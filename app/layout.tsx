@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { ThemeProvider } from "@/components/theme-provider"
+import "./globals.css"
 
 export const metadata: Metadata = {
   title: "Periplus - 旅行轨迹规划",

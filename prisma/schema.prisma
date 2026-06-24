@@ -27,5 +27,6 @@ model RoutePoint {
   stayDays  Int?
   notes     String?
 
+  @@unique([routeId, order])
   @@index([routeId])
 }
