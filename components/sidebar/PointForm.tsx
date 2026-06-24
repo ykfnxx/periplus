@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { RoutePoint } from '@/stores/mapStore';
 
 interface PointFormProps {
@@ -15,13 +15,43 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
   const [lng, setLng] = useState(point?.lng?.toString() || '');
   const [stayDays, setStayDays] = useState(point?.stayDays?.toString() || '');
   const [notes, setNotes] = useState(point?.notes || '');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setName(point?.name || '');
+    setLat(point?.lat?.toString() || '');
+    setLng(point?.lng?.toString() || '');
+    setStayDays(point?.stayDays?.toString() || '');
+    setNotes(point?.notes || '');
+    setError('');
+  }, [point]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      setError('请输入有效的经纬度');
+      return;
+    }
+
+    if (latNum < -90 || latNum > 90) {
+      setError('纬度必须在 -90 到 90 之间');
+      return;
+    }
+
+    if (lngNum < -180 || lngNum > 180) {
+      setError('经度必须在 -180 到 180 之间');
+      return;
+    }
+
     onSubmit({
       name: name.trim(),
-      lat: parseFloat(lat),
-      lng: parseFloat(lng),
+      lat: latNum,
+      lng: lngNum,
       order: point?.order ?? 0,
       stayDays: stayDays ? parseInt(stayDays) : undefined,
       notes: notes.trim() || undefined,
@@ -89,6 +119,7 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
           取消
         </button>
       </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </form>
   );
 }

@@ -51,25 +51,31 @@ export default function RouteEditor() {
   const handleSave = async () => {
     if (!currentRoute) return;
 
-    const method = currentRoute.id.startsWith('preset-') ? 'POST' : 'PUT';
-    const url = method === 'POST' ? '/api/routes' : `/api/routes/${currentRoute.id}`;
+    const isNewRoute = currentRoute.id.startsWith('preset-') || currentRoute.id.startsWith('temp-');
+    const method = isNewRoute ? 'POST' : 'PUT';
+    const url = isNewRoute ? '/api/routes' : `/api/routes/${currentRoute.id}`;
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: currentRoute.name,
-        description: currentRoute.description,
-        points: currentRoute.points,
-      }),
-    });
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: currentRoute.name,
+          description: currentRoute.description,
+          points: currentRoute.points,
+        }),
+      });
 
-    if (res.ok) {
-      const saved = await res.json();
-      setCurrentRoute(saved);
-      alert('保存成功');
-    } else {
-      alert('保存失败');
+      if (res.ok) {
+        const saved = await res.json();
+        setCurrentRoute(saved);
+        alert('保存成功');
+      } else {
+        const err = await res.json().catch(() => ({ error: '保存失败' }));
+        alert(err.error || '保存失败');
+      }
+    } catch {
+      alert('网络错误，请稍后重试');
     }
   };
 
