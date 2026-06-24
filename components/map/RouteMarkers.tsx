@@ -13,9 +13,9 @@ export default function RouteMarkers() {
 
     const markers: AMap.Marker[] = [];
 
-    currentRoute.points
-      .sort((a, b) => a.order - b.order)
-      .forEach((point, index) => {
+    const sortedPoints = [...currentRoute.points].sort((a, b) => a.order - b.order);
+
+    sortedPoints.forEach((point, index) => {
         const marker = new AMap.Marker({
           position: new AMap.LngLat(point.lng, point.lat),
           title: point.name,

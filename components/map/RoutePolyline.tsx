@@ -10,7 +10,7 @@ export default function RoutePolyline() {
   useEffect(() => {
     if (!map || !currentRoute || currentRoute.points.length < 2) return;
 
-    const path = currentRoute.points
+    const path = [...currentRoute.points]
       .sort((a, b) => a.order - b.order)
       .map((p) => new AMap.LngLat(p.lng, p.lat));
 

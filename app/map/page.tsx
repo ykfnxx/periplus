@@ -8,10 +8,14 @@ import { silkRoadRoute } from '@/lib/mock-routes';
 export const dynamic = 'force-dynamic';
 
 export default function MapPage() {
+  const currentRoute = useMapStore((s) => s.currentRoute);
   const setCurrentRoute = useMapStore((s) => s.setCurrentRoute);
   useEffect(() => {
-    setCurrentRoute(silkRoadRoute);
-  }, [setCurrentRoute]);
+    // TODO(Task 5): Remove mock data loading, load from API instead
+    if (!currentRoute) {
+      setCurrentRoute(silkRoadRoute);
+    }
+  }, [setCurrentRoute, currentRoute]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">

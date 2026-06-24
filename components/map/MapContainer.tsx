@@ -49,8 +49,8 @@ export default function MapContainer() {
         className="w-full h-full"
         style={{ minHeight: '100%' }}
       />
-      <RoutePolyline />
-      <RouteMarkers />
+      <RoutePolyline key="polyline" />
+      <RouteMarkers key="markers" />
     </>
   );
 }
