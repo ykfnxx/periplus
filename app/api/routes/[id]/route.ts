@@ -23,11 +23,38 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const body = await request.json();
+
+  // Check route exists first
+  const existing = await prisma.route.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: 'Route not found' }, { status: 404 });
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
   const { name, description, points } = body;
 
-  // Delete existing points and recreate
-  await prisma.routePoint.deleteMany({ where: { routeId: id } });
+  if (!name || !Array.isArray(points) || points.length === 0) {
+    return NextResponse.json(
+      { error: 'Invalid input: name and points required' },
+      { status: 400 }
+    );
+  }
+
+  // Validate point data
+  for (const p of points) {
+    if (!p.name || typeof p.lat !== 'number' || typeof p.lng !== 'number' || typeof p.order !== 'number') {
+      return NextResponse.json(
+        { error: 'Invalid point data: name, lat, lng, order required' },
+        { status: 400 }
+      );
+    }
+  }
 
   const route = await prisma.route.update({
     where: { id },
@@ -35,6 +62,7 @@ export async function PUT(
       name,
       description,
       points: {
+        deleteMany: {},
         create: points.map((p: { name: string; lat: number; lng: number; order: number; stayDays?: number; notes?: string }) => ({
           name: p.name,
           lat: p.lat,
@@ -56,6 +84,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const existing = await prisma.route.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: 'Route not found' }, { status: 404 });
+  }
+
   await prisma.route.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }

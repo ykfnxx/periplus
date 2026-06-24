@@ -10,7 +10,12 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
 
   const { name, description, points } = body;
 
@@ -19,6 +24,16 @@ export async function POST(request: NextRequest) {
       { error: 'Invalid input: name and points required' },
       { status: 400 }
     );
+  }
+
+  // Validate point data
+  for (const p of points) {
+    if (!p.name || typeof p.lat !== 'number' || typeof p.lng !== 'number' || typeof p.order !== 'number') {
+      return NextResponse.json(
+        { error: 'Invalid point data: name, lat, lng, order required' },
+        { status: 400 }
+      );
+    }
   }
 
   const route = await prisma.route.create({
