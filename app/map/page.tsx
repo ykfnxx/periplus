@@ -1,5 +1,9 @@
+'use client';
+
+import { Suspense } from 'react';
 import MapContainer from '@/components/map/MapContainer';
 import RouteEditor from '@/components/sidebar/RouteEditor';
+import MapRouteLoader from '@/components/map/MapRouteLoader';
 
 export default function MapPage() {
   return (
@@ -8,6 +12,9 @@ export default function MapPage() {
         <RouteEditor />
       </aside>
       <main className="flex-1 relative">
+        <Suspense fallback={null}>
+          <MapRouteLoader />
+        </Suspense>
         <MapContainer />
       </main>
     </div>
