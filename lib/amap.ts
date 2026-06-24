@@ -1,22 +1,19 @@
-import AMapLoader from '@amap/amap-jsapi-loader';
-
-const AMAP_KEY = process.env.NEXT_PUBLIC_AMAP_KEY;
-
-if (!AMAP_KEY) {
-  throw new Error(
-    'NEXT_PUBLIC_AMAP_KEY is required but not set. Please add it to .env.local'
-  );
-}
-
-// TypeScript now knows AMAP_KEY is non-null after the guard above
-const AMAP_KEY_STRING: string = AMAP_KEY;
-
 let amapPromise: Promise<typeof AMap> | null = null;
 
 export async function loadAMap(): Promise<typeof AMap> {
   if (!amapPromise) {
+    const AMAP_KEY = process.env.NEXT_PUBLIC_AMAP_KEY;
+    if (!AMAP_KEY) {
+      throw new Error(
+        'NEXT_PUBLIC_AMAP_KEY is required but not set. Please add it to .env.local'
+      );
+    }
+
+    // Dynamic import to avoid SSR issues with @amap/amap-jsapi-loader
+    // which accesses `window` at module evaluation time
+    const AMapLoader = (await import('@amap/amap-jsapi-loader')).default;
     amapPromise = AMapLoader.load({
-      key: AMAP_KEY_STRING,
+      key: AMAP_KEY,
       version: '2.0',
       plugins: ['AMap.Scale', 'AMap.ToolBar'],
     });

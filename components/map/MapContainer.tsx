@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import { loadAMap } from '@/lib/amap';
+import RoutePolyline from './RoutePolyline';
+import RouteMarkers from './RouteMarkers';
 import { useMapStore } from '@/stores/mapStore';
 
 export default function MapContainer() {
@@ -41,10 +43,14 @@ export default function MapContainer() {
   }, [setMap]);
 
   return (
-    <div
-      ref={mapDivRef}
-      className="w-full h-full"
-      style={{ minHeight: '100%' }}
-    />
+    <>
+      <div
+        ref={mapDivRef}
+        className="w-full h-full"
+        style={{ minHeight: '100%' }}
+      />
+      <RoutePolyline />
+      <RouteMarkers />
+    </>
   );
 }
