@@ -11,17 +11,29 @@ export default function MapRouteLoader() {
   const setCurrentRoute = useMapStore((s) => s.setCurrentRoute);
 
   useEffect(() => {
+    let mounted = true;
+
     if (routeId === 'preset-silk-road') {
       setCurrentRoute(silkRoadRoute);
     } else if (routeId) {
-      // Fetch from API
       fetch(`/api/routes/${routeId}`)
-        .then((res) => res.json())
-        .then((data) => setCurrentRoute(data))
-        .catch(() => setCurrentRoute(null));
+        .then((res) => {
+          if (!res.ok) throw new Error('Route not found');
+          return res.json();
+        })
+        .then((data) => {
+          if (mounted) setCurrentRoute(data);
+        })
+        .catch(() => {
+          if (mounted) setCurrentRoute(null);
+        });
     } else {
       setCurrentRoute(null);
     }
+
+    return () => {
+      mounted = false;
+    };
   }, [routeId, setCurrentRoute]);
 
   return null;

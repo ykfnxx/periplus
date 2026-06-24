@@ -36,25 +36,29 @@ export default function HomePage() {
 }
 
 async function SavedRoutes() {
-  const res = await fetch('http://localhost:3000/api/routes', {
-    cache: 'no-store',
-  });
+  try {
+    const res = await fetch('/api/routes', {
+      cache: 'no-store',
+    });
 
-  if (!res.ok) {
+    if (!res.ok) {
+      return <p className="text-sm text-slate-400">暂无保存的路线</p>;
+    }
+
+    const routes = await res.json();
+
+    if (routes.length === 0) {
+      return <p className="text-sm text-slate-400">暂无保存的路线</p>;
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {routes.map((route: Route) => (
+          <RouteCard key={route.id} route={route} />
+        ))}
+      </div>
+    );
+  } catch {
     return <p className="text-sm text-slate-400">暂无保存的路线</p>;
   }
-
-  const routes = await res.json();
-
-  if (routes.length === 0) {
-    return <p className="text-sm text-slate-400">暂无保存的路线</p>;
-  }
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {routes.map((route: Route) => (
-        <RouteCard key={route.id} route={route} />
-      ))}
-    </div>
-  );
 }
