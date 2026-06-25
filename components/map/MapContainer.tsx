@@ -4,6 +4,9 @@ import { useEffect, useRef } from 'react';
 import { loadAMap } from '@/lib/amap';
 import RoutePolyline from './RoutePolyline';
 import RouteMarkers from './RouteMarkers';
+import PhotoMarkers from './PhotoMarkers';
+import PhotoInfoWindow from './PhotoInfoWindow';
+import LocationSelector from './LocationSelector';
 import { useMapStore } from '@/stores/mapStore';
 
 export default function MapContainer() {
@@ -51,6 +54,9 @@ export default function MapContainer() {
       />
       <RoutePolyline key="polyline" />
       <RouteMarkers key="markers" />
+      <PhotoMarkers key="photo-markers" />
+      <PhotoInfoWindow key="photo-info" />
+      <LocationSelector key="location-selector" />
     </>
   );
 }
