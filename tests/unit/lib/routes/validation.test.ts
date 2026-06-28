@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { validateRouteInput } from '@/lib/routes/validation';
+import {
+  validateRouteInput,
+  validateRoutePointCreateInput,
+  validateRoutePointPatchInput,
+  validateRoutePointPosition,
+} from '@/lib/routes/validation';
 
 describe('validateRouteInput', () => {
   it('accepts decimal stayHours for route points', () => {
@@ -61,6 +66,74 @@ describe('validateRouteInput', () => {
     expect(result).toEqual({
       ok: false,
       error: 'Invalid point data: stayDays has been replaced by stayHours',
+    });
+  });
+});
+
+describe('route point validators', () => {
+  it('validates point creation input without requiring order', () => {
+    const result = validateRoutePointCreateInput({
+      name: '西湖',
+      lat: 30.246,
+      lng: 120.146,
+      stayHours: 2.5,
+      notes: '下午散步',
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        name: '西湖',
+        lat: 30.246,
+        lng: 120.146,
+        stayHours: 2.5,
+        notes: '下午散步',
+      },
+    });
+  });
+
+  it('validates nullable point patch fields', () => {
+    const result = validateRoutePointPatchInput({
+      stayHours: null,
+      notes: null,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        stayHours: null,
+        notes: null,
+      },
+    });
+  });
+
+  it('rejects empty point patches', () => {
+    const result = validateRoutePointPatchInput({});
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Invalid point patch: at least one field is required',
+    });
+  });
+
+  it('validates relative route point positions', () => {
+    expect(validateRoutePointPosition({ placement: 'start' })).toEqual({
+      ok: true,
+      data: { placement: 'start' },
+    });
+
+    expect(validateRoutePointPosition({ placement: 'after', pointId: 'point-1' })).toEqual({
+      ok: true,
+      data: { placement: 'after', pointId: 'point-1' },
+    });
+  });
+
+  it('rejects relative positions without anchor point ids', () => {
+    const result = validateRoutePointPosition({ placement: 'before' });
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Invalid point position: before requires pointId',
     });
   });
 });

@@ -26,6 +26,28 @@ export interface RoutePointInput {
   notes?: string;
 }
 
+export type RoutePointPosition =
+  | { placement: 'start' }
+  | { placement: 'end' }
+  | { placement: 'before'; pointId: string }
+  | { placement: 'after'; pointId: string };
+
+export interface RoutePointCreateInput {
+  name: string;
+  lat: number;
+  lng: number;
+  stayHours?: number;
+  notes?: string;
+}
+
+export interface RoutePointPatchInput {
+  name?: string;
+  lat?: number;
+  lng?: number;
+  stayHours?: number | null;
+  notes?: string | null;
+}
+
 export interface RouteInput {
   name: string;
   description?: string;

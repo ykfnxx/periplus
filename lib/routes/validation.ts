@@ -1,7 +1,25 @@
-import type { RouteInput, RoutePointInput } from '@/types/route';
+import type {
+  RouteInput,
+  RoutePointCreateInput,
+  RoutePointInput,
+  RoutePointPatchInput,
+  RoutePointPosition,
+} from '@/types/route';
 
 type ValidationResult =
   | { ok: true; data: RouteInput }
+  | { ok: false; error: string };
+
+type PointCreateValidationResult =
+  | { ok: true; data: RoutePointCreateInput }
+  | { ok: false; error: string };
+
+type PointPatchValidationResult =
+  | { ok: true; data: RoutePointPatchInput }
+  | { ok: false; error: string };
+
+type PointPositionValidationResult =
+  | { ok: true; data: RoutePointPosition }
   | { ok: false; error: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -10,6 +28,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
+}
+
+function isOptionalNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
+function validateLatLng(lat: unknown, lng: unknown, context: string): string | null {
+  if (typeof lat !== 'number' || typeof lng !== 'number') {
+    return `${context}: lat and lng must be numbers`;
+  }
+
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+    return `${context}: lat must be between -90 and 90`;
+  }
+
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+    return `${context}: lng must be between -180 and 180`;
+  }
+
+  return null;
+}
+
+function validateStayHours(value: unknown, context: string): string | null {
+  if (value === undefined) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return `${context}: stayHours must be greater than 0`;
+  }
+  return null;
 }
 
 function validatePoint(point: unknown): { ok: true; data: RoutePointInput } | { ok: false; error: string } {
@@ -34,30 +80,15 @@ function validatePoint(point: unknown): { ok: true; data: RoutePointInput } | { 
     return { ok: false, error: 'Invalid point data: name, lat, lng, order required' };
   }
 
-  if (!Number.isFinite(point.lat) || point.lat < -90 || point.lat > 90) {
-    return { ok: false, error: 'Invalid point data: lat must be between -90 and 90' };
-  }
-
-  if (!Number.isFinite(point.lng) || point.lng < -180 || point.lng > 180) {
-    return { ok: false, error: 'Invalid point data: lng must be between -180 and 180' };
-  }
+  const latLngError = validateLatLng(point.lat, point.lng, 'Invalid point data');
+  if (latLngError) return { ok: false, error: latLngError };
 
   if (!Number.isFinite(point.order)) {
     return { ok: false, error: 'Invalid point data: order must be a finite number' };
   }
 
-  if (point.stayHours !== undefined) {
-    if (
-      typeof point.stayHours !== 'number' ||
-      !Number.isFinite(point.stayHours) ||
-      point.stayHours <= 0
-    ) {
-      return {
-        ok: false,
-        error: 'Invalid point data: stayHours must be greater than 0',
-      };
-    }
-  }
+  const stayHoursError = validateStayHours(point.stayHours, 'Invalid point data');
+  if (stayHoursError) return { ok: false, error: stayHoursError };
 
   if (!isOptionalString(point.notes)) {
     return { ok: false, error: 'Invalid point data: notes must be a string' };
@@ -70,7 +101,7 @@ function validatePoint(point: unknown): { ok: true; data: RoutePointInput } | { 
       lat: point.lat,
       lng: point.lng,
       order: point.order,
-      stayHours: point.stayHours,
+      stayHours: typeof point.stayHours === 'number' ? point.stayHours : undefined,
       notes: point.notes?.trim() || undefined,
     },
   };
@@ -109,4 +140,117 @@ export function validateRouteInput(input: unknown): ValidationResult {
       points,
     },
   };
+}
+
+export function validateRoutePointCreateInput(input: unknown): PointCreateValidationResult {
+  if (!isRecord(input)) {
+    return { ok: false, error: 'Invalid point data: name, lat, lng required' };
+  }
+
+  if ('stayDays' in input) {
+    return {
+      ok: false,
+      error: 'Invalid point data: stayDays has been replaced by stayHours',
+    };
+  }
+
+  if (typeof input.name !== 'string' || input.name.trim().length === 0) {
+    return { ok: false, error: 'Invalid point data: name is required' };
+  }
+
+  const latLngError = validateLatLng(input.lat, input.lng, 'Invalid point data');
+  if (latLngError) return { ok: false, error: latLngError };
+
+  const stayHoursError = validateStayHours(input.stayHours, 'Invalid point data');
+  if (stayHoursError) return { ok: false, error: stayHoursError };
+
+  if (!isOptionalString(input.notes)) {
+    return { ok: false, error: 'Invalid point data: notes must be a string' };
+  }
+
+  const lat = input.lat as number;
+  const lng = input.lng as number;
+
+  return {
+    ok: true,
+    data: {
+      name: input.name.trim(),
+      lat,
+      lng,
+      stayHours: typeof input.stayHours === 'number' ? input.stayHours : undefined,
+      notes: input.notes?.trim() || undefined,
+    },
+  };
+}
+
+export function validateRoutePointPatchInput(input: unknown): PointPatchValidationResult {
+  if (!isRecord(input)) {
+    return { ok: false, error: 'Invalid point patch: object required' };
+  }
+
+  const allowedFields = ['name', 'lat', 'lng', 'stayHours', 'notes'];
+  const presentFields = allowedFields.filter((field) => field in input);
+  if (presentFields.length === 0) {
+    return { ok: false, error: 'Invalid point patch: at least one field is required' };
+  }
+
+  if ('name' in input && (typeof input.name !== 'string' || input.name.trim().length === 0)) {
+    return { ok: false, error: 'Invalid point patch: name must be a non-empty string' };
+  }
+
+  if ('lat' in input || 'lng' in input) {
+    const latLngError = validateLatLng(input.lat, input.lng, 'Invalid point patch');
+    if (latLngError) return { ok: false, error: latLngError };
+  }
+
+  if ('stayHours' in input && input.stayHours !== null) {
+    const stayHoursError = validateStayHours(input.stayHours, 'Invalid point patch');
+    if (stayHoursError) return { ok: false, error: stayHoursError };
+  }
+
+  if (!isOptionalNullableString(input.notes)) {
+    return { ok: false, error: 'Invalid point patch: notes must be a string or null' };
+  }
+
+  return {
+    ok: true,
+    data: {
+      name: typeof input.name === 'string' ? input.name.trim() : undefined,
+      lat: typeof input.lat === 'number' ? input.lat : undefined,
+      lng: typeof input.lng === 'number' ? input.lng : undefined,
+      stayHours: input.stayHours === null || typeof input.stayHours === 'number' ? input.stayHours : undefined,
+      notes:
+        input.notes === null
+          ? null
+          : typeof input.notes === 'string'
+            ? input.notes.trim() || null
+            : undefined,
+    },
+  };
+}
+
+export function validateRoutePointPosition(input: unknown): PointPositionValidationResult {
+  if (input === undefined) {
+    return { ok: true, data: { placement: 'end' } };
+  }
+
+  if (!isRecord(input) || typeof input.placement !== 'string') {
+    return { ok: false, error: 'Invalid point position: placement required' };
+  }
+
+  if (input.placement === 'start' || input.placement === 'end') {
+    return { ok: true, data: { placement: input.placement } };
+  }
+
+  if (input.placement === 'before' || input.placement === 'after') {
+    if (typeof input.pointId !== 'string' || input.pointId.trim().length === 0) {
+      return { ok: false, error: `Invalid point position: ${input.placement} requires pointId` };
+    }
+    return {
+      ok: true,
+      data: { placement: input.placement, pointId: input.pointId.trim() },
+    };
+  }
+
+  return { ok: false, error: 'Invalid point position: placement must be start, end, before, or after' };
 }
