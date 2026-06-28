@@ -188,44 +188,53 @@ export function validateRoutePointPatchInput(input: unknown): PointPatchValidati
     return { ok: false, error: 'Invalid point patch: object required' };
   }
 
-  const allowedFields = ['name', 'lat', 'lng', 'stayHours', 'notes'];
-  const presentFields = allowedFields.filter((field) => field in input);
-  if (presentFields.length === 0) {
-    return { ok: false, error: 'Invalid point patch: at least one field is required' };
+  if ('stayDays' in input) {
+    return {
+      ok: false,
+      error: 'Invalid point patch: stayDays has been replaced by stayHours',
+    };
   }
 
-  if ('name' in input && (typeof input.name !== 'string' || input.name.trim().length === 0)) {
-    return { ok: false, error: 'Invalid point patch: name must be a non-empty string' };
+  const data: RoutePointPatchInput = {};
+
+  if ('name' in input && input.name !== undefined) {
+    if (typeof input.name !== 'string' || input.name.trim().length === 0) {
+      return { ok: false, error: 'Invalid point patch: name must be a non-empty string' };
+    }
+    data.name = input.name.trim();
   }
 
-  if ('lat' in input || 'lng' in input) {
+  if (input.lat !== undefined || input.lng !== undefined) {
     const latLngError = validateLatLng(input.lat, input.lng, 'Invalid point patch');
     if (latLngError) return { ok: false, error: latLngError };
+    data.lat = input.lat as number;
+    data.lng = input.lng as number;
   }
 
-  if ('stayHours' in input && input.stayHours !== null) {
-    const stayHoursError = validateStayHours(input.stayHours, 'Invalid point patch');
-    if (stayHoursError) return { ok: false, error: stayHoursError };
+  if ('stayHours' in input && input.stayHours !== undefined) {
+    if (input.stayHours === null) {
+      data.stayHours = null;
+    } else {
+      const stayHoursError = validateStayHours(input.stayHours, 'Invalid point patch');
+      if (stayHoursError) return { ok: false, error: stayHoursError };
+      data.stayHours = input.stayHours as number;
+    }
   }
 
-  if (!isOptionalNullableString(input.notes)) {
-    return { ok: false, error: 'Invalid point patch: notes must be a string or null' };
+  if ('notes' in input && input.notes !== undefined) {
+    if (!isOptionalNullableString(input.notes)) {
+      return { ok: false, error: 'Invalid point patch: notes must be a string or null' };
+    }
+    data.notes = input.notes === null ? null : input.notes.trim() || null;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return { ok: false, error: 'Invalid point patch: at least one field is required' };
   }
 
   return {
     ok: true,
-    data: {
-      name: typeof input.name === 'string' ? input.name.trim() : undefined,
-      lat: typeof input.lat === 'number' ? input.lat : undefined,
-      lng: typeof input.lng === 'number' ? input.lng : undefined,
-      stayHours: input.stayHours === null || typeof input.stayHours === 'number' ? input.stayHours : undefined,
-      notes:
-        input.notes === null
-          ? null
-          : typeof input.notes === 'string'
-            ? input.notes.trim() || null
-            : undefined,
-    },
+    data,
   };
 }
 

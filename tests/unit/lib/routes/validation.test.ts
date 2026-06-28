@@ -98,13 +98,16 @@ describe('route point validators', () => {
       notes: null,
     });
 
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       ok: true,
       data: {
         stayHours: null,
         notes: null,
       },
     });
+    if (result.ok) {
+      expect(Object.keys(result.data)).toStrictEqual(['stayHours', 'notes']);
+    }
   });
 
   it('rejects empty point patches', () => {
@@ -114,6 +117,42 @@ describe('route point validators', () => {
       ok: false,
       error: 'Invalid point patch: at least one field is required',
     });
+  });
+
+  it('rejects undefined-only point patches', () => {
+    const result = validateRoutePointPatchInput({ notes: undefined });
+
+    expect(result).toStrictEqual({
+      ok: false,
+      error: 'Invalid point patch: at least one field is required',
+    });
+  });
+
+  it('rejects legacy stayDays point patches', () => {
+    const result = validateRoutePointPatchInput({ stayDays: 1, notes: 'x' });
+
+    expect(result).toStrictEqual({
+      ok: false,
+      error: 'Invalid point patch: stayDays has been replaced by stayHours',
+    });
+  });
+
+  it('returns only supplied trimmed point patch fields', () => {
+    const result = validateRoutePointPatchInput({
+      name: ' 西湖 ',
+      notes: ' 下午 ',
+    });
+
+    expect(result).toStrictEqual({
+      ok: true,
+      data: {
+        name: '西湖',
+        notes: '下午',
+      },
+    });
+    if (result.ok) {
+      expect(Object.keys(result.data)).toStrictEqual(['name', 'notes']);
+    }
   });
 
   it('validates relative route point positions', () => {
