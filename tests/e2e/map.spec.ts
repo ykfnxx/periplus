@@ -9,6 +9,18 @@ test.describe("Map Page", () => {
     await expect(page.getByRole("tab", { name: "探索" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "计划" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "收藏" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "地图样式" })).toBeDisabled()
+  })
+
+  test("keeps the workbench on the left side on desktop", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto("/")
+    const tablist = page.getByRole("tablist", { name: "Periplus 工作台" })
+    await expect(tablist).toBeVisible()
+    const box = await tablist.boundingBox()
+    expect(box).not.toBeNull()
+    expect(box!.x).toBeLessThan(80)
+    expect(box!.y).toBeLessThan(120)
   })
 
   test("/map preserves route query on redirect", async ({ page }) => {

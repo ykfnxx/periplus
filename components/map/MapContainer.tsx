@@ -7,6 +7,7 @@ import RouteMarkers from './RouteMarkers';
 import PhotoMarkers from './PhotoMarkers';
 import PhotoInfoWindow from './PhotoInfoWindow';
 import LocationSelector from './LocationSelector';
+import MapFloatingControls from './MapFloatingControls';
 import { useMapStore } from '@/stores/mapStore';
 
 export default function MapContainer() {
@@ -58,6 +59,7 @@ export default function MapContainer() {
       <PhotoMarkers key="photo-markers" />
       <PhotoInfoWindow key="photo-info" />
       <LocationSelector key="location-selector" />
+      <MapFloatingControls key="floating-controls" />
     </>
   );
 }
