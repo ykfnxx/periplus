@@ -31,6 +31,14 @@ describe('mapStore UI state', () => {
     expect(useMapStore.getState().isSelectingLocation).toBe(true);
   });
 
+  it('stores a clicked point selection draft', () => {
+    useMapStore.getState().setPointSelectionDraft({ lat: 39.9, lng: 116.4 });
+    expect(useMapStore.getState().pointSelectionDraft).toEqual({
+      lat: 39.9,
+      lng: 116.4,
+    });
+  });
+
   it('switches to plan tab when opening add point modes', () => {
     useMapStore.getState().setAddPointMode('search');
     expect(useMapStore.getState().addPointMode).toBe('search');
@@ -80,7 +88,7 @@ describe('mapStore UI state', () => {
     });
   });
 
-  it('clears all location selection owned state', () => {
+  it('clears active location selection state', () => {
     useMapStore.setState({
       pendingPhotoDataUrl: 'data-url',
       pointSelectionDraft: { lat: 31.23, lng: 121.47 },
@@ -93,7 +101,7 @@ describe('mapStore UI state', () => {
 
     expect(useMapStore.getState()).toMatchObject({
       pendingPhotoDataUrl: null,
-      pointSelectionDraft: null,
+      pointSelectionDraft: { lat: 31.23, lng: 121.47 },
       isSelectingLocation: false,
       locationSelectionMode: 'none',
       addPointMode: 'closed',

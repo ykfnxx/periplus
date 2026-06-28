@@ -102,7 +102,6 @@ export const useMapStore = create<MapState>((set) => ({
   clearLocationSelection: () =>
     set({
       pendingPhotoDataUrl: null,
-      pointSelectionDraft: null,
       isSelectingLocation: false,
       locationSelectionMode: 'none',
       addPointMode: 'closed',

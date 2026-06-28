@@ -1,32 +1,170 @@
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import PlanPanel from "@/components/workbench/PlanPanel"
 import { silkRoadRoute } from "@/lib/mock-routes"
 import { useMapStore } from "@/stores/mapStore"
+import type { Route } from "@/types/route"
 
 vi.mock("@/stores/mapStore", () => ({
   useMapStore: vi.fn(),
 }))
 
+function mockPlanPanelStore(overrides: Partial<{
+  currentRoute: Route
+  setCurrentRoute: ReturnType<typeof vi.fn>
+  editingPointId: string | null
+  setEditingPointId: ReturnType<typeof vi.fn>
+  startPointLocationSelection: ReturnType<typeof vi.fn>
+  pointSelectionDraft: { lat: number; lng: number } | null
+  setPointSelectionDraft: ReturnType<typeof vi.fn>
+  setAddPointMode: ReturnType<typeof vi.fn>
+}> = {}) {
+  const state = {
+    currentRoute: silkRoadRoute,
+    setCurrentRoute: vi.fn(),
+    editingPointId: null,
+    setEditingPointId: vi.fn(),
+    startPointLocationSelection: vi.fn(),
+    pointSelectionDraft: null,
+    setPointSelectionDraft: vi.fn(),
+    setAddPointMode: vi.fn(),
+    ...overrides,
+  }
+
+  ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+    (selector: (s: typeof state) => unknown) => selector(state)
+  )
+
+  return state
+}
+
 describe("PlanPanel", () => {
   it("renders current route actions", () => {
-    ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      (selector: (s: unknown) => unknown) =>
-        selector({
-          currentRoute: silkRoadRoute,
-          setCurrentRoute: vi.fn(),
-          editingPointId: null,
-          setEditingPointId: vi.fn(),
-          startPointLocationSelection: vi.fn(),
-          pointSelectionDraft: null,
-          setPointSelectionDraft: vi.fn(),
-          setAddPointMode: vi.fn(),
-        })
-    )
+    mockPlanPanelStore()
 
     render(<PlanPanel searchQuery="" />)
     expect(screen.getByText("丝绸之路")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "地图选点" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "保存变更" })).toBeInTheDocument()
+  })
+
+  it("starts point location selection from the map button", () => {
+    const startPointLocationSelection = vi.fn()
+    mockPlanPanelStore({ startPointLocationSelection })
+
+    render(<PlanPanel searchQuery="" />)
+    fireEvent.click(screen.getByRole("button", { name: "地图选点" }))
+
+    expect(startPointLocationSelection).toHaveBeenCalledTimes(1)
+  })
+
+  it("adds a selected draft point to the route", () => {
+    const setCurrentRoute = vi.fn()
+    const setPointSelectionDraft = vi.fn()
+    const setAddPointMode = vi.fn()
+    mockPlanPanelStore({
+      setCurrentRoute,
+      setPointSelectionDraft,
+      setAddPointMode,
+      pointSelectionDraft: { lat: 39.9, lng: 116.4 },
+    })
+
+    render(<PlanPanel searchQuery="" />)
+    expect(screen.getByText("39.9000, 116.4000")).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText("地点名称"), {
+      target: { value: "  天安门  " },
+    })
+    fireEvent.change(screen.getByLabelText("停留小时"), {
+      target: { value: "1.5" },
+    })
+    fireEvent.change(screen.getByLabelText("地点备注"), {
+      target: { value: "  看升旗  " },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "添加到路线" }))
+
+    expect(setCurrentRoute).toHaveBeenCalledWith({
+      ...silkRoadRoute,
+      points: [
+        ...silkRoadRoute.points,
+        expect.objectContaining({
+          id: expect.stringMatching(/^temp-/),
+          name: "天安门",
+          lat: 39.9,
+          lng: 116.4,
+          order: silkRoadRoute.points.length,
+          stayHours: 1.5,
+          notes: "看升旗",
+        }),
+      ],
+    })
+    expect(setPointSelectionDraft).toHaveBeenCalledWith(null)
+    expect(setAddPointMode).toHaveBeenCalledWith("closed")
+  })
+
+  it("cancels the selected draft point form", () => {
+    const setPointSelectionDraft = vi.fn()
+    const setAddPointMode = vi.fn()
+    mockPlanPanelStore({
+      setPointSelectionDraft,
+      setAddPointMode,
+      pointSelectionDraft: { lat: 39.9, lng: 116.4 },
+    })
+
+    render(<PlanPanel searchQuery="" />)
+    fireEvent.click(screen.getByRole("button", { name: "取消" }))
+
+    expect(setPointSelectionDraft).toHaveBeenCalledWith(null)
+    expect(setAddPointMode).toHaveBeenCalledWith("closed")
+  })
+
+  it("resets draft point form defaults after cancel", () => {
+    const state = mockPlanPanelStore({
+      pointSelectionDraft: { lat: 39.9, lng: 116.4 },
+    })
+    const { rerender } = render(<PlanPanel searchQuery="" />)
+
+    fireEvent.change(screen.getByLabelText("地点名称"), {
+      target: { value: "天安门" },
+    })
+    fireEvent.change(screen.getByLabelText("停留小时"), {
+      target: { value: "2" },
+    })
+    fireEvent.change(screen.getByLabelText("地点备注"), {
+      target: { value: "看升旗" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "取消" }))
+
+    state.pointSelectionDraft = { lat: 31.23, lng: 121.47 }
+    rerender(<PlanPanel searchQuery="" />)
+
+    expect(screen.getByLabelText("地点名称")).toHaveValue("新地点")
+    expect(screen.getByLabelText("停留小时")).toHaveValue(1)
+    expect(screen.getByLabelText("地点备注")).toHaveValue("")
+  })
+
+  it("resets draft point form defaults before restarting map selection", () => {
+    const state = mockPlanPanelStore({
+      pointSelectionDraft: { lat: 39.9, lng: 116.4 },
+    })
+    const { rerender } = render(<PlanPanel searchQuery="" />)
+
+    fireEvent.change(screen.getByLabelText("地点名称"), {
+      target: { value: "天安门" },
+    })
+    fireEvent.change(screen.getByLabelText("停留小时"), {
+      target: { value: "2" },
+    })
+    fireEvent.change(screen.getByLabelText("地点备注"), {
+      target: { value: "看升旗" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "地图选点" }))
+
+    state.pointSelectionDraft = { lat: 31.23, lng: 121.47 }
+    rerender(<PlanPanel searchQuery="" />)
+
+    expect(screen.getByLabelText("地点名称")).toHaveValue("新地点")
+    expect(screen.getByLabelText("停留小时")).toHaveValue(1)
+    expect(screen.getByLabelText("地点备注")).toHaveValue("")
   })
 })

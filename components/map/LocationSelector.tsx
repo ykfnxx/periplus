@@ -6,13 +6,14 @@ import { useMapStore } from '@/stores/mapStore';
 export default function LocationSelector() {
   const map = useMapStore((s) => s.map);
   const isSelectingLocation = useMapStore((s) => s.isSelectingLocation);
+  const locationSelectionMode = useMapStore((s) => s.locationSelectionMode);
   const pendingPhotoDataUrl = useMapStore((s) => s.pendingPhotoDataUrl);
   const addPhotoShare = useMapStore((s) => s.addPhotoShare);
-  const setIsSelectingLocation = useMapStore((s) => s.setIsSelectingLocation);
-  const setPendingPhotoDataUrl = useMapStore((s) => s.setPendingPhotoDataUrl);
+  const setPointSelectionDraft = useMapStore((s) => s.setPointSelectionDraft);
+  const clearLocationSelection = useMapStore((s) => s.clearLocationSelection);
 
   useEffect(() => {
-    if (!map || !isSelectingLocation || !pendingPhotoDataUrl) return;
+    if (!map || !isSelectingLocation) return;
 
     // Add a visual indicator that we're in selection mode
     const mapContainer = map.getContainer();
@@ -24,15 +25,21 @@ export default function LocationSelector() {
       const lng = e.lnglat.getLng();
       const lat = e.lnglat.getLat();
 
-      addPhotoShare({
-        lat,
-        lng,
-        imageDataUrl: pendingPhotoDataUrl,
-        caption: '',
-      });
+      if (locationSelectionMode === 'photo' && pendingPhotoDataUrl) {
+        addPhotoShare({
+          lat,
+          lng,
+          imageDataUrl: pendingPhotoDataUrl,
+          caption: '',
+        });
+        clearLocationSelection();
+        return;
+      }
 
-      setIsSelectingLocation(false);
-      setPendingPhotoDataUrl(null);
+      if (locationSelectionMode === 'point') {
+        setPointSelectionDraft({ lat, lng });
+        clearLocationSelection();
+      }
     };
 
     map.on('click', clickHandler);
@@ -43,7 +50,15 @@ export default function LocationSelector() {
         mapContainer.style.cursor = '';
       }
     };
-  }, [map, isSelectingLocation, pendingPhotoDataUrl, addPhotoShare, setIsSelectingLocation, setPendingPhotoDataUrl]);
+  }, [
+    map,
+    isSelectingLocation,
+    locationSelectionMode,
+    pendingPhotoDataUrl,
+    addPhotoShare,
+    setPointSelectionDraft,
+    clearLocationSelection,
+  ]);
 
   return null;
 }
