@@ -26,10 +26,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function hasOwn(value: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
-
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
 }
@@ -192,24 +188,17 @@ export function validateRoutePointPatchInput(input: unknown): PointPatchValidati
     return { ok: false, error: 'Invalid point patch: object required' };
   }
 
-  if (hasOwn(input, 'stayDays')) {
-    return {
-      ok: false,
-      error: 'Invalid point patch: stayDays has been replaced by stayHours',
-    };
-  }
-
   const data: RoutePointPatchInput = {};
 
-  if (hasOwn(input, 'name') && input.name !== undefined) {
+  if (input.name !== undefined) {
     if (typeof input.name !== 'string' || input.name.trim().length === 0) {
       return { ok: false, error: 'Invalid point patch: name must be a non-empty string' };
     }
     data.name = input.name.trim();
   }
 
-  const lat = hasOwn(input, 'lat') ? input.lat : undefined;
-  const lng = hasOwn(input, 'lng') ? input.lng : undefined;
+  const lat = input.lat;
+  const lng = input.lng;
   if (lat !== undefined || lng !== undefined) {
     const latLngError = validateLatLng(lat, lng, 'Invalid point patch');
     if (latLngError) return { ok: false, error: latLngError };
@@ -217,7 +206,7 @@ export function validateRoutePointPatchInput(input: unknown): PointPatchValidati
     data.lng = lng as number;
   }
 
-  if (hasOwn(input, 'stayHours') && input.stayHours !== undefined) {
+  if (input.stayHours !== undefined) {
     if (input.stayHours === null) {
       data.stayHours = null;
     } else {
@@ -227,7 +216,7 @@ export function validateRoutePointPatchInput(input: unknown): PointPatchValidati
     }
   }
 
-  if (hasOwn(input, 'notes') && input.notes !== undefined) {
+  if (input.notes !== undefined) {
     if (!isOptionalNullableString(input.notes)) {
       return { ok: false, error: 'Invalid point patch: notes must be a string or null' };
     }

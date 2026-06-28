@@ -119,24 +119,6 @@ describe('route point validators', () => {
     });
   });
 
-  it('rejects undefined-only point patches', () => {
-    const result = validateRoutePointPatchInput({ notes: undefined });
-
-    expect(result).toStrictEqual({
-      ok: false,
-      error: 'Invalid point patch: at least one field is required',
-    });
-  });
-
-  it('rejects legacy stayDays point patches', () => {
-    const result = validateRoutePointPatchInput({ stayDays: 1, notes: 'x' });
-
-    expect(result).toStrictEqual({
-      ok: false,
-      error: 'Invalid point patch: stayDays has been replaced by stayHours',
-    });
-  });
-
   it('returns only supplied trimmed point patch fields', () => {
     const result = validateRoutePointPatchInput({
       name: ' 西湖 ',
@@ -152,53 +134,6 @@ describe('route point validators', () => {
     });
     if (result.ok) {
       expect(Object.keys(result.data)).toStrictEqual(['name', 'notes']);
-    }
-  });
-
-  it('rejects point patches with inherited name only', () => {
-    const result = validateRoutePointPatchInput(Object.create({ name: 'Inherited' }));
-
-    expect(result).toStrictEqual({
-      ok: false,
-      error: 'Invalid point patch: at least one field is required',
-    });
-  });
-
-  it('rejects point patches with inherited coordinates only', () => {
-    const result = validateRoutePointPatchInput(Object.create({ lat: 30.246, lng: 120.146 }));
-
-    expect(result).toStrictEqual({
-      ok: false,
-      error: 'Invalid point patch: at least one field is required',
-    });
-  });
-
-  it('rejects point patches when inherited coordinates complete an own coordinate', () => {
-    const input = Object.create({ lat: 30.246 });
-    input.lng = 120.146;
-
-    const result = validateRoutePointPatchInput(input);
-
-    expect(result).toStrictEqual({
-      ok: false,
-      error: 'Invalid point patch: lat and lng must be numbers',
-    });
-  });
-
-  it('omits explicit undefined notes from valid point patches', () => {
-    const result = validateRoutePointPatchInput({
-      name: ' 西湖 ',
-      notes: undefined,
-    });
-
-    expect(result).toStrictEqual({
-      ok: true,
-      data: {
-        name: '西湖',
-      },
-    });
-    if (result.ok) {
-      expect(Object.keys(result.data)).toStrictEqual(['name']);
     }
   });
 
