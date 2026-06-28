@@ -26,6 +26,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
 }
@@ -188,7 +192,7 @@ export function validateRoutePointPatchInput(input: unknown): PointPatchValidati
     return { ok: false, error: 'Invalid point patch: object required' };
   }
 
-  if ('stayDays' in input) {
+  if (hasOwn(input, 'stayDays')) {
     return {
       ok: false,
       error: 'Invalid point patch: stayDays has been replaced by stayHours',
@@ -197,21 +201,23 @@ export function validateRoutePointPatchInput(input: unknown): PointPatchValidati
 
   const data: RoutePointPatchInput = {};
 
-  if ('name' in input && input.name !== undefined) {
+  if (hasOwn(input, 'name') && input.name !== undefined) {
     if (typeof input.name !== 'string' || input.name.trim().length === 0) {
       return { ok: false, error: 'Invalid point patch: name must be a non-empty string' };
     }
     data.name = input.name.trim();
   }
 
-  if (input.lat !== undefined || input.lng !== undefined) {
-    const latLngError = validateLatLng(input.lat, input.lng, 'Invalid point patch');
+  const lat = hasOwn(input, 'lat') ? input.lat : undefined;
+  const lng = hasOwn(input, 'lng') ? input.lng : undefined;
+  if (lat !== undefined || lng !== undefined) {
+    const latLngError = validateLatLng(lat, lng, 'Invalid point patch');
     if (latLngError) return { ok: false, error: latLngError };
-    data.lat = input.lat as number;
-    data.lng = input.lng as number;
+    data.lat = lat as number;
+    data.lng = lng as number;
   }
 
-  if ('stayHours' in input && input.stayHours !== undefined) {
+  if (hasOwn(input, 'stayHours') && input.stayHours !== undefined) {
     if (input.stayHours === null) {
       data.stayHours = null;
     } else {
@@ -221,7 +227,7 @@ export function validateRoutePointPatchInput(input: unknown): PointPatchValidati
     }
   }
 
-  if ('notes' in input && input.notes !== undefined) {
+  if (hasOwn(input, 'notes') && input.notes !== undefined) {
     if (!isOptionalNullableString(input.notes)) {
       return { ok: false, error: 'Invalid point patch: notes must be a string or null' };
     }
