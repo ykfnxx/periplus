@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoute, updateRoute } from '@/lib/routes/client';
 import { useMapStore } from '@/stores/mapStore';
 import type { RoutePoint } from '@/types/route';
@@ -10,8 +10,20 @@ import PointForm from './PointForm';
 export default function RouteEditor() {
   const currentRoute = useMapStore((s) => s.currentRoute);
   const setCurrentRoute = useMapStore((s) => s.setCurrentRoute);
+  const currentRouteId = currentRoute?.id ?? null;
   const [editingPoint, setEditingPoint] = useState<RoutePoint | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<{
+    routeId: string;
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setSaveStatus((status) =>
+      status?.routeId === currentRouteId ? status : null
+    );
+  }, [currentRouteId]);
 
   const handleAdd = (data: Omit<RoutePoint, 'id'>) => {
     if (!currentRoute) return;
@@ -26,6 +38,7 @@ export default function RouteEditor() {
       ...currentRoute,
       points: [...currentRoute.points, newPoint],
     });
+    setSaveStatus(null);
     setShowForm(false);
   };
 
@@ -37,6 +50,7 @@ export default function RouteEditor() {
     );
 
     setCurrentRoute({ ...currentRoute, points: updatedPoints });
+    setSaveStatus(null);
     setEditingPoint(null);
   };
 
@@ -48,11 +62,13 @@ export default function RouteEditor() {
     const reordered = filtered.map((p, i) => ({ ...p, order: i }));
 
     setCurrentRoute({ ...currentRoute, points: reordered });
+    setSaveStatus(null);
   };
 
   const handleSave = async () => {
     if (!currentRoute) return;
 
+    setSaveStatus(null);
     const isNewRoute = currentRoute.id.startsWith('preset-') || currentRoute.id.startsWith('temp-');
     const method = isNewRoute ? 'POST' : 'PUT';
 
@@ -66,9 +82,13 @@ export default function RouteEditor() {
         ? await createRoute(input)
         : await updateRoute(currentRoute.id, input);
       setCurrentRoute(saved);
-      alert('保存成功');
+      setSaveStatus({ routeId: saved.id, type: 'success', message: '保存成功' });
     } catch {
-      alert('网络错误，请稍后重试');
+      setSaveStatus({
+        routeId: currentRoute.id,
+        type: 'error',
+        message: '网络错误，请稍后重试',
+      });
     }
   };
 
@@ -108,22 +128,33 @@ export default function RouteEditor() {
         />
       )}
 
-      <div className="mt-3 pt-3 border-t flex gap-2">
-        <button
-          onClick={() => {
-            setEditingPoint(null);
-            setShowForm(true);
-          }}
-          className="flex-1 px-4 py-2 bg-slate-100 rounded text-sm hover:bg-slate-200"
-        >
-          + 添加地点
-        </button>
-        <button
-          onClick={handleSave}
-          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-        >
-          保存路线
-        </button>
+      <div className="mt-3 pt-3 border-t">
+        {saveStatus?.routeId === currentRoute.id && (
+          <p
+            className={`mb-2 text-xs ${
+              saveStatus.type === 'success' ? 'text-emerald-700' : 'text-red-600'
+            }`}
+          >
+            {saveStatus.message}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setEditingPoint(null);
+              setShowForm(true);
+            }}
+            className="flex-1 px-4 py-2 bg-slate-100 rounded text-sm hover:bg-slate-200"
+          >
+            + 添加地点
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+          >
+            保存路线
+          </button>
+        </div>
       </div>
     </div>
   );

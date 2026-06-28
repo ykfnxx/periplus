@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loadAMap } from '@/lib/amap';
 import RoutePolyline from './RoutePolyline';
 import RouteMarkers from './RouteMarkers';
@@ -12,6 +12,7 @@ import { useMapStore } from '@/stores/mapStore';
 
 export default function MapContainer() {
   const mapDivRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
   const setMap = useMapStore((s) => s.setMap);
 
   useEffect(() => {
@@ -21,6 +22,7 @@ export default function MapContainer() {
     loadAMap()
       .then((AMap) => {
         if (!mounted || !mapDivRef.current) return;
+        setError(null);
 
         mapInstance = new AMap.Map(mapDivRef.current, {
           zoom: 5,
@@ -38,6 +40,9 @@ export default function MapContainer() {
       })
       .catch((err) => {
         console.error('Failed to load AMap:', err);
+        if (mounted) {
+          setError('地图加载失败，请检查高德 Key 或网络连接');
+        }
       });
 
     return () => {
@@ -54,12 +59,19 @@ export default function MapContainer() {
         className="w-full h-full"
         style={{ minHeight: '100%' }}
       />
+      {error && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[var(--periplus-cream)]">
+          <div className="max-w-sm rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] p-4 text-sm text-[var(--periplus-walnut)] shadow-[var(--periplus-soft-shadow)]">
+            {error}
+          </div>
+        </div>
+      )}
       <RoutePolyline key="polyline" />
       <RouteMarkers key="markers" />
       <PhotoMarkers key="photo-markers" />
       <PhotoInfoWindow key="photo-info" />
       <LocationSelector key="location-selector" />
-      <MapFloatingControls key="floating-controls" />
+      {!error && <MapFloatingControls key="floating-controls" />}
     </>
   );
 }

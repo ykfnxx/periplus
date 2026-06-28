@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { MapPin, Save } from "lucide-react"
 import { createRoute, updateRoute } from "@/lib/routes/client"
 import { useMapStore } from "@/stores/mapStore"
@@ -12,7 +12,10 @@ interface PlanPanelProps {
   searchQuery: string
 }
 
-type SaveStatus = "idle" | "saving" | "success" | "error"
+type SaveStatus = {
+  routeId: string
+  state: "saving" | "success" | "error"
+} | null
 
 function matchesPoint(point: RoutePoint, query: string) {
   const normalized = query.trim().toLowerCase()
@@ -39,6 +42,7 @@ function isNewRoute(route: Route) {
 export default function PlanPanel({ searchQuery }: PlanPanelProps) {
   const currentRoute = useMapStore((state) => state.currentRoute)
   const setCurrentRoute = useMapStore((state) => state.setCurrentRoute)
+  const currentRouteId = currentRoute?.id ?? null
   const editingPointId = useMapStore((state) => state.editingPointId)
   const setEditingPointId = useMapStore((state) => state.setEditingPointId)
   const startPointLocationSelection = useMapStore(
@@ -53,7 +57,13 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
   const [newPointStayHours, setNewPointStayHours] = useState("1")
   const [newPointNotes, setNewPointNotes] = useState("")
   const [addPointError, setAddPointError] = useState("")
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle")
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(null)
+
+  useEffect(() => {
+    setSaveStatus((status) =>
+      status?.routeId === currentRouteId ? status : null
+    )
+  }, [currentRouteId])
 
   const visibleRoute = useMemo(() => {
     if (!currentRoute) return null
@@ -76,7 +86,7 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
       ),
     })
     setEditingPointId(null)
-    setSaveStatus("idle")
+    setSaveStatus(null)
   }
 
   const resetDraftPointForm = () => {
@@ -128,14 +138,14 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
         },
       ],
     })
-    setSaveStatus("idle")
+    setSaveStatus(null)
     closeDraftPointForm()
   }
 
   const saveRoute = async () => {
     if (!currentRoute) return
 
-    setSaveStatus("saving")
+    setSaveStatus({ routeId: currentRoute.id, state: "saving" })
     try {
       const savedRoute = isNewRoute(currentRoute)
         ? await createRoute(getRouteInput(currentRoute))
@@ -143,9 +153,9 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
 
       setCurrentRoute(savedRoute)
       setEditingPointId(null)
-      setSaveStatus("success")
+      setSaveStatus({ routeId: savedRoute.id, state: "success" })
     } catch {
-      setSaveStatus("error")
+      setSaveStatus({ routeId: currentRoute.id, state: "error" })
     }
   }
 
@@ -168,6 +178,8 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
     (total, point) => total + (point.stayHours ?? 0),
     0
   )
+  const routeSaveStatus =
+    saveStatus?.routeId === currentRoute.id ? saveStatus.state : null
 
   return (
     <div className="flex min-h-full flex-col gap-4">
@@ -281,12 +293,12 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
       <PhotoMaterials />
 
       <div className="space-y-2 border-t border-[rgb(44_36_22_/_12%)] pt-3">
-        {saveStatus === "success" && (
+        {routeSaveStatus === "success" && (
           <p className="text-xs font-bold text-[var(--periplus-olive)]">
             保存成功
           </p>
         )}
-        {saveStatus === "error" && (
+        {routeSaveStatus === "error" && (
           <p className="text-xs font-bold text-[var(--periplus-coral)]">
             保存失败，请稍后重试
           </p>
@@ -303,7 +315,7 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
           <button
             type="button"
             onClick={saveRoute}
-            disabled={saveStatus === "saving"}
+            disabled={routeSaveStatus === "saving"}
             className="flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--periplus-russet)] text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)] disabled:cursor-wait disabled:opacity-70"
           >
             <Save aria-hidden="true" className="h-4 w-4" />

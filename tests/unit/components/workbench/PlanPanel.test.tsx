@@ -1,9 +1,15 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen } from "@testing-library/react"
 import PlanPanel from "@/components/workbench/PlanPanel"
+import { createRoute, updateRoute } from "@/lib/routes/client"
 import { silkRoadRoute } from "@/lib/mock-routes"
 import { useMapStore } from "@/stores/mapStore"
 import type { Route } from "@/types/route"
+
+vi.mock("@/lib/routes/client", () => ({
+  createRoute: vi.fn(),
+  updateRoute: vi.fn(),
+}))
 
 vi.mock("@/stores/mapStore", () => ({
   useMapStore: vi.fn(),
@@ -53,6 +59,10 @@ function mockPlanPanelStore(overrides: Partial<{
 }
 
 describe("PlanPanel", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it("renders current route actions", () => {
     mockPlanPanelStore()
 
@@ -180,5 +190,49 @@ describe("PlanPanel", () => {
     expect(screen.getByLabelText("地点名称")).toHaveValue("新地点")
     expect(screen.getByLabelText("停留小时")).toHaveValue(1)
     expect(screen.getByLabelText("地点备注")).toHaveValue("")
+  })
+
+  it("does not carry save status to another selected route", async () => {
+    const currentRoute = {
+      ...silkRoadRoute,
+      id: "route-current",
+    }
+    const state = mockPlanPanelStore({ currentRoute })
+    vi.mocked(updateRoute).mockResolvedValueOnce(currentRoute)
+    const { rerender } = render(<PlanPanel searchQuery="" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "保存变更" }))
+    expect(await screen.findByText("保存成功")).toBeInTheDocument()
+
+    state.currentRoute = {
+      ...silkRoadRoute,
+      id: "route-next",
+      name: "下一条路线",
+    }
+    rerender(<PlanPanel searchQuery="" />)
+
+    expect(screen.getByText("下一条路线")).toBeInTheDocument()
+    expect(screen.queryByText("保存成功")).not.toBeInTheDocument()
+  })
+
+  it("keeps save success after a new route receives its saved id", async () => {
+    const savedRoute = {
+      ...silkRoadRoute,
+      id: "route-saved",
+    }
+    const state = mockPlanPanelStore()
+    state.setCurrentRoute.mockImplementation((route: Route) => {
+      state.currentRoute = route
+    })
+    vi.mocked(createRoute).mockResolvedValueOnce(savedRoute)
+    const { rerender } = render(<PlanPanel searchQuery="" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "保存变更" }))
+    await screen.findByText("保存成功")
+
+    state.currentRoute = savedRoute
+    rerender(<PlanPanel searchQuery="" />)
+
+    expect(screen.getByText("保存成功")).toBeInTheDocument()
   })
 })

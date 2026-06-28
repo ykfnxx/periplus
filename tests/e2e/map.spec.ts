@@ -9,7 +9,15 @@ test.describe("Map Page", () => {
     await expect(page.getByRole("tab", { name: "探索" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "计划" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "收藏" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "地图样式" })).toBeDisabled()
+    const mapStyleButton = page.getByRole("button", { name: "地图样式" })
+    const mapError = page.getByText("地图加载失败，请检查高德 Key 或网络连接")
+    await expect(mapStyleButton.or(mapError)).toBeVisible()
+
+    if ((await mapStyleButton.count()) > 0) {
+      await expect(mapStyleButton).toBeDisabled()
+    } else {
+      await expect(mapError).toBeVisible()
+    }
   })
 
   test("keeps the workbench on the left side on desktop", async ({ page }) => {
