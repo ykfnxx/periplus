@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useMapStore } from '@/stores/mapStore';
+import { periplusColors } from '@/lib/ui/map-theme';
 
 export default function RoutePolyline() {
   const map = useMapStore((s) => s.map);
@@ -16,10 +17,11 @@ export default function RoutePolyline() {
 
     const polyline = new AMap.Polyline({
       path,
-      strokeColor: '#3b82f6',
-      strokeWeight: 4,
-      strokeOpacity: 0.8,
+      strokeColor: periplusColors.russet,
+      strokeWeight: 6,
+      strokeOpacity: 0.9,
       lineJoin: 'round',
+      lineCap: 'round',
       showDir: true,
     });
 

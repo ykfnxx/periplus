@@ -77,28 +77,28 @@ export default function PhotoInfoWindow() {
       className="absolute z-50 transform -translate-x-1/2 -translate-y-full"
       style={{ pointerEvents: 'auto' }}
     >
-      <div className="bg-white rounded-lg shadow-lg p-3 min-w-[200px] max-w-[300px]">
+      <div className="min-w-[220px] max-w-[320px] rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] p-3 shadow-[var(--periplus-shadow)]">
         <img
           src={selectedPhotoShare.imageDataUrl}
           alt="照片"
-          className="w-full max-w-[280px] rounded object-cover"
+          className="w-full max-w-[296px] rounded-md object-cover"
           style={{ maxHeight: '200px' }}
         />
         {selectedPhotoShare.caption && (
-          <p className="text-sm text-slate-700 mt-2 break-words">
+          <p className="mt-2 break-words text-sm text-[var(--periplus-walnut)]">
             {selectedPhotoShare.caption}
           </p>
         )}
         <div className="mt-2 flex justify-end">
           <button
             onClick={handleDelete}
-            className="px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+            className="rounded-md bg-[var(--periplus-russet)] px-3 py-1 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
           >
             删除
           </button>
         </div>
         {/* Arrow pointing down to marker */}
-        <div className="absolute left-1/2 -bottom-2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-white" />
+        <div className="absolute left-1/2 -bottom-2 h-0 w-0 -translate-x-1/2 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-[var(--periplus-soft-white)]" />
       </div>
     </div>
   );

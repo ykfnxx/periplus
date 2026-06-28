@@ -14,27 +14,14 @@ export default function PhotoMarkers() {
     const markers: AMap.Marker[] = [];
 
     photoShares.forEach((photo) => {
-      // Custom DOM content: circular thumbnail
       const content = document.createElement('div');
-      content.className = 'photo-marker';
-      content.innerHTML = `
-        <div style="
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          border: 2px solid white;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-          overflow: hidden;
-          cursor: pointer;
-        ">
-          <img src="${photo.imageDataUrl}" style="width: 100%; height: 100%; object-fit: cover;" />
-        </div>
-      `;
+      content.className = 'periplus-photo-marker';
+      content.innerHTML = `<img src="${photo.imageDataUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" />`;
 
       const marker = new AMap.Marker({
         position: new AMap.LngLat(photo.lng, photo.lat),
-        content: content,
-        offset: new AMap.Pixel(-20, -20), // Center the 40px marker
+        content,
+        offset: new AMap.Pixel(-24, -24),
       });
 
       marker.on('click', () => {
