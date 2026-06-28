@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { RoutePoint } from '@/stores/mapStore';
+import type { RoutePoint } from '@/types/route';
 
 interface PointFormProps {
   point?: RoutePoint | null;
@@ -13,7 +13,7 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
   const [name, setName] = useState(point?.name || '');
   const [lat, setLat] = useState(point?.lat?.toString() || '');
   const [lng, setLng] = useState(point?.lng?.toString() || '');
-  const [stayDays, setStayDays] = useState(point?.stayDays?.toString() || '');
+  const [stayHours, setStayHours] = useState(point?.stayHours?.toString() || '');
   const [notes, setNotes] = useState(point?.notes || '');
   const [error, setError] = useState('');
 
@@ -21,7 +21,7 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
     setName(point?.name || '');
     setLat(point?.lat?.toString() || '');
     setLng(point?.lng?.toString() || '');
-    setStayDays(point?.stayDays?.toString() || '');
+    setStayHours(point?.stayHours?.toString() || '');
     setNotes(point?.notes || '');
     setError('');
   }, [point]);
@@ -53,7 +53,7 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
       lat: latNum,
       lng: lngNum,
       order: point?.order ?? 0,
-      stayDays: stayDays ? parseInt(stayDays) : undefined,
+      stayHours: stayHours ? parseFloat(stayHours) : undefined,
       notes: notes.trim() || undefined,
     });
   };
@@ -93,9 +93,11 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
       </div>
       <input
         type="number"
-        placeholder="停留天数（可选）"
-        value={stayDays}
-        onChange={(e) => setStayDays(e.target.value)}
+        step="0.25"
+        min="0"
+        placeholder="停留小时（可选）"
+        value={stayHours}
+        onChange={(e) => setStayHours(e.target.value)}
         className="w-full px-3 py-2 border rounded text-sm"
       />
       <textarea

@@ -1,25 +1,7 @@
 import { create } from 'zustand';
+import type { Route, RoutePoint } from '@/types/route';
 
 export type MapType = 'standard' | 'satellite' | 'terrain';
-
-export interface RoutePoint {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  order: number;
-  stayDays?: number;
-  notes?: string;
-}
-
-export interface Route {
-  id: string;
-  name: string;
-  description?: string;
-  points: RoutePoint[];
-  createdAt: string;
-  updatedAt: string;
-}
 
 export interface PhotoShare {
   id: string;

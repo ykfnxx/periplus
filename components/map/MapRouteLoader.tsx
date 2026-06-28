@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMapStore } from '@/stores/mapStore';
 import { silkRoadRoute } from '@/lib/mock-routes';
+import { getRoute } from '@/lib/routes/client';
 
 export default function MapRouteLoader() {
   const searchParams = useSearchParams();
@@ -16,11 +17,7 @@ export default function MapRouteLoader() {
     if (routeId === 'preset-silk-road') {
       setCurrentRoute(silkRoadRoute);
     } else if (routeId) {
-      fetch(`/api/routes/${routeId}`)
-        .then((res) => {
-          if (!res.ok) throw new Error('Route not found');
-          return res.json();
-        })
+      getRoute(routeId)
         .then((data) => {
           if (mounted) setCurrentRoute(data);
         })

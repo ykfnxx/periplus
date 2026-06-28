@@ -15,7 +15,7 @@ CREATE TABLE "RoutePoint" (
     "lat" REAL NOT NULL,
     "lng" REAL NOT NULL,
     "order" INTEGER NOT NULL,
-    "stayDays" INTEGER,
+    "stayHours" REAL,
     "notes" TEXT,
     CONSTRAINT "RoutePoint_routeId_fkey" FOREIGN KEY ("routeId") REFERENCES "Route" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );

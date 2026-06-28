@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useMapStore, RoutePoint } from '@/stores/mapStore';
+import { createRoute, updateRoute } from '@/lib/routes/client';
+import { useMapStore } from '@/stores/mapStore';
+import type { RoutePoint } from '@/types/route';
 import PointList from './PointList';
 import PointForm from './PointForm';
 
@@ -53,27 +55,18 @@ export default function RouteEditor() {
 
     const isNewRoute = currentRoute.id.startsWith('preset-') || currentRoute.id.startsWith('temp-');
     const method = isNewRoute ? 'POST' : 'PUT';
-    const url = isNewRoute ? '/api/routes' : `/api/routes/${currentRoute.id}`;
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: currentRoute.name,
-          description: currentRoute.description,
-          points: currentRoute.points,
-        }),
-      });
-
-      if (res.ok) {
-        const saved = await res.json();
-        setCurrentRoute(saved);
-        alert('保存成功');
-      } else {
-        const err = await res.json().catch(() => ({ error: '保存失败' }));
-        alert(err.error || '保存失败');
-      }
+      const input = {
+        name: currentRoute.name,
+        description: currentRoute.description,
+        points: currentRoute.points,
+      };
+      const saved = method === 'POST'
+        ? await createRoute(input)
+        : await updateRoute(currentRoute.id, input);
+      setCurrentRoute(saved);
+      alert('保存成功');
     } catch {
       alert('网络错误，请稍后重试');
     }

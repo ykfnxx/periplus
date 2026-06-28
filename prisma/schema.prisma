@@ -24,7 +24,7 @@ model RoutePoint {
   lat       Float
   lng       Float
   order     Int
-  stayDays  Int?
+  stayHours Float?
   notes     String?
 
   @@unique([routeId, order])

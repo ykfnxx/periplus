@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Route } from '@/stores/mapStore';
+import type { Route } from '@/types/route';
 
 interface RouteCardProps {
   route: Route;

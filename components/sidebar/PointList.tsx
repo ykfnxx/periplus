@@ -1,6 +1,7 @@
 'use client';
 
-import { useMapStore, RoutePoint } from '@/stores/mapStore';
+import { useMapStore } from '@/stores/mapStore';
+import type { RoutePoint } from '@/types/route';
 
 interface PointListProps {
   onEdit: (point: RoutePoint) => void;
@@ -55,8 +56,8 @@ export default function PointList({ onEdit, onDelete }: PointListProps) {
               </button>
             </div>
           </div>
-          {point.stayDays && (
-            <p className="text-xs text-slate-500 mt-1">停留 {point.stayDays} 天</p>
+          {point.stayHours && (
+            <p className="text-xs text-slate-500 mt-1">停留 {point.stayHours} 小时</p>
           )}
           {point.notes && (
             <p className="text-xs text-slate-400 mt-1">{point.notes}</p>

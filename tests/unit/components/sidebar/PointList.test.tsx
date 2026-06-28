@@ -83,8 +83,8 @@ describe('PointList', () => {
     expect(mockOnDelete).toHaveBeenCalledWith('p1');
   });
 
-  it('shows stay days and notes when present', () => {
-    const point = { id: 'p1', name: 'Point A', lat: 1, lng: 1, order: 0, stayDays: 3, notes: 'Some notes' };
+  it('shows stay hours and notes when present', () => {
+    const point = { id: 'p1', name: 'Point A', lat: 1, lng: 1, order: 0, stayHours: 1.5, notes: 'Some notes' };
     const route = { points: [point] };
 
     (useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (s: unknown) => unknown) => {
@@ -93,7 +93,7 @@ describe('PointList', () => {
     });
 
     render(<PointList onEdit={mockOnEdit} onDelete={mockOnDelete} />);
-    expect(screen.getByText('停留 3 天')).toBeInTheDocument();
+    expect(screen.getByText('停留 1.5 小时')).toBeInTheDocument();
     expect(screen.getByText('Some notes')).toBeInTheDocument();
   });
 });

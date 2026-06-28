@@ -1,7 +1,8 @@
 import RouteCard from '@/components/RouteCard';
 import { silkRoadRoute } from '@/lib/mock-routes';
+import { listRoutes } from '@/lib/routes/client';
 import Link from 'next/link';
-import type { Route } from '@/stores/mapStore';
+import type { Route } from '@/types/route';
 
 export default function HomePage() {
   return (
@@ -37,15 +38,7 @@ export default function HomePage() {
 
 async function SavedRoutes() {
   try {
-    const res = await fetch('/api/routes', {
-      cache: 'no-store',
-    });
-
-    if (!res.ok) {
-      return <p className="text-sm text-slate-400">暂无保存的路线</p>;
-    }
-
-    const routes = await res.json();
+    const routes = await listRoutes();
 
     if (routes.length === 0) {
       return <p className="text-sm text-slate-400">暂无保存的路线</p>;

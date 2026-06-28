@@ -19,7 +19,7 @@ describe('PointForm', () => {
       lat: 34.5,
       lng: 108.9,
       order: 0,
-      stayDays: 2,
+      stayHours: 2.5,
       notes: 'Test notes',
     };
 
@@ -29,7 +29,7 @@ describe('PointForm', () => {
     expect(screen.getByDisplayValue('Test Point')).toBeInTheDocument();
     expect(screen.getByDisplayValue('34.5')).toBeInTheDocument();
     expect(screen.getByDisplayValue('108.9')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('2')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2.5')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Test notes')).toBeInTheDocument();
   });
 
@@ -39,7 +39,7 @@ describe('PointForm', () => {
     fireEvent.change(screen.getByPlaceholderText('地点名称'), { target: { value: 'New Point' } });
     fireEvent.change(screen.getByPlaceholderText('纬度'), { target: { value: '35.0' } });
     fireEvent.change(screen.getByPlaceholderText('经度'), { target: { value: '110.0' } });
-    fireEvent.change(screen.getByPlaceholderText('停留天数（可选）'), { target: { value: '3' } });
+    fireEvent.change(screen.getByPlaceholderText('停留小时（可选）'), { target: { value: '1.5' } });
     fireEvent.change(screen.getByPlaceholderText('备注（可选）'), { target: { value: 'Some notes' } });
 
     fireEvent.click(screen.getByRole('button', { name: '添加' }));
@@ -49,7 +49,7 @@ describe('PointForm', () => {
       lat: 35.0,
       lng: 110.0,
       order: 0,
-      stayDays: 3,
+      stayHours: 1.5,
       notes: 'Some notes',
     });
   });
