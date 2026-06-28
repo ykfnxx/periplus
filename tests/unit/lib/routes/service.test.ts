@@ -206,7 +206,7 @@ describe('route service', () => {
     });
     expect(prismaMocks.routePoint.update).toHaveBeenCalledWith({
       where: { id: 'point-3' },
-      data: { order: 1000001 },
+      data: { order: 4 },
     });
     expect(prismaMocks.routePoint.update).toHaveBeenCalledWith({
       where: { id: 'point-3' },
@@ -320,12 +320,38 @@ describe('route service', () => {
 
     expect(prismaMocks.routePoint.update).toHaveBeenCalledWith({
       where: { id: 'point-2' },
-      data: { order: 1000000 },
+      data: { order: 2 },
     });
     expect(prismaMocks.routePoint.update).toHaveBeenCalledWith({
       where: { id: 'point-1' },
       data: { order: 1 },
     });
     expect(route?.points.map((point) => point.id)).toEqual(['point-2', 'point-1']);
+  });
+
+  it('derives temporary reorder orders above the current max order', async () => {
+    const highOrderRoute = {
+      ...baseRoute,
+      points: [
+        { ...baseRoute.points[0], order: 1000000 },
+        { ...baseRoute.points[1], order: 1000001 },
+      ],
+    };
+    prismaMocks.route.findUnique
+      .mockResolvedValueOnce(highOrderRoute)
+      .mockResolvedValueOnce({
+        ...baseRoute,
+        points: [
+          { ...baseRoute.points[1], order: 0 },
+          { ...baseRoute.points[0], order: 1 },
+        ],
+      });
+
+    await reorderRoutePoints('route-1', ['point-2', 'point-1']);
+
+    expect(prismaMocks.routePoint.update).toHaveBeenNthCalledWith(1, {
+      where: { id: 'point-2' },
+      data: { order: 1000002 },
+    });
   });
 });

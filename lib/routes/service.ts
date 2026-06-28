@@ -81,6 +81,10 @@ function maxPointOrder(points: { order: number }[]): number {
   return points.reduce((maxOrder, point) => Math.max(maxOrder, point.order), -1);
 }
 
+function nextTemporaryOrderBase(points: { order: number }[]): number {
+  return maxPointOrder(points) + 1;
+}
+
 function pointPatchData(patch: RoutePointPatchInput) {
   return Object.fromEntries(
     Object.entries({
@@ -133,10 +137,9 @@ interface RoutePointOrderWriter {
 
 async function normalizePointOrders(
   db: RoutePointOrderWriter,
-  orderedPointIds: string[]
+  orderedPointIds: string[],
+  tempBase: number
 ): Promise<void> {
-  const tempBase = 1000000;
-
   for (const [index, pointId] of orderedPointIds.entries()) {
     await db.routePoint.update({
       where: { id: pointId },
@@ -249,7 +252,7 @@ export async function addRoutePoint(
       createdPoint.id,
       position
     );
-    await normalizePointOrders(tx, orderedPointIds);
+    await normalizePointOrders(tx, orderedPointIds, nextTemporaryOrderBase([...route.points, createdPoint]));
 
     const updatedRoute = await tx.route.findUnique({
       where: { id: routeId },
@@ -294,7 +297,7 @@ export async function updateRoutePoint(
         data: pointPatchData(patch),
       });
     }
-    await normalizePointOrders(tx, orderedPointIds);
+    await normalizePointOrders(tx, orderedPointIds, nextTemporaryOrderBase(route.points));
 
     const updatedRoute = await tx.route.findUnique({
       where: { id: routeId },
@@ -324,7 +327,8 @@ export async function deleteRoutePoint(
 
     await normalizePointOrders(
       tx,
-      route.points.filter((point) => point.id !== pointId).map((point) => point.id)
+      route.points.filter((point) => point.id !== pointId).map((point) => point.id),
+      nextTemporaryOrderBase(route.points)
     );
 
     const updatedRoute = await tx.route.findUnique({
@@ -365,7 +369,7 @@ export async function reorderRoutePoints(
       seenPointIds.add(pointId);
     }
 
-    await normalizePointOrders(tx, pointIds);
+    await normalizePointOrders(tx, pointIds, nextTemporaryOrderBase(route.points));
 
     const updatedRoute = await tx.route.findUnique({
       where: { id: routeId },
