@@ -25,6 +25,7 @@ export default function MapContainer() {
           zoom: 5,
           center: [104.5, 36.5],
           viewMode: '2D',
+          mapStyle: 'amap://styles/5fa99faa24edae66ca845a370693c754',
         });
 
         mapInstance.addControl(new AMap.Scale());
