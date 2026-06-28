@@ -1,0 +1,46 @@
+"use client"
+
+import PhotoUploader from "@/components/sidebar/PhotoUploader"
+import { useMapStore } from "@/stores/mapStore"
+
+export default function PhotoMaterials() {
+  const photoShares = useMapStore((state) => state.photoShares)
+  const setSelectedPhotoShare = useMapStore(
+    (state) => state.setSelectedPhotoShare
+  )
+
+  return (
+    <section className="space-y-3 rounded-lg border border-[rgb(44_36_22_/_14%)] bg-white/60 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xs font-black text-[var(--periplus-ink)]">
+          照片素材
+        </h3>
+      </div>
+
+      <PhotoUploader />
+
+      {photoShares.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-[rgb(44_36_22_/_18%)] bg-[var(--periplus-soft-white)]/70 p-3 text-xs font-bold text-[var(--periplus-walnut)]">
+          暂无照片素材
+        </p>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {photoShares.map((photo) => (
+            <button
+              key={photo.id}
+              type="button"
+              onClick={() => setSelectedPhotoShare(photo)}
+              className="group overflow-hidden rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] transition hover:border-[var(--periplus-russet)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--periplus-russet)]"
+            >
+              <img
+                src={photo.imageDataUrl}
+                alt={photo.caption || "照片素材"}
+                className="aspect-square w-full object-cover"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}

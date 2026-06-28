@@ -1,30 +1,44 @@
 'use client';
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useMapStore } from '@/stores/mapStore';
 import { parseExifGps, wgs84ToGcj02, readFileAsDataURL } from '@/lib/exif';
 
 export default function PhotoUploader() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [validationError, setValidationError] = useState('');
   const addPhotoShare = useMapStore((s) => s.addPhotoShare);
-  const setPendingPhotoDataUrl = useMapStore((s) => s.setPendingPhotoDataUrl);
-  const setIsSelectingLocation = useMapStore((s) => s.setIsSelectingLocation);
+  const startPhotoLocationSelection = useMapStore(
+    (s) => s.startPhotoLocationSelection
+  );
+  const clearLocationSelection = useMapStore((s) => s.clearLocationSelection);
   const isSelectingLocation = useMapStore((s) => s.isSelectingLocation);
+  const locationSelectionMode = useMapStore((s) => s.locationSelectionMode);
+  const isSelectingPhotoLocation =
+    isSelectingLocation && locationSelectionMode === 'photo';
+
+  const clearInput = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+  }, []);
 
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      // Check file type
+      setValidationError('');
+
       if (!file.type.startsWith('image/')) {
-        alert('请选择图片文件');
+        setValidationError('请选择图片文件');
+        clearInput();
         return;
       }
 
-      // Check file size (5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('图片大小不能超过 5MB');
+        setValidationError('图片大小不能超过 5MB');
+        clearInput();
         return;
       }
 
@@ -32,7 +46,7 @@ export default function PhotoUploader() {
       const gps = await parseExifGps(file);
 
       if (gps) {
-        // Photo has GPS - place it directly
+        // 高德地图使用 GCJ-02，照片 EXIF 坐标需要从 WGS-84 转换后再落点
         const [gcjLng, gcjLat] = wgs84ToGcj02(gps.lng, gps.lat);
         addPhotoShare({
           lat: gcjLat,
@@ -41,27 +55,21 @@ export default function PhotoUploader() {
           caption: '',
         });
       } else {
-        // No GPS - enter manual location selection mode
-        setPendingPhotoDataUrl(imageDataUrl);
-        setIsSelectingLocation(true);
-        alert('照片没有 GPS 信息，请在地图上点击选择位置');
+        startPhotoLocationSelection(imageDataUrl);
       }
 
-      // Clear input to allow re-selecting same file
-      if (inputRef.current) {
-        inputRef.current.value = '';
-      }
+      clearInput();
     },
-    [addPhotoShare, setPendingPhotoDataUrl, setIsSelectingLocation]
+    [addPhotoShare, clearInput, startPhotoLocationSelection]
   );
 
   const handleCancelSelection = useCallback(() => {
-    setPendingPhotoDataUrl(null);
-    setIsSelectingLocation(false);
-  }, [setPendingPhotoDataUrl, setIsSelectingLocation]);
+    setValidationError('');
+    clearLocationSelection();
+  }, [clearLocationSelection]);
 
   return (
-    <div>
+    <div className="space-y-2">
       <input
         ref={inputRef}
         type="file"
@@ -69,25 +77,32 @@ export default function PhotoUploader() {
         onChange={handleFileChange}
         className="hidden"
       />
-      {isSelectingLocation ? (
+      {isSelectingPhotoLocation ? (
         <div className="space-y-2">
-          <p className="text-sm text-amber-600 font-medium">
-            请在地图上点击选择照片位置
+          <p className="text-xs font-bold text-[var(--periplus-russet)]">
+            照片没有 GPS 信息，请在地图上点击选择位置
           </p>
           <button
+            type="button"
             onClick={handleCancelSelection}
-            className="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded text-sm hover:bg-slate-300 transition-colors"
+            className="h-9 w-full rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-4 text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)]"
           >
             取消选点
           </button>
         </div>
       ) : (
         <button
+          type="button"
           onClick={() => inputRef.current?.click()}
-          className="w-full px-4 py-2 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700 transition-colors"
+          className="h-9 w-full rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
         >
-          + 添加照片分享
+          添加照片素材
         </button>
+      )}
+      {validationError && (
+        <p className="text-xs font-bold leading-5 text-[var(--periplus-coral)]">
+          {validationError}
+        </p>
       )}
     </div>
   );

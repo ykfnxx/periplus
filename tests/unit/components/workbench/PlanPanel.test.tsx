@@ -18,6 +18,13 @@ function mockPlanPanelStore(overrides: Partial<{
   pointSelectionDraft: { lat: number; lng: number } | null
   setPointSelectionDraft: ReturnType<typeof vi.fn>
   setAddPointMode: ReturnType<typeof vi.fn>
+  photoShares: []
+  setSelectedPhotoShare: ReturnType<typeof vi.fn>
+  addPhotoShare: ReturnType<typeof vi.fn>
+  startPhotoLocationSelection: ReturnType<typeof vi.fn>
+  clearLocationSelection: ReturnType<typeof vi.fn>
+  isSelectingLocation: boolean
+  locationSelectionMode: "none"
 }> = {}) {
   const state = {
     currentRoute: silkRoadRoute,
@@ -28,6 +35,13 @@ function mockPlanPanelStore(overrides: Partial<{
     pointSelectionDraft: null,
     setPointSelectionDraft: vi.fn(),
     setAddPointMode: vi.fn(),
+    photoShares: [],
+    setSelectedPhotoShare: vi.fn(),
+    addPhotoShare: vi.fn(),
+    startPhotoLocationSelection: vi.fn(),
+    clearLocationSelection: vi.fn(),
+    isSelectingLocation: false,
+    locationSelectionMode: "none",
     ...overrides,
   }
 

@@ -5,6 +5,7 @@ import { MapPin, Save } from "lucide-react"
 import { createRoute, updateRoute } from "@/lib/routes/client"
 import { useMapStore } from "@/stores/mapStore"
 import type { Route, RoutePoint } from "@/types/route"
+import PhotoMaterials from "./PhotoMaterials"
 import RouteTimeline from "./RouteTimeline"
 
 interface PlanPanelProps {
@@ -276,6 +277,8 @@ export default function PlanPanel({ searchQuery }: PlanPanelProps) {
           </div>
         </form>
       )}
+
+      <PhotoMaterials />
 
       <div className="space-y-2 border-t border-[rgb(44_36_22_/_12%)] pt-3">
         {saveStatus === "success" && (
