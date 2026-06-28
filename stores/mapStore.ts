@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import type { Route, RoutePoint } from '@/types/route';
 
 export type MapType = 'standard' | 'satellite' | 'terrain';
+export type WorkbenchTab = 'explore' | 'plan' | 'saved';
+export type AddPointMode = 'closed' | 'search' | 'map-select' | 'manual';
+export type LocationSelectionMode = 'none' | 'photo' | 'point';
+
+export interface PointSelectionDraft {
+  lat: number;
+  lng: number;
+}
 
 export interface PhotoShare {
   id: string;
@@ -21,6 +29,18 @@ interface MapState {
   setSelectedPoint: (point: RoutePoint | null) => void;
   mapType: MapType;
   setMapType: (type: MapType) => void;
+  activeWorkbenchTab: WorkbenchTab;
+  setActiveWorkbenchTab: (tab: WorkbenchTab) => void;
+  editingPointId: string | null;
+  setEditingPointId: (pointId: string | null) => void;
+  addPointMode: AddPointMode;
+  setAddPointMode: (mode: AddPointMode) => void;
+  pointSelectionDraft: PointSelectionDraft | null;
+  setPointSelectionDraft: (draft: PointSelectionDraft | null) => void;
+  locationSelectionMode: LocationSelectionMode;
+  startPhotoLocationSelection: (imageDataUrl: string) => void;
+  startPointLocationSelection: () => void;
+  clearLocationSelection: () => void;
   photoShares: PhotoShare[];
   addPhotoShare: (photo: Omit<PhotoShare, 'id' | 'createdAt'>) => void;
   removePhotoShare: (id: string) => void;
@@ -43,6 +63,50 @@ export const useMapStore = create<MapState>((set) => ({
   setSelectedPoint: (selectedPoint) => set({ selectedPoint }),
   mapType: 'standard',
   setMapType: (mapType) => set({ mapType }),
+  activeWorkbenchTab: 'explore',
+  setActiveWorkbenchTab: (activeWorkbenchTab) => set({ activeWorkbenchTab }),
+  editingPointId: null,
+  setEditingPointId: (editingPointId) =>
+    set((state) => ({
+      editingPointId,
+      activeWorkbenchTab: editingPointId ? 'plan' : state.activeWorkbenchTab,
+    })),
+  addPointMode: 'closed',
+  setAddPointMode: (addPointMode) =>
+    set((state) => ({
+      addPointMode,
+      activeWorkbenchTab:
+        addPointMode === 'closed' ? state.activeWorkbenchTab : 'plan',
+    })),
+  pointSelectionDraft: null,
+  setPointSelectionDraft: (pointSelectionDraft) => set({ pointSelectionDraft }),
+  locationSelectionMode: 'none',
+  startPhotoLocationSelection: (imageDataUrl) =>
+    set({
+      pendingPhotoDataUrl: imageDataUrl,
+      isSelectingLocation: true,
+      locationSelectionMode: 'photo',
+      activeWorkbenchTab: 'plan',
+      addPointMode: 'closed',
+      pointSelectionDraft: null,
+    }),
+  startPointLocationSelection: () =>
+    set({
+      pendingPhotoDataUrl: null,
+      pointSelectionDraft: null,
+      isSelectingLocation: true,
+      locationSelectionMode: 'point',
+      addPointMode: 'map-select',
+      activeWorkbenchTab: 'plan',
+    }),
+  clearLocationSelection: () =>
+    set({
+      pendingPhotoDataUrl: null,
+      pointSelectionDraft: null,
+      isSelectingLocation: false,
+      locationSelectionMode: 'none',
+      addPointMode: 'closed',
+    }),
   photoShares: [],
   addPhotoShare: (photo) =>
     set((state) => ({
@@ -73,7 +137,56 @@ export const useMapStore = create<MapState>((set) => ({
   setSelectedPhotoShare: (selectedPhotoShare) => set({ selectedPhotoShare }),
   // Manual location selection mode
   pendingPhotoDataUrl: null,
-  setPendingPhotoDataUrl: (pendingPhotoDataUrl) => set({ pendingPhotoDataUrl }),
+  setPendingPhotoDataUrl: (pendingPhotoDataUrl) =>
+    set((state) => {
+      if (pendingPhotoDataUrl) {
+        return {
+          pendingPhotoDataUrl,
+          locationSelectionMode: 'photo',
+          isSelectingLocation: true,
+          activeWorkbenchTab: 'plan',
+          addPointMode: 'closed',
+          pointSelectionDraft: null,
+        };
+      }
+
+      return {
+        pendingPhotoDataUrl,
+        ...(state.locationSelectionMode === 'photo'
+          ? {
+              locationSelectionMode: 'none' as const,
+              isSelectingLocation: false,
+            }
+          : {}),
+      };
+    }),
   isSelectingLocation: false,
-  setIsSelectingLocation: (isSelectingLocation) => set({ isSelectingLocation }),
+  setIsSelectingLocation: (isSelectingLocation) =>
+    set((state) => {
+      if (isSelectingLocation) {
+        if (state.locationSelectionMode !== 'none') {
+          return { isSelectingLocation };
+        }
+
+        return {
+          isSelectingLocation,
+          locationSelectionMode: 'point',
+          addPointMode: 'map-select',
+          pendingPhotoDataUrl: null,
+          pointSelectionDraft: null,
+          activeWorkbenchTab: 'plan',
+        };
+      }
+
+      return {
+        isSelectingLocation,
+        locationSelectionMode: 'none',
+        ...(state.locationSelectionMode === 'point'
+          ? { addPointMode: 'closed' as const }
+          : {}),
+        ...(state.locationSelectionMode === 'photo'
+          ? { pendingPhotoDataUrl: null }
+          : {}),
+      };
+    }),
 }));
