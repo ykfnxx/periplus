@@ -1,34 +1,40 @@
 import { test, expect } from "@playwright/test"
 
 test.describe("Map Page", () => {
-  test("loads map-first home page with left workbench", async ({ page }) => {
+  test("loads map-first home page with AI workbench", async ({ page }) => {
     await page.goto("/")
-    await expect(
-      page.getByRole("searchbox", { name: "搜索地点、路线、标签或备注" })
-    ).toBeVisible()
-    await expect(page.getByRole("tab", { name: "探索" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "计划" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "规划" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "地点" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "照片" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "收藏" })).toBeVisible()
-    const mapStyleButton = page.getByRole("button", { name: "地图样式" })
+    await expect(page.getByRole("textbox", { name: "AI 输入" })).toBeVisible()
+    const settingsButton = page.getByRole("button", { name: "地图设置" })
     const mapError = page.getByText("地图加载失败，请检查高德 Key 或网络连接")
-    await expect(mapStyleButton.or(mapError)).toBeVisible()
-
-    if ((await mapStyleButton.count()) > 0) {
-      await expect(mapStyleButton).toBeDisabled()
-    } else {
-      await expect(mapError).toBeVisible()
-    }
+    await expect(settingsButton.or(mapError)).toBeVisible()
+    await expect(page.getByRole("button", { name: "地图样式" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "定位到默认视图" })).toHaveCount(
+      0
+    )
   })
 
   test("keeps the workbench on the left side on desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto("/")
-    const tablist = page.getByRole("tablist", { name: "Periplus 工作台" })
+    const tablist = page.getByRole("tablist", { name: "AI 工作台工具" })
     await expect(tablist).toBeVisible()
     const box = await tablist.boundingBox()
     expect(box).not.toBeNull()
     expect(box!.x).toBeLessThan(80)
-    expect(box!.y).toBeLessThan(120)
+    expect(box!.y).toBeGreaterThan(600)
+  })
+
+  test("tool switching keeps composer text", async ({ page }) => {
+    await page.goto("/")
+    const composer = page.getByRole("textbox", { name: "AI 输入" })
+    await composer.fill("帮我把敦煌多留半天")
+    await page.getByRole("tab", { name: "地点" }).click()
+    await expect(page.getByText("地点工作区")).toBeVisible()
+    await expect(composer).toHaveValue("帮我把敦煌多留半天")
   })
 
   test("/map preserves route query on redirect", async ({ page }) => {

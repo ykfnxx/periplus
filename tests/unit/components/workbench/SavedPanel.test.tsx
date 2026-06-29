@@ -27,13 +27,13 @@ describe("SavedPanel", () => {
     vi.mocked(listRoutes).mockResolvedValueOnce([savedRoute])
 
     const setCurrentRoute = vi.fn()
-    const setActiveWorkbenchTab = vi.fn()
+    const setActiveWorkbenchTool = vi.fn()
     ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) =>
-        selector({ setCurrentRoute, setActiveWorkbenchTab })
+        selector({ setCurrentRoute, setActiveWorkbenchTool })
     )
 
-    render(<SavedPanel searchQuery="敦煌" />)
+    render(<SavedPanel />)
 
     await waitFor(() => {
       expect(
@@ -43,6 +43,6 @@ describe("SavedPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Saved Northwest/ }))
     expect(setCurrentRoute).toHaveBeenCalledWith(savedRoute)
-    expect(setActiveWorkbenchTab).toHaveBeenCalledWith("plan")
+    expect(setActiveWorkbenchTool).toHaveBeenCalledWith("plan")
   })
 })

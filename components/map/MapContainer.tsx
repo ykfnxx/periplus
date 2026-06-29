@@ -7,7 +7,7 @@ import RouteMarkers from './RouteMarkers';
 import PhotoMarkers from './PhotoMarkers';
 import PhotoInfoWindow from './PhotoInfoWindow';
 import LocationSelector from './LocationSelector';
-import MapFloatingControls from './MapFloatingControls';
+import MapSettingsButton from './MapSettingsButton';
 import { useMapStore } from '@/stores/mapStore';
 
 export default function MapContainer() {
@@ -32,7 +32,6 @@ export default function MapContainer() {
         });
 
         mapInstance.addControl(new AMap.Scale());
-        mapInstance.addControl(new AMap.ToolBar());
 
         if (mounted) {
           setMap(mapInstance);
@@ -71,7 +70,7 @@ export default function MapContainer() {
       <PhotoMarkers key="photo-markers" />
       <PhotoInfoWindow key="photo-info" />
       <LocationSelector key="location-selector" />
-      {!error && <MapFloatingControls key="floating-controls" />}
+      {!error && <MapSettingsButton key="map-settings" />}
     </>
   );
 }

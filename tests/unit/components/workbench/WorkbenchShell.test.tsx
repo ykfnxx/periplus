@@ -7,12 +7,16 @@ vi.mock("@/stores/mapStore", () => ({
   useMapStore: vi.fn(),
 }))
 
-vi.mock("@/components/workbench/ExplorePanel", () => ({
-  default: () => <div>探索内容</div>,
+vi.mock("@/components/workbench/PlanPanel", () => ({
+  default: () => <div>规划内容</div>,
 }))
 
-vi.mock("@/components/workbench/PlanPanel", () => ({
-  default: () => <div>计划内容</div>,
+vi.mock("@/components/workbench/PlacesPanel", () => ({
+  default: () => <div>地点内容</div>,
+}))
+
+vi.mock("@/components/workbench/PhotosPanel", () => ({
+  default: () => <div>照片内容</div>,
 }))
 
 vi.mock("@/components/workbench/SavedPanel", () => ({
@@ -20,18 +24,25 @@ vi.mock("@/components/workbench/SavedPanel", () => ({
 }))
 
 describe("WorkbenchShell", () => {
-  it("switches tabs through the store", () => {
-    const setActiveWorkbenchTab = vi.fn()
+  it("switches tools through the bottom rail without replacing the composer", () => {
+    const setActiveWorkbenchTool = vi.fn()
+    const setComposerInput = vi.fn()
     ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) =>
         selector({
-          activeWorkbenchTab: "explore",
-          setActiveWorkbenchTab,
+          activeWorkbenchTool: "plan",
+          setActiveWorkbenchTool,
+          composerInput: "保留这段输入",
+          setComposerInput,
         })
     )
 
     render(<WorkbenchShell />)
-    fireEvent.click(screen.getByRole("tab", { name: "计划" }))
-    expect(setActiveWorkbenchTab).toHaveBeenCalledWith("plan")
+    expect(screen.getByText("规划内容")).toBeInTheDocument()
+    expect(screen.getByLabelText("AI 输入")).toHaveValue("保留这段输入")
+
+    fireEvent.click(screen.getByRole("tab", { name: "地点" }))
+    expect(setActiveWorkbenchTool).toHaveBeenCalledWith("places")
+    expect(screen.getByLabelText("AI 输入")).toHaveValue("保留这段输入")
   })
 })
