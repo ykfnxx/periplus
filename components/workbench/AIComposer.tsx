@@ -7,9 +7,18 @@ import { useMapStore } from "@/stores/mapStore"
 export default function AIComposer() {
   const composerInput = useMapStore((state) => state.composerInput)
   const setComposerInput = useMapStore((state) => state.setComposerInput)
+  const sendAgentEvent = useMapStore((state) => state.sendAgentEvent)
+  const clearAgentMessages = useMapStore((state) => state.clearAgentMessages)
+  const isDraftLocked = useMapStore((state) => state.isDraftLocked)
 
   const submitPrompt = (event: FormEvent) => {
     event.preventDefault()
+    const prompt = composerInput.trim()
+    if (!prompt || !sendAgentEvent || isDraftLocked) return
+
+    clearAgentMessages()
+    sendAgentEvent("agent.run.start", { prompt })
+    setComposerInput("")
   }
 
   return (
@@ -29,7 +38,7 @@ export default function AIComposer() {
         type="submit"
         aria-label="发送"
         title="发送"
-        disabled={!composerInput.trim()}
+        disabled={!composerInput.trim() || !sendAgentEvent || isDraftLocked}
         className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--periplus-russet)] text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)] disabled:cursor-default disabled:bg-[var(--periplus-mustard)] disabled:text-[var(--periplus-ink)] disabled:opacity-55"
       >
         <Send className="h-4 w-4" aria-hidden="true" />

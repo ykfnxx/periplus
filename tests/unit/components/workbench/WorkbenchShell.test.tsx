@@ -23,6 +23,10 @@ vi.mock("@/components/workbench/SavedPanel", () => ({
   default: () => <div>收藏内容</div>,
 }))
 
+vi.mock("@/components/workbench/AgentSync", () => ({
+  default: () => null,
+}))
+
 describe("WorkbenchShell", () => {
   it("switches tools through the bottom rail without replacing the composer", () => {
     const setActiveWorkbenchTool = vi.fn()
@@ -34,6 +38,9 @@ describe("WorkbenchShell", () => {
           setActiveWorkbenchTool,
           composerInput: "保留这段输入",
           setComposerInput,
+          sendAgentEvent: vi.fn(),
+          clearAgentMessages: vi.fn(),
+          isDraftLocked: false,
         })
     )
 

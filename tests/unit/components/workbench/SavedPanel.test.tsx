@@ -26,11 +26,15 @@ describe("SavedPanel", () => {
     }
     vi.mocked(listRoutes).mockResolvedValueOnce([savedRoute])
 
-    const setCurrentRoute = vi.fn()
+    const sendAgentEvent = vi.fn()
     const setActiveWorkbenchTool = vi.fn()
     ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) =>
-        selector({ setCurrentRoute, setActiveWorkbenchTool })
+        selector({
+          sendAgentEvent,
+          setActiveWorkbenchTool,
+          isDraftLocked: false,
+        })
     )
 
     render(<SavedPanel />)
@@ -42,7 +46,9 @@ describe("SavedPanel", () => {
     })
 
     fireEvent.click(screen.getByRole("button", { name: /Saved Northwest/ }))
-    expect(setCurrentRoute).toHaveBeenCalledWith(savedRoute)
+    expect(sendAgentEvent).toHaveBeenCalledWith("draft.load_saved_route", {
+      routeId: savedRoute.id,
+    })
     expect(setActiveWorkbenchTool).toHaveBeenCalledWith("plan")
   })
 })

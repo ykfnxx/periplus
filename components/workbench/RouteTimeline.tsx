@@ -10,6 +10,7 @@ interface RouteTimelineProps {
   editingPointId: string | null
   onEditPoint: (pointId: string | null) => void
   onChangePoint: (point: RoutePoint) => void
+  isLocked?: boolean
 }
 
 export default function RouteTimeline({
@@ -17,6 +18,7 @@ export default function RouteTimeline({
   editingPointId,
   onEditPoint,
   onChangePoint,
+  isLocked = false,
 }: RouteTimelineProps) {
   const points = [...route.points].sort((a, b) => a.order - b.order)
 
@@ -66,7 +68,8 @@ export default function RouteTimeline({
                   <button
                     type="button"
                     onClick={() => onEditPoint(point.id)}
-                    className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-3 text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)]"
+                    disabled={isLocked}
+                    className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-3 text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)] disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label={`编辑 ${point.name}`}
                   >
                     <Pencil aria-hidden="true" className="h-3.5 w-3.5" />

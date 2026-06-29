@@ -12,6 +12,9 @@ function mockPlacesPanelStore(
   overrides: Partial<{
     currentRoute: typeof silkRoadRoute | null
     setCurrentRoute: ReturnType<typeof vi.fn>
+    isDraftLocked: boolean
+    sendAgentEvent: ReturnType<typeof vi.fn> | null
+    setDraftSaveState: ReturnType<typeof vi.fn>
     setActiveWorkbenchTool: ReturnType<typeof vi.fn>
     startPointLocationSelection: ReturnType<typeof vi.fn>
     pointSelectionDraft: { lat: number; lng: number } | null
@@ -22,6 +25,9 @@ function mockPlacesPanelStore(
   const state = {
     currentRoute: silkRoadRoute,
     setCurrentRoute: vi.fn(),
+    isDraftLocked: false,
+    sendAgentEvent: vi.fn(),
+    setDraftSaveState: vi.fn(),
     setActiveWorkbenchTool: vi.fn(),
     startPointLocationSelection: vi.fn(),
     pointSelectionDraft: null,
@@ -52,10 +58,12 @@ describe("PlacesPanel", () => {
     const setCurrentRoute = vi.fn()
     const setPointSelectionDraft = vi.fn()
     const setAddPointMode = vi.fn()
+    const sendAgentEvent = vi.fn()
     mockPlacesPanelStore({
       setCurrentRoute,
       setPointSelectionDraft,
       setAddPointMode,
+      sendAgentEvent,
       pointSelectionDraft: { lat: 39.9, lng: 116.4 },
     })
 
@@ -85,6 +93,15 @@ describe("PlacesPanel", () => {
           notes: "看升旗",
         }),
       ],
+    })
+    expect(sendAgentEvent).toHaveBeenCalledWith("draft.replace", {
+      route: {
+        ...silkRoadRoute,
+        points: [
+          ...silkRoadRoute.points,
+          expect.objectContaining({ name: "天安门" }),
+        ],
+      },
     })
     expect(setPointSelectionDraft).toHaveBeenCalledWith(null)
     expect(setAddPointMode).toHaveBeenCalledWith("closed")

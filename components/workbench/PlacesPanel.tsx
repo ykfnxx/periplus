@@ -9,6 +9,9 @@ import RouteListItem from "./RouteListItem"
 export default function PlacesPanel() {
   const currentRoute = useMapStore((state) => state.currentRoute)
   const setCurrentRoute = useMapStore((state) => state.setCurrentRoute)
+  const isDraftLocked = useMapStore((state) => state.isDraftLocked)
+  const sendAgentEvent = useMapStore((state) => state.sendAgentEvent)
+  const setDraftSaveState = useMapStore((state) => state.setDraftSaveState)
   const setActiveWorkbenchTool = useMapStore(
     (state) => state.setActiveWorkbenchTool
   )
@@ -45,7 +48,7 @@ export default function PlacesPanel() {
 
   const addDraftPoint = (event: FormEvent) => {
     event.preventDefault()
-    if (!currentRoute || !pointSelectionDraft) return
+    if (!currentRoute || !pointSelectionDraft || isDraftLocked) return
 
     const trimmedName = newPointName.trim()
     if (!trimmedName) {
@@ -59,7 +62,7 @@ export default function PlacesPanel() {
       return
     }
 
-    setCurrentRoute({
+    const nextRoute = {
       ...currentRoute,
       points: [
         ...currentRoute.points,
@@ -73,12 +76,19 @@ export default function PlacesPanel() {
           notes: newPointNotes.trim(),
         },
       ],
-    })
+    }
+    setCurrentRoute(nextRoute)
+    sendAgentEvent?.("draft.replace", { route: nextRoute })
+    setDraftSaveState("idle")
     closeDraftPointForm()
   }
 
   const selectStarterRoute = () => {
+    if (isDraftLocked) return
+
     setCurrentRoute(silkRoadRoute)
+    sendAgentEvent?.("draft.replace", { route: silkRoadRoute })
+    setDraftSaveState("idle")
     setActiveWorkbenchTool("plan")
   }
 
@@ -100,7 +110,8 @@ export default function PlacesPanel() {
         <button
           type="button"
           onClick={restartPointLocationSelection}
-          className="flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
+          disabled={isDraftLocked}
+          className="flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <MapPin aria-hidden="true" className="h-4 w-4" />
           地图选点
@@ -166,7 +177,8 @@ export default function PlacesPanel() {
             </button>
             <button
               type="submit"
-              className="h-9 rounded-full bg-[var(--periplus-russet)] text-xs font-black text-[var(--periplus-soft-white)]"
+              disabled={isDraftLocked}
+              className="h-9 rounded-full bg-[var(--periplus-russet)] text-xs font-black text-[var(--periplus-soft-white)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               添加到路线
             </button>

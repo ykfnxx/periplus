@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const pointPositionSchema = z.discriminatedUnion('placement', [
+export const pointPositionSchema = z.discriminatedUnion('placement', [
   z.object({ placement: z.literal('start') }),
   z.object({ placement: z.literal('end') }),
   z.object({ placement: z.literal('before'), pointId: z.string().min(1) }),
@@ -16,9 +16,9 @@ const routePointInputSchema = z.object({
   notes: z.string().optional(),
 });
 
-const routePointCreateSchema = routePointInputSchema.omit({ order: true });
+export const routePointCreateSchema = routePointInputSchema.omit({ order: true });
 
-const routePointPatchSchema = z
+export const routePointPatchSchema = z
   .object({
     name: z.string().min(1).optional(),
     lat: z.number().min(-90).max(90).optional(),

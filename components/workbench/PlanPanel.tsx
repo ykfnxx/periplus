@@ -1,32 +1,19 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { MapPin, Save } from "lucide-react"
-import { createRoute, updateRoute } from "@/lib/routes/client"
+import { useMemo } from "react"
+import { MapPin, Save, Square } from "lucide-react"
 import { useMapStore } from "@/stores/mapStore"
 import type { Route, RoutePoint } from "@/types/route"
 import RouteTimeline from "./RouteTimeline"
 
-type SaveStatus = {
-  routeId: string
-  state: "saving" | "success" | "error"
-} | null
-
-function getRouteInput(route: Route) {
-  return {
-    name: route.name,
-    description: route.description,
-    points: route.points,
-  }
-}
-
-function isNewRoute(route: Route) {
-  return route.id.startsWith("preset-") || route.id.startsWith("temp-")
-}
-
 export default function PlanPanel() {
   const currentRoute = useMapStore((state) => state.currentRoute)
   const setCurrentRoute = useMapStore((state) => state.setCurrentRoute)
+  const isDraftLocked = useMapStore((state) => state.isDraftLocked)
+  const draftSaveState = useMapStore((state) => state.draftSaveState)
+  const setDraftSaveState = useMapStore((state) => state.setDraftSaveState)
+  const agentMessages = useMapStore((state) => state.agentMessages)
+  const sendAgentEvent = useMapStore((state) => state.sendAgentEvent)
   const editingPointId = useMapStore((state) => state.editingPointId)
   const setEditingPointId = useMapStore((state) => state.setEditingPointId)
   const startPointLocationSelection = useMapStore(
@@ -35,8 +22,6 @@ export default function PlanPanel() {
   const setActiveWorkbenchTool = useMapStore(
     (state) => state.setActiveWorkbenchTool
   )
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>(null)
-
   const totalStayHours = useMemo(() => {
     return (
       currentRoute?.points.reduce(
@@ -47,38 +32,36 @@ export default function PlanPanel() {
   }, [currentRoute])
 
   const changePoint = (point: RoutePoint) => {
-    if (!currentRoute) return
+    if (!currentRoute || isDraftLocked) return
 
-    setCurrentRoute({
+    const nextRoute: Route = {
       ...currentRoute,
       points: currentRoute.points.map((routePoint) =>
         routePoint.id === point.id ? point : routePoint
       ),
-    })
+    }
+    setCurrentRoute(nextRoute)
+    sendAgentEvent?.("draft.replace", { route: nextRoute })
     setEditingPointId(null)
-    setSaveStatus(null)
+    setDraftSaveState("idle")
   }
 
   const addPlaceFromMap = () => {
+    if (isDraftLocked) return
     startPointLocationSelection()
     setActiveWorkbenchTool("places")
   }
 
-  const saveRoute = async () => {
-    if (!currentRoute) return
+  const saveRoute = () => {
+    if (!currentRoute || !sendAgentEvent || isDraftLocked) return
 
-    setSaveStatus({ routeId: currentRoute.id, state: "saving" })
-    try {
-      const savedRoute = isNewRoute(currentRoute)
-        ? await createRoute(getRouteInput(currentRoute))
-        : await updateRoute(currentRoute.id, getRouteInput(currentRoute))
+    setDraftSaveState("saving")
+    sendAgentEvent("draft.save")
+    setEditingPointId(null)
+  }
 
-      setCurrentRoute(savedRoute)
-      setEditingPointId(null)
-      setSaveStatus({ routeId: savedRoute.id, state: "success" })
-    } catch {
-      setSaveStatus({ routeId: currentRoute.id, state: "error" })
-    }
+  const cancelAgentRun = () => {
+    sendAgentEvent?.("agent.run.cancel")
   }
 
   if (!currentRoute) {
@@ -106,9 +89,6 @@ export default function PlanPanel() {
       </div>
     )
   }
-
-  const routeSaveStatus =
-    saveStatus?.routeId === currentRoute.id ? saveStatus.state : null
 
   return (
     <div className="flex min-h-full flex-col gap-4">
@@ -160,16 +140,39 @@ export default function PlanPanel() {
           editingPointId={editingPointId}
           onEditPoint={setEditingPointId}
           onChangePoint={changePoint}
+          isLocked={isDraftLocked}
         />
       </div>
 
       <div className="space-y-2 border-t border-[rgb(44_36_22_/_12%)] pt-3">
-        {routeSaveStatus === "success" && (
+        {(isDraftLocked || agentMessages.length > 0) && (
+          <div className="space-y-2 rounded-lg border border-[rgb(44_36_22_/_14%)] bg-white/70 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-black tracking-[0.16em] text-[var(--periplus-teak)] uppercase">
+                AGENT
+              </p>
+              {isDraftLocked && (
+                <button
+                  type="button"
+                  onClick={cancelAgentRun}
+                  className="flex h-7 items-center gap-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-2 text-[11px] font-black text-[var(--periplus-walnut)]"
+                >
+                  <Square aria-hidden="true" className="h-3 w-3" />
+                  停止
+                </button>
+              )}
+            </div>
+            <pre className="max-h-28 overflow-auto whitespace-pre-wrap text-xs leading-5 text-[var(--periplus-walnut)]">
+              {agentMessages.join("") || "Agent 正在规划..."}
+            </pre>
+          </div>
+        )}
+        {draftSaveState === "success" && (
           <p className="text-xs font-bold text-[var(--periplus-olive)]">
             保存成功
           </p>
         )}
-        {routeSaveStatus === "error" && (
+        {draftSaveState === "error" && (
           <p className="text-xs font-bold text-[var(--periplus-coral)]">
             保存失败，请稍后重试
           </p>
@@ -178,7 +181,8 @@ export default function PlanPanel() {
           <button
             type="button"
             onClick={addPlaceFromMap}
-            className="flex h-10 items-center justify-center gap-2 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)]"
+            disabled={isDraftLocked}
+            className="flex h-10 items-center justify-center gap-2 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <MapPin aria-hidden="true" className="h-4 w-4" />
             添加地点
@@ -186,7 +190,9 @@ export default function PlanPanel() {
           <button
             type="button"
             onClick={saveRoute}
-            disabled={routeSaveStatus === "saving"}
+            disabled={
+              draftSaveState === "saving" || isDraftLocked || !sendAgentEvent
+            }
             className="flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--periplus-russet)] text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)] disabled:cursor-wait disabled:opacity-70"
           >
             <Save aria-hidden="true" className="h-4 w-4" />

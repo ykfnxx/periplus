@@ -7,10 +7,11 @@ import type { Route } from "@/types/route"
 import RouteListItem from "./RouteListItem"
 
 export default function SavedPanel() {
-  const setCurrentRoute = useMapStore((state) => state.setCurrentRoute)
   const setActiveWorkbenchTool = useMapStore(
     (state) => state.setActiveWorkbenchTool
   )
+  const sendAgentEvent = useMapStore((state) => state.sendAgentEvent)
+  const isDraftLocked = useMapStore((state) => state.isDraftLocked)
   const [routes, setRoutes] = useState<Route[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
@@ -36,7 +37,9 @@ export default function SavedPanel() {
   }, [])
 
   const selectRoute = (route: Route) => {
-    setCurrentRoute(route)
+    if (isDraftLocked || !sendAgentEvent) return
+
+    sendAgentEvent("draft.load_saved_route", { routeId: route.id })
     setActiveWorkbenchTool("plan")
   }
 

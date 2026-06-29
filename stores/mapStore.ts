@@ -5,6 +5,8 @@ export type MapType = 'standard' | 'satellite' | 'terrain';
 export type WorkbenchTool = 'plan' | 'places' | 'photos' | 'saved';
 export type AddPointMode = 'closed' | 'search' | 'map-select' | 'manual';
 export type LocationSelectionMode = 'none' | 'photo' | 'point';
+export type DraftSaveState = 'idle' | 'saving' | 'success' | 'error';
+export type AgentSender = (type: string, payload?: unknown) => void;
 
 export interface PointSelectionDraft {
   lat: number;
@@ -25,6 +27,15 @@ interface MapState {
   setMap: (map: AMap.Map | null) => void;
   currentRoute: Route | null;
   setCurrentRoute: (route: Route | null) => void;
+  isDraftLocked: boolean;
+  setDraftLocked: (isDraftLocked: boolean) => void;
+  draftSaveState: DraftSaveState;
+  setDraftSaveState: (draftSaveState: DraftSaveState) => void;
+  agentMessages: string[];
+  appendAgentMessage: (message: string) => void;
+  clearAgentMessages: () => void;
+  sendAgentEvent: AgentSender | null;
+  setAgentSender: (sendAgentEvent: AgentSender | null) => void;
   selectedPoint: RoutePoint | null;
   setSelectedPoint: (point: RoutePoint | null) => void;
   mapType: MapType;
@@ -58,6 +69,18 @@ export const useMapStore = create<MapState>((set) => ({
   setMap: (map) => set({ map }),
   currentRoute: null,
   setCurrentRoute: (currentRoute) => set({ currentRoute }),
+  isDraftLocked: false,
+  setDraftLocked: (isDraftLocked) => set({ isDraftLocked }),
+  draftSaveState: 'idle',
+  setDraftSaveState: (draftSaveState) => set({ draftSaveState }),
+  agentMessages: [],
+  appendAgentMessage: (message) =>
+    set((state) => ({
+      agentMessages: [...state.agentMessages, message].slice(-120),
+    })),
+  clearAgentMessages: () => set({ agentMessages: [] }),
+  sendAgentEvent: null,
+  setAgentSender: (sendAgentEvent) => set({ sendAgentEvent }),
   selectedPoint: null,
   setSelectedPoint: (selectedPoint) => set({ selectedPoint }),
   mapType: 'standard',
