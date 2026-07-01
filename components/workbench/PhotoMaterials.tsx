@@ -10,7 +10,7 @@ export default function PhotoMaterials() {
   )
 
   return (
-    <section className="space-y-3 rounded-lg border border-[rgb(44_36_22_/_14%)] bg-white/60 p-3">
+    <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-black text-[var(--periplus-ink)]">
           照片素材

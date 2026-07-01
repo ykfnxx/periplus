@@ -15,14 +15,16 @@ function asDraftSnapshot(payload: unknown) {
 }
 
 function asDelta(payload: unknown) {
-  return payload as { text?: string; message?: string }
+  return payload as { text?: string; message?: string; stream?: string }
 }
 
 export default function AgentSync() {
   const setCurrentRoute = useMapStore((state) => state.setCurrentRoute)
   const setDraftLocked = useMapStore((state) => state.setDraftLocked)
   const setAgentSender = useMapStore((state) => state.setAgentSender)
-  const appendAgentMessage = useMapStore((state) => state.appendAgentMessage)
+  const appendAssistantMessage = useMapStore(
+    (state) => state.appendAssistantMessage
+  )
   const setDraftSaveState = useMapStore((state) => state.setDraftSaveState)
 
   useEffect(() => {
@@ -68,22 +70,26 @@ export default function AgentSync() {
           }
 
           if (message.type === "agent.message.delta") {
-            appendAgentMessage(asDelta(message.payload).text ?? "")
+            const delta = asDelta(message.payload)
+            if (delta.stream === "stdout") {
+              appendAssistantMessage(delta.text ?? "")
+            }
             return
           }
 
           if (message.type === "agent.run.completed") {
-            appendAgentMessage("\nAgent 已完成\n")
             return
           }
 
           if (message.type === "agent.run.cancelled") {
-            appendAgentMessage("\nAgent 已停止\n")
+            appendAssistantMessage("\n已停止。\n")
             return
           }
 
           if (message.type === "agent.run.failed" || message.type === "error") {
-            appendAgentMessage(`\n${asDelta(message.payload).message ?? "Agent 运行失败"}\n`)
+            appendAssistantMessage(
+              `\n${asDelta(message.payload).message ?? "Agent 运行失败"}\n`
+            )
             setDraftSaveState("error")
           }
         })
@@ -98,7 +104,7 @@ export default function AgentSync() {
       socket?.close()
     }
   }, [
-    appendAgentMessage,
+    appendAssistantMessage,
     setAgentSender,
     setCurrentRoute,
     setDraftLocked,

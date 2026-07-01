@@ -1,76 +1,76 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { useMapStore } from '@/stores/mapStore';
+import { beforeEach, describe, expect, it } from "vitest"
+import { useMapStore } from "@/stores/mapStore"
 
-describe('mapStore UI state', () => {
+describe("mapStore UI state", () => {
   beforeEach(() => {
     useMapStore.setState({
-      activeWorkbenchTool: 'plan',
-      composerInput: '',
-      editingPointId: null,
-      addPointMode: 'closed',
+      composerInput: "",
+      chatMessages: [],
+      activeMapPanel: "none",
       pointSelectionDraft: null,
-      locationSelectionMode: 'none',
+      locationSelectionMode: "none",
       pendingPhotoDataUrl: null,
       isSelectingLocation: false,
-    });
-  });
+    })
+  })
 
-  it('switches workbench tools', () => {
-    useMapStore.getState().setActiveWorkbenchTool('places');
-    expect(useMapStore.getState().activeWorkbenchTool).toBe('places');
-  });
+  it("switches map panels", () => {
+    useMapStore.getState().setActiveMapPanel("saved")
+    expect(useMapStore.getState().activeMapPanel).toBe("saved")
+  })
 
-  it('preserves the composer input outside tool switching', () => {
-    useMapStore.getState().setComposerInput('帮我把敦煌多留半天');
-    useMapStore.getState().setActiveWorkbenchTool('photos');
-    expect(useMapStore.getState().composerInput).toBe('帮我把敦煌多留半天');
-  });
+  it("preserves the composer input outside map panel switching", () => {
+    useMapStore.getState().setComposerInput("帮我把敦煌多留半天")
+    useMapStore.getState().setActiveMapPanel("photo")
+    expect(useMapStore.getState().composerInput).toBe("帮我把敦煌多留半天")
+  })
 
-  it('opens point editing and switches to plan', () => {
-    useMapStore.getState().setEditingPointId('point-1');
-    expect(useMapStore.getState().editingPointId).toBe('point-1');
-    expect(useMapStore.getState().activeWorkbenchTool).toBe('plan');
-  });
+  it("stores user and assistant chat messages", () => {
+    useMapStore.getState().addUserMessage("规划新疆路线")
+    useMapStore.getState().appendAssistantMessage("可以。")
+    useMapStore.getState().appendAssistantMessage("先去乌鲁木齐。")
 
-  it('starts point location selection from the places tool', () => {
-    useMapStore.getState().startPointLocationSelection();
+    expect(useMapStore.getState().chatMessages).toMatchObject([
+      { role: "user", content: "规划新疆路线" },
+      { role: "assistant", content: "可以。先去乌鲁木齐。" },
+    ])
+  })
+
+  it("starts point location selection without exposing a workbench tool", () => {
+    useMapStore.getState().startPointLocationSelection()
     expect(useMapStore.getState()).toMatchObject({
-      locationSelectionMode: 'point',
+      locationSelectionMode: "point",
       isSelectingLocation: true,
-      addPointMode: 'map-select',
-      activeWorkbenchTool: 'places',
-    });
-  });
-
-  it('starts photo location selection from the photos tool', () => {
-    useMapStore.getState().startPhotoLocationSelection('data-url');
-    expect(useMapStore.getState()).toMatchObject({
-      pendingPhotoDataUrl: 'data-url',
-      locationSelectionMode: 'photo',
-      isSelectingLocation: true,
-      activeWorkbenchTool: 'photos',
-      addPointMode: 'closed',
       pointSelectionDraft: null,
-    });
-  });
+    })
+  })
 
-  it('clears active location selection state', () => {
+  it("starts photo location selection from the photo panel", () => {
+    useMapStore.getState().startPhotoLocationSelection("data-url")
+    expect(useMapStore.getState()).toMatchObject({
+      pendingPhotoDataUrl: "data-url",
+      locationSelectionMode: "photo",
+      isSelectingLocation: true,
+      activeMapPanel: "photo",
+      pointSelectionDraft: null,
+    })
+  })
+
+  it("clears active location selection state", () => {
     useMapStore.setState({
-      pendingPhotoDataUrl: 'data-url',
+      pendingPhotoDataUrl: "data-url",
       pointSelectionDraft: { lat: 31.23, lng: 121.47 },
       isSelectingLocation: true,
-      locationSelectionMode: 'point',
-      addPointMode: 'map-select',
-    });
+      locationSelectionMode: "point",
+    })
 
-    useMapStore.getState().clearLocationSelection();
+    useMapStore.getState().clearLocationSelection()
 
     expect(useMapStore.getState()).toMatchObject({
       pendingPhotoDataUrl: null,
       pointSelectionDraft: { lat: 31.23, lng: 121.47 },
       isSelectingLocation: false,
-      locationSelectionMode: 'none',
-      addPointMode: 'closed',
-    });
-  });
-});
+      locationSelectionMode: "none",
+    })
+  })
+})
