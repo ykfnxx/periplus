@@ -100,6 +100,25 @@ body {
   display: none;
 }
 
+.periplus-prompt-scroll {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 24px,
+    black calc(100% - 24px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 24px,
+    black calc(100% - 24px),
+    transparent
+  );
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+}
+
 .periplus-markdown > * + * {
   margin-top: 0.7rem;
 }
