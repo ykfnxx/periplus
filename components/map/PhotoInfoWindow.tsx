@@ -1,105 +1,116 @@
-'use client';
+"use client"
 
-import { useEffect, useRef, useCallback } from 'react';
-import { useMapStore } from '@/stores/mapStore';
+import { Trash2 } from "lucide-react"
+import { type MouseEvent, useCallback, useEffect, useRef } from "react"
+import { useMapStore } from "@/stores/mapStore"
+
+function formatUploadDate(timestamp: number) {
+  const date = new Date(timestamp)
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}.${String(date.getDate()).padStart(2, "0")}`
+}
 
 export default function PhotoInfoWindow() {
-  const map = useMapStore((s) => s.map);
-  const selectedPhotoShare = useMapStore((s) => s.selectedPhotoShare);
-  const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare);
-  const removePhotoShare = useMapStore((s) => s.removePhotoShare);
-  const isSelectingLocation = useMapStore((s) => s.isSelectingLocation);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const map = useMapStore((state) => state.map)
+  const selectedPhotoShare = useMapStore((state) => state.selectedPhotoShare)
+  const setSelectedPhotoShare = useMapStore(
+    (state) => state.setSelectedPhotoShare
+  )
+  const setLightboxPhotoShare = useMapStore(
+    (state) => state.setLightboxPhotoShare
+  )
+  const removePhotoShare = useMapStore((state) => state.removePhotoShare)
+  const isSelectingLocation = useMapStore((state) => state.isSelectingLocation)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
 
-  // Convert lat/lng to pixel position on map
   const updatePosition = useCallback(() => {
-    if (!map || !selectedPhotoShare || !overlayRef.current) return;
+    if (!map || !selectedPhotoShare || !overlayRef.current) return
 
     const pixel = map.lngLatToContainer(
       new AMap.LngLat(selectedPhotoShare.lng, selectedPhotoShare.lat)
-    );
+    )
 
-    overlayRef.current.style.left = `${pixel.getX()}px`;
-    overlayRef.current.style.top = `${pixel.getY() - 10}px`; // offset above marker
-  }, [map, selectedPhotoShare]);
+    overlayRef.current.style.left = `${pixel.getX()}px`
+    overlayRef.current.style.top = `${pixel.getY() - 10}px`
+  }, [map, selectedPhotoShare])
 
   useEffect(() => {
-    if (!map) return;
+    if (!map) return
 
-    // Listen for map clicks to close the overlay
-    // But only when we're NOT in location selection mode
     const mapClickHandler = () => {
       if (!isSelectingLocation) {
-        setSelectedPhotoShare(null);
+        setSelectedPhotoShare(null)
       }
-    };
+    }
+    const moveHandler = () => updatePosition()
 
-    map.on('click', mapClickHandler);
-
-    // Update position when map moves/zooms
-    const moveHandler = () => {
-      updatePosition();
-    };
-
-    map.on('mapmove', moveHandler);
-    map.on('zoomchange', moveHandler);
+    map.on("click", mapClickHandler)
+    map.on("mapmove", moveHandler)
+    map.on("zoomchange", moveHandler)
 
     return () => {
-      map.off('click', mapClickHandler);
-      map.off('mapmove', moveHandler);
-      map.off('zoomchange', moveHandler);
-    };
-  }, [map, setSelectedPhotoShare, isSelectingLocation, updatePosition]);
-
-  // Update position when selected photo changes
-  useEffect(() => {
-    updatePosition();
-  }, [updatePosition]);
-
-  const handleDelete = useCallback(() => {
-    if (confirm('确定要删除这张照片分享吗？')) {
-      removePhotoShare(selectedPhotoShare!.id);
-      setSelectedPhotoShare(null);
+      map.off("click", mapClickHandler)
+      map.off("mapmove", moveHandler)
+      map.off("zoomchange", moveHandler)
     }
-  }, [removePhotoShare, setSelectedPhotoShare, selectedPhotoShare]);
+  }, [map, setSelectedPhotoShare, isSelectingLocation, updatePosition])
 
-  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
-    // Prevent click from bubbling to map
-    e.stopPropagation();
-  }, []);
+  useEffect(() => {
+    updatePosition()
+  }, [updatePosition])
 
-  if (!selectedPhotoShare) return null;
+  const handleDelete = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      removePhotoShare(selectedPhotoShare!.id)
+    },
+    [removePhotoShare, selectedPhotoShare]
+  )
+
+  const openLightbox = useCallback(
+    (event: MouseEvent<HTMLImageElement>) => {
+      event.stopPropagation()
+      setLightboxPhotoShare(selectedPhotoShare)
+    },
+    [selectedPhotoShare, setLightboxPhotoShare]
+  )
+
+  const stopOverlayClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation()
+  }, [])
+
+  if (!selectedPhotoShare) return null
 
   return (
     <div
       ref={overlayRef}
-      onClick={handleOverlayClick}
-      className="absolute z-50 transform -translate-x-1/2 -translate-y-full"
-      style={{ pointerEvents: 'auto' }}
+      onClick={stopOverlayClick}
+      className="absolute z-50 -translate-x-1/2 -translate-y-full"
+      style={{ pointerEvents: "auto" }}
     >
-      <div className="min-w-[220px] max-w-[320px] rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] p-3 shadow-[var(--periplus-shadow)]">
+      <div className="relative h-[120px] w-[120px] rounded-xl border border-[rgb(44_36_22_/_10%)] bg-[var(--periplus-soft-white)] p-1 shadow-[0_4px_16px_rgb(44_36_22_/_12%)]">
         <img
           src={selectedPhotoShare.imageDataUrl}
           alt="照片"
-          className="w-full max-w-[296px] rounded-md object-cover"
-          style={{ maxHeight: '200px' }}
+          onClick={openLightbox}
+          className="h-[112px] w-[112px] cursor-pointer rounded-lg object-cover"
         />
-        {selectedPhotoShare.caption && (
-          <p className="mt-2 break-words text-sm text-[var(--periplus-walnut)]">
-            {selectedPhotoShare.caption}
-          </p>
-        )}
-        <div className="mt-2 flex justify-end">
-          <button
-            onClick={handleDelete}
-            className="rounded-md bg-[var(--periplus-russet)] px-3 py-1 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
-          >
-            删除
-          </button>
-        </div>
-        {/* Arrow pointing down to marker */}
-        <div className="absolute left-1/2 -bottom-2 h-0 w-0 -translate-x-1/2 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-[var(--periplus-soft-white)]" />
+        <button
+          type="button"
+          onClick={handleDelete}
+          aria-label="删除照片"
+          title="删除"
+          className="absolute right-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full bg-[rgb(44_36_22_/_40%)] text-[var(--periplus-soft-white)] transition hover:bg-[rgb(229_122_119_/_90%)]"
+        >
+          <Trash2 className="h-3 w-3" aria-hidden="true" />
+        </button>
+      </div>
+      <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-t-4 border-r-4 border-l-4 border-t-[var(--periplus-soft-white)] border-r-transparent border-l-transparent" />
+      <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-full border border-[rgb(44_36_22_/_8%)] bg-[rgb(255_250_243_/_95%)] px-2 py-0.5 text-[11px] whitespace-nowrap text-[var(--periplus-teak)]">
+        {formatUploadDate(selectedPhotoShare.createdAt)}
       </div>
     </div>
-  );
+  )
 }

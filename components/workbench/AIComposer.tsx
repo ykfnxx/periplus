@@ -1,7 +1,12 @@
 "use client"
 
 import { Save, Send, Square } from "lucide-react"
-import { type FormEvent, type KeyboardEvent } from "react"
+import {
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useRef,
+} from "react"
 import { useMapStore } from "@/stores/mapStore"
 
 export default function AIComposer() {
@@ -13,6 +18,36 @@ export default function AIComposer() {
   const isDraftLocked = useMapStore((state) => state.isDraftLocked)
   const draftSaveState = useMapStore((state) => state.draftSaveState)
   const setDraftSaveState = useMapStore((state) => state.setDraftSaveState)
+  const lightboxPhotoShare = useMapStore((state) => state.lightboxPhotoShare)
+  const escTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !isDraftLocked || lightboxPhotoShare) {
+        return
+      }
+
+      if (escTimerRef.current) {
+        window.clearTimeout(escTimerRef.current)
+        escTimerRef.current = null
+        sendAgentEvent?.("agent.run.cancel")
+        return
+      }
+
+      escTimerRef.current = window.setTimeout(() => {
+        escTimerRef.current = null
+      }, 500)
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+      if (escTimerRef.current) {
+        window.clearTimeout(escTimerRef.current)
+        escTimerRef.current = null
+      }
+    }
+  }, [isDraftLocked, lightboxPhotoShare, sendAgentEvent])
 
   const sendPrompt = () => {
     const prompt = composerInput.trim()
@@ -28,7 +63,7 @@ export default function AIComposer() {
     sendPrompt()
   }
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
       sendPrompt()
@@ -59,19 +94,9 @@ export default function AIComposer() {
           aria-label="AI 输入"
           placeholder="告诉我你想怎么改路线..."
           disabled={isDraftLocked}
-          className="max-h-24 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm leading-5 text-[var(--periplus-ink)] outline-none placeholder:text-[var(--periplus-teak)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="periplus-textarea-hidden-scroll max-h-24 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm leading-5 text-[var(--periplus-ink)] outline-none placeholder:text-[var(--periplus-teak)] disabled:cursor-not-allowed disabled:opacity-60"
         />
-        {isDraftLocked ? (
-          <button
-            type="button"
-            onClick={cancelAgentRun}
-            aria-label="停止"
-            title="停止"
-            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--periplus-ink)] text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-russet)]"
-          >
-            <Square className="h-4 w-4" aria-hidden="true" />
-          </button>
-        ) : (
+        {!isDraftLocked && (
           <button
             type="button"
             onClick={saveRoute}
@@ -86,13 +111,24 @@ export default function AIComposer() {
           </button>
         )}
         <button
-          type="submit"
-          aria-label="发送"
-          title="发送"
-          disabled={!composerInput.trim() || !sendAgentEvent || isDraftLocked}
-          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--periplus-russet)] text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)] disabled:cursor-default disabled:bg-[var(--periplus-mustard)] disabled:text-[var(--periplus-ink)] disabled:opacity-55"
+          type={isDraftLocked ? "button" : "submit"}
+          onClick={isDraftLocked ? cancelAgentRun : undefined}
+          aria-label={isDraftLocked ? "停止" : "发送"}
+          title={isDraftLocked ? "停止" : "发送"}
+          disabled={
+            !isDraftLocked && (!composerInput.trim() || !sendAgentEvent)
+          }
+          className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--periplus-soft-white)] transition disabled:cursor-default disabled:opacity-55 ${
+            isDraftLocked
+              ? "bg-[var(--periplus-ink)] hover:bg-[var(--periplus-russet)]"
+              : "bg-[var(--periplus-russet)] hover:bg-[var(--periplus-ink)] disabled:bg-[var(--periplus-mustard)] disabled:text-[var(--periplus-ink)]"
+          }`}
         >
-          <Send className="h-4 w-4" aria-hidden="true" />
+          {isDraftLocked ? (
+            <Square className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Send className="h-4 w-4" aria-hidden="true" />
+          )}
         </button>
       </form>
       <div className="flex items-center justify-between px-2 text-[11px] font-bold text-[var(--periplus-teak)]">

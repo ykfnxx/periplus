@@ -67,6 +67,8 @@ interface MapState {
   updatePhotoShareCaption: (id: string, caption: string) => void
   selectedPhotoShare: PhotoShare | null
   setSelectedPhotoShare: (photo: PhotoShare | null) => void
+  lightboxPhotoShare: PhotoShare | null
+  setLightboxPhotoShare: (photo: PhotoShare | null) => void
   pendingPhotoDataUrl: string | null
   isSelectingLocation: boolean
 }
@@ -159,7 +161,13 @@ export const useMapStore = create<MapState>((set) => ({
       const newShares = state.photoShares.filter((p) => p.id !== id)
       const newSelected =
         state.selectedPhotoShare?.id === id ? null : state.selectedPhotoShare
-      return { photoShares: newShares, selectedPhotoShare: newSelected }
+      const newLightbox =
+        state.lightboxPhotoShare?.id === id ? null : state.lightboxPhotoShare
+      return {
+        photoShares: newShares,
+        selectedPhotoShare: newSelected,
+        lightboxPhotoShare: newLightbox,
+      }
     }),
   updatePhotoShareCaption: (id, caption) =>
     set((state) => {
@@ -174,6 +182,8 @@ export const useMapStore = create<MapState>((set) => ({
     }),
   selectedPhotoShare: null,
   setSelectedPhotoShare: (selectedPhotoShare) => set({ selectedPhotoShare }),
+  lightboxPhotoShare: null,
+  setLightboxPhotoShare: (lightboxPhotoShare) => set({ lightboxPhotoShare }),
   pendingPhotoDataUrl: null,
   isSelectingLocation: false,
 }))

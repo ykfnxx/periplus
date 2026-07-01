@@ -11,6 +11,9 @@ describe("mapStore UI state", () => {
       locationSelectionMode: "none",
       pendingPhotoDataUrl: null,
       isSelectingLocation: false,
+      photoShares: [],
+      selectedPhotoShare: null,
+      lightboxPhotoShare: null,
     })
   })
 
@@ -93,6 +96,31 @@ describe("mapStore UI state", () => {
       pointSelectionDraft: { lat: 31.23, lng: 121.47 },
       isSelectingLocation: false,
       locationSelectionMode: "none",
+    })
+  })
+
+  it("clears selected and lightbox photo state when a photo is removed", () => {
+    const photo = {
+      id: "photo-1",
+      lat: 31.23,
+      lng: 121.47,
+      imageDataUrl: "data:image/png;base64,abc",
+      caption: "日落",
+      createdAt: 1,
+    }
+
+    useMapStore.setState({
+      photoShares: [photo],
+      selectedPhotoShare: photo,
+      lightboxPhotoShare: photo,
+    })
+
+    useMapStore.getState().removePhotoShare("photo-1")
+
+    expect(useMapStore.getState()).toMatchObject({
+      photoShares: [],
+      selectedPhotoShare: null,
+      lightboxPhotoShare: null,
     })
   })
 })

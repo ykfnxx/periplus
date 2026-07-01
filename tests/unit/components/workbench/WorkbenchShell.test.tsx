@@ -12,7 +12,7 @@ vi.mock("@/components/workbench/AgentSync", () => ({
 }))
 
 describe("WorkbenchShell", () => {
-  it("shows preset prompts and keeps the composer as the only input surface", () => {
+  it("shows centered initial state with preset prompts before chat starts", () => {
     const setComposerInput = vi.fn()
     const addUserMessage = vi.fn()
     const sendAgentEvent = vi.fn()
@@ -28,17 +28,19 @@ describe("WorkbenchShell", () => {
           currentRoute: null,
           draftSaveState: "idle",
           setDraftSaveState: vi.fn(),
+          lightboxPhotoShare: null,
         })
     )
 
     render(<WorkbenchShell />)
+    expect(screen.getByText("开始你的旅程")).toBeInTheDocument()
     expect(screen.getByText("规划一条丝绸之路路线")).toBeInTheDocument()
-    expect(screen.getByLabelText("AI 输入")).toHaveValue("保留这段输入")
+    expect(screen.getByLabelText("AI 初始输入")).toHaveValue("保留这段输入")
 
-    fireEvent.click(screen.getByText("北京周边徒步推荐"))
-    expect(addUserMessage).toHaveBeenCalledWith("北京周边徒步推荐")
+    fireEvent.click(screen.getByText("推荐北京周边徒步"))
+    expect(addUserMessage).toHaveBeenCalledWith("推荐北京周边徒步")
     expect(sendAgentEvent).toHaveBeenCalledWith("agent.run.start", {
-      prompt: "北京周边徒步推荐",
+      prompt: "推荐北京周边徒步",
     })
   })
 })
