@@ -17,6 +17,9 @@ export interface ChatMessage {
   id: string
   role: ChatMessageRole
   content: string
+  runId?: string | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface PhotoShare {
@@ -40,6 +43,7 @@ interface MapState {
   chatMessages: ChatMessage[]
   addUserMessage: (content: string) => void
   appendAssistantMessage: (content: string) => void
+  setChatMessages: (chatMessages: ChatMessage[]) => void
   clearChatMessages: () => void
   sendAgentEvent: AgentSender | null
   setAgentSender: (sendAgentEvent: AgentSender | null) => void
@@ -105,6 +109,7 @@ export const useMapStore = create<MapState>((set) => ({
               createChatMessage("assistant", content),
             ].slice(-80),
     })),
+  setChatMessages: (chatMessages) => set({ chatMessages }),
   clearChatMessages: () => set({ chatMessages: [] }),
   sendAgentEvent: null,
   setAgentSender: (sendAgentEvent) => set({ sendAgentEvent }),

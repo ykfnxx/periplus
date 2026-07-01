@@ -5,6 +5,7 @@ import {
   bootstrapAgentSession,
   connectAgentSocket,
   sendAgentEvent,
+  type AgentConversationMessage,
   type AgentEvent,
   type DraftSnapshot,
 } from "@/lib/agent/client"
@@ -18,10 +19,17 @@ function asDelta(payload: unknown) {
   return payload as { text?: string; message?: string; stream?: string }
 }
 
+function asConversationMessages(
+  messages: AgentConversationMessage[] | undefined
+) {
+  return messages ?? []
+}
+
 export default function AgentSync() {
   const setCurrentRoute = useMapStore((state) => state.setCurrentRoute)
   const setDraftLocked = useMapStore((state) => state.setDraftLocked)
   const setAgentSender = useMapStore((state) => state.setAgentSender)
+  const setChatMessages = useMapStore((state) => state.setChatMessages)
   const appendAssistantMessage = useMapStore(
     (state) => state.appendAssistantMessage
   )
@@ -37,9 +45,10 @@ export default function AgentSync() {
     }
 
     bootstrapAgentSession()
-      .then(({ sessionId, draft }) => {
+      .then(({ sessionId, draft, messages }) => {
         if (disposed) return
         applySnapshot(draft)
+        setChatMessages(asConversationMessages(messages))
 
         socket = connectAgentSocket(sessionId)
         setAgentSender((type, payload) => {
@@ -106,6 +115,7 @@ export default function AgentSync() {
   }, [
     appendAssistantMessage,
     setAgentSender,
+    setChatMessages,
     setCurrentRoute,
     setDraftLocked,
     setDraftSaveState,

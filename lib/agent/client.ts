@@ -14,9 +14,19 @@ export interface AgentEvent {
   payload?: unknown;
 }
 
+export interface AgentConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  runId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface SessionResponse {
   sessionId: string;
   draft: DraftSnapshot;
+  messages: AgentConversationMessage[];
 }
 
 export const agentBackendUrl =
@@ -38,7 +48,11 @@ export function connectAgentSocket(sessionId: string) {
   return new WebSocket(url);
 }
 
-export function sendAgentEvent(socket: WebSocket, type: string, payload?: unknown) {
+export function sendAgentEvent(
+  socket: WebSocket,
+  type: string,
+  payload?: unknown
+) {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type, payload }));
   }

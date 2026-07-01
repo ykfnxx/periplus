@@ -11,6 +11,7 @@ export interface SessionDraft {
   route: Route | null;
   sourceRouteId: string | null;
   lockedByRunId: string | null;
+  conversationMessages: AgentConversationMessage[];
   updatedAt: string;
 }
 
@@ -35,7 +36,11 @@ export type DraftToolInput =
   | Record<string, never>
   | { route: RouteInput | Route | null }
   | { point: RoutePointCreateInput; position?: RoutePointPosition }
-  | { pointId: string; patch?: RoutePointPatchInput; position?: RoutePointPosition }
+  | {
+      pointId: string;
+      patch?: RoutePointPatchInput;
+      position?: RoutePointPosition;
+    }
   | { pointId: string }
   | { pointIds: string[] };
 
@@ -45,3 +50,14 @@ export interface AgentEvent {
 }
 
 export type AgentEventEmitter = (sessionId: string, event: AgentEvent) => void;
+
+export type AgentConversationRole = 'user' | 'assistant';
+
+export interface AgentConversationMessage {
+  id: string;
+  role: AgentConversationRole;
+  content: string;
+  runId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -39,7 +39,9 @@ describe('DraftStore', () => {
       '西湖',
       '灵隐寺',
     ]);
-    expect(snapshot.route!.points.map((point) => point.order)).toEqual([0, 1, 2]);
+    expect(snapshot.route!.points.map((point) => point.order)).toEqual([
+      0, 1, 2,
+    ]);
   });
 
   it('saves a new draft through route creation', async () => {
@@ -62,5 +64,31 @@ describe('DraftStore', () => {
     expect(routeServiceMocks.createRoute).toHaveBeenCalledWith(routeInput);
     expect(snapshot.sourceRouteId).toBe('route-saved');
     expect(snapshot.route!.id).toBe('route-saved');
+  });
+
+  it('stores conversation history for a session', () => {
+    const store = new DraftStore();
+
+    store.addUserConversationMessage('session-1', '规划新疆路线');
+    store.appendAssistantConversationDelta('session-1', 'run-1', '可以。');
+    store.appendAssistantConversationDelta(
+      'session-1',
+      'run-1',
+      '先去乌鲁木齐。'
+    );
+    store.addUserConversationMessage('session-1', '把喀纳斯提前');
+
+    const messages = store.getConversationMessages('session-1');
+
+    expect(messages).toMatchObject([
+      { role: 'user', content: '规划新疆路线', runId: null },
+      { role: 'assistant', content: '可以。先去乌鲁木齐。', runId: 'run-1' },
+      { role: 'user', content: '把喀纳斯提前', runId: null },
+    ]);
+
+    messages[0].content = '外部修改不应写回 store';
+    expect(store.getConversationMessages('session-1')[0].content).toBe(
+      '规划新疆路线'
+    );
   });
 });

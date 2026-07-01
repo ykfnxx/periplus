@@ -36,6 +36,28 @@ describe("mapStore UI state", () => {
     ])
   })
 
+  it("restores chat messages from the backend session", () => {
+    useMapStore.getState().setChatMessages([
+      {
+        id: "message-1",
+        role: "user",
+        content: "规划新疆路线",
+        runId: null,
+      },
+      {
+        id: "message-2",
+        role: "assistant",
+        content: "已规划。",
+        runId: "run-1",
+      },
+    ])
+
+    expect(useMapStore.getState().chatMessages).toMatchObject([
+      { id: "message-1", role: "user", content: "规划新疆路线" },
+      { id: "message-2", role: "assistant", content: "已规划。" },
+    ])
+  })
+
   it("starts point location selection without exposing a workbench tool", () => {
     useMapStore.getState().startPointLocationSelection()
     expect(useMapStore.getState()).toMatchObject({

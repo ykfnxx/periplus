@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  createRoute,
-  getRoute,
-  updateRoute,
-} from '@/lib/routes/service';
+import { createRoute, getRoute, updateRoute } from '@/lib/routes/service';
 import {
   validateRouteInput,
   validateRoutePointCreateInput,
@@ -18,7 +14,12 @@ import type {
   RoutePointPatchInput,
   RoutePointPosition,
 } from '@/types/route';
-import type { DraftSnapshot, DraftToolName, SessionDraft } from './types';
+import type {
+  AgentConversationMessage,
+  DraftSnapshot,
+  DraftToolName,
+  SessionDraft,
+} from './types';
 
 export class DraftInputError extends Error {
   constructor(message: string) {
@@ -79,15 +80,20 @@ function orderedIdsWithPosition(
   if (position.placement === 'end') return [...remainingIds, movingPointId];
 
   if (position.pointId === movingPointId) {
-    throw new DraftInputError('Invalid point position: point cannot be positioned relative to itself');
+    throw new DraftInputError(
+      'Invalid point position: point cannot be positioned relative to itself'
+    );
   }
 
   const anchorIndex = remainingIds.indexOf(position.pointId);
   if (anchorIndex === -1) {
-    throw new DraftInputError('Invalid point position: anchor point must belong to the draft');
+    throw new DraftInputError(
+      'Invalid point position: anchor point must belong to the draft'
+    );
   }
 
-  const insertIndex = position.placement === 'before' ? anchorIndex : anchorIndex + 1;
+  const insertIndex =
+    position.placement === 'before' ? anchorIndex : anchorIndex + 1;
   return [
     ...remainingIds.slice(0, insertIndex),
     movingPointId,
@@ -95,9 +101,14 @@ function orderedIdsWithPosition(
   ];
 }
 
-function normalizePointOrders(points: RoutePoint[], orderedPointIds?: string[]) {
+function normalizePointOrders(
+  points: RoutePoint[],
+  orderedPointIds?: string[]
+) {
   const pointById = new Map(points.map((point) => [point.id, point]));
-  const ids = orderedPointIds ?? [...points].sort((a, b) => a.order - b.order).map((point) => point.id);
+  const ids =
+    orderedPointIds ??
+    [...points].sort((a, b) => a.order - b.order).map((point) => point.id);
 
   return ids.map((pointId, order) => ({
     ...pointById.get(pointId)!,
@@ -132,7 +143,9 @@ function toDraftRoute(input: RouteInput | Route): Route {
     points: [...routeInput.points]
       .sort((a, b) => a.order - b.order)
       .map((point, order) => {
-        const originalPoint = input.points.find((candidate) => candidate.order === point.order);
+        const originalPoint = input.points.find(
+          (candidate) => candidate.order === point.order
+        );
         const originalId =
           originalPoint && typeof (originalPoint as RoutePoint).id === 'string'
             ? (originalPoint as RoutePoint).id
@@ -166,6 +179,43 @@ export class DraftStore {
       lockedByRunId: session.lockedByRunId,
       updatedAt: session.updatedAt,
     };
+  }
+
+  getConversationMessages(sessionId: string) {
+    return this.ensureSession(sessionId).conversationMessages.map(
+      (message) => ({ ...message })
+    );
+  }
+
+  addUserConversationMessage(sessionId: string, content: string) {
+    return this.addConversationMessage(sessionId, {
+      role: 'user',
+      content,
+      runId: null,
+    });
+  }
+
+  appendAssistantConversationDelta(
+    sessionId: string,
+    runId: string,
+    content: string
+  ) {
+    const session = this.ensureSession(sessionId);
+    const lastMessage = session.conversationMessages.at(-1);
+    const timestamp = nowIso();
+
+    if (lastMessage?.role === 'assistant' && lastMessage.runId === runId) {
+      lastMessage.content += content;
+      lastMessage.updatedAt = timestamp;
+      session.updatedAt = timestamp;
+      return { ...lastMessage };
+    }
+
+    return this.addConversationMessage(sessionId, {
+      role: 'assistant',
+      content,
+      runId,
+    });
   }
 
   isLocked(sessionId: string) {
@@ -233,29 +283,50 @@ export class DraftStore {
       notes: point.notes,
     };
     const orderedPointIds = orderedIdsWithPosition(
-      [...session.route.points.map((routePoint) => routePoint.id), createdPoint.id],
+      [
+        ...session.route.points.map((routePoint) => routePoint.id),
+        createdPoint.id,
+      ],
       createdPoint.id,
       position
     );
 
     session.route = {
       ...session.route,
-      points: normalizePointOrders([...session.route.points, createdPoint], orderedPointIds),
+      points: normalizePointOrders(
+        [...session.route.points, createdPoint],
+        orderedPointIds
+      ),
       updatedAt: nowIso(),
     };
     session.updatedAt = session.route.updatedAt;
     return this.getSnapshot(sessionId);
   }
 
-  updateDraftPoint(sessionId: string, pointId: string, input: UpdateDraftPointInput) {
+  updateDraftPoint(
+    sessionId: string,
+    pointId: string,
+    input: UpdateDraftPointInput
+  ) {
     const session = this.ensureSession(sessionId);
     if (!session.route) throw new DraftInputError('Draft route is empty');
 
-    const patch = input.patch === undefined ? undefined : validatedPointPatchInput(input.patch);
-    const position = input.position === undefined ? undefined : validatedPointPosition(input.position);
-    if (!patch && !position) throw new DraftInputError('Invalid point update: patch or position required');
+    const patch =
+      input.patch === undefined
+        ? undefined
+        : validatedPointPatchInput(input.patch);
+    const position =
+      input.position === undefined
+        ? undefined
+        : validatedPointPosition(input.position);
+    if (!patch && !position)
+      throw new DraftInputError(
+        'Invalid point update: patch or position required'
+      );
 
-    const existingPoint = session.route.points.find((point) => point.id === pointId);
+    const existingPoint = session.route.points.find(
+      (point) => point.id === pointId
+    );
     if (!existingPoint) throw new DraftInputError('Route point not found');
 
     const patchedPoints = session.route.points.map((point) =>
@@ -263,8 +334,12 @@ export class DraftStore {
         ? {
             ...point,
             ...patch,
-            stayHours: patch?.stayHours === null ? undefined : patch?.stayHours ?? point.stayHours,
-            notes: patch?.notes === null ? undefined : patch?.notes ?? point.notes,
+            stayHours:
+              patch?.stayHours === null
+                ? undefined
+                : (patch?.stayHours ?? point.stayHours),
+            notes:
+              patch?.notes === null ? undefined : (patch?.notes ?? point.notes),
           }
         : point
     );
@@ -290,7 +365,8 @@ export class DraftStore {
     if (!session.route) throw new DraftInputError('Draft route is empty');
 
     const points = session.route.points.filter((point) => point.id !== pointId);
-    if (points.length === session.route.points.length) throw new DraftInputError('Route point not found');
+    if (points.length === session.route.points.length)
+      throw new DraftInputError('Route point not found');
 
     session.route = {
       ...session.route,
@@ -305,13 +381,19 @@ export class DraftStore {
     const session = this.ensureSession(sessionId);
     if (!session.route) throw new DraftInputError('Draft route is empty');
 
-    const expectedPointIds = new Set(session.route.points.map((point) => point.id));
+    const expectedPointIds = new Set(
+      session.route.points.map((point) => point.id)
+    );
     if (pointIds.length !== expectedPointIds.size) {
-      throw new DraftInputError('Invalid point reorder: pointIds must include every draft point exactly once');
+      throw new DraftInputError(
+        'Invalid point reorder: pointIds must include every draft point exactly once'
+      );
     }
     for (const pointId of pointIds) {
       if (!expectedPointIds.has(pointId)) {
-        throw new DraftInputError('Invalid point reorder: pointIds must include every draft point exactly once');
+        throw new DraftInputError(
+          'Invalid point reorder: pointIds must include every draft point exactly once'
+        );
       }
     }
 
@@ -341,9 +423,17 @@ export class DraftStore {
     return this.getSnapshot(sessionId);
   }
 
-  async callTool(sessionId: string, tool: DraftToolName, input: Record<string, unknown>) {
+  async callTool(
+    sessionId: string,
+    tool: DraftToolName,
+    input: Record<string, unknown>
+  ) {
     if (tool === 'get_current_draft') return this.getSnapshot(sessionId);
-    if (tool === 'replace_draft') return this.replaceDraft(sessionId, input.route as RouteInput | Route | null);
+    if (tool === 'replace_draft')
+      return this.replaceDraft(
+        sessionId,
+        input.route as RouteInput | Route | null
+      );
     if (tool === 'add_draft_point') {
       return this.addDraftPoint(sessionId, {
         point: input.point as RoutePointCreateInput,
@@ -371,9 +461,30 @@ export class DraftStore {
       route: null,
       sourceRouteId: null,
       lockedByRunId: null,
+      conversationMessages: [],
       updatedAt: nowIso(),
     };
     this.sessions.set(sessionId, session);
     return session;
+  }
+
+  private addConversationMessage(
+    sessionId: string,
+    input: Pick<AgentConversationMessage, 'role' | 'content' | 'runId'>
+  ) {
+    const session = this.ensureSession(sessionId);
+    const timestamp = nowIso();
+    const message: AgentConversationMessage = {
+      id: `message-${randomUUID()}`,
+      role: input.role,
+      content: input.content,
+      runId: input.runId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    session.conversationMessages.push(message);
+    session.updatedAt = timestamp;
+    return { ...message };
   }
 }

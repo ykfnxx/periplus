@@ -7,7 +7,10 @@ import type { AgentEventEmitter, DraftToolName } from './types';
 type JsonBody = Record<string, unknown>;
 
 function applyCors(req: IncomingMessage, res: ServerResponse) {
-  const origin = req.headers.origin ?? process.env.PERIPLUS_FRONTEND_ORIGIN ?? 'http://localhost:3001';
+  const origin =
+    req.headers.origin ??
+    process.env.PERIPLUS_FRONTEND_ORIGIN ??
+    'http://localhost:3001';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Headers', 'content-type');
@@ -28,7 +31,12 @@ async function readJson(req: IncomingMessage): Promise<JsonBody> {
 
 function errorBody(error: unknown) {
   if (error instanceof ZodError) {
-    return { error: { code: 'invalid_input', message: error.issues.map((issue) => issue.message).join('; ') } };
+    return {
+      error: {
+        code: 'invalid_input',
+        message: error.issues.map((issue) => issue.message).join('; '),
+      },
+    };
   }
   if (error instanceof DraftInputError) {
     return { error: { code: 'invalid_input', message: error.message } };
@@ -36,7 +44,9 @@ function errorBody(error: unknown) {
   if (error instanceof Error) {
     return { error: { code: 'internal_error', message: error.message } };
   }
-  return { error: { code: 'internal_error', message: 'Unexpected backend error' } };
+  return {
+    error: { code: 'internal_error', message: 'Unexpected backend error' },
+  };
 }
 
 export async function handleInternalRequest(
@@ -60,6 +70,7 @@ export async function handleInternalRequest(
     sendJson(res, 200, {
       sessionId,
       draft: store.getSnapshot(sessionId),
+      messages: store.getConversationMessages(sessionId),
     });
     return;
   }
@@ -85,5 +96,7 @@ export async function handleInternalRequest(
     return;
   }
 
-  sendJson(res, 404, { error: { code: 'not_found', message: 'Endpoint not found' } });
+  sendJson(res, 404, {
+    error: { code: 'not_found', message: 'Endpoint not found' },
+  });
 }
