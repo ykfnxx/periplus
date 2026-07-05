@@ -3,6 +3,7 @@
 import { Send } from "lucide-react"
 import { type FormEvent, type KeyboardEvent } from "react"
 import { useMapStore } from "@/stores/mapStore"
+import AgentModeToggle from "./AgentModeToggle"
 import PresetPromptBubbles from "./PresetPromptBubbles"
 
 export default function InitialChatState() {
@@ -11,13 +12,14 @@ export default function InitialChatState() {
   const sendAgentEvent = useMapStore((state) => state.sendAgentEvent)
   const addUserMessage = useMapStore((state) => state.addUserMessage)
   const isDraftLocked = useMapStore((state) => state.isDraftLocked)
+  const agentMode = useMapStore((state) => state.agentMode)
 
   const sendPrompt = () => {
     const prompt = composerInput.trim()
     if (!prompt || !sendAgentEvent || isDraftLocked) return
 
     addUserMessage(prompt)
-    sendAgentEvent("agent.run.start", { prompt })
+    sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
     setComposerInput("")
   }
 
@@ -58,7 +60,8 @@ export default function InitialChatState() {
             disabled={isDraftLocked}
             className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent text-sm leading-5 text-[var(--periplus-ink)] outline-none placeholder:text-[var(--periplus-teak)] disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <AgentModeToggle />
             <button
               type="submit"
               aria-label="发送"

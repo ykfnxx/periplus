@@ -30,6 +30,9 @@ export default function AgentSync() {
   const setDraftLocked = useMapStore((state) => state.setDraftLocked)
   const setAgentSender = useMapStore((state) => state.setAgentSender)
   const setChatMessages = useMapStore((state) => state.setChatMessages)
+  const setPendingSuggestions = useMapStore(
+    (state) => state.setPendingSuggestions
+  )
   const appendAssistantMessage = useMapStore(
     (state) => state.appendAssistantMessage
   )
@@ -42,6 +45,7 @@ export default function AgentSync() {
     const applySnapshot = (snapshot: DraftSnapshot) => {
       setCurrentRoute(snapshot.route)
       setDraftLocked(snapshot.isLocked)
+      setPendingSuggestions(snapshot.pendingSuggestions ?? [])
     }
 
     bootstrapAgentSession()
@@ -119,6 +123,7 @@ export default function AgentSync() {
     setCurrentRoute,
     setDraftLocked,
     setDraftSaveState,
+    setPendingSuggestions,
   ])
 
   return null

@@ -1,12 +1,24 @@
 import type { Route } from "@/types/route"
 import { periplusPublicConfig } from "@/config/periplus"
 
+export interface ToolCallSuggestionSummary {
+  id: string
+  title: string
+  summary: string
+  toolCallCount: number
+  draftRevision: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DraftSnapshot {
   sessionId: string
   route: Route | null
   sourceRouteId: string | null
   isLocked: boolean
   lockedByRunId: string | null
+  revision: number
+  pendingSuggestions: ToolCallSuggestionSummary[]
   updatedAt: string
 }
 

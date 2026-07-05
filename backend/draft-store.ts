@@ -38,6 +38,8 @@ import type {
   SubPlanRemoveNodeRangeInput,
   SubPlanUpdateEdgeInput,
   SubPlanUpdateNodeInput,
+  ToolCallSuggestionCall,
+  ToolCallSuggestionCreateInput,
   UpdateEdgeInput,
   UpdateNodeInput,
 } from "./types"
@@ -75,6 +77,10 @@ function pendingSuggestionSummaries(session: SessionDraft) {
     createdAt: suggestion.createdAt,
     updatedAt: suggestion.updatedAt,
   }))
+}
+
+function cloneSuggestionToolCalls(toolCalls: ToolCallSuggestionCall[]) {
+  return clone(toolCalls)
 }
 
 function isPersistedRoute(input: RouteInput | Route): input is Route {
@@ -404,6 +410,81 @@ export class DraftStore {
         : null
     this.touchSession(session)
     return this.getSnapshot(sessionId)
+  }
+
+  createSuggestion(
+    sessionId: string,
+    input: ToolCallSuggestionCreateInput
+  ) {
+    const session = this.ensureSession(sessionId)
+    if (!input.toolCalls.length) {
+      throw new DraftInputError("Suggestion must contain at least one tool call")
+    }
+
+    const timestamp = nowIso()
+    session.pendingSuggestions = [
+      {
+        id: `suggestion-${randomUUID()}`,
+        title: input.title.trim() || "路线修改建议",
+        summary: input.summary.trim() || "Agent 生成了一组待确认的路线修改",
+        toolCalls: cloneSuggestionToolCalls(input.toolCalls),
+        draftRevision: session.revision,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      ...session.pendingSuggestions,
+    ].slice(0, 8)
+    session.updatedAt = timestamp
+    return this.getSnapshot(sessionId)
+  }
+
+  rejectSuggestion(sessionId: string, suggestionId: string) {
+    const session = this.ensureSession(sessionId)
+    session.pendingSuggestions = session.pendingSuggestions.filter(
+      (suggestion) => suggestion.id !== suggestionId
+    )
+    session.updatedAt = nowIso()
+    return this.getSnapshot(sessionId)
+  }
+
+  async acceptSuggestion(sessionId: string, suggestionId: string) {
+    const session = this.ensureSession(sessionId)
+    const suggestion = session.pendingSuggestions.find(
+      (candidate) => candidate.id === suggestionId
+    )
+    if (!suggestion) throw new DraftInputError("Suggestion not found")
+    if (suggestion.draftRevision !== session.revision) {
+      throw new DraftInputError("Suggestion is stale; regenerate it first")
+    }
+
+    const previewSessionId = `suggestion-preview-${randomUUID()}`
+    this.sessions.set(previewSessionId, {
+      sessionId: previewSessionId,
+      userContext: session.userContext,
+      route: session.route ? cloneRoute(session.route) : null,
+      sourceRouteId: session.sourceRouteId,
+      lockedByRunId: null,
+      conversationMessages: clone(session.conversationMessages),
+      pendingSuggestions: [],
+      revision: session.revision,
+      updatedAt: session.updatedAt,
+    })
+
+    try {
+      for (const toolCall of suggestion.toolCalls) {
+        await this.callTool(previewSessionId, toolCall.tool, toolCall.input)
+      }
+      const previewSession = this.ensureSession(previewSessionId)
+      session.route = previewSession.route ? cloneRoute(previewSession.route) : null
+      session.sourceRouteId = previewSession.sourceRouteId
+      session.pendingSuggestions = session.pendingSuggestions.filter(
+        (candidate) => candidate.id !== suggestionId
+      )
+      this.touchSession(session)
+      return this.getSnapshot(sessionId)
+    } finally {
+      this.sessions.delete(previewSessionId)
+    }
   }
 
   routeAddStartNode(sessionId: string, input: RouteAddStartNodeInput) {

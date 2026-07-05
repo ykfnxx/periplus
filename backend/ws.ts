@@ -3,7 +3,7 @@ import { WebSocket, WebSocketServer } from "ws"
 import { AgentRunner } from "./agent-runner"
 import { DraftInputError, DraftStore } from "./draft-store"
 import { getSessionId } from "./session"
-import type { AgentEvent, AgentEventEmitter } from "./types"
+import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
 
 interface WireMessage {
   type: string
@@ -113,11 +113,36 @@ export function createAgentWebSocketServer(
           return
         }
         if (message.type === "agent.run.start") {
-          await agentRunner.start(sessionId, String(payload.prompt), broadcast)
+          const mode: AgentMode =
+            payload.mode === "suggest" ? "suggest" : "auto"
+          await agentRunner.start(
+            sessionId,
+            String(payload.prompt),
+            mode,
+            broadcast
+          )
           return
         }
         if (message.type === "agent.run.cancel") {
           agentRunner.cancel(sessionId)
+          return
+        }
+        if (message.type === "agent.diff.accept") {
+          const snapshot = await store.acceptSuggestion(
+            sessionId,
+            String(payload.suggestionId)
+          )
+          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
+          broadcast(sessionId, { type: "agent.diff.accepted", payload: snapshot })
+          return
+        }
+        if (message.type === "agent.diff.reject") {
+          const snapshot = store.rejectSuggestion(
+            sessionId,
+            String(payload.suggestionId)
+          )
+          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
+          broadcast(sessionId, { type: "agent.diff.rejected", payload: snapshot })
         }
       } catch (error) {
         send(socket, errorEvent(error))

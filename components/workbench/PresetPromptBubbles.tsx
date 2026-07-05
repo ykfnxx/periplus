@@ -17,6 +17,7 @@ export default function PresetPromptBubbles() {
   const sendAgentEvent = useMapStore((state) => state.sendAgentEvent)
   const addUserMessage = useMapStore((state) => state.addUserMessage)
   const setComposerInput = useMapStore((state) => state.setComposerInput)
+  const agentMode = useMapStore((state) => state.agentMode)
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
@@ -29,7 +30,7 @@ export default function PresetPromptBubbles() {
   const sendPrompt = (prompt: string) => {
     if (!sendAgentEvent || isDraftLocked) return
     addUserMessage(prompt)
-    sendAgentEvent("agent.run.start", { prompt })
+    sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
     setComposerInput("")
   }
 

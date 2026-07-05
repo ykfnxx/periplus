@@ -6,6 +6,7 @@ export type LocationSelectionMode = "none" | "photo" | "point"
 export type DraftSaveState = "idle" | "saving" | "success" | "error"
 export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
 export type ChatMessageRole = "user" | "assistant"
+export type AgentMode = "auto" | "suggest"
 export type AgentSender = (type: string, payload?: unknown) => void
 export type AnchorType = "route" | "photo"
 
@@ -34,6 +35,16 @@ export interface ChatMessage {
   runId?: string | null
   createdAt?: string
   updatedAt?: string
+}
+
+export interface PendingSuggestion {
+  id: string
+  title: string
+  summary: string
+  toolCallCount: number
+  draftRevision: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface PendingPhotoUpload {
@@ -68,6 +79,10 @@ interface MapState {
   setDraftLocked: (isDraftLocked: boolean) => void
   draftSaveState: DraftSaveState
   setDraftSaveState: (draftSaveState: DraftSaveState) => void
+  agentMode: AgentMode
+  setAgentMode: (agentMode: AgentMode) => void
+  pendingSuggestions: PendingSuggestion[]
+  setPendingSuggestions: (pendingSuggestions: PendingSuggestion[]) => void
   chatMessages: ChatMessage[]
   addUserMessage: (content: string) => void
   appendAssistantMessage: (content: string) => void
@@ -132,6 +147,10 @@ export const useMapStore = create<MapState>((set) => ({
   setDraftLocked: (isDraftLocked) => set({ isDraftLocked }),
   draftSaveState: "idle",
   setDraftSaveState: (draftSaveState) => set({ draftSaveState }),
+  agentMode: "auto",
+  setAgentMode: (agentMode) => set({ agentMode }),
+  pendingSuggestions: [],
+  setPendingSuggestions: (pendingSuggestions) => set({ pendingSuggestions }),
   chatMessages: [],
   addUserMessage: (content) =>
     set((state) => ({

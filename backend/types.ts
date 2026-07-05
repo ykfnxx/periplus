@@ -75,22 +75,27 @@ export interface SubPlanUpdateEdgeInput extends UpdateEdgeInput {
   routeNodeId: string
 }
 
-export type DraftToolName =
-  | "get_current_draft"
-  | "replace_draft"
-  | "route.add_start_node"
-  | "route.append_node"
-  | "route.insert_node"
-  | "route.remove_node_range"
-  | "route.update_node"
-  | "route.update_edge"
-  | "subplan.create"
-  | "subplan.add_start_node"
-  | "subplan.append_node"
-  | "subplan.insert_node"
-  | "subplan.remove_node_range"
-  | "subplan.update_node"
-  | "subplan.update_edge"
+export type AgentMode = "auto" | "suggest"
+
+export const DRAFT_TOOL_NAMES = [
+  "get_current_draft",
+  "replace_draft",
+  "route.add_start_node",
+  "route.append_node",
+  "route.insert_node",
+  "route.remove_node_range",
+  "route.update_node",
+  "route.update_edge",
+  "subplan.create",
+  "subplan.add_start_node",
+  "subplan.append_node",
+  "subplan.insert_node",
+  "subplan.remove_node_range",
+  "subplan.update_node",
+  "subplan.update_edge",
+] as const
+
+export type DraftToolName = (typeof DRAFT_TOOL_NAMES)[number]
 
 export interface ToolCallSuggestionCall {
   tool: DraftToolName
@@ -115,6 +120,12 @@ export interface ToolCallSuggestionSummary {
   draftRevision: number
   createdAt: string
   updatedAt: string
+}
+
+export interface ToolCallSuggestionCreateInput {
+  title: string
+  summary: string
+  toolCalls: ToolCallSuggestionCall[]
 }
 
 export interface SessionDraft {
