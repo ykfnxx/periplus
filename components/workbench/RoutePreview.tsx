@@ -1,19 +1,10 @@
 "use client"
 
+import { Car, Footprints, Plane } from "lucide-react"
 import { getActivePathView } from "@/lib/routes/active-path"
 import { sortPathEdgesByOrder, sortPathNodes } from "@/lib/routes/path-graph"
 import { useMapStore } from "@/stores/mapStore"
-import type { PathEdge, PathNode } from "@/types/route"
-
-const categoryLabels: Record<string, string> = {
-  CITY: "城市",
-  PLACE: "地点",
-  SIGHT: "景点",
-  RESTAURANT: "餐饮",
-  HOTEL: "住宿",
-  ACTIVITY: "活动",
-  TRANSIT: "中转",
-}
+import type { PathEdge, PathNode, TransportMode } from "@/types/route"
 
 const transportLabels: Record<string, string> = {
   FLIGHT: "飞机",
@@ -40,65 +31,50 @@ function formatNumber(value?: number, suffix = "") {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}${suffix}`
 }
 
-function statusLabel(status: PathEdge["status"]) {
-  return status === "PLANNED" ? "已规划" : "待补全"
+function TransportIcon({ mode }: { mode?: TransportMode }) {
+  const className = "h-2 w-2 text-white"
+  if (mode === "FLIGHT") return <Plane className={className} />
+  if (mode === "WALK") return <Footprints className={className} />
+  return <Car className={className} />
 }
 
-function NodeCard({
+function NodeItem({
   node,
-  index,
-  edges,
-  subPlanCount,
   onSelect,
 }: {
   node: PathNode
-  index: number
-  edges: PathEdge[]
-  subPlanCount?: number
   onSelect: () => void
 }) {
   const duration = formatDuration(node.durationMinutes)
-  const relatedStatuses = edges
-    .filter((edge) => edge.fromNodeId === node.id || edge.toNodeId === node.id)
-    .map((edge) => statusLabel(edge.status))
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="w-full rounded-lg border border-[rgb(44_36_22_/_12%)] bg-[var(--periplus-white)] p-3 text-left shadow-[0_8px_18px_rgb(44_36_22_/_5%)] transition hover:border-[var(--periplus-russet)]"
+      className="relative mb-5 w-full text-left"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold text-[var(--periplus-ink)]">
-            {index + 1}. {node.name}
-          </h3>
-          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-bold text-[var(--periplus-teak)]">
-            <span>{categoryLabels[node.category] ?? node.category}</span>
-            {duration && <span>{duration}</span>}
-            {subPlanCount !== undefined && (
-              <span>
-                {subPlanCount > 0 ? `次级规划 ${subPlanCount} 节点` : "无次级规划"}
-              </span>
-            )}
-          </div>
-        </div>
-        {relatedStatuses.length > 0 && (
-          <span className="shrink-0 rounded-full bg-[rgb(44_36_22_/_7%)] px-2 py-1 text-[11px] font-bold text-[var(--periplus-walnut)]">
-            {relatedStatuses.includes("待补全") ? "待补全" : "已规划"}
-          </span>
+      {/* Timeline dot */}
+      <div className="absolute -left-[18px] top-1 h-4 w-4 rounded-full border-[3px] border-white bg-[var(--periplus-russet)] shadow-[0_1px_4px_rgb(0_0_0_/_20%)]" />
+
+      {/* Content */}
+      <div>
+        {duration && (
+          <p className="text-[11px] text-[var(--periplus-teak)]">{duration}</p>
+        )}
+        <h3 className="text-sm font-bold text-[var(--periplus-ink)]">
+          {node.name}
+        </h3>
+        {node.notes && (
+          <p className="mt-0.5 text-xs text-[var(--periplus-walnut)]">
+            {node.notes}
+          </p>
         )}
       </div>
-      {node.notes && (
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--periplus-walnut)]">
-          {node.notes}
-        </p>
-      )}
     </button>
   )
 }
 
-function EdgeSummary({
+function EdgeItem({
   edge,
   onSelect,
 }: {
@@ -106,34 +82,33 @@ function EdgeSummary({
   onSelect: () => void
 }) {
   const details = [
-    edge.transportMode ? transportLabels[edge.transportMode] : null,
-    formatDuration(edge.durationMinutes),
     formatNumber(edge.distanceKm, " 公里"),
-    formatNumber(edge.costEstimate, " 元"),
+    formatDuration(edge.durationMinutes),
   ].filter(Boolean)
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="ml-4 flex w-[calc(100%-1rem)] items-center gap-2 py-3 text-left text-xs font-bold text-[var(--periplus-teak)] transition hover:text-[var(--periplus-ink)]"
+      className="relative mb-5 w-full text-left"
     >
-      <span
-        className={`h-px flex-1 ${
-          edge.status === "INCOMPLETE"
-            ? "border-t border-dashed border-[var(--periplus-coral)]"
-            : "bg-[rgb(44_36_22_/_20%)]"
-        }`}
-      />
-      <span>{details.length ? details.join(" · ") : statusLabel(edge.status)}</span>
-      <span>{statusLabel(edge.status)}</span>
-      <span
-        className={`h-px flex-1 ${
-          edge.status === "INCOMPLETE"
-            ? "border-t border-dashed border-[var(--periplus-coral)]"
-            : "bg-[rgb(44_36_22_/_20%)]"
-        }`}
-      />
+      {/* Timeline dot with icon */}
+      <div className="absolute -left-[16px] top-1 flex h-3 w-3 items-center justify-center rounded-full border-2 border-white bg-[var(--periplus-bluegray)]">
+        <TransportIcon mode={edge.transportMode} />
+      </div>
+
+      {/* Content */}
+      <div>
+        {details.length > 0 && (
+          <p className="text-[11px] text-[var(--periplus-teak)]">
+            {details.join(" · ")}
+          </p>
+        )}
+        <p className="text-[13px] text-[var(--periplus-bluegray)]">
+          {transportLabels[edge.transportMode ?? ""] ??
+            (edge.transportMode || "驾车")}
+        </p>
+      </div>
     </button>
   )
 }
@@ -204,28 +179,17 @@ export default function RoutePreview() {
         </div>
       )}
 
-      <div>
-        {nodes.map((node, index) => {
+      <div className="relative pl-7">
+        {/* Vertical line */}
+        <div className="absolute left-[10px] top-0 bottom-0 w-0.5 bg-[var(--periplus-bluegray)]" />
+
+        {nodes.map((node) => {
           const edge = edgeByFromNodeId.get(node.id)
-          const subPlanCount =
-            view.level === "overview"
-              ? (currentRoute.subPlans.find(
-                  (subPlan) => subPlan.routeNodeId === node.id
-                )?.nodes.length ?? 0)
-              : undefined
 
           return (
             <div key={node.id}>
-              <NodeCard
-                node={node}
-                index={index}
-                edges={edges}
-                subPlanCount={subPlanCount}
-                onSelect={() => selectNode(node)}
-              />
-              {edge && (
-                <EdgeSummary edge={edge} onSelect={() => selectEdge(edge)} />
-              )}
+              <NodeItem node={node} onSelect={() => selectNode(node)} />
+              {edge && <EdgeItem edge={edge} onSelect={() => selectEdge(edge)} />}
             </div>
           )
         })}
