@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { ArrowLeft } from "lucide-react"
 import { getActivePathView } from "@/lib/routes/active-path"
 import { useMapStore } from "@/stores/mapStore"
@@ -12,12 +12,33 @@ export default function MapRouteLevelControls() {
   const activeRouteNodeId = useMapStore((state) => state.activeRouteNodeId)
   const returnToOverview = useMapStore((state) => state.returnToOverview)
   const view = getActivePathView(currentRoute, viewLevel, activeRouteNodeId)
+  const autoReturnEnabledRef = useRef(true)
+
+  useEffect(() => {
+    if (viewLevel !== "city") {
+      autoReturnEnabledRef.current = true
+      return
+    }
+
+    autoReturnEnabledRef.current = false
+    const timer = window.setTimeout(() => {
+      autoReturnEnabledRef.current = true
+    }, 800)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [viewLevel, activeRouteNodeId])
 
   useEffect(() => {
     if (!map) return
 
     const handleZoomChange = () => {
-      if (useMapStore.getState().viewLevel === "city" && map.getZoom() < 12) {
+      if (
+        autoReturnEnabledRef.current &&
+        useMapStore.getState().viewLevel === "city" &&
+        map.getZoom() < 12
+      ) {
         returnToOverview()
       }
     }

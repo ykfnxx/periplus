@@ -19,6 +19,7 @@ export default function RoutePolyline() {
     const view = getActivePathView(currentRoute, viewLevel, activeRouteNodeId)
     const nodeById = new Map(view.nodes.map((node) => [node.id, node]))
     const polylines: AMap.Polyline[] = []
+    let ensureCityZoomTimer: ReturnType<typeof setTimeout> | null = null
 
     for (const edge of view.edges) {
       const fromNode = nodeById.get(edge.fromNodeId)
@@ -55,7 +56,22 @@ export default function RoutePolyline() {
 
     if (polylines.length) {
       map.add(polylines)
-      map.setFitView(polylines, false, [80, 80, 80, 460], 12)
+      map.setFitView(
+        polylines,
+        false,
+        [80, 80, 80, 460],
+        view.level === "city" ? 15 : 12
+      )
+      if (view.level === "city") {
+        ensureCityZoomTimer = setTimeout(() => {
+          if (
+            useMapStore.getState().viewLevel === "city" &&
+            map.getZoom() < 12
+          ) {
+            map.setZoom(12)
+          }
+        }, 250)
+      }
     } else if (view.nodes.length === 1) {
       const node = view.nodes[0]
       map.setZoomAndCenter(
@@ -65,6 +81,7 @@ export default function RoutePolyline() {
     }
 
     return () => {
+      if (ensureCityZoomTimer) clearTimeout(ensureCityZoomTimer)
       if (polylines.length) map.remove(polylines)
     }
   }, [

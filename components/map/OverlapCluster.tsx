@@ -147,6 +147,7 @@ export default function OverlapCluster() {
     (s) => s.setSelectedLocationPoint
   )
   const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare)
+  const enterCityView = useMapStore((s) => s.enterCityView)
 
   const [clusters, setClusters] = useState<ClusterGroup[]>([])
   const clusterMarkersRef = useRef<AMap.Marker[]>([])
@@ -392,6 +393,10 @@ export default function OverlapCluster() {
             (p) => `route-${p.id}` === anchor.id
           )
           if (point) {
+            if (view.level === "overview") {
+              enterCityView(point.id)
+              return
+            }
             if (useMapStore.getState().selectedLocationPoint?.id === point.id) {
               setSelectedLocationPoint(null)
               return
@@ -437,6 +442,7 @@ export default function OverlapCluster() {
     viewLevel,
     activeRouteNodeId,
     collapseCluster,
+    enterCityView,
     setSelectedLocationPoint,
     setSelectedPhotoShare,
     updateRouteNodeMeta,
