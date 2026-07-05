@@ -72,6 +72,16 @@ export interface MapAnchor {
   lng: number
 }
 
+export interface UploadPhoto {
+  id: string
+  file: File
+  previewUrl: string
+  lat?: number
+  lng?: number
+  caption?: string
+  hasGPS: boolean
+}
+
 interface MapState {
   map: AMap.Map | null
   setMap: (map: AMap.Map | null) => void
@@ -139,6 +149,15 @@ interface MapState {
     anchors: ScatteredAnchor[]
   ) => void
   collapseCluster: () => void
+  uploadModalOpen: boolean
+  setUploadModalOpen: (open: boolean) => void
+  uploadStep: 1 | 2 | 3
+  setUploadStep: (step: 1 | 2 | 3) => void
+  uploadPhotos: UploadPhoto[]
+  setUploadPhotos: (photos: UploadPhoto[]) => void
+  addUploadPhoto: (photo: UploadPhoto) => void
+  updateUploadPhoto: (id: string, updates: Partial<UploadPhoto>) => void
+  clearUploadState: () => void
 }
 
 function createChatMessage(
@@ -369,5 +388,27 @@ export const useMapStore = create<MapState>((set) => ({
       selectedLocationAnchor: null,
       selectedPhotoShare: null,
       selectedPhotoAnchor: null,
+    }),
+  uploadModalOpen: false,
+  setUploadModalOpen: (uploadModalOpen) => set({ uploadModalOpen }),
+  uploadStep: 1,
+  setUploadStep: (uploadStep) => set({ uploadStep }),
+  uploadPhotos: [],
+  setUploadPhotos: (uploadPhotos) => set({ uploadPhotos }),
+  addUploadPhoto: (photo) =>
+    set((state) => ({
+      uploadPhotos: [...state.uploadPhotos, photo],
+    })),
+  updateUploadPhoto: (id, updates) =>
+    set((state) => ({
+      uploadPhotos: state.uploadPhotos.map((p) =>
+        p.id === id ? { ...p, ...updates } : p
+      ),
+    })),
+  clearUploadState: () =>
+    set({
+      uploadModalOpen: false,
+      uploadStep: 1,
+      uploadPhotos: [],
     }),
 }))
