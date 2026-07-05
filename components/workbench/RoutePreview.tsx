@@ -1,10 +1,8 @@
-"use client"
-
 import { Car, Footprints, Plane } from "lucide-react"
+import { haversineKm, matchPhotosToNode } from "@/lib/geo"
 import { getActivePathView } from "@/lib/routes/active-path"
 import { sortPathEdgesByOrder, sortPathNodes } from "@/lib/routes/path-graph"
 import { useMapStore } from "@/stores/mapStore"
-import type { PhotoShare } from "@/stores/mapStore"
 import type { PathEdge, PathNode, TransportMode } from "@/types/route"
 
 const transportLabels: Record<string, string> = {
@@ -32,27 +30,6 @@ function formatNumber(value?: number, suffix = "") {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}${suffix}`
 }
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLng = ((lng2 - lng1) * Math.PI) / 180
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2)
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-function matchPhotosToNode(node: PathNode, photos: PhotoShare[]): PhotoShare[] {
-  const PROXIMITY_KM = 5
-  return photos.filter((photo) => {
-    const distance = haversineKm(node.lat, node.lng, photo.lat, photo.lng)
-    return distance <= PROXIMITY_KM
-  })
-}
-
 function TransportIcon({ mode }: { mode?: TransportMode }) {
   const className = "h-2 w-2 text-white"
   if (mode === "FLIGHT") return <Plane className={className} />
@@ -66,7 +43,7 @@ function NodeItem({
   onSelect,
 }: {
   node: PathNode
-  photos: PhotoShare[]
+  photos: Array<{ id: string; url: string }>
   onSelect: () => void
 }) {
   const duration = formatDuration(node.durationMinutes)
@@ -74,6 +51,7 @@ function NodeItem({
   return (
     <button
       type="button"
+      aria-label={`选择节点 ${node.name}`}
       onClick={onSelect}
       className="relative mb-5 w-full text-left"
     >
@@ -101,7 +79,7 @@ function NodeItem({
                 className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg"
               >
                 <img
-                  src={photo.imageDataUrl}
+                  src={photo.url}
                   alt=""
                   className="h-full w-full object-cover"
                 />
@@ -129,6 +107,7 @@ function EdgeItem({
   return (
     <button
       type="button"
+      aria-label={`路线段 ${edge.transportMode}`}
       onClick={onSelect}
       className="relative mb-5 w-full text-left"
     >
@@ -226,7 +205,7 @@ export default function RoutePreview() {
 
         {nodes.map((node) => {
           const edge = edgeByFromNodeId.get(node.id)
-          const nodePhotos = matchPhotosToNode(node, photoShares)
+          const nodePhotos = matchPhotosToNode(node.lat, node.lng, photoShares)
 
           return (
             <div key={node.id}>
@@ -235,7 +214,13 @@ export default function RoutePreview() {
                 photos={nodePhotos}
                 onSelect={() => selectNode(node)}
               />
-              {edge && <EdgeItem edge={edge} onSelect={() => selectEdge(edge)} />}
+              {edge && (
+                <EdgeItem
+                  key={edge.id}
+                  edge={edge}
+                  onSelect={() => selectEdge(edge)}
+                />
+              )}
             </div>
           )
         })}
