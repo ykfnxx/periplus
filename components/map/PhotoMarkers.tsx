@@ -81,7 +81,6 @@ export default function PhotoMarkers() {
     viewLevel,
     activeRouteNodeId,
     photoShares,
-    lightboxPhotoShare?.id,
     setSelectedLocationPoint,
     setLightboxPhotoShare,
   ])

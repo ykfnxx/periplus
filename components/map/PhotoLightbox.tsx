@@ -1,7 +1,7 @@
 "use client"
 
 import { Trash2 } from "lucide-react"
-import { type MouseEvent, useCallback, useEffect } from "react"
+import { type MouseEvent, useCallback, useEffect, useState } from "react"
 import { deletePhoto } from "@/lib/photos/client"
 import { useMapStore } from "@/stores/mapStore"
 
@@ -17,6 +17,8 @@ export default function PhotoLightbox() {
   )
   const removePhotoShare = useMapStore((state) => state.removePhotoShare)
 
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   const closeLightbox = useCallback(() => {
     setLightboxPhotoShare(null)
   }, [setLightboxPhotoShare])
@@ -25,13 +27,13 @@ export default function PhotoLightbox() {
     async (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       if (!lightboxPhotoShare?.canDelete) return
+      setDeleteError(null)
       try {
         await deletePhoto(lightboxPhotoShare.id)
         removePhotoShare(lightboxPhotoShare.id)
-      } catch (error) {
-        console.error("Failed to delete photo:", error)
-      } finally {
         setLightboxPhotoShare(null)
+      } catch (error) {
+        setDeleteError("删除失败，请重试")
       }
     },
     [lightboxPhotoShare, removePhotoShare, setLightboxPhotoShare]
@@ -106,6 +108,11 @@ export default function PhotoLightbox() {
           <div className="mt-4 border-t border-[rgb(44_36_22_/_8%)] pt-4 text-xs text-[var(--periplus-teak)]">
             上传于 {formatUploadDate(lightboxPhotoShare.createdAt)}
           </div>
+          {deleteError && (
+            <div className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">
+              {deleteError}
+            </div>
+          )}
           {lightboxPhotoShare.canDelete && (
             <button
               type="button"
