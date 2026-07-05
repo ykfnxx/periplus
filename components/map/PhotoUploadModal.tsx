@@ -162,12 +162,12 @@ export default function PhotoUploadModal() {
     (photoId: string) => {
       if (!map) return
       if (mapClickHandlerRef.current) {
-        map.removeEventListener("click", mapClickHandlerRef.current)
+        map.off("click", mapClickHandlerRef.current)
       }
       const clickHandler = (e: AMap.MapsEvent<'click', AMap.Map>) => {
         const lnglat = e.lnglat
         updateUploadPhoto(photoId, { lat: lnglat.getLat(), lng: lnglat.getLng() })
-        map.removeEventListener("click", clickHandler)
+        map.off("click", clickHandler)
         mapClickHandlerRef.current = null
       }
       mapClickHandlerRef.current = clickHandler
@@ -179,7 +179,7 @@ export default function PhotoUploadModal() {
   useEffect(() => {
     return () => {
       if (mapClickHandlerRef.current && map) {
-        map.removeEventListener("click", mapClickHandlerRef.current)
+        map.off("click", mapClickHandlerRef.current)
         mapClickHandlerRef.current = null
       }
     }

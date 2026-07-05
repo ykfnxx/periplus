@@ -154,7 +154,7 @@ interface MapState {
   uploadStep: 1 | 2 | 3
   setUploadStep: (step: 1 | 2 | 3) => void
   uploadPhotos: UploadPhoto[]
-  setUploadPhotos: (photos: UploadPhoto[]) => void
+  setUploadPhotos: (photos: UploadPhoto[] | ((prev: UploadPhoto[]) => UploadPhoto[])) => void
   addUploadPhoto: (photo: UploadPhoto) => void
   updateUploadPhoto: (id: string, updates: Partial<UploadPhoto>) => void
   clearUploadState: () => void
@@ -394,7 +394,13 @@ export const useMapStore = create<MapState>((set) => ({
   uploadStep: 1,
   setUploadStep: (uploadStep) => set({ uploadStep }),
   uploadPhotos: [],
-  setUploadPhotos: (uploadPhotos) => set({ uploadPhotos }),
+  setUploadPhotos: (uploadPhotos) =>
+    set((state) => ({
+      uploadPhotos:
+        typeof uploadPhotos === 'function'
+          ? uploadPhotos(state.uploadPhotos)
+          : uploadPhotos,
+    })),
   addUploadPhoto: (photo) =>
     set((state) => ({
       uploadPhotos: [...state.uploadPhotos, photo],

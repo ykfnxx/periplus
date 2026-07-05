@@ -17,9 +17,9 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
 export function matchPhotosToNode(
   nodeLat: number,
   nodeLng: number,
-  photos: Array<{ lat: number; lng: number; id: string; url: string }>
+  photos: Array<{ lat: number; lng: number; id: string; url?: string; imageDataUrl?: string }>
 ): Array<{ id: string; url: string }> {
   return photos
     .filter((photo) => haversineKm(nodeLat, nodeLng, photo.lat, photo.lng) <= PROXIMITY_KM)
-    .map((photo) => ({ id: photo.id, url: photo.url }))
+    .map((photo) => ({ id: photo.id, url: photo.url || photo.imageDataUrl || '' }))
 }
