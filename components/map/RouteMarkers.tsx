@@ -8,7 +8,7 @@ import {
   createAnchorItems,
 } from "@/lib/map/anchor-clusters"
 import { useMapStore } from "@/stores/mapStore"
-import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
+import { periplusColors } from "@/lib/ui/map-theme"
 
 export default function RouteMarkers() {
   const map = useMapStore((s) => s.map)
@@ -52,14 +52,9 @@ export default function RouteMarkers() {
       if (clusteredIds.has(point.id)) return
 
       const content = document.createElement("div")
-      const markerColor = routeMarkerColors[index % routeMarkerColors.length]
-      content.className = `periplus-map-marker ${
-        markerColor === periplusColors.mustard ||
-        markerColor === periplusColors.bluegray
-          ? "periplus-map-marker--mustard"
-          : ""
-      }`
-      content.style.background = markerColor
+      content.className = "periplus-map-marker periplus-map-marker--bluegray"
+      content.style.background = periplusColors.bluegray
+      content.style.color = "var(--periplus-white)"
       content.textContent = `${index + 1}`
 
       const marker = new AMap.Marker({
