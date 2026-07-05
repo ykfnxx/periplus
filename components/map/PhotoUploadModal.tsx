@@ -161,12 +161,15 @@ export default function PhotoUploadModal() {
   const handleMapClickForPhoto = useCallback(
     (photoId: string) => {
       if (!map) return
+      // Remove any existing handler first
       if (mapClickHandlerRef.current) {
         map.off("click", mapClickHandlerRef.current)
+        mapClickHandlerRef.current = null
       }
       const clickHandler = (e: AMap.MapsEvent<'click', AMap.Map>) => {
         const lnglat = e.lnglat
         updateUploadPhoto(photoId, { lat: lnglat.getLat(), lng: lnglat.getLng() })
+        // Auto-remove after one click
         map.off("click", clickHandler)
         mapClickHandlerRef.current = null
       }
@@ -176,6 +179,7 @@ export default function PhotoUploadModal() {
     [map, updateUploadPhoto]
   )
 
+  // Cleanup on step change or unmount
   useEffect(() => {
     return () => {
       if (mapClickHandlerRef.current && map) {
@@ -321,7 +325,7 @@ export default function PhotoUploadModal() {
                 <span className="mt-1 text-[10px] text-[var(--periplus-walnut)]">地图区域（请直接点击主地图）</span>
               </div>
             </div>
-            <div className="w-48 space-y-4">
+            <div className="w-48 space-y-4 pointer-events-auto">
               <p className="text-xs font-bold text-[var(--periplus-russet)]">
                 以下照片缺少 GPS 信息，请在地图上点击选择位置
               </p>
