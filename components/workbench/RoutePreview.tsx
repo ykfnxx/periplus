@@ -205,7 +205,7 @@ export default function RoutePreview() {
 
         {nodes.map((node) => {
           const edge = edgeByFromNodeId.get(node.id)
-          const nodePhotos = matchPhotosToNode(node.lat, node.lng, photoShares)
+          const nodePhotos = photoShares ? matchPhotosToNode(node.lat, node.lng, photoShares) : []
 
           return (
             <div key={node.id}>
