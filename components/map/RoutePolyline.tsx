@@ -33,8 +33,8 @@ export default function RoutePolyline() {
         ],
         strokeColor:
           edge.status === "INCOMPLETE"
-            ? periplusColors.coral
-            : periplusColors.russet,
+            ? "#a8c4d0"
+            : periplusColors.bluegray,
         strokeWeight: selectedEdgeId === edge.id ? 7 : 5,
         strokeOpacity: selectedEdgeId === edge.id ? 1 : 0.88,
         strokeStyle: edge.status === "INCOMPLETE" ? "dashed" : "solid",
