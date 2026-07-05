@@ -25,9 +25,14 @@ export default function PhotoLightbox() {
     async (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       if (!lightboxPhotoShare?.canDelete) return
-      await deletePhoto(lightboxPhotoShare.id)
-      removePhotoShare(lightboxPhotoShare.id)
-      setLightboxPhotoShare(null)
+      try {
+        await deletePhoto(lightboxPhotoShare.id)
+        removePhotoShare(lightboxPhotoShare.id)
+      } catch (error) {
+        console.error("Failed to delete photo:", error)
+      } finally {
+        setLightboxPhotoShare(null)
+      }
     },
     [lightboxPhotoShare, removePhotoShare, setLightboxPhotoShare]
   )
