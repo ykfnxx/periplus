@@ -406,11 +406,7 @@ export default function OverlapCluster() {
         } else {
           const photo = photoShares.find((p) => `photo-${p.id}` === anchor.id)
           if (photo) {
-            if (useMapStore.getState().selectedPhotoShare?.id === photo.id) {
-              setSelectedPhotoShare(null)
-              return
-            }
-            setSelectedPhotoShare(photo, lngLatToAnchor(scatteredLngLat))
+            setLightboxPhotoShare(photo, lngLatToAnchor(scatteredLngLat))
           }
         }
       })

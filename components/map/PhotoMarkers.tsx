@@ -63,10 +63,6 @@ export default function PhotoMarkers() {
       marker.on("click", (event) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(event as any).stopPropagation?.()
-        if (lightboxPhotoShare?.id === photo.id) {
-          setLightboxPhotoShare(null)
-          return
-        }
         setSelectedLocationPoint(null)
         setLightboxPhotoShare(photo)
       })
