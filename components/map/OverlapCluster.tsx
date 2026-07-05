@@ -143,6 +143,7 @@ export default function OverlapCluster() {
   const anchorCluster = useMapStore((s) => s.anchorCluster)
   const expandCluster = useMapStore((s) => s.expandCluster)
   const collapseCluster = useMapStore((s) => s.collapseCluster)
+  const selectedLocationPoint = useMapStore((state) => state.selectedLocationPoint)
   const setSelectedLocationPoint = useMapStore(
     (s) => s.setSelectedLocationPoint
   )
@@ -397,9 +398,6 @@ export default function OverlapCluster() {
               enterCityView(point.id)
               return
             }
-            const selectedLocationPoint = useMapStore(
-              (state) => state.selectedLocationPoint
-            )
             if (selectedLocationPoint?.id === point.id) {
               setSelectedLocationPoint(null)
               return
