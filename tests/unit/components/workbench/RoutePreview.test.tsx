@@ -36,6 +36,7 @@ function mockStore(route: unknown | null) {
         currentRoute: route,
         viewLevel: "overview",
         activeRouteNodeId: null,
+        photoShares: [],
         setSelectedEdgeId,
         setSelectedLocationPoint,
       })
