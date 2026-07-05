@@ -4,8 +4,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ZodError, type ZodObject, type ZodRawShape } from "zod"
 import { loadProjectEnv } from "@/config/env.server"
 import { periplusServerConfig } from "@/config/periplus.server"
-import { mcpErrorResult, mcpJsonResult } from "@/mcp/errors"
 import type { DraftToolName } from "../../types"
+import { mcpErrorResult, mcpJsonResult } from "../errors"
 import {
   appendNodeInputSchema,
   getCurrentDraftInputSchema,
