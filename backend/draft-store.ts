@@ -15,6 +15,7 @@ import type {
   PathEdgePatchInput,
   PathNodeCreateInput,
   PathNodePatchInput,
+  NodeCategory,
   Route,
   RouteEdge,
   RouteInput,
@@ -29,6 +30,7 @@ import type {
   DraftSnapshot,
   DraftToolName,
   InsertNodeInput,
+  LinkPlaceToNodeInput,
   RemoveNodeRangeInput,
   RouteAddStartNodeInput,
   SessionDraft,
@@ -164,6 +166,10 @@ function makeRouteNode(
     name: input.name,
     lat: input.lat,
     lng: input.lng,
+    placeId: input.placeId,
+    coordinateSystem: input.coordinateSystem,
+    coordinateProvider: input.coordinateProvider,
+    providerPlaceId: input.providerPlaceId,
     order,
     category: input.category,
     durationMinutes: input.durationMinutes,
@@ -182,6 +188,10 @@ function makeSubPlanNode(
     name: input.name,
     lat: input.lat,
     lng: input.lng,
+    placeId: input.placeId,
+    coordinateSystem: input.coordinateSystem,
+    coordinateProvider: input.coordinateProvider,
+    providerPlaceId: input.providerPlaceId,
     order,
     category: input.category,
     durationMinutes: input.durationMinutes,
@@ -236,6 +246,20 @@ function applyNodePatch<TNode extends RouteNode | SubPlanNode>(
   return {
     ...node,
     ...patch,
+    placeId:
+      patch.placeId === null ? undefined : (patch.placeId ?? node.placeId),
+    coordinateSystem:
+      patch.coordinateSystem === null
+        ? undefined
+        : (patch.coordinateSystem ?? node.coordinateSystem),
+    coordinateProvider:
+      patch.coordinateProvider === null
+        ? undefined
+        : (patch.coordinateProvider ?? node.coordinateProvider),
+    providerPlaceId:
+      patch.providerPlaceId === null
+        ? undefined
+        : (patch.providerPlaceId ?? node.providerPlaceId),
     durationMinutes:
       patch.durationMinutes === null
         ? undefined
@@ -295,6 +319,44 @@ function normalizeRouteNodeOrders(nodes: RouteNode[]) {
 
 function normalizeSubPlanNodeOrders(nodes: SubPlanNode[]) {
   return sortPathNodes(nodes).map((node, order) => ({ ...node, order }))
+}
+
+function mapPlaceCategoryToNodeCategory(
+  category: string | undefined
+): NodeCategory | undefined {
+  if (!category) return undefined
+  if (category === "RESTAURANT") return "RESTAURANT"
+  if (category === "HOTEL") return "HOTEL"
+  if (category === "TRANSIT") return "TRANSIT"
+  if (
+    category === "SIGHT" ||
+    category === "PARK" ||
+    category === "MUSEUM" ||
+    category === "CULTURE"
+  ) {
+    return "SIGHT"
+  }
+  if (
+    category === "PERFORMANCE" ||
+    category === "SPORTS" ||
+    category === "ENTERTAINMENT"
+  ) {
+    return "ACTIVITY"
+  }
+  return "PLACE"
+}
+
+function placeLinkPatch(input: LinkPlaceToNodeInput): PathNodePatchInput {
+  return {
+    name: input.place.name,
+    lat: input.place.coordinate.lat,
+    lng: input.place.coordinate.lng,
+    placeId: input.place.placeId,
+    coordinateSystem: input.place.coordinate.coordinateSystem,
+    coordinateProvider: input.place.coordinate.provider,
+    providerPlaceId: input.place.providerPlaceId,
+    category: mapPlaceCategoryToNodeCategory(input.place.category),
+  }
 }
 
 export class DraftStore {
@@ -412,13 +474,12 @@ export class DraftStore {
     return this.getSnapshot(sessionId)
   }
 
-  createSuggestion(
-    sessionId: string,
-    input: ToolCallSuggestionCreateInput
-  ) {
+  createSuggestion(sessionId: string, input: ToolCallSuggestionCreateInput) {
     const session = this.ensureSession(sessionId)
     if (!input.toolCalls.length) {
-      throw new DraftInputError("Suggestion must contain at least one tool call")
+      throw new DraftInputError(
+        "Suggestion must contain at least one tool call"
+      )
     }
 
     const timestamp = nowIso()
@@ -475,7 +536,9 @@ export class DraftStore {
         await this.callTool(previewSessionId, toolCall.tool, toolCall.input)
       }
       const previewSession = this.ensureSession(previewSessionId)
-      session.route = previewSession.route ? cloneRoute(previewSession.route) : null
+      session.route = previewSession.route
+        ? cloneRoute(previewSession.route)
+        : null
       session.sourceRouteId = previewSession.sourceRouteId
       session.pendingSuggestions = session.pendingSuggestions.filter(
         (candidate) => candidate.id !== suggestionId
@@ -633,13 +696,40 @@ export class DraftStore {
     return this.commitRoute(sessionId, route)
   }
 
+  routeLinkPlaceToNode(sessionId: string, input: LinkPlaceToNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const patch = placeLinkPatch(input)
+
+    if (input.routeNodeId) {
+      const subPlan = this.mutableSubPlan(route, input.routeNodeId)
+      if (!subPlan.nodes.some((node) => node.id === input.nodeId)) {
+        throw new DraftInputError("SubPlan node not found")
+      }
+      subPlan.nodes = subPlan.nodes.map((node) =>
+        node.id === input.nodeId ? applyNodePatch(node, patch) : node
+      )
+      return this.commitRoute(sessionId, route)
+    }
+
+    if (!route.nodes.some((node) => node.id === input.nodeId)) {
+      throw new DraftInputError("Route node not found")
+    }
+    route.nodes = route.nodes.map((node) =>
+      node.id === input.nodeId ? applyNodePatch(node, patch) : node
+    )
+    return this.commitRoute(sessionId, route)
+  }
+
   routeUpdateEdge(sessionId: string, input: UpdateEdgeInput) {
     const session = this.ensureRouteSession(sessionId)
     const route = cloneRoute(session.route)
     const edge = findRouteEdge(route, input)
     if (!edge) throw new DraftInputError("Route edge not found")
     route.edges = route.edges.map((candidate) =>
-      candidate.id === edge.id ? applyEdgePatch(candidate, input.patch) : candidate
+      candidate.id === edge.id
+        ? applyEdgePatch(candidate, input.patch)
+        : candidate
     )
     return this.commitRoute(sessionId, route)
   }
@@ -650,7 +740,11 @@ export class DraftStore {
     if (!route.nodes.some((node) => node.id === input.routeNodeId)) {
       throw new DraftInputError("Route node not found")
     }
-    if (route.subPlans.some((subPlan) => subPlan.routeNodeId === input.routeNodeId)) {
+    if (
+      route.subPlans.some(
+        (subPlan) => subPlan.routeNodeId === input.routeNodeId
+      )
+    ) {
       throw new DraftInputError("SubPlan already exists for route node")
     }
 
@@ -667,12 +761,7 @@ export class DraftStore {
             "SubPlan replacement edges require endpoints"
           )
         }
-        return makeSubPlanEdge(
-          subPlanId,
-          edge.fromNodeId,
-          edge.toNodeId,
-          edge
-        )
+        return makeSubPlanEdge(subPlanId, edge.fromNodeId, edge.toNodeId, edge)
       }),
     }
     route.subPlans = [...route.subPlans, subPlan]
@@ -696,7 +785,9 @@ export class DraftStore {
     const subPlan = this.mutableSubPlan(route, input.routeNodeId)
     const plan = planAppendNode(subPlan.nodes)
     if (!plan.previousNode) {
-      throw new DraftInputError("Use subplan.add_start_node for an empty subplan")
+      throw new DraftInputError(
+        "Use subplan.add_start_node for an empty subplan"
+      )
     }
     const node = makeSubPlanNode(subPlan.id, input.node, plan.order)
     subPlan.nodes = [...subPlan.nodes, node]
@@ -822,7 +913,9 @@ export class DraftStore {
     const edge = findSubPlanEdge(subPlan, input)
     if (!edge) throw new DraftInputError("SubPlan edge not found")
     subPlan.edges = subPlan.edges.map((candidate) =>
-      candidate.id === edge.id ? applyEdgePatch(candidate, input.patch) : candidate
+      candidate.id === edge.id
+        ? applyEdgePatch(candidate, input.patch)
+        : candidate
     )
     return this.commitRoute(sessionId, route)
   }
@@ -871,6 +964,9 @@ export class DraftStore {
     }
     if (tool === "route.update_edge") {
       return this.routeUpdateEdge(sessionId, input as never)
+    }
+    if (tool === "route.link_place_to_node") {
+      return this.routeLinkPlaceToNode(sessionId, input as never)
     }
     if (tool === "subplan.create") {
       return this.subPlanCreate(sessionId, input as never)

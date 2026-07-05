@@ -4,7 +4,10 @@ import { loadProjectEnv } from "@/config/env.server"
 
 loadProjectEnv()
 
-const { registerDraftTools } = await import("./tools/draft")
+const [{ registerDraftTools }, { registerPlaceTools }] = await Promise.all([
+  import("./tools/draft"),
+  import("./tools/place"),
+])
 
 const server = new McpServer({
   name: "periplus-draft",
@@ -12,6 +15,7 @@ const server = new McpServer({
 })
 
 registerDraftTools(server)
+registerPlaceTools(server)
 
 const transport = new StdioServerTransport()
 await server.connect(transport)

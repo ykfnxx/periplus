@@ -33,6 +33,27 @@ enum NodeCategory {
   TRANSIT
 }
 
+enum PlaceCategory {
+  SIGHT
+  PARK
+  MUSEUM
+  CULTURE
+  PERFORMANCE
+  SPORTS
+  ENTERTAINMENT
+  RESTAURANT
+  HOTEL
+  TRANSIT
+  OTHER
+}
+
+enum PlaceSourceQuality {
+  VERIFIED
+  PROBABLE
+  CANDIDATE
+  NEEDS_REVIEW
+}
+
 model Route {
   id          String      @id @default(uuid())
   ownerId     String
@@ -48,22 +69,28 @@ model Route {
 }
 
 model RouteNode {
-  id              String       @id @default(uuid())
-  routeId         String
-  route           Route        @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  name            String
-  lat             Float
-  lng             Float
-  order           Int
-  category        NodeCategory
-  durationMinutes Int?
-  notes           String?
-  subPlan         SubPlan?
-  outgoingEdges   RouteEdge[]  @relation("RouteEdgeFrom")
-  incomingEdges   RouteEdge[]  @relation("RouteEdgeTo")
+  id                 String       @id @default(uuid())
+  routeId            String
+  route              Route        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  name               String
+  lat                Float
+  lng                Float
+  placeId            String?
+  place              Place?       @relation("RouteNodePlace", fields: [placeId], references: [id], onDelete: SetNull)
+  coordinateSystem   String?
+  coordinateProvider String?
+  providerPlaceId    String?
+  order              Int
+  category           NodeCategory
+  durationMinutes    Int?
+  notes              String?
+  subPlan            SubPlan?
+  outgoingEdges      RouteEdge[]  @relation("RouteEdgeFrom")
+  incomingEdges      RouteEdge[]  @relation("RouteEdgeTo")
 
   @@unique([routeId, order])
   @@index([routeId])
+  @@index([placeId])
 }
 
 model RouteEdge {
@@ -93,21 +120,27 @@ model SubPlan {
 }
 
 model SubPlanNode {
-  id              String        @id @default(uuid())
-  subPlanId       String
-  subPlan         SubPlan       @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
-  name            String
-  lat             Float
-  lng             Float
-  order           Int
-  category        NodeCategory
-  durationMinutes Int?
-  notes           String?
-  outgoingEdges   SubPlanEdge[] @relation("SubPlanEdgeFrom")
-  incomingEdges   SubPlanEdge[] @relation("SubPlanEdgeTo")
+  id                 String        @id @default(uuid())
+  subPlanId          String
+  subPlan            SubPlan       @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
+  name               String
+  lat                Float
+  lng                Float
+  placeId            String?
+  place              Place?        @relation("SubPlanNodePlace", fields: [placeId], references: [id], onDelete: SetNull)
+  coordinateSystem   String?
+  coordinateProvider String?
+  providerPlaceId    String?
+  order              Int
+  category           NodeCategory
+  durationMinutes    Int?
+  notes              String?
+  outgoingEdges      SubPlanEdge[] @relation("SubPlanEdgeFrom")
+  incomingEdges      SubPlanEdge[] @relation("SubPlanEdgeTo")
 
   @@unique([subPlanId, order])
   @@index([subPlanId])
+  @@index([placeId])
 }
 
 model SubPlanEdge {
@@ -225,4 +258,132 @@ model AgentSession {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+model Place {
+  id              String               @id @default(uuid())
+  name            String
+  normalizedName  String
+  category        PlaceCategory
+  latWgs84        Float?
+  lngWgs84        Float?
+  latGcj02        Float?
+  lngGcj02        Float?
+  countryCode     String?
+  province        String?
+  city            String?
+  district        String?
+  address         String?
+  description     String?
+  popularityScore Float?
+  sourceQuality   PlaceSourceQuality   @default(CANDIDATE)
+  aliases         PlaceAlias[]
+  sources         PlaceSource[]
+  providerMatches PlaceProviderMatch[]
+  routeNodes      RouteNode[]          @relation("RouteNodePlace")
+  subPlanNodes    SubPlanNode[]        @relation("SubPlanNodePlace")
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([normalizedName])
+  @@index([city])
+  @@index([category])
+  @@index([sourceQuality])
+}
+
+model PlaceAlias {
+  id             String   @id @default(uuid())
+  placeId        String
+  place          Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String
+  locale         String?
+  createdAt      DateTime @default(now())
+
+  @@unique([placeId, normalizedName])
+  @@index([normalizedName])
+}
+
+model PlaceSource {
+  id          String   @id @default(uuid())
+  placeId     String
+  place       Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  provider    String
+  providerId  String
+  license     String
+  rawName     String
+  rawCategory String?
+  rawPayload  String?
+  fetchedAt   DateTime @default(now())
+
+  @@unique([provider, providerId])
+  @@index([placeId])
+  @@index([provider])
+}
+
+model PlaceProviderMatch {
+  id               String   @id @default(uuid())
+  placeId          String
+  place            Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  provider         String
+  providerId       String
+  confidence       Float
+  coordinateSystem String
+  lat              Float
+  lng              Float
+  address          String?
+  adcode           String?
+  typeCode         String?
+  matchedAt        DateTime @default(now())
+
+  @@unique([provider, providerId])
+  @@index([placeId])
+  @@index([provider])
+}
+
+model RawPlaceCandidate {
+  id               String         @id @default(uuid())
+  provider         String
+  providerId       String?
+  queryHash        String?
+  name             String
+  normalizedName   String
+  category         PlaceCategory?
+  lat              Float?
+  lng              Float?
+  coordinateSystem String?
+  rawPayload       String?
+  confidence       Float          @default(0)
+  status           String         @default("CACHED")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([provider, providerId])
+  @@index([normalizedName])
+  @@index([queryHash])
+}
+
+model ProviderRequestCache {
+  id           String    @id @default(uuid())
+  provider     String
+  cacheKey     String    @unique
+  responseJson String
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([provider])
+  @@index([expiresAt])
+}
+
+model ProviderUsageLog {
+  id        String   @id @default(uuid())
+  provider  String
+  purpose   String
+  status    String
+  code      String?
+  createdAt DateTime @default(now())
+
+  @@index([provider, purpose])
+  @@index([createdAt])
 }

@@ -15,6 +15,10 @@ interface PathNodeRecord {
   name: string
   lat: number
   lng: number
+  placeId?: string | null
+  coordinateSystem?: string | null
+  coordinateProvider?: string | null
+  providerPlaceId?: string | null
   order: number
   category: NodeCategory
   durationMinutes: number | null
@@ -83,6 +87,10 @@ function mapRouteNodeToDto(node: RouteNodeRecord): RouteNode {
     name: node.name,
     lat: node.lat,
     lng: node.lng,
+    placeId: node.placeId ?? undefined,
+    coordinateSystem: node.coordinateSystem ?? undefined,
+    coordinateProvider: node.coordinateProvider ?? undefined,
+    providerPlaceId: node.providerPlaceId ?? undefined,
     order: node.order,
     category: node.category,
     durationMinutes: node.durationMinutes ?? undefined,
@@ -99,6 +107,10 @@ function mapSubPlanNodeToDto(node: SubPlanNodeRecord): SubPlanNode {
     name: node.name,
     lat: node.lat,
     lng: node.lng,
+    placeId: node.placeId ?? undefined,
+    coordinateSystem: node.coordinateSystem ?? undefined,
+    coordinateProvider: node.coordinateProvider ?? undefined,
+    providerPlaceId: node.providerPlaceId ?? undefined,
     order: node.order,
     category: node.category,
     durationMinutes: node.durationMinutes ?? undefined,

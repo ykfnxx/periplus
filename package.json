@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "places:import-mct-5a": "tsx scripts/import-mct-5a.ts",
+    "places:import-mct-5a:mock": "tsx scripts/import-mct-5a.ts --mock"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
