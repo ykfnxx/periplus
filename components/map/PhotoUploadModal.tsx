@@ -14,6 +14,7 @@ export default function PhotoUploadModal() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [validationError, setValidationError] = useState("")
   const [isUploading, setIsUploading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
 
   const uploadModalOpen = useMapStore((s) => s.uploadModalOpen)
   const setUploadModalOpen = useMapStore((s) => s.setUploadModalOpen)
@@ -33,9 +34,8 @@ export default function PhotoUploadModal() {
     }
   }, [])
 
-  const handleFileSelect = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? [])
+  const processFiles = useCallback(
+    async (files: File[]) => {
       if (files.length === 0) return
 
       setValidationError("")
@@ -86,6 +86,42 @@ export default function PhotoUploadModal() {
       clearInput()
     },
     [addUploadPhoto, clearInput]
+  )
+
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? [])
+      await processFiles(files)
+    },
+    [processFiles]
+  )
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragging(false)
+      const files = Array.from(e.dataTransfer.files)
+      await processFiles(files)
+    },
+    [processFiles]
   )
 
   const handleRemovePhoto = useCallback(
@@ -169,22 +205,19 @@ export default function PhotoUploadModal() {
 
   const photosWithoutGPS = uploadPhotos.filter((p) => !p.hasGPS && (!p.lat || !p.lng))
 
+  const dropAreaBorder = isDragging
+    ? "border-[var(--periplus-russet)] bg-[var(--periplus-cream)]"
+    : "border-[rgb(44_36_22_/_14%)] bg-transparent"
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-lg rounded-lg bg-[var(--periplus-cream)] p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(44_36_22_/_60%)]">
+      <div className="w-full max-w-[560px] rounded-2xl bg-[var(--periplus-soft-white)] p-6 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-black text-[var(--periplus-ink)]">
             {uploadStep === 1 && "选择照片"}
             {uploadStep === 2 && "标记位置"}
             {uploadStep === 3 && "添加描述"}
           </h2>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="text-xs font-bold text-[var(--periplus-russet)] hover:text-[var(--periplus-ink)]"
-          >
-            关闭
-          </button>
         </div>
 
         {uploadStep === 1 && (
@@ -197,18 +230,30 @@ export default function PhotoUploadModal() {
               onChange={handleFileSelect}
               className="hidden"
             />
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="h-9 w-full rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
+            <div
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 transition-colors ${dropAreaBorder}`}
             >
-              选择照片
-            </button>
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="h-9 rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
+              >
+                选择照片
+              </button>
+              <p className="mt-2 text-xs text-[var(--periplus-walnut)]">或拖拽照片到此处</p>
+            </div>
 
             {uploadPhotos.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 {uploadPhotos.map((photo) => (
-                  <div key={photo.id} className="relative">
+                  <div
+                    key={photo.id}
+                    className={`relative ${!photo.hasGPS && (!photo.lat || !photo.lng) ? "border border-[var(--periplus-coral)]" : ""}`}
+                  >
                     <img
                       src={photo.previewUrl}
                       alt="preview"
@@ -231,53 +276,13 @@ export default function PhotoUploadModal() {
               </div>
             )}
 
-            {uploadPhotos.length > 0 && (
-              <button
-                type="button"
-                onClick={handleNextStep}
-                className="h-9 w-full rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
-              >
-                下一步
-              </button>
-            )}
-          </div>
-        )}
-
-        {uploadStep === 2 && (
-          <div className="space-y-4">
-            <p className="text-xs font-bold text-[var(--periplus-russet)]">
-              以下照片缺少 GPS 信息，请在地图上点击选择位置
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {photosWithoutGPS.map((photo) => (
-                <div key={photo.id} className="relative">
-                  <img
-                    src={photo.previewUrl}
-                    alt="preview"
-                    className="h-24 w-full rounded object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleMapClickForPhoto(photo.id)}
-                    className="absolute bottom-0 left-0 rounded bg-[var(--periplus-russet)] px-1 text-[10px] font-bold text-[var(--periplus-soft-white)]"
-                  >
-                    点击选点
-                  </button>
-                  {photo.lat !== undefined && photo.lng !== undefined && (
-                    <span className="absolute bottom-0 right-0 rounded bg-[var(--periplus-olive)] px-1 text-[10px] font-bold text-[var(--periplus-soft-white)]">
-                      已标记
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={handlePrevStep}
-                className="h-9 flex-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-4 text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)]"
+                onClick={handleClose}
+                className="h-9 flex-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-6 py-2 text-sm text-[var(--periplus-walnut)]"
               >
-                上一步
+                取消
               </button>
               <button
                 type="button"
@@ -286,6 +291,60 @@ export default function PhotoUploadModal() {
               >
                 下一步
               </button>
+            </div>
+          </div>
+        )}
+
+        {uploadStep === 2 && (
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <div className="flex h-64 items-center justify-center rounded-xl border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)]">
+                <span className="text-xs text-[var(--periplus-walnut)]">地图区域</span>
+              </div>
+            </div>
+            <div className="w-48 space-y-4">
+              <p className="text-xs font-bold text-[var(--periplus-russet)]">
+                以下照片缺少 GPS 信息，请在地图上点击选择位置
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {photosWithoutGPS.map((photo) => (
+                  <div key={photo.id} className="relative">
+                    <img
+                      src={photo.previewUrl}
+                      alt="preview"
+                      className="h-24 w-full rounded object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleMapClickForPhoto(photo.id)}
+                      className="absolute bottom-0 left-0 rounded bg-[var(--periplus-russet)] px-1 text-[10px] font-bold text-[var(--periplus-soft-white)]"
+                    >
+                      点击选点
+                    </button>
+                    {photo.lat !== undefined && photo.lng !== undefined && (
+                      <span className="absolute bottom-0 right-0 rounded bg-[var(--periplus-olive)] px-1 text-[10px] font-bold text-[var(--periplus-soft-white)]">
+                        已标记
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrevStep}
+                  className="h-9 flex-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-6 py-2 text-sm text-[var(--periplus-walnut)]"
+                >
+                  上一步
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="h-9 flex-1 rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
+                >
+                  下一步
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -322,10 +381,10 @@ export default function PhotoUploadModal() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={handlePrevStep}
-                className="h-9 flex-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-4 text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)]"
+                onClick={handleClose}
+                className="h-9 flex-1 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-6 py-2 text-sm text-[var(--periplus-walnut)]"
               >
-                上一步
+                取消
               </button>
               <button
                 type="button"
@@ -333,7 +392,7 @@ export default function PhotoUploadModal() {
                 disabled={isUploading}
                 className="h-9 flex-1 rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)] disabled:opacity-50"
               >
-                {isUploading ? "上传中..." : "确认上传"}
+                {isUploading ? "上传中..." : `上传 ${uploadPhotos.length} 张照片`}
               </button>
             </div>
           </div>
