@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useCallback, useState } from "react"
+import { useRef, useCallback, useState, useEffect } from "react"
 import { useMapStore } from "@/stores/mapStore"
 import type { UploadPhoto } from "@/stores/mapStore"
 import { parseExifGps, wgs84ToGcj02, readFileAsDataURL } from "@/lib/exif"
@@ -15,6 +15,7 @@ export default function PhotoUploadModal() {
   const [validationError, setValidationError] = useState("")
   const [isUploading, setIsUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const mapClickHandlerRef = useRef<((e: any) => void) | null>(null)
 
   const uploadModalOpen = useMapStore((s) => s.uploadModalOpen)
   const setUploadModalOpen = useMapStore((s) => s.setUploadModalOpen)
@@ -126,9 +127,9 @@ export default function PhotoUploadModal() {
 
   const handleRemovePhoto = useCallback(
     (id: string) => {
-      setUploadPhotos(uploadPhotos.filter((p) => p.id !== id))
+      setUploadPhotos((prev) => prev.filter((p) => p.id !== id))
     },
-    [uploadPhotos, setUploadPhotos]
+    [setUploadPhotos]
   )
 
   const handleNextStep = useCallback(() => {
@@ -160,29 +161,46 @@ export default function PhotoUploadModal() {
   const handleMapClickForPhoto = useCallback(
     (photoId: string) => {
       if (!map) return
+      if (mapClickHandlerRef.current) {
+        map.removeEventListener("click", mapClickHandlerRef.current)
+      }
       const clickHandler = (e: AMap.MapsEvent<'click', AMap.Map>) => {
         const lnglat = e.lnglat
         updateUploadPhoto(photoId, { lat: lnglat.getLat(), lng: lnglat.getLng() })
-        map.off("click", clickHandler)
+        map.removeEventListener("click", clickHandler)
+        mapClickHandlerRef.current = null
       }
+      mapClickHandlerRef.current = clickHandler
       map.on("click", clickHandler)
     },
     [map, updateUploadPhoto]
   )
 
+  useEffect(() => {
+    return () => {
+      if (mapClickHandlerRef.current && map) {
+        map.removeEventListener("click", mapClickHandlerRef.current)
+        mapClickHandlerRef.current = null
+      }
+    }
+  }, [uploadStep, map])
+
   const handleSubmit = useCallback(async () => {
+    const photosWithoutCoords = uploadPhotos.filter((p) => p.lat === undefined || p.lng === undefined)
+    if (photosWithoutCoords.length > 0) {
+      setValidationError(`${photosWithoutCoords.length} 张照片缺少位置，请先在地图上标记`)
+      return
+    }
+
     setIsUploading(true)
     setValidationError("")
 
     try {
       for (const photo of uploadPhotos) {
-        if (photo.lat === undefined || photo.lng === undefined) {
-          continue
-        }
         const uploaded = await uploadPhoto({
           file: photo.file,
-          lat: photo.lat,
-          lng: photo.lng,
+          lat: photo.lat!,
+          lng: photo.lng!,
           caption: photo.caption ?? "",
         })
         addPhotoShare(photoDtoToShare(uploaded))
@@ -298,8 +316,9 @@ export default function PhotoUploadModal() {
         {uploadStep === 2 && (
           <div className="flex gap-4">
             <div className="flex-1">
-              <div className="flex h-64 items-center justify-center rounded-xl border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)]">
-                <span className="text-xs text-[var(--periplus-walnut)]">地图区域</span>
+              <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)]">
+                <span className="text-xs text-[var(--periplus-walnut)]">点击右侧照片后，在背景地图上选点</span>
+                <span className="mt-1 text-[10px] text-[var(--periplus-walnut)]">地图区域（请直接点击主地图）</span>
               </div>
             </div>
             <div className="w-48 space-y-4">
