@@ -10,6 +10,7 @@ import {
   appendNodeInputSchema,
   getCurrentDraftInputSchema,
   insertNodeInputSchema,
+  linkPlaceToNodeInputSchema,
   removeNodeRangeInputSchema,
   replaceDraftInputSchema,
   routeAddStartNodeInputSchema,
@@ -132,6 +133,10 @@ export const draftToolHandlers = {
   ),
   routeUpdateNode: draftHandler("route.update_node", updateNodeInputSchema),
   routeUpdateEdge: draftHandler("route.update_edge", updateEdgeInputSchema),
+  routeLinkPlaceToNode: draftHandler(
+    "route.link_place_to_node",
+    linkPlaceToNodeInputSchema
+  ),
   subPlanCreate: draftHandler("subplan.create", subPlanCreateInputSchema),
   subPlanAddStartNode: draftHandler(
     "subplan.add_start_node",
@@ -249,6 +254,14 @@ export function registerDraftTools(server: McpServer): void {
     "Patch route edge fields.",
     updateEdgeInputSchema,
     draftToolHandlers.routeUpdateEdge
+  )
+  registerDraftTool(
+    server,
+    "periplus.route.link_place_to_node",
+    "Link place to route node",
+    "Link a resolved place result to an existing route or subplan node.",
+    linkPlaceToNodeInputSchema,
+    draftToolHandlers.routeLinkPlaceToNode
   )
   registerDraftTool(
     server,

@@ -28,6 +28,10 @@ const nodeCreateSchema = z.object({
   name: z.string().min(1),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
+  placeId: z.string().min(1).optional(),
+  coordinateSystem: z.string().min(1).optional(),
+  coordinateProvider: z.string().min(1).optional(),
+  providerPlaceId: z.string().min(1).optional(),
   category: nodeCategorySchema,
   durationMinutes: z.number().int().nonnegative().optional(),
   notes: z.string().optional(),
@@ -38,6 +42,10 @@ const nodePatchSchema = z
     name: z.string().min(1).optional(),
     lat: z.number().min(-90).max(90).optional(),
     lng: z.number().min(-180).max(180).optional(),
+    placeId: z.string().min(1).nullable().optional(),
+    coordinateSystem: z.string().min(1).nullable().optional(),
+    coordinateProvider: z.string().min(1).nullable().optional(),
+    providerPlaceId: z.string().min(1).nullable().optional(),
     category: nodeCategorySchema.optional(),
     durationMinutes: z.number().int().nonnegative().nullable().optional(),
     notes: z.string().nullable().optional(),
@@ -115,6 +123,24 @@ export const updateNodeInputSchema = z.object({
   patch: nodePatchSchema,
 })
 
+export const linkPlaceToNodeInputSchema = z.object({
+  nodeId: z.string().min(1),
+  routeNodeId: z.string().min(1).optional(),
+  place: z.object({
+    placeId: z.string().min(1).optional(),
+    name: z.string().min(1),
+    category: z.string().min(1).optional(),
+    address: z.string().optional(),
+    providerPlaceId: z.string().min(1).optional(),
+    coordinate: z.object({
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+      coordinateSystem: z.string().min(1),
+      provider: z.string().min(1),
+    }),
+  }),
+})
+
 export const updateEdgeInputSchema = z
   .object({
     edgeId: z.string().min(1).optional(),
@@ -124,7 +150,8 @@ export const updateEdgeInputSchema = z
   })
   .refine(
     (value) =>
-      Boolean(value.edgeId) || (Boolean(value.fromNodeId) && Boolean(value.toNodeId)),
+      Boolean(value.edgeId) ||
+      (Boolean(value.fromNodeId) && Boolean(value.toNodeId)),
     { message: "edgeId or fromNodeId/toNodeId is required" }
   )
 
@@ -134,7 +161,11 @@ export const subPlanCreateInputSchema = z.object({
     .object({
       id: z.string().min(1).optional(),
       nodes: z
-        .array(nodeCreateSchema.extend({ order: z.number().int().nonnegative().optional() }))
+        .array(
+          nodeCreateSchema.extend({
+            order: z.number().int().nonnegative().optional(),
+          })
+        )
         .optional(),
       edges: z.array(edgeCreateSchema).optional(),
     })

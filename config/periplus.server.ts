@@ -39,6 +39,14 @@ export const periplusServerConfig = {
       return envString("DATABASE_URL", "file:./dev.db")
     },
   },
+  amap: {
+    get webServiceKey() {
+      return (
+        envString("PERIPLUS_AMAP_WEB_SERVICE_KEY") ||
+        envString("NEXT_PUBLIC_AMAP_KEY")
+      )
+    },
+  },
   agentBackend: {
     get url() {
       return periplusPublicConfig.agentBackend.url

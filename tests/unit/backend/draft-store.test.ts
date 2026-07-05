@@ -57,6 +57,38 @@ describe("DraftStore", () => {
     ])
   })
 
+  it("links a resolved place to an existing route node", () => {
+    const store = new DraftStore()
+    store.replaceDraft("session-1", routeInput)
+
+    const snapshot = store.routeLinkPlaceToNode("session-1", {
+      nodeId: "node-1",
+      place: {
+        placeId: "place-west-lake",
+        name: "西湖风景名胜区",
+        category: "PARK",
+        providerPlaceId: "B023B0",
+        coordinate: {
+          lat: 30.247,
+          lng: 120.146,
+          coordinateSystem: "GCJ02",
+          provider: "amap",
+        },
+      },
+    })
+
+    expect(snapshot.route!.nodes[0]).toMatchObject({
+      name: "西湖风景名胜区",
+      lat: 30.247,
+      lng: 120.146,
+      placeId: "place-west-lake",
+      coordinateSystem: "GCJ02",
+      coordinateProvider: "amap",
+      providerPlaceId: "B023B0",
+      category: "SIGHT",
+    })
+  })
+
   it("saves a new draft through route creation", async () => {
     const savedRoute: Route = {
       id: "route-saved",

@@ -197,6 +197,24 @@ function validatePathNode(
   const lat = input.lat as number
   const lng = input.lng as number
 
+  const placeId = validateOptionalId(input.placeId, `${context}: placeId`)
+  if (!placeId.ok) return placeId
+
+  if (!isOptionalString(input.coordinateSystem)) {
+    return { ok: false, error: `${context}: coordinateSystem must be a string` }
+  }
+
+  if (!isOptionalString(input.coordinateProvider)) {
+    return {
+      ok: false,
+      error: `${context}: coordinateProvider must be a string`,
+    }
+  }
+
+  if (!isOptionalString(input.providerPlaceId)) {
+    return { ok: false, error: `${context}: providerPlaceId must be a string` }
+  }
+
   const order = validateOrder(input.order, context)
   if (!order.ok) return order
 
@@ -220,6 +238,10 @@ function validatePathNode(
       name: input.name.trim(),
       lat,
       lng,
+      placeId: placeId.data,
+      coordinateSystem: trimOptionalString(input.coordinateSystem),
+      coordinateProvider: trimOptionalString(input.coordinateProvider),
+      providerPlaceId: trimOptionalString(input.providerPlaceId),
       order: order.data,
       category: category.data,
       durationMinutes: durationMinutes.data,

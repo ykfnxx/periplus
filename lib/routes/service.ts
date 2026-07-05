@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/prisma"
 import type { AuthContext } from "@/lib/auth-context"
 import { isAdmin } from "@/lib/auth-context"
-import type { CreateRouteInput, RouteDto, UpdateRouteInput } from "@/types/route"
+import type {
+  CreateRouteInput,
+  RouteDto,
+  UpdateRouteInput,
+} from "@/types/route"
 import { mapRouteToDto } from "./mapper"
 import { validateRouteInput } from "./validation"
 
@@ -41,13 +45,20 @@ function routeListWhere(context: AuthContext) {
   return isAdmin(context) ? {} : { ownerId: context.userId }
 }
 
-function nodeCreateData(routeId: string, node: CreateRouteInput["nodes"][number]) {
+function nodeCreateData(
+  routeId: string,
+  node: CreateRouteInput["nodes"][number]
+) {
   return {
     id: node.id,
     routeId,
     name: node.name,
     lat: node.lat,
     lng: node.lng,
+    placeId: node.placeId,
+    coordinateSystem: node.coordinateSystem,
+    coordinateProvider: node.coordinateProvider,
+    providerPlaceId: node.providerPlaceId,
     order: node.order,
     category: node.category,
     durationMinutes: node.durationMinutes,
@@ -55,7 +66,10 @@ function nodeCreateData(routeId: string, node: CreateRouteInput["nodes"][number]
   }
 }
 
-function edgeCreateData(routeId: string, edge: CreateRouteInput["edges"][number]) {
+function edgeCreateData(
+  routeId: string,
+  edge: CreateRouteInput["edges"][number]
+) {
   return {
     id: edge.id,
     routeId,
@@ -99,6 +113,10 @@ async function writeRouteGraph(
           name: node.name,
           lat: node.lat,
           lng: node.lng,
+          placeId: node.placeId,
+          coordinateSystem: node.coordinateSystem,
+          coordinateProvider: node.coordinateProvider,
+          providerPlaceId: node.providerPlaceId,
           order: node.order,
           category: node.category,
           durationMinutes: node.durationMinutes,

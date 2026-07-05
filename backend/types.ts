@@ -39,6 +39,24 @@ export interface UpdateNodeInput {
   patch: PathNodePatchInput
 }
 
+export interface LinkPlaceToNodeInput {
+  nodeId: string
+  routeNodeId?: string
+  place: {
+    placeId?: string
+    name: string
+    category?: string
+    address?: string
+    providerPlaceId?: string
+    coordinate: {
+      lat: number
+      lng: number
+      coordinateSystem: string
+      provider: string
+    }
+  }
+}
+
 export interface UpdateEdgeInput {
   edgeId?: string
   fromNodeId?: string
@@ -86,6 +104,7 @@ export const DRAFT_TOOL_NAMES = [
   "route.remove_node_range",
   "route.update_node",
   "route.update_edge",
+  "route.link_place_to_node",
   "subplan.create",
   "subplan.add_start_node",
   "subplan.append_node",
@@ -159,6 +178,7 @@ export type DraftToolInput =
   | InsertNodeInput
   | RemoveNodeRangeInput
   | UpdateNodeInput
+  | LinkPlaceToNodeInput
   | UpdateEdgeInput
   | SubPlanCreateInput
   | SubPlanNodeInput

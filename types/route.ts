@@ -29,6 +29,10 @@ export interface PathNode {
   name: string
   lat: number
   lng: number
+  placeId?: string
+  coordinateSystem?: string
+  coordinateProvider?: string
+  providerPlaceId?: string
   order: number
   category: NodeCategory
   durationMinutes?: number
@@ -124,6 +128,10 @@ export interface PathNodeCreateInput {
   name: string
   lat: number
   lng: number
+  placeId?: string
+  coordinateSystem?: string
+  coordinateProvider?: string
+  providerPlaceId?: string
   category: NodeCategory
   durationMinutes?: number
   notes?: string
@@ -136,6 +144,10 @@ export interface PathNodePatchInput {
   name?: string
   lat?: number
   lng?: number
+  placeId?: string | null
+  coordinateSystem?: string | null
+  coordinateProvider?: string | null
+  providerPlaceId?: string | null
   category?: NodeCategory
   durationMinutes?: number | null
   notes?: string | null
