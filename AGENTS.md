@@ -21,14 +21,14 @@
 
 **注释和实现写在一处，不要拆分。**
 
-- ✅ 正确：
+- 正确：
 
   ```typescript
   // 高德地图使用 GCJ-02 坐标系，所有坐标直接按此存储
   const path = points.map((p) => new AMap.LngLat(p.lng, p.lat))
   ```
 
-- ❌ 错误（不要单独写注释文件或注释块）：
+- 错误（不要单独写注释文件或注释块）：
 
   ```typescript
   // 见 docs/coordinate-system.md 了解坐标系说明
@@ -44,6 +44,7 @@
 - 每个文件一个明确职责，保持小而聚焦
 - 使用 Zustand 进行客户端状态管理
 - 地图相关操作通过 `lib/amap.ts` 统一加载 AMap SDK
+- **禁止使用 emoji**：代码、注释、UI 文案、提交信息、设计文档和 Agent 输出中都不得新增 emoji，除非用户明确要求处理既有 emoji 内容
 
 ---
 
