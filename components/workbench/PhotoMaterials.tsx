@@ -5,8 +5,8 @@ import { useMapStore } from "@/stores/mapStore"
 
 export default function PhotoMaterials() {
   const photoShares = useMapStore((state) => state.photoShares)
-  const setSelectedPhotoShare = useMapStore(
-    (state) => state.setSelectedPhotoShare
+  const setLightboxPhotoShare = useMapStore(
+    (state) => state.setLightboxPhotoShare
   )
 
   return (
@@ -29,7 +29,7 @@ export default function PhotoMaterials() {
             <button
               key={photo.id}
               type="button"
-              onClick={() => setSelectedPhotoShare(photo)}
+              onClick={() => setLightboxPhotoShare(photo)}
               className="group overflow-hidden rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] transition hover:border-[var(--periplus-russet)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--periplus-russet)]"
             >
               <img
