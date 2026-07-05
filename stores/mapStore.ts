@@ -22,13 +22,22 @@ export interface ChatMessage {
   updatedAt?: string
 }
 
+export interface PendingPhotoUpload {
+  file: File
+  imageDataUrl: string
+}
+
 export interface PhotoShare {
   id: string
+  ownerId: string
+  ownerName: string
   lat: number
   lng: number
   imageDataUrl: string
   caption: string
   createdAt: number
+  updatedAt?: number
+  canDelete: boolean
 }
 
 interface MapState {
@@ -58,17 +67,20 @@ interface MapState {
   pointSelectionDraft: PointSelectionDraft | null
   setPointSelectionDraft: (draft: PointSelectionDraft | null) => void
   locationSelectionMode: LocationSelectionMode
-  startPhotoLocationSelection: (imageDataUrl: string) => void
+  startPhotoLocationSelection: (file: File, imageDataUrl: string) => void
   startPointLocationSelection: () => void
   clearLocationSelection: () => void
   photoShares: PhotoShare[]
-  addPhotoShare: (photo: Omit<PhotoShare, "id" | "createdAt">) => void
+  setPhotoShares: (photos: PhotoShare[]) => void
+  addPhotoShare: (photo: PhotoShare) => void
+  upsertPhotoShare: (photo: PhotoShare) => void
   removePhotoShare: (id: string) => void
   updatePhotoShareCaption: (id: string, caption: string) => void
   selectedPhotoShare: PhotoShare | null
   setSelectedPhotoShare: (photo: PhotoShare | null) => void
   lightboxPhotoShare: PhotoShare | null
   setLightboxPhotoShare: (photo: PhotoShare | null) => void
+  pendingPhotoUpload: PendingPhotoUpload | null
   pendingPhotoDataUrl: string | null
   isSelectingLocation: boolean
 }
@@ -127,8 +139,9 @@ export const useMapStore = create<MapState>((set) => ({
   pointSelectionDraft: null,
   setPointSelectionDraft: (pointSelectionDraft) => set({ pointSelectionDraft }),
   locationSelectionMode: "none",
-  startPhotoLocationSelection: (imageDataUrl) =>
+  startPhotoLocationSelection: (file, imageDataUrl) =>
     set({
+      pendingPhotoUpload: { file, imageDataUrl },
       pendingPhotoDataUrl: imageDataUrl,
       isSelectingLocation: true,
       locationSelectionMode: "photo",
@@ -137,6 +150,7 @@ export const useMapStore = create<MapState>((set) => ({
     }),
   startPointLocationSelection: () =>
     set({
+      pendingPhotoUpload: null,
       pendingPhotoDataUrl: null,
       pointSelectionDraft: null,
       isSelectingLocation: true,
@@ -144,17 +158,34 @@ export const useMapStore = create<MapState>((set) => ({
     }),
   clearLocationSelection: () =>
     set({
+      pendingPhotoUpload: null,
       pendingPhotoDataUrl: null,
       isSelectingLocation: false,
       locationSelectionMode: "none",
     }),
   photoShares: [],
+  setPhotoShares: (photoShares) => set({ photoShares }),
   addPhotoShare: (photo) =>
     set((state) => ({
-      photoShares: [
-        ...state.photoShares,
-        { ...photo, id: `photo-${Date.now()}`, createdAt: Date.now() },
-      ],
+      photoShares: [photo, ...state.photoShares],
+    })),
+  upsertPhotoShare: (photo) =>
+    set((state) => ({
+      photoShares: state.photoShares.some(
+        (existing) => existing.id === photo.id
+      )
+        ? state.photoShares.map((existing) =>
+            existing.id === photo.id ? photo : existing
+          )
+        : [photo, ...state.photoShares],
+      selectedPhotoShare:
+        state.selectedPhotoShare?.id === photo.id
+          ? photo
+          : state.selectedPhotoShare,
+      lightboxPhotoShare:
+        state.lightboxPhotoShare?.id === photo.id
+          ? photo
+          : state.lightboxPhotoShare,
     })),
   removePhotoShare: (id) =>
     set((state) => {
@@ -184,6 +215,7 @@ export const useMapStore = create<MapState>((set) => ({
   setSelectedPhotoShare: (selectedPhotoShare) => set({ selectedPhotoShare }),
   lightboxPhotoShare: null,
   setLightboxPhotoShare: (lightboxPhotoShare) => set({ lightboxPhotoShare }),
+  pendingPhotoUpload: null,
   pendingPhotoDataUrl: null,
   isSelectingLocation: false,
 }))

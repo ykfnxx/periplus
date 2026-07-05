@@ -1,94 +1,100 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const routeServiceMocks = vi.hoisted(() => ({
   createRoute: vi.fn(),
   getRoute: vi.fn(),
   updateRoute: vi.fn(),
-}));
+}))
 
-vi.mock('@/lib/routes/service', () => routeServiceMocks);
+vi.mock("@/lib/routes/service", () => routeServiceMocks)
 
-import { DraftStore } from '@/backend/draft-store';
-import type { Route } from '@/types/route';
+import { DraftStore } from "@/backend/draft-store"
+import type { Route } from "@/types/route"
 
 const routeInput = {
-  name: '杭州周末',
+  name: "杭州周末",
   points: [
-    { name: '西湖', lat: 30.246, lng: 120.146, order: 0 },
-    { name: '灵隐寺', lat: 30.24, lng: 120.102, order: 1 },
+    { name: "西湖", lat: 30.246, lng: 120.146, order: 0 },
+    { name: "灵隐寺", lat: 30.24, lng: 120.102, order: 1 },
   ],
-};
+}
 
-describe('DraftStore', () => {
+const userContext = { userId: "user-1", role: "user" as const }
+
+describe("DraftStore", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-  });
+    vi.clearAllMocks()
+  })
 
-  it('adds draft points by relative position and normalizes order', () => {
-    const store = new DraftStore();
-    const initial = store.replaceDraft('session-1', routeInput);
-    const firstPointId = initial.route!.points[0].id;
+  it("adds draft points by relative position and normalizes order", () => {
+    const store = new DraftStore()
+    const initial = store.replaceDraft("session-1", routeInput)
+    const firstPointId = initial.route!.points[0].id
 
-    const snapshot = store.addDraftPoint('session-1', {
-      point: { name: '龙井村', lat: 30.223, lng: 120.091, stayHours: 2 },
-      position: { placement: 'before', pointId: firstPointId },
-    });
+    const snapshot = store.addDraftPoint("session-1", {
+      point: { name: "龙井村", lat: 30.223, lng: 120.091, stayHours: 2 },
+      position: { placement: "before", pointId: firstPointId },
+    })
 
     expect(snapshot.route!.points.map((point) => point.name)).toEqual([
-      '龙井村',
-      '西湖',
-      '灵隐寺',
-    ]);
+      "龙井村",
+      "西湖",
+      "灵隐寺",
+    ])
     expect(snapshot.route!.points.map((point) => point.order)).toEqual([
       0, 1, 2,
-    ]);
-  });
+    ])
+  })
 
-  it('saves a new draft through route creation', async () => {
+  it("saves a new draft through route creation", async () => {
     const savedRoute: Route = {
-      id: 'route-saved',
-      name: '杭州周末',
+      id: "route-saved",
+      ownerId: "user-1",
+      name: "杭州周末",
       points: [
-        { id: 'point-1', name: '西湖', lat: 30.246, lng: 120.146, order: 0 },
-        { id: 'point-2', name: '灵隐寺', lat: 30.24, lng: 120.102, order: 1 },
+        { id: "point-1", name: "西湖", lat: 30.246, lng: 120.146, order: 0 },
+        { id: "point-2", name: "灵隐寺", lat: 30.24, lng: 120.102, order: 1 },
       ],
-      createdAt: '2026-06-30T00:00:00.000Z',
-      updatedAt: '2026-06-30T01:00:00.000Z',
-    };
-    routeServiceMocks.createRoute.mockResolvedValueOnce(savedRoute);
-    const store = new DraftStore();
-    store.replaceDraft('session-1', routeInput);
+      createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T01:00:00.000Z",
+    }
+    routeServiceMocks.createRoute.mockResolvedValueOnce(savedRoute)
+    const store = new DraftStore()
+    store.replaceDraft("session-1", routeInput)
 
-    const snapshot = await store.saveDraft('session-1');
+    const snapshot = await store.saveDraft(userContext, "session-1")
 
-    expect(routeServiceMocks.createRoute).toHaveBeenCalledWith(routeInput);
-    expect(snapshot.sourceRouteId).toBe('route-saved');
-    expect(snapshot.route!.id).toBe('route-saved');
-  });
+    expect(routeServiceMocks.createRoute).toHaveBeenCalledWith(
+      userContext,
+      routeInput
+    )
+    expect(snapshot.sourceRouteId).toBe("route-saved")
+    expect(snapshot.route!.id).toBe("route-saved")
+  })
 
-  it('stores conversation history for a session', () => {
-    const store = new DraftStore();
+  it("stores conversation history for a session", () => {
+    const store = new DraftStore()
 
-    store.addUserConversationMessage('session-1', '规划新疆路线');
-    store.appendAssistantConversationDelta('session-1', 'run-1', '可以。');
+    store.addUserConversationMessage("session-1", "规划新疆路线")
+    store.appendAssistantConversationDelta("session-1", "run-1", "可以。")
     store.appendAssistantConversationDelta(
-      'session-1',
-      'run-1',
-      '先去乌鲁木齐。'
-    );
-    store.addUserConversationMessage('session-1', '把喀纳斯提前');
+      "session-1",
+      "run-1",
+      "先去乌鲁木齐。"
+    )
+    store.addUserConversationMessage("session-1", "把喀纳斯提前")
 
-    const messages = store.getConversationMessages('session-1');
+    const messages = store.getConversationMessages("session-1")
 
     expect(messages).toMatchObject([
-      { role: 'user', content: '规划新疆路线', runId: null },
-      { role: 'assistant', content: '可以。先去乌鲁木齐。', runId: 'run-1' },
-      { role: 'user', content: '把喀纳斯提前', runId: null },
-    ]);
+      { role: "user", content: "规划新疆路线", runId: null },
+      { role: "assistant", content: "可以。先去乌鲁木齐。", runId: "run-1" },
+      { role: "user", content: "把喀纳斯提前", runId: null },
+    ])
 
-    messages[0].content = '外部修改不应写回 store';
-    expect(store.getConversationMessages('session-1')[0].content).toBe(
-      '规划新疆路线'
-    );
-  });
-});
+    messages[0].content = "外部修改不应写回 store"
+    expect(store.getConversationMessages("session-1")[0].content).toBe(
+      "规划新疆路线"
+    )
+  })
+})

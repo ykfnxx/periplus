@@ -7,6 +7,7 @@ import RouteMarkers from "./RouteMarkers"
 import PhotoMarkers from "./PhotoMarkers"
 import PhotoInfoWindow from "./PhotoInfoWindow"
 import PhotoLightbox from "./PhotoLightbox"
+import PhotoSync from "./PhotoSync"
 import LocationSelector from "./LocationSelector"
 import LocationInfoBubble from "./LocationInfoBubble"
 import MapCornerControls from "./MapCornerControls"
@@ -70,6 +71,7 @@ export default function MapContainer() {
       <RoutePolyline key="polyline" />
       <RouteMarkers key="markers" />
       <LocationInfoBubble key="location-info" />
+      <PhotoSync key="photo-sync" />
       <PhotoMarkers key="photo-markers" />
       <PhotoInfoWindow key="photo-info" />
       <PhotoLightbox key="photo-lightbox" />

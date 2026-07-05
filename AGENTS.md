@@ -22,15 +22,17 @@
 **注释和实现写在一处，不要拆分。**
 
 - ✅ 正确：
+
   ```typescript
   // 高德地图使用 GCJ-02 坐标系，所有坐标直接按此存储
-  const path = points.map((p) => new AMap.LngLat(p.lng, p.lat));
+  const path = points.map((p) => new AMap.LngLat(p.lng, p.lat))
   ```
 
 - ❌ 错误（不要单独写注释文件或注释块）：
+
   ```typescript
   // 见 docs/coordinate-system.md 了解坐标系说明
-  const path = points.map((p) => new AMap.LngLat(p.lng, p.lat));
+  const path = points.map((p) => new AMap.LngLat(p.lng, p.lat))
   ```
 
 - **禁止创建独立的注释/说明文档来阐述代码逻辑** — 代码本身 + 行内注释就是全部文档
@@ -69,32 +71,34 @@ npm run build       # 生产构建
 
 ## 4. 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| 框架 | Next.js 15 (App Router) |
-| 语言 | TypeScript 5 (严格模式) |
-| 样式 | Tailwind CSS 4 + shadcn/ui |
-| 地图 | 高德地图 JS API 2.0 |
-| 数据库 | SQLite (开发) |
-| ORM | Prisma |
-| 状态 | Zustand |
-| 测试 | Vitest + Playwright |
+| 层级   | 技术                       |
+| ------ | -------------------------- |
+| 框架   | Next.js 15 (App Router)    |
+| 语言   | TypeScript 5 (严格模式)    |
+| 样式   | Tailwind CSS 4 + shadcn/ui |
+| 地图   | 高德地图 JS API 2.0        |
+| 数据库 | SQLite (开发)              |
+| ORM    | Prisma                     |
+| 状态   | Zustand                    |
+| 测试   | Vitest + Playwright        |
 
 ---
 
-## 5. 高德地图 Key 配置
+## 5. 项目配置
 
-在 `.env.local` 中设置：
+应用配置通过 env 文件提供，代码中只保留薄配置读取层：
 
-```
-NEXT_PUBLIC_AMAP_KEY=你的高德Key
-```
+- `.env.local`：本机开发实际配置，已被 `.gitignore` 忽略
+- `.env.example`：可提交的配置模板
+- `config/periplus.ts`：浏览器可见配置读取层，只读取 `NEXT_PUBLIC_*`
+- `config/periplus.server.ts`：服务端配置读取层，读取数据库、认证、Kimi、MCP 等配置
 
 **注意**：
-- 变量名必须是 `NEXT_PUBLIC_AMAP_KEY`（Next.js 浏览器端环境变量要求）
-- 申请 Key 后需在高德控制台白名单中添加 `localhost:3000`
-- `.env.local` 文件已被 `.gitignore` 忽略，不会意外提交
+
+- 申请 Key 后需在高德控制台白名单中添加 `localhost:3001`
+- 新增配置项应先加入 `.env.example`，再通过 `config/periplus.ts` 或 `config/periplus.server.ts` 读取
+- 运行本地命令时不要再临时前缀 `DATABASE_URL=...`，配置应来自 `.env.local`
 
 ---
 
-*本文件如有变更，直接提交，无需用户额外同意。*
+_本文件如有变更，直接提交，无需用户额外同意。_

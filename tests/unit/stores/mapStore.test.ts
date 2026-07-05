@@ -10,6 +10,7 @@ describe("mapStore UI state", () => {
       pointSelectionDraft: null,
       locationSelectionMode: "none",
       pendingPhotoDataUrl: null,
+      pendingPhotoUpload: null,
       isSelectingLocation: false,
       photoShares: [],
       selectedPhotoShare: null,
@@ -71,8 +72,10 @@ describe("mapStore UI state", () => {
   })
 
   it("starts photo location selection from the photo panel", () => {
-    useMapStore.getState().startPhotoLocationSelection("data-url")
+    const file = new File(["photo"], "photo.png", { type: "image/png" })
+    useMapStore.getState().startPhotoLocationSelection(file, "data-url")
     expect(useMapStore.getState()).toMatchObject({
+      pendingPhotoUpload: { file, imageDataUrl: "data-url" },
       pendingPhotoDataUrl: "data-url",
       locationSelectionMode: "photo",
       isSelectingLocation: true,
@@ -83,6 +86,10 @@ describe("mapStore UI state", () => {
 
   it("clears active location selection state", () => {
     useMapStore.setState({
+      pendingPhotoUpload: {
+        file: new File(["photo"], "photo.png", { type: "image/png" }),
+        imageDataUrl: "data-url",
+      },
       pendingPhotoDataUrl: "data-url",
       pointSelectionDraft: { lat: 31.23, lng: 121.47 },
       isSelectingLocation: true,
@@ -92,6 +99,7 @@ describe("mapStore UI state", () => {
     useMapStore.getState().clearLocationSelection()
 
     expect(useMapStore.getState()).toMatchObject({
+      pendingPhotoUpload: null,
       pendingPhotoDataUrl: null,
       pointSelectionDraft: { lat: 31.23, lng: 121.47 },
       isSelectingLocation: false,
@@ -102,11 +110,14 @@ describe("mapStore UI state", () => {
   it("clears selected and lightbox photo state when a photo is removed", () => {
     const photo = {
       id: "photo-1",
+      ownerId: "user-1",
+      ownerName: "User One",
       lat: 31.23,
       lng: 121.47,
       imageDataUrl: "data:image/png;base64,abc",
       caption: "日落",
       createdAt: 1,
+      canDelete: true,
     }
 
     useMapStore.setState({

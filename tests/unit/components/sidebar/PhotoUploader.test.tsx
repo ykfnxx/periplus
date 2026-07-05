@@ -37,14 +37,16 @@ describe("PhotoUploader", () => {
     const fileInput = container.querySelector("input[type='file']")
     if (!fileInput) throw new Error("Photo input not found")
 
+    const file = new File(["photo"], "photo.png", { type: "image/png" })
     fireEvent.change(fileInput, {
       target: {
-        files: [new File(["photo"], "photo.png", { type: "image/png" })],
+        files: [file],
       },
     })
 
     await waitFor(() => {
       expect(storeState.startPhotoLocationSelection).toHaveBeenCalledWith(
+        file,
         "data:image/png;base64,abc"
       )
     })

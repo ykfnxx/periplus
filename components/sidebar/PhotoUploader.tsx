@@ -1,72 +1,84 @@
-'use client';
+"use client"
 
-import { useRef, useCallback, useState } from 'react';
-import { useMapStore } from '@/stores/mapStore';
-import { parseExifGps, wgs84ToGcj02, readFileAsDataURL } from '@/lib/exif';
+import { useRef, useCallback, useState } from "react"
+import { useMapStore } from "@/stores/mapStore"
+import { parseExifGps, wgs84ToGcj02, readFileAsDataURL } from "@/lib/exif"
+import { photoDtoToShare, uploadPhoto } from "@/lib/photos/client"
 
 export default function PhotoUploader() {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [validationError, setValidationError] = useState('');
-  const addPhotoShare = useMapStore((s) => s.addPhotoShare);
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [validationError, setValidationError] = useState("")
+  const [isUploading, setIsUploading] = useState(false)
+  const addPhotoShare = useMapStore((s) => s.addPhotoShare)
   const startPhotoLocationSelection = useMapStore(
     (s) => s.startPhotoLocationSelection
-  );
-  const clearLocationSelection = useMapStore((s) => s.clearLocationSelection);
-  const isSelectingLocation = useMapStore((s) => s.isSelectingLocation);
-  const locationSelectionMode = useMapStore((s) => s.locationSelectionMode);
+  )
+  const clearLocationSelection = useMapStore((s) => s.clearLocationSelection)
+  const isSelectingLocation = useMapStore((s) => s.isSelectingLocation)
+  const locationSelectionMode = useMapStore((s) => s.locationSelectionMode)
   const isSelectingPhotoLocation =
-    isSelectingLocation && locationSelectionMode === 'photo';
+    isSelectingLocation && locationSelectionMode === "photo"
 
   const clearInput = useCallback(() => {
     if (inputRef.current) {
-      inputRef.current.value = '';
+      inputRef.current.value = ""
     }
-  }, []);
+  }, [])
 
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+      const file = e.target.files?.[0]
+      if (!file) return
 
-      setValidationError('');
+      setValidationError("")
 
-      if (!file.type.startsWith('image/')) {
-        setValidationError('请选择图片文件');
-        clearInput();
-        return;
+      if (!file.type.startsWith("image/")) {
+        setValidationError("请选择图片文件")
+        clearInput()
+        return
       }
 
       if (file.size > 5 * 1024 * 1024) {
-        setValidationError('图片大小不能超过 5MB');
-        clearInput();
-        return;
+        setValidationError("图片大小不能超过 5MB")
+        clearInput()
+        return
       }
 
-      const imageDataUrl = await readFileAsDataURL(file);
-      const gps = await parseExifGps(file);
+      setIsUploading(true)
 
-      if (gps) {
-        // 高德地图使用 GCJ-02，照片 EXIF 坐标需要从 WGS-84 转换后再落点
-        const [gcjLng, gcjLat] = wgs84ToGcj02(gps.lng, gps.lat);
-        addPhotoShare({
-          lat: gcjLat,
-          lng: gcjLng,
-          imageDataUrl,
-          caption: '',
-        });
-      } else {
-        startPhotoLocationSelection(imageDataUrl);
+      try {
+        const imageDataUrl = await readFileAsDataURL(file)
+        const gps = await parseExifGps(file)
+
+        if (gps) {
+          // 高德地图使用 GCJ-02，照片 EXIF 坐标需要从 WGS-84 转换后再落点
+          const [gcjLng, gcjLat] = wgs84ToGcj02(gps.lng, gps.lat)
+          const photo = await uploadPhoto({
+            file,
+            lat: gcjLat,
+            lng: gcjLng,
+          })
+          addPhotoShare(photoDtoToShare(photo))
+        } else {
+          startPhotoLocationSelection(file, imageDataUrl)
+        }
+      } catch (error) {
+        setValidationError(
+          error instanceof Error ? error.message : "图片上传失败"
+        )
+      } finally {
+        setIsUploading(false)
       }
 
-      clearInput();
+      clearInput()
     },
     [addPhotoShare, clearInput, startPhotoLocationSelection]
-  );
+  )
 
   const handleCancelSelection = useCallback(() => {
-    setValidationError('');
-    clearLocationSelection();
-  }, [clearLocationSelection]);
+    setValidationError("")
+    clearLocationSelection()
+  }, [clearLocationSelection])
 
   return (
     <div className="space-y-2">
@@ -94,16 +106,17 @@ export default function PhotoUploader() {
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
+          disabled={isUploading}
           className="h-9 w-full rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
         >
-          添加照片素材
+          {isUploading ? "上传中..." : "添加照片素材"}
         </button>
       )}
       {validationError && (
-        <p className="text-xs font-bold leading-5 text-[var(--periplus-coral)]">
+        <p className="text-xs leading-5 font-bold text-[var(--periplus-coral)]">
           {validationError}
         </p>
       )}
     </div>
-  );
+  )
 }

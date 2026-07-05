@@ -27,7 +27,7 @@ npm run dev:mcp
 }
 ```
 
-MCP server 使用同一个 `DATABASE_URL` 访问当前 Prisma SQLite 数据库。启动 Web 页面不是 MCP 运行的前置条件。
+MCP server 使用 `.env.local` 中的 `DATABASE_URL` 访问同一个 SQLite 数据库。启动 Web 页面不是 MCP 运行的前置条件。
 
 ## 文件结构
 

@@ -1,61 +1,62 @@
 export interface RoutePointDto {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  order: number;
-  stayHours?: number;
-  notes?: string;
+  id: string
+  name: string
+  lat: number
+  lng: number
+  order: number
+  stayHours?: number
+  notes?: string
 }
 
 export interface RouteDto {
-  id: string;
-  name: string;
-  description?: string;
-  points: RoutePointDto[];
-  createdAt: string;
-  updatedAt: string;
+  id: string
+  ownerId: string
+  name: string
+  description?: string
+  points: RoutePointDto[]
+  createdAt: string
+  updatedAt: string
 }
 
 export interface RoutePointInput {
-  name: string;
-  lat: number;
-  lng: number;
-  order: number;
-  stayHours?: number;
-  notes?: string;
+  name: string
+  lat: number
+  lng: number
+  order: number
+  stayHours?: number
+  notes?: string
 }
 
 export type RoutePointPosition =
-  | { placement: 'start' }
-  | { placement: 'end' }
-  | { placement: 'before'; pointId: string }
-  | { placement: 'after'; pointId: string };
+  | { placement: "start" }
+  | { placement: "end" }
+  | { placement: "before"; pointId: string }
+  | { placement: "after"; pointId: string }
 
 export interface RoutePointCreateInput {
-  name: string;
-  lat: number;
-  lng: number;
-  stayHours?: number;
-  notes?: string;
+  name: string
+  lat: number
+  lng: number
+  stayHours?: number
+  notes?: string
 }
 
 export interface RoutePointPatchInput {
-  name?: string;
-  lat?: number;
-  lng?: number;
-  stayHours?: number | null;
-  notes?: string | null;
+  name?: string
+  lat?: number
+  lng?: number
+  stayHours?: number | null
+  notes?: string | null
 }
 
 export interface RouteInput {
-  name: string;
-  description?: string;
-  points: RoutePointInput[];
+  name: string
+  description?: string
+  points: RoutePointInput[]
 }
 
-export type CreateRouteInput = RouteInput;
-export type UpdateRouteInput = RouteInput;
+export type CreateRouteInput = RouteInput
+export type UpdateRouteInput = RouteInput
 
-export type Route = RouteDto;
-export type RoutePoint = RoutePointDto;
+export type Route = RouteDto
+export type RoutePoint = RoutePointDto

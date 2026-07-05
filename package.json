@@ -14,15 +14,18 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
     "@amap/amap-jsapi-types": "^0.0.15",
+    "@better-auth/prisma-adapter": "^1.6.23",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^6.19.3",
     "@types/amap-js-api-scale": "^1.4.5",
     "@types/amap-js-api-tool-bar": "^1.4.4",
+    "better-auth": "^1.6.23",
     "clsx": "^2.1.1",
     "exif-js": "^2.3.0",
     "lucide-react": "^1.21.0",

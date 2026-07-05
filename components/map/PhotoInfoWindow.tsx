@@ -2,6 +2,7 @@
 
 import { Trash2 } from "lucide-react"
 import { type MouseEvent, useCallback, useEffect, useRef } from "react"
+import { deletePhoto } from "@/lib/photos/client"
 import { useMapStore } from "@/stores/mapStore"
 
 function formatUploadDate(timestamp: number) {
@@ -62,9 +63,11 @@ export default function PhotoInfoWindow() {
   }, [updatePosition])
 
   const handleDelete = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
+    async (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
-      removePhotoShare(selectedPhotoShare!.id)
+      if (!selectedPhotoShare?.canDelete) return
+      await deletePhoto(selectedPhotoShare.id)
+      removePhotoShare(selectedPhotoShare.id)
     },
     [removePhotoShare, selectedPhotoShare]
   )
@@ -97,15 +100,17 @@ export default function PhotoInfoWindow() {
           onClick={openLightbox}
           className="h-[112px] w-[112px] cursor-pointer rounded-lg object-cover"
         />
-        <button
-          type="button"
-          onClick={handleDelete}
-          aria-label="删除照片"
-          title="删除"
-          className="absolute right-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full bg-[rgb(44_36_22_/_40%)] text-[var(--periplus-soft-white)] transition hover:bg-[rgb(229_122_119_/_90%)]"
-        >
-          <Trash2 className="h-3 w-3" aria-hidden="true" />
-        </button>
+        {selectedPhotoShare.canDelete && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            aria-label="删除照片"
+            title="删除"
+            className="absolute right-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full bg-[rgb(44_36_22_/_40%)] text-[var(--periplus-soft-white)] transition hover:bg-[rgb(229_122_119_/_90%)]"
+          >
+            <Trash2 className="h-3 w-3" aria-hidden="true" />
+          </button>
+        )}
       </div>
       <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-t-4 border-r-4 border-l-4 border-t-[var(--periplus-soft-white)] border-r-transparent border-l-transparent" />
       <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-full border border-[rgb(44_36_22_/_8%)] bg-[rgb(255_250_243_/_95%)] px-2 py-0.5 text-[11px] whitespace-nowrap text-[var(--periplus-teak)]">
