@@ -13,8 +13,16 @@ describe("mapStore UI state", () => {
       pendingPhotoUpload: null,
       isSelectingLocation: false,
       photoShares: [],
+      selectedLocationPoint: null,
+      selectedLocationAnchor: null,
       selectedPhotoShare: null,
+      selectedPhotoAnchor: null,
       lightboxPhotoShare: null,
+      anchorCluster: {
+        isScattered: false,
+        scatterCenter: null,
+        scatteredAnchors: [],
+      },
     })
   })
 
@@ -132,6 +140,100 @@ describe("mapStore UI state", () => {
       photoShares: [],
       selectedPhotoShare: null,
       lightboxPhotoShare: null,
+    })
+  })
+
+  it("keeps route and photo info windows mutually exclusive", () => {
+    const point = {
+      id: "point-1",
+      name: "测试点",
+      lat: 31.23,
+      lng: 121.47,
+      order: 0,
+    }
+    const photo = {
+      id: "photo-1",
+      ownerId: "user-1",
+      ownerName: "User One",
+      lat: 31.23,
+      lng: 121.47,
+      imageDataUrl: "data:image/png;base64,abc",
+      caption: "日落",
+      createdAt: 1,
+      canDelete: true,
+    }
+
+    useMapStore.getState().setSelectedPhotoShare(photo, { lat: 10, lng: 20 })
+    useMapStore.getState().setSelectedLocationPoint(point, { lat: 30, lng: 40 })
+
+    expect(useMapStore.getState()).toMatchObject({
+      selectedLocationPoint: point,
+      selectedLocationAnchor: { lat: 30, lng: 40 },
+      selectedPhotoShare: null,
+      selectedPhotoAnchor: null,
+    })
+
+    useMapStore.getState().setSelectedPhotoShare(photo, { lat: 50, lng: 60 })
+
+    expect(useMapStore.getState()).toMatchObject({
+      selectedLocationPoint: null,
+      selectedLocationAnchor: null,
+      selectedPhotoShare: photo,
+      selectedPhotoAnchor: { lat: 50, lng: 60 },
+    })
+  })
+
+  it("clears scattered info-window anchors when a cluster collapses", () => {
+    const point = {
+      id: "point-1",
+      name: "测试点",
+      lat: 31.23,
+      lng: 121.47,
+      order: 0,
+    }
+    const photo = {
+      id: "photo-1",
+      ownerId: "user-1",
+      ownerName: "User One",
+      lat: 31.23,
+      lng: 121.47,
+      imageDataUrl: "data:image/png;base64,abc",
+      caption: "日落",
+      createdAt: 1,
+      canDelete: true,
+    }
+
+    useMapStore.setState({
+      selectedLocationPoint: point,
+      selectedLocationAnchor: { lat: 10, lng: 20 },
+      selectedPhotoShare: photo,
+      selectedPhotoAnchor: { lat: 30, lng: 40 },
+      anchorCluster: {
+        isScattered: true,
+        scatterCenter: { x: 12, y: 24 },
+        scatteredAnchors: [
+          {
+            id: "route-point-1",
+            type: "route",
+            originalPixel: { x: 12, y: 24 },
+            scatterOffset: { x: 4, y: -8 },
+          },
+        ],
+      },
+    })
+
+    useMapStore.getState().collapseCluster()
+
+    expect(useMapStore.getState()).toMatchObject({
+      selectedLocationPoint: null,
+      selectedLocationAnchor: null,
+      selectedPhotoShare: null,
+      selectedPhotoAnchor: null,
+      anchorCluster: {
+        isScattered: false,
+        scatterCenter: null,
+        scatteredAnchors: [],
+      },
     })
   })
 })

@@ -7,6 +7,20 @@ export type DraftSaveState = "idle" | "saving" | "success" | "error"
 export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
 export type ChatMessageRole = "user" | "assistant"
 export type AgentSender = (type: string, payload?: unknown) => void
+export type AnchorType = "route" | "photo"
+
+export interface ScatteredAnchor {
+  id: string
+  type: AnchorType
+  originalPixel: { x: number; y: number }
+  scatterOffset: { x: number; y: number }
+}
+
+export interface AnchorClusterState {
+  isScattered: boolean
+  scatterCenter: { x: number; y: number } | null
+  scatteredAnchors: ScatteredAnchor[]
+}
 
 export interface PointSelectionDraft {
   lat: number
@@ -40,6 +54,11 @@ export interface PhotoShare {
   canDelete: boolean
 }
 
+export interface MapAnchor {
+  lat: number
+  lng: number
+}
+
 interface MapState {
   map: AMap.Map | null
   setMap: (map: AMap.Map | null) => void
@@ -57,7 +76,11 @@ interface MapState {
   sendAgentEvent: AgentSender | null
   setAgentSender: (sendAgentEvent: AgentSender | null) => void
   selectedLocationPoint: RoutePoint | null
-  setSelectedLocationPoint: (point: RoutePoint | null) => void
+  selectedLocationAnchor: MapAnchor | null
+  setSelectedLocationPoint: (
+    point: RoutePoint | null,
+    anchor?: MapAnchor
+  ) => void
   mapType: MapType
   setMapType: (type: MapType) => void
   activeMapPanel: ActiveMapPanel
@@ -77,12 +100,20 @@ interface MapState {
   removePhotoShare: (id: string) => void
   updatePhotoShareCaption: (id: string, caption: string) => void
   selectedPhotoShare: PhotoShare | null
-  setSelectedPhotoShare: (photo: PhotoShare | null) => void
+  selectedPhotoAnchor: MapAnchor | null
+  setSelectedPhotoShare: (photo: PhotoShare | null, anchor?: MapAnchor) => void
   lightboxPhotoShare: PhotoShare | null
   setLightboxPhotoShare: (photo: PhotoShare | null) => void
   pendingPhotoUpload: PendingPhotoUpload | null
   pendingPhotoDataUrl: string | null
   isSelectingLocation: boolean
+  anchorCluster: AnchorClusterState
+  setAnchorCluster: (cluster: AnchorClusterState) => void
+  expandCluster: (
+    center: { x: number; y: number },
+    anchors: ScatteredAnchor[]
+  ) => void
+  collapseCluster: () => void
 }
 
 function createChatMessage(
@@ -128,8 +159,15 @@ export const useMapStore = create<MapState>((set) => ({
   sendAgentEvent: null,
   setAgentSender: (sendAgentEvent) => set({ sendAgentEvent }),
   selectedLocationPoint: null,
-  setSelectedLocationPoint: (selectedLocationPoint) =>
-    set({ selectedLocationPoint }),
+  selectedLocationAnchor: null,
+  setSelectedLocationPoint: (selectedLocationPoint, anchor) =>
+    set({
+      selectedLocationPoint,
+      selectedLocationAnchor: anchor ?? null,
+      ...(selectedLocationPoint
+        ? { selectedPhotoShare: null, selectedPhotoAnchor: null }
+        : {}),
+    }),
   mapType: "standard",
   setMapType: (mapType) => set({ mapType }),
   activeMapPanel: "none",
@@ -212,10 +250,44 @@ export const useMapStore = create<MapState>((set) => ({
       return { photoShares: newShares, selectedPhotoShare: newSelected }
     }),
   selectedPhotoShare: null,
-  setSelectedPhotoShare: (selectedPhotoShare) => set({ selectedPhotoShare }),
+  selectedPhotoAnchor: null,
+  setSelectedPhotoShare: (selectedPhotoShare, anchor) =>
+    set({
+      selectedPhotoShare,
+      selectedPhotoAnchor: anchor ?? null,
+      ...(selectedPhotoShare
+        ? { selectedLocationPoint: null, selectedLocationAnchor: null }
+        : {}),
+    }),
   lightboxPhotoShare: null,
   setLightboxPhotoShare: (lightboxPhotoShare) => set({ lightboxPhotoShare }),
   pendingPhotoUpload: null,
   pendingPhotoDataUrl: null,
   isSelectingLocation: false,
+  anchorCluster: {
+    isScattered: false,
+    scatterCenter: null,
+    scatteredAnchors: [],
+  },
+  setAnchorCluster: (anchorCluster) => set({ anchorCluster }),
+  expandCluster: (center, anchors) =>
+    set({
+      anchorCluster: {
+        isScattered: true,
+        scatterCenter: center,
+        scatteredAnchors: anchors,
+      },
+    }),
+  collapseCluster: () =>
+    set({
+      anchorCluster: {
+        isScattered: false,
+        scatterCenter: null,
+        scatteredAnchors: [],
+      },
+      selectedLocationPoint: null,
+      selectedLocationAnchor: null,
+      selectedPhotoShare: null,
+      selectedPhotoAnchor: null,
+    }),
 }))

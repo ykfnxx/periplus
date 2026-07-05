@@ -60,6 +60,97 @@ body {
   width: 48px;
 }
 
+.periplus-overlap-cluster {
+  cursor: pointer;
+  height: 44px;
+  position: relative;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  width: 44px;
+}
+
+.periplus-overlap-cluster:hover {
+  transform: translateY(-1px) scale(1.05);
+}
+
+.periplus-overlap-cluster--dimmed {
+  opacity: 0.38;
+}
+
+.periplus-overlap-cluster--dimmed:hover {
+  opacity: 0.6;
+}
+
+.periplus-overlap-anchor-icon {
+  align-items: center;
+  border: 2px solid var(--periplus-soft-white);
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgb(44 36 22 / 22%);
+  display: flex;
+  font-size: 11px;
+  font-weight: 900;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  width: 30px;
+}
+
+.periplus-overlap-anchor-icon--route {
+  color: var(--periplus-white);
+}
+
+.periplus-overlap-anchor-icon--photo {
+  background: var(--periplus-teak);
+}
+
+.periplus-overlap-anchor-icon--1 {
+  left: 2px;
+  top: 2px;
+  z-index: 2;
+}
+
+.periplus-overlap-anchor-icon--2 {
+  left: 12px;
+  top: 11px;
+  z-index: 1;
+}
+
+.periplus-overlap-cluster__count {
+  align-items: center;
+  background: var(--periplus-ink);
+  border: 1px solid var(--periplus-soft-white);
+  border-radius: 999px;
+  bottom: 0;
+  color: var(--periplus-soft-white);
+  display: flex;
+  font-size: 10px;
+  font-weight: 900;
+  height: 18px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 18px;
+  padding: 0 4px;
+  position: absolute;
+  right: 0;
+  z-index: 3;
+}
+
+@keyframes scatterPop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .periplus-chat-scroll {
   scrollbar-color: rgb(44 36 22 / 20%) transparent;
   scrollbar-width: thin;

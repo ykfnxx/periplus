@@ -1,42 +1,88 @@
-'use client';
+"use client"
 
-import { useEffect } from 'react';
-import { useMapStore } from '@/stores/mapStore';
+import { useEffect } from "react"
+import {
+  calculateAnchorClusters,
+  collectClusteredSourceIds,
+  createAnchorItems,
+} from "@/lib/map/anchor-clusters"
+import { useMapStore } from "@/stores/mapStore"
 
 export default function PhotoMarkers() {
-  const map = useMapStore((s) => s.map);
-  const photoShares = useMapStore((s) => s.photoShares);
-  const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare);
+  const map = useMapStore((s) => s.map)
+  const currentRoute = useMapStore((s) => s.currentRoute)
+  const photoShares = useMapStore((s) => s.photoShares)
+  const selectedPhotoShare = useMapStore((s) => s.selectedPhotoShare)
+  const setSelectedLocationPoint = useMapStore(
+    (s) => s.setSelectedLocationPoint
+  )
+  const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare)
 
   useEffect(() => {
-    if (!map || photoShares.length === 0) return;
+    if (!map || photoShares.length === 0) return
 
-    const markers: AMap.Marker[] = [];
+    const markers: AMap.Marker[] = []
+
+    const routePoints =
+      currentRoute?.points.map((point) => ({
+        id: point.id,
+        lat: point.lat,
+        lng: point.lng,
+        order: point.order,
+        name: point.name,
+      })) ?? []
+    const clusters = calculateAnchorClusters(
+      createAnchorItems(routePoints, photoShares),
+      (anchor) => {
+        const pixel = map.lngLatToContainer(
+          new AMap.LngLat(anchor.lng, anchor.lat)
+        )
+        return { x: pixel.getX(), y: pixel.getY() }
+      }
+    )
+    const clusteredIds = collectClusteredSourceIds(clusters, "photo")
 
     photoShares.forEach((photo) => {
-      const content = document.createElement('div');
-      content.className = 'periplus-photo-marker';
-      content.innerHTML = `<img src="${photo.imageDataUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" />`;
+      // 重叠照片由 OverlapCluster 渲染，普通照片层只画独立照片点。
+      if (clusteredIds.has(photo.id)) return
+
+      const content = document.createElement("div")
+      content.className = "periplus-photo-marker"
+      content.innerHTML = `<img src="${photo.imageDataUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" />`
 
       const marker = new AMap.Marker({
         position: new AMap.LngLat(photo.lng, photo.lat),
         content,
         offset: new AMap.Pixel(-24, -24),
-      });
+      })
 
-      marker.on('click', () => {
-        setSelectedPhotoShare(photo);
-      });
+      marker.on("click", (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(event as any).stopPropagation?.()
+        if (selectedPhotoShare?.id === photo.id) {
+          setSelectedPhotoShare(null)
+          return
+        }
+        setSelectedLocationPoint(null)
+        setSelectedPhotoShare(photo)
+      })
 
-      markers.push(marker);
-    });
+      markers.push(marker)
+    })
 
-    map.add(markers);
+    map.add(markers)
 
     return () => {
-      map.remove(markers);
-    };
-  }, [map, photoShares, setSelectedPhotoShare]);
+      map.remove(markers)
+    }
+  }, [
+    map,
+    currentRoute,
+    photoShares,
+    selectedPhotoShare?.id,
+    setSelectedLocationPoint,
+    setSelectedPhotoShare,
+  ])
 
-  return null;
+  return null
 }

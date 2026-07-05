@@ -8,6 +8,9 @@ export default function LocationInfoBubble() {
   const selectedLocationPoint = useMapStore(
     (state) => state.selectedLocationPoint
   )
+  const selectedLocationAnchor = useMapStore(
+    (state) => state.selectedLocationAnchor
+  )
   const setSelectedLocationPoint = useMapStore(
     (state) => state.setSelectedLocationPoint
   )
@@ -16,13 +19,12 @@ export default function LocationInfoBubble() {
   const updatePosition = useCallback(() => {
     if (!map || !selectedLocationPoint || !overlayRef.current) return
 
-    const pixel = map.lngLatToContainer(
-      new AMap.LngLat(selectedLocationPoint.lng, selectedLocationPoint.lat)
-    )
+    const anchor = selectedLocationAnchor ?? selectedLocationPoint
+    const pixel = map.lngLatToContainer(new AMap.LngLat(anchor.lng, anchor.lat))
 
     overlayRef.current.style.left = `${pixel.getX()}px`
     overlayRef.current.style.top = `${pixel.getY() - 24}px`
-  }, [map, selectedLocationPoint])
+  }, [map, selectedLocationPoint, selectedLocationAnchor])
 
   useEffect(() => {
     if (!map) return

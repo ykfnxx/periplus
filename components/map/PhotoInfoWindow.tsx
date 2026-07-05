@@ -19,6 +19,7 @@ export default function PhotoInfoWindow() {
   const setSelectedPhotoShare = useMapStore(
     (state) => state.setSelectedPhotoShare
   )
+  const selectedPhotoAnchor = useMapStore((state) => state.selectedPhotoAnchor)
   const setLightboxPhotoShare = useMapStore(
     (state) => state.setLightboxPhotoShare
   )
@@ -29,13 +30,12 @@ export default function PhotoInfoWindow() {
   const updatePosition = useCallback(() => {
     if (!map || !selectedPhotoShare || !overlayRef.current) return
 
-    const pixel = map.lngLatToContainer(
-      new AMap.LngLat(selectedPhotoShare.lng, selectedPhotoShare.lat)
-    )
+    const anchor = selectedPhotoAnchor ?? selectedPhotoShare
+    const pixel = map.lngLatToContainer(new AMap.LngLat(anchor.lng, anchor.lat))
 
     overlayRef.current.style.left = `${pixel.getX()}px`
     overlayRef.current.style.top = `${pixel.getY() - 10}px`
-  }, [map, selectedPhotoShare])
+  }, [map, selectedPhotoShare, selectedPhotoAnchor])
 
   useEffect(() => {
     if (!map) return
