@@ -1,0 +1,63 @@
+<h2>设计细节 1/4（修订版）：左侧面板 — AI 对话中心</h2>
+<p class="subtitle">参考 Codex 风格，修订后的对话面板</p>
+
+<div class="mockup">
+  <div class="mockup-header">左侧面板布局（修订版）</div>
+  <div class="mockup-body" style="padding: 0; background: #f5e6d3; border-radius: 8px; min-height: 400px; display: flex; flex-direction: column;">
+    <!-- 整个面板作为一个圆角卡片，外围有阴影 -->
+    <div style="flex: 1; overflow-y: auto; padding: 16px;">
+      <!-- 预设气泡区域（仅首次/空对话时显示） -->
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+        <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer; width: fit-content;">规划一条丝绸之路路线</div>
+        <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer; width: fit-content;">北京周边徒步推荐</div>
+        <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer; width: fit-content;">7天新疆自驾游</div>
+        <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer; width: fit-content;">帮我找有历史感的古镇</div>
+      </div>
+      <!-- 对话历史 -->
+      <div style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+          <div style="background: #2c2416; color: white; padding: 8px 14px; border-radius: 16px; border-bottom-right-radius: 4px; font-size: 14px; max-width: 85%; width: fit-content;">规划一条从北京到西安的路线</div>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #8b7355; margin-bottom: 4px; font-weight: 500;">AI</div>
+          <div style="font-size: 14px; color: #2c2416; line-height: 1.6;">
+            <p>好的，我为你规划了一条路线：</p>
+            <p><strong>北京 → 保定 → 石家庄 → 太原 → 临汾 → 西安</strong></p>
+            <p>全程约 <code style="background: #fffaf3; padding: 2px 6px; border-radius: 4px; font-size: 12px;">1100 公里</code>，建议分 3 天行驶。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- 输入框（无分割线，与内容区无缝衔接） -->
+    <div style="padding: 12px 16px 16px;">
+      <div style="background: white; border-radius: 20px; padding: 10px 16px; font-size: 14px; color: #8b7355; border: 1px solid #d4a574; display: flex; align-items: center;">
+        <span style="flex: 1;">告诉我你想怎么改路线...</span>
+        <span style="color: #d97642; margin-left: 8px;">↵</span>
+      </div>
+      <div style="font-size: 11px; color: #8b7355; margin-top: 4px; text-align: right;">Enter 发送 · Shift+Enter 换行</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>修订要点</h3>
+  <ul>
+    <li><strong>预设气泡</strong>：仅在首次进入或对话为空时显示，开始对话后自动隐藏</li>
+    <li><strong>用户消息</strong>：深色气泡（#2c2416），右对齐，圆角适配内容长度（非全宽）</li>
+    <li><strong>AI 消息</strong>：无气泡，纯文本流式输出，支持 Markdown 渲染（粗体、代码、列表等）</li>
+    <li><strong>无分割线</strong>：输入框与对话区域无缝衔接，无视觉分隔</li>
+    <li><strong>面板阴影</strong>：整个 WorkbenchShell 外围有阴影，圆角设计</li>
+    <li><strong>Markdown 渲染</strong>：AI 返回内容使用 react-markdown 或类似方案渲染</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>Markdown 渲染方案</h3>
+  <p>推荐使用 <code>react-markdown</code> + <code>remark-gfm</code>：</p>
+  <ul>
+    <li>支持标准 Markdown（标题、列表、粗体、斜体、代码块、链接）</li>
+    <li>GFM 扩展支持表格、任务列表、删除线</li>
+    <li>可自定义组件映射：code → 语法高亮、ul/ol → 自定义列表样式</li>
+    <li>流式输出时支持增量渲染，无需等待完整响应</li>
+  </ul>
+</div>

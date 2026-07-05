@@ -1,0 +1,56 @@
+<h2>页面与组件结构</h2>
+<p class="subtitle">未登录用户只看到门禁；登录后进入工作台；管理员多一个管理后台入口。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Unauthenticated</div>
+    <div class="mockup-body">
+      <div class="placeholder" style="min-height:240px;background:#f7f4ec;border-color:#dbc79d">
+        <div style="font-size:28px;font-weight:900;margin-bottom:8px">Periplus</div>
+        <div style="font-size:13px;color:#6b5a44;margin-bottom:24px">旅行轨迹规划平台</div>
+        <button class="mock-button">登录</button>
+        <button class="mock-button" style="background:#fff;color:#43382a;border:1px solid #d2c1a3">注册</button>
+      </div>
+      <p style="font-size:13px;color:#6b7280;margin-top:12px">不展示路线、图片、案例数据；只提供登录/注册入口。</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Authenticated Workbench</div>
+    <div class="mockup-body">
+      <div class="mock-nav">Periplus · 我的路线 · 照片 · admin? · 账户</div>
+      <div style="display:grid;grid-template-columns:160px 1fr 180px;gap:10px;margin-top:10px">
+        <div class="mock-sidebar">我的路线库<br>仅 ownerId = me</div>
+        <div class="placeholder" style="min-height:180px">高德地图 + route draft + photo markers</div>
+        <div class="mock-sidebar">照片素材<br>所有登录用户可见<br>自己/管理员可删</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Admin Console</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:180px 1fr;gap:12px">
+      <div class="mock-sidebar">用户管理<br>路线管理<br>图片管理</div>
+      <div class="mock-content">
+        <div class="mock-nav">用户列表 · 创建 · 改角色 · 禁用 · 重置密码 · 查看资源</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px">
+          <div class="placeholder">User row<br>role/status/actions</div>
+          <div class="placeholder">User routes<br>admin only</div>
+          <div class="placeholder">User photos<br>admin delete</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approve-ui-structure" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Approve UI structure</h3>
+      <p>Use a minimal gate page for visitors, authenticated map workbench for users, and admin console for full user/resource management.</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,81 @@
+<h2>设计细节 3/4（修订版）：地点信息浮窗 — 点击展开</h2>
+<p class="subtitle">参考 Google Maps，点击图标后气泡弹出到图标一侧</p>
+
+<div class="mockup">
+  <div class="mockup-header">地点信息浮窗 — 折叠状态</div>
+  <div class="mockup-body" style="padding: 24px; background: #d4c4a8; border-radius: 8px; min-height: 120px; position: relative;">
+    <!-- 标记点 -->
+    <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);">
+      <div style="width: 28px; height: 28px; background: #d97642; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">1</div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">地点信息浮窗 — 展开状态（气泡在图标右侧）</div>
+  <div class="mockup-body" style="padding: 24px; background: #d4c4a8; border-radius: 8px; min-height: 220px; position: relative;">
+    <!-- 标记点 -->
+    <div style="position: absolute; left: 15%; top: 50%; transform: translate(-50%, -50%);">
+      <div style="width: 28px; height: 28px; background: #d97642; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">1</div>
+    </div>
+    <!-- 小三角箭头（从气泡左侧伸出，指向图标） -->
+    <div style="position: absolute; left: 22%; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-top: 10px solid transparent; border-bottom: 10px solid transparent; border-right: 10px solid #fffaf3;"></div>
+    <!-- 浮窗气泡（在图标右侧） -->
+    <div style="position: absolute; left: 26%; top: 50%; transform: translateY(-50%); width: 200px; background: #fffaf3; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); padding: 0; overflow: hidden;">
+      <!-- 浮窗内容（完整显示，无滚动条） -->
+      <div style="padding: 12px 14px;">
+        <div style="font-size: 15px; font-weight: 600; color: #2c2416; margin-bottom: 4px;">北京</div>
+        <div style="font-size: 11px; color: #8b7355; margin-bottom: 6px;">39.9042°N, 116.4074°E</div>
+        <div style="font-size: 12px; color: #2c2416; line-height: 1.5;">
+          中华人民共和国首都，是一座有着三千多年历史的古都。
+        </div>
+        <div style="font-size: 11px; color: #6b5d4f; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e8dcc8;">
+          停留时间：2 天
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">地点信息浮窗 — 展开状态（气泡在图标上方）</div>
+  <div class="mockup-body" style="padding: 24px; background: #d4c4a8; border-radius: 8px; min-height: 280px; position: relative;">
+    <!-- 标记点 -->
+    <div style="position: absolute; left: 50%; top: 65%; transform: translate(-50%, -50%);">
+      <div style="width: 28px; height: 28px; background: #d97642; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">1</div>
+    </div>
+    <!-- 小三角箭头（从气泡底部伸出，指向图标） -->
+    <div style="position: absolute; left: 50%; top: 52%; transform: translateX(-50%); width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 10px solid #fffaf3;"></div>
+    <!-- 浮窗气泡（在图标上方） -->
+    <div style="position: absolute; left: 50%; top: 8%; transform: translateX(-50%); width: 200px; background: #fffaf3; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); padding: 0; overflow: hidden;">
+      <!-- 浮窗内容（完整显示，无滚动条） -->
+      <div style="padding: 12px 14px;">
+        <div style="font-size: 15px; font-weight: 600; color: #2c2416; margin-bottom: 4px;">北京</div>
+        <div style="font-size: 11px; color: #8b7355; margin-bottom: 6px;">39.9042°N, 116.4074°E</div>
+        <div style="font-size: 12px; color: #2c2416; line-height: 1.5;">
+          中华人民共和国首都，是一座有着三千多年历史的古都。
+        </div>
+        <div style="font-size: 11px; color: #6b5d4f; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e8dcc8;">
+          停留时间：2 天
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>修订要点（参考 Google Maps）</h3>
+  <ul>
+    <li><strong>默认折叠</strong>：标记点仅显示编号圆点</li>
+    <li><strong>点击展开</strong>：点击标记点后，气泡弹出到图标一侧（上方或右侧，根据空间自动调整）</li>
+    <li><strong>不覆盖图标</strong>：气泡与图标完全分离，小三角连接两者</li>
+    <li><strong>小三角指向</strong>：气泡边缘伸出小三角，指向标记图标中心</li>
+    <li><strong>固定宽度</strong>：气泡宽度固定 200px</li>
+    <li><strong>无滚动条</strong>：气泡高度自适应内容，完整显示所有信息</li>
+    <li><strong>UI 风格一致</strong>：使用项目配色（#fffaf3 背景、#2c2416 文字、圆角 12px）</li>
+    <li><strong>无额外按钮</strong>：气泡内不设置任何关闭/编辑/删除按钮</li>
+    <li><strong>点击地图恢复</strong>：点击地图其他位置（非气泡区域）后，气泡自动折叠隐藏</li>
+    <li><strong>单气泡原则</strong>：同时只能有一个气泡展开，点击新标记点自动关闭旧气泡</li>
+    <li><strong>内容结构</strong>：地点名称 → 坐标 → 描述 → 停留时间（如有）</li>
+  </ul>
+</div>

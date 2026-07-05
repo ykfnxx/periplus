@@ -1,0 +1,62 @@
+<h2>统一语义：预览 vs 进入</h2>
+<p class="subtitle">桌面用 hover 预览，移动端用长按预览；点击/轻点都表示进入次级规划。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Recommended Interaction Contract</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+      <div style="min-height:270px;border-radius:14px;background:linear-gradient(135deg,#e7dfd2,#fffaf2);border:1px solid rgba(44,36,22,.12);position:relative;overflow:hidden;padding:18px">
+        <div style="font-weight:900;color:#2c2416">Desktop / precise pointer</div>
+        <div style="font-size:13px;color:#7a6a56;margin-top:6px">Hover shows node card. Click expands sub-plan.</div>
+        <div style="position:absolute;left:48px;top:150px;width:150px;height:3px;background:#9f5d3d;transform:rotate(-12deg)"></div>
+        <div style="position:absolute;left:78px;top:128px;width:40px;height:40px;border-radius:50%;background:#34586f;color:white;display:flex;align-items:center;justify-content:center;font-weight:900;box-shadow:0 0 0 8px rgba(52,88,111,.16)">2</div>
+        <div style="position:absolute;left:128px;top:86px;background:white;border:1px solid rgba(44,36,22,.14);border-radius:12px;width:205px;padding:11px;box-shadow:0 12px 26px rgba(44,36,22,.14)">
+          <div style="font-size:11px;color:#7a6a56;font-weight:900;text-transform:uppercase">hover card</div>
+          <strong style="color:#2c2416;display:block;margin-top:3px">敦煌</strong>
+          <div style="font-size:12px;color:#7a6a56;margin-top:5px">48h · 5 个市内节点</div>
+        </div>
+        <div style="position:absolute;left:28px;bottom:24px;background:white;border:1px solid rgba(44,36,22,.12);border-radius:999px;padding:7px 10px;font-size:12px;color:#9f5d3d;font-weight:800">Click marker → 城市视图</div>
+      </div>
+
+      <div style="min-height:270px;border-radius:14px;background:linear-gradient(135deg,#e7dfd2,#fffaf2);border:1px solid rgba(44,36,22,.12);position:relative;overflow:hidden;padding:18px">
+        <div style="font-weight:900;color:#2c2416">Mobile / touch pointer</div>
+        <div style="font-size:13px;color:#7a6a56;margin-top:6px">Long press shows node card. Tap expands sub-plan.</div>
+        <div style="position:absolute;left:48px;top:150px;width:150px;height:3px;background:#9f5d3d;transform:rotate(-12deg)"></div>
+        <div style="position:absolute;left:78px;top:128px;width:40px;height:40px;border-radius:50%;background:#34586f;color:white;display:flex;align-items:center;justify-content:center;font-weight:900;box-shadow:0 0 0 8px rgba(52,88,111,.16)">2</div>
+        <div style="position:absolute;left:130px;top:88px;background:white;border:1px solid rgba(44,36,22,.14);border-radius:12px;width:205px;padding:11px;box-shadow:0 12px 26px rgba(44,36,22,.14)">
+          <div style="font-size:11px;color:#7a6a56;font-weight:900;text-transform:uppercase">long press card</div>
+          <strong style="color:#2c2416;display:block;margin-top:3px">敦煌</strong>
+          <div style="font-size:12px;color:#7a6a56;margin-top:5px">松手后保留，点地图空白关闭</div>
+        </div>
+        <div style="position:absolute;left:28px;bottom:24px;background:white;border:1px solid rgba(44,36,22,.12);border-radius:999px;padding:7px 10px;font-size:12px;color:#9f5d3d;font-weight:800">Tap marker → 城市视图</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Implementation Guardrails</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="delay" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>长按阈值 500ms</h3>
+        <p>过短容易误触，过长感觉迟钝；500ms 是比较稳的起点。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="cancel-on-move" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>移动超过阈值取消长按</h3>
+        <p>手指开始拖动地图时，不弹卡片，避免阻断地图浏览。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="no-essential-hover" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content">
+        <h3>卡片只做预览和次要动作</h3>
+        <p>进入次级规划永远是点击/轻点节点，避免核心能力只藏在 hover 或长按里。</p>
+      </div>
+    </div>
+  </div>
+</div>

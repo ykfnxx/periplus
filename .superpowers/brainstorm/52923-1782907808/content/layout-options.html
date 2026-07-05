@@ -1,0 +1,38 @@
+<h2>UI/UX 迭代方案对比</h2>
+<p class="subtitle">三种整体布局方向，请选择一个后我们会继续细化</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>方案 A：极简左侧面板</h3>
+      <p>左侧面板仅保留聊天区域（对话历史 + 输入框），完全取消工具栏切换。地图标记点击展开信息浮窗，所有地点/路线信息通过地图交互获取。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>最简洁，零认知负担</li><li>AI 对话成为唯一交互中心</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>照片上传、收藏列表需要另寻入口</li><li>路线统计信息（总里程、停留时间）无处可放</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>方案 B：AI 对话 + 地图叠加控件</h3>
+      <p>左侧面板为聊天区域。地图右上角添加极简控件（照片上传按钮、收藏列表按钮），点击后在地图上层弹出临时面板。路线统计以小型浮动卡片形式显示在地图角落。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>功能完整，不丢失现有能力</li><li>地图-centric，符合迭代方向</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>地图控件需要精心设计避免杂乱</li><li>临时面板与地图标记浮窗可能重叠</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>方案 C：可折叠左侧面板</h3>
+      <p>左侧面板默认显示聊天区域，但可通过手势/按钮展开显示额外功能（照片、收藏、路线统计）。展开时面板宽度增加，地图自适应缩放。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>渐进式披露，新手友好</li><li>所有功能在一个面板内，不分散注意力</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>面板状态管理更复杂</li><li>展开/折叠动画需要打磨</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

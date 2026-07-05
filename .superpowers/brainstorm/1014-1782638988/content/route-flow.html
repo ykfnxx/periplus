@@ -1,0 +1,355 @@
+<style>
+  .flow-board {
+    --cream: #f5e6d3;
+    --white: #fff;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --teak: #8b7355;
+    --bluegray: #7d9ba8;
+    color: var(--ink);
+    font-family: Avenir, "Century Gothic", Futura, system-ui, sans-serif;
+  }
+  .flow-board h2 {
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: 0;
+  }
+  .flow-board .subtitle {
+    max-width: 760px;
+    color: var(--walnut);
+  }
+  .flow-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+  .flow-card {
+    border-radius: 8px;
+    background: #fffaf3;
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 14px 28px rgba(44, 36, 22, 0.10);
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  }
+  .flow-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(217, 118, 66, 0.65);
+    box-shadow: 0 18px 38px rgba(44, 36, 22, 0.14);
+  }
+  .flow-card.selected {
+    outline: 3px solid var(--russet);
+    outline-offset: 3px;
+  }
+  .flow-preview {
+    height: 330px;
+    position: relative;
+    background:
+      radial-gradient(circle at 12% 86%, rgba(212, 165, 116, 0.28) 0 58px, transparent 60px),
+      radial-gradient(ellipse at 90% 18%, rgba(125, 155, 168, 0.22) 0 72px, transparent 74px),
+      linear-gradient(135deg, var(--cream), #fff7ea);
+  }
+  .topbar {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    top: 18px;
+    height: 34px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid rgba(44,36,22,0.14);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 12px;
+    color: var(--walnut);
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+  .dot-logo {
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--russet);
+    box-shadow: 9px 0 0 var(--mustard), 18px 0 0 var(--olive);
+    flex: none;
+  }
+  .panel {
+    position: absolute;
+    top: 70px;
+    left: 18px;
+    bottom: 18px;
+    width: 178px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.94);
+    border: 1px solid rgba(44,36,22,0.16);
+    padding: 14px;
+    box-shadow: 0 15px 30px rgba(44,36,22,0.13);
+  }
+  .map-mini {
+    position: absolute;
+    top: 70px;
+    right: 18px;
+    bottom: 18px;
+    left: 214px;
+    border-radius: 8px;
+    background:
+      linear-gradient(20deg, transparent 0 43%, rgba(217,118,66,0.34) 44% 47%, transparent 48%),
+      linear-gradient(145deg, transparent 0 35%, rgba(74,124,89,0.20) 36% 39%, transparent 40%),
+      #fff2de;
+    border: 1px solid rgba(44,36,22,0.12);
+  }
+  .panel-title {
+    height: 16px;
+    width: 74%;
+    border-radius: 99px;
+    background: var(--ink);
+    opacity: 0.82;
+    margin-bottom: 12px;
+  }
+  .panel-line {
+    height: 7px;
+    border-radius: 99px;
+    background: rgba(44,36,22,0.18);
+    margin-bottom: 8px;
+  }
+  .panel-line.short { width: 48%; }
+  .panel-line.med { width: 68%; }
+  .meta-row {
+    display: flex;
+    gap: 7px;
+    margin: 16px 0;
+  }
+  .meta-pill {
+    height: 24px;
+    flex: 1;
+    border-radius: 999px;
+    background: rgba(212,165,116,0.36);
+    border: 1px solid rgba(44,36,22,0.08);
+  }
+  .timeline {
+    margin-top: 18px;
+  }
+  .timeline-row {
+    display: grid;
+    grid-template-columns: 21px 1fr;
+    gap: 8px;
+    align-items: start;
+    margin-bottom: 10px;
+  }
+  .num {
+    width: 21px;
+    height: 21px;
+    border-radius: 50%;
+    background: var(--russet);
+    color: #fff;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+  }
+  .timeline-row:nth-child(2) .num { background: var(--mustard); color: var(--ink); }
+  .timeline-row:nth-child(3) .num { background: var(--olive); }
+  .field {
+    height: 30px;
+    border-radius: 5px;
+    border: 1px solid rgba(44,36,22,0.18);
+    background: rgba(245,230,211,0.52);
+    margin-bottom: 9px;
+  }
+  .button-row {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    display: flex;
+    gap: 8px;
+  }
+  .button {
+    height: 32px;
+    flex: 1;
+    border-radius: 999px;
+    background: var(--russet);
+  }
+  .button.secondary {
+    background: rgba(44,36,22,0.10);
+    border: 1px solid rgba(44,36,22,0.14);
+  }
+  .map-pin {
+    position: absolute;
+    width: 21px;
+    height: 21px;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 5px 13px rgba(44,36,22,0.22);
+  }
+  .pin-a { top: 74px; right: 55px; background: var(--russet); }
+  .pin-b { bottom: 72px; right: 104px; background: var(--olive); }
+  .pin-c { bottom: 124px; right: 36px; background: var(--mustard); }
+  .flow-body {
+    padding: 17px 18px 19px;
+  }
+  .flow-kicker {
+    color: var(--russet);
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .flow-body h3 {
+    margin: 0 0 8px;
+    color: var(--ink);
+    font-size: 20px;
+    line-height: 1.16;
+  }
+  .flow-body p {
+    margin: 0;
+    color: var(--walnut);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .chip {
+    border-radius: 999px;
+    background: rgba(245,230,211,0.72);
+    border: 1px solid rgba(44,36,22,0.14);
+    padding: 5px 8px;
+    font-size: 11px;
+    color: var(--walnut);
+  }
+  .starburst {
+    position: absolute;
+    right: 24px;
+    top: 24px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, var(--russet) 0 10deg, transparent 10deg 20deg);
+    opacity: 0.74;
+  }
+  @media (max-width: 980px) {
+    .flow-options { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="flow-board">
+  <h2>点击路线后，左侧浮窗应该进入什么状态？</h2>
+  <p class="subtitle">单页地图确定后，核心分歧就是“先看路线”还是“马上编辑”。这会影响 Tab、路线卡片、地图点选、保存按钮和照片分享的位置。</p>
+
+  <div class="flow-options">
+    <div class="flow-card" data-choice="detail-first" onclick="toggleSelect(this)">
+      <div class="flow-preview">
+        <div class="topbar"><div class="dot-logo"></div> Periplus · Silk Road</div>
+        <div class="panel">
+          <div class="panel-title"></div>
+          <div class="panel-line med"></div>
+          <div class="panel-line short"></div>
+          <div class="meta-row">
+            <div class="meta-pill"></div>
+            <div class="meta-pill"></div>
+          </div>
+          <div class="timeline">
+            <div class="timeline-row"><div class="num">1</div><div><div class="panel-line"></div><div class="panel-line short"></div></div></div>
+            <div class="timeline-row"><div class="num">2</div><div><div class="panel-line med"></div><div class="panel-line short"></div></div></div>
+            <div class="timeline-row"><div class="num">3</div><div><div class="panel-line"></div><div class="panel-line med"></div></div></div>
+          </div>
+          <div class="button-row"><div class="button"></div></div>
+        </div>
+        <div class="map-mini">
+          <div class="map-pin pin-a"></div>
+          <div class="map-pin pin-b"></div>
+          <div class="map-pin pin-c"></div>
+        </div>
+      </div>
+      <div class="flow-body">
+        <div class="flow-kicker">选项 A</div>
+        <h3>先显示路线详情</h3>
+        <p>点击路线后进入阅读/预览态：简介、地点时间线、里程/天数、照片摘要。用户点“编辑路线”才进入表单编辑。</p>
+        <div class="chips">
+          <span class="chip">适合探索感</span>
+          <span class="chip">不打扰浏览</span>
+          <span class="chip">多一步编辑</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-card" data-choice="direct-edit" onclick="toggleSelect(this)">
+      <div class="flow-preview">
+        <div class="topbar"><div class="dot-logo"></div> Periplus · Editing</div>
+        <div class="panel">
+          <div class="panel-title"></div>
+          <div class="field"></div>
+          <div class="field"></div>
+          <div class="timeline">
+            <div class="timeline-row"><div class="num">1</div><div><div class="field"></div></div></div>
+            <div class="timeline-row"><div class="num">2</div><div><div class="field"></div></div></div>
+            <div class="timeline-row"><div class="num">+</div><div><div class="field"></div></div></div>
+          </div>
+          <div class="button-row"><div class="button secondary"></div><div class="button"></div></div>
+        </div>
+        <div class="map-mini">
+          <div class="map-pin pin-a"></div>
+          <div class="map-pin pin-b"></div>
+          <div class="map-pin pin-c"></div>
+        </div>
+      </div>
+      <div class="flow-body">
+        <div class="flow-kicker">选项 B</div>
+        <h3>直接进入编辑模式</h3>
+        <p>点击路线后马上出现编辑器：路线名、地点表单、添加/删除/保存都可直接操作。路线更像个人工作草稿。</p>
+        <div class="chips">
+          <span class="chip">最高效</span>
+          <span class="chip">贴近当前实现</span>
+          <span class="chip">浏览压力大</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-card" data-choice="progressive" onclick="toggleSelect(this)">
+      <div class="flow-preview">
+        <div class="topbar"><div class="dot-logo"></div> Periplus · Route Desk</div>
+        <div class="panel">
+          <div class="starburst"></div>
+          <div class="panel-title"></div>
+          <div class="panel-line med"></div>
+          <div class="meta-row">
+            <div class="meta-pill"></div>
+            <div class="meta-pill"></div>
+          </div>
+          <div class="timeline">
+            <div class="timeline-row"><div class="num">1</div><div><div class="panel-line"></div><div class="panel-line short"></div></div></div>
+            <div class="timeline-row"><div class="num">2</div><div><div class="panel-line med"></div><div class="field"></div></div></div>
+            <div class="timeline-row"><div class="num">3</div><div><div class="panel-line"></div><div class="panel-line short"></div></div></div>
+          </div>
+          <div class="button-row"><div class="button secondary"></div><div class="button"></div></div>
+        </div>
+        <div class="map-mini">
+          <div class="map-pin pin-a"></div>
+          <div class="map-pin pin-b"></div>
+          <div class="map-pin pin-c"></div>
+        </div>
+      </div>
+      <div class="flow-body">
+        <div class="flow-kicker">选项 C · 推荐</div>
+        <h3>详情为主，局部渐进编辑</h3>
+        <p>默认是详情/时间线，但地点行和标题可逐步展开编辑；底部有“添加地点”“保存变更”。浏览和创作共用一个面板。</p>
+        <div class="chips">
+          <span class="chip">单页感最好</span>
+          <span class="chip">减少模式切换</span>
+          <span class="chip">实现中等</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

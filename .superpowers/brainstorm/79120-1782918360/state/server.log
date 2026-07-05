@@ -1,0 +1,10 @@
+{"type":"server-started","port":65400,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:65400","screen_dir":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content","state_dir":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/state"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content/photo-bubble-approaches.html"}
+{"source":"user-event","type":"click","text":"A\n    \n      Minimal Bubble — Image Only\n      48px circular thumbnail on map. Click → expands to 120px rounded bubble with narrow border, small triangle pointer pointing down at the marker. No text inside bubble, date shown below the bubble. Delete button: small circular transparent button at bottom-right of bubble, trash icon, opaque on hover.","choice":"a","id":null,"timestamp":1782918945452}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content/initial-chat-state.html"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content/initial-chat-state-v2.html"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content/photo-lightbox-design.html"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content/photo-lightbox-v2.html"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content/photo-lightbox-v3.html"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/79120-1782918360/content/composer-button-states.html"}
+{"type":"server-stopped","reason":"idle timeout"}

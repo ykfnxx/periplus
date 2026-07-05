@@ -1,0 +1,36 @@
+<h2>认证、API 与 Agent 数据流</h2>
+<p class="subtitle">所有真实资源读写都从服务端解析当前用户；普通 sessionId 只用于草稿连接，不再承担权限。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Normal App Flow</div>
+    <div class="mockup-body">
+      <div class="placeholder" style="min-height:72px"><strong>Browser</strong><br>Landing / Login / Workbench / Admin</div>
+      <div style="text-align:center;font-weight:800;color:#6b7280;margin:10px 0">same-origin fetch + secure cookie</div>
+      <div class="placeholder" style="min-height:104px;background:#eef6ff;border-color:#b7d7f8"><strong>Next /api</strong><br>requireCurrentUser()<br>requireAdmin()<br>owner filters</div>
+      <div style="text-align:center;font-weight:800;color:#6b7280;margin:10px 0">Prisma</div>
+      <div class="placeholder" style="min-height:80px;background:#f7f4ec;border-color:#dbc79d"><strong>SQLite</strong><br>User / Route / Photo / Auth tables</div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Agent Flow</div>
+    <div class="mockup-body">
+      <div class="placeholder" style="min-height:72px"><strong>Browser</strong><br>Authenticated user starts agent</div>
+      <div style="text-align:center;font-weight:800;color:#6b7280;margin:10px 0">bootstrap through Next-authenticated context</div>
+      <div class="placeholder" style="min-height:104px;background:#eef6ff;border-color:#b7d7f8"><strong>Next BFF</strong><br>validates user<br>creates/binds agent session<br>passes signed internal context</div>
+      <div style="text-align:center;font-weight:800;color:#6b7280;margin:10px 0">WS/internal call</div>
+      <div class="placeholder" style="min-height:104px;background:#f4f1ff;border-color:#cfc5ff"><strong>Agent Backend</strong><br>draft store keyed by agentSessionId<br>saveDraft(userContext)<br>no global route writes</div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approve-auth-api-flow" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Approve this flow</h3>
+      <p>Next owns auth and authorization; backend agent sessions are bound to users and route/photo writes require user context.</p>
+    </div>
+  </div>
+</div>

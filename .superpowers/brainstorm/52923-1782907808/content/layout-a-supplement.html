@@ -1,0 +1,37 @@
+<h2>方案 A 补充：功能入口设计</h2>
+<p class="subtitle">极简面板下，照片、收藏、统计信息如何呈现？</p>
+
+<div class="options">
+  <div class="option" data-choice="a1" onclick="toggleSelect(this)">
+    <div class="letter">A1</div>
+    <div class="content">
+      <h3>AI 指令驱动</h3>
+      <p>所有功能通过自然语言与 AI 交互完成。例如："上传照片"→弹出文件选择器；"查看我的收藏"→AI 在对话中列出；"显示路线统计"→AI 回复数据。零额外 UI 元素。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>最纯粹的 AI-Centric</li><li>零额外 UI，极致简洁</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>用户必须知道指令关键词</li><li>照片上传的地理位置选择流程较长</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="a2" onclick="toggleSelect(this)">
+    <div class="letter">A2</div>
+    <div class="content">
+      <h3>地图角落极简控件</h3>
+      <p>地图右上角放置 2-3 个小型图标按钮（照片、收藏、设置），平时半透明，hover 时高亮。点击后弹出临时面板，不使用时自动淡出。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>功能 discoverable</li><li>不影响主视觉</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>打破了"纯 AI"的极致简洁</li><li>需要设计好淡出/淡入时机</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="a3" onclick="toggleSelect(this)">
+    <div class="content">
+      <h3>混合方案（推荐）</h3>
+      <p>主要功能走 AI 指令，但为高频操作提供快捷入口：聊天输入框上方有一排小型 icon 按钮（照片上传、收藏），点击直接触发，同时支持 AI 指令。路线统计在地图左下角以小型浮动卡片显示。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>兼顾 AI-Centric 和可用性</li><li>高频操作不依赖记忆指令</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>需要精心设计 icon 的显隐逻辑</li><li>浮动卡片与地图标记浮窗可能重叠</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

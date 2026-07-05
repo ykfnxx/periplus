@@ -1,0 +1,55 @@
+<h2>B 方案：城市视图如何回到顶层？</h2>
+<p class="subtitle">进入靠点击城市节点；退出提供明确控件，缩小地图作为辅助回退。</p>
+
+<div class="mockup">
+  <div class="mockup-header">City View Locked: 敦煌</div>
+  <div class="mockup-body">
+    <div style="height:320px;border-radius:14px;background:#f9f6ef;position:relative;overflow:hidden;border:1px solid rgba(44,36,22,.12)">
+      <div style="position:absolute;inset:0;background:linear-gradient(135deg,rgba(231,223,210,.95),rgba(249,246,239,.96))"></div>
+      <div style="position:absolute;left:28px;top:22px;display:flex;gap:8px;align-items:center;background:white;border:1px solid rgba(44,36,22,.14);border-radius:999px;padding:7px 10px;box-shadow:0 8px 20px rgba(44,36,22,.12);font-size:13px;color:#2c2416">
+        <button class="mock-button" style="padding:5px 10px;background:#2c2416;color:white">← 概览</button>
+        <span style="font-weight:800">敦煌市内规划</span>
+        <span style="color:#7a6a56">Route node 2</span>
+      </div>
+      <div style="position:absolute;right:24px;top:22px;background:white;border:1px solid rgba(44,36,22,.14);border-radius:12px;padding:8px 10px;font-size:12px;box-shadow:0 8px 20px rgba(44,36,22,.1);color:#7a6a56">
+        缩小到 zoom &lt; 12 也会返回概览
+      </div>
+      <div style="position:absolute;left:82px;top:174px;width:180px;border-top:2px dashed #34586f;transform:rotate(-8deg)"></div>
+      <div style="position:absolute;left:242px;top:154px;width:128px;border-top:2px dashed #9f5d3d;transform:rotate(15deg)"></div>
+      <div style="position:absolute;left:75px;top:158px;width:22px;height:22px;border-radius:50%;background:#34586f;color:white;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:800">1</div>
+      <div style="position:absolute;left:176px;top:130px;width:22px;height:22px;background:#9f5d3d;color:white;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:800">2</div>
+      <div style="position:absolute;left:288px;top:173px;width:22px;height:22px;transform:rotate(45deg);background:#c49a3b"></div>
+      <div style="position:absolute;left:398px;top:180px;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-bottom:24px solid #547b59"></div>
+      <div style="position:absolute;left:26px;bottom:24px;background:rgba(255,255,255,.72);border-radius:12px;padding:8px 10px;font-size:12px;color:#7a6a56">
+        顶层 Route 节点可半透明保留作定位锚点，但不可编辑
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>推荐行为</h3>
+  <div class="options">
+    <div class="option" data-choice="explicit-exit" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>主退出：左上“← 概览”</h3>
+        <p>点击后清空 activeRouteNode，viewLevel 回到 overview，并把地图 fit 到顶层路线。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="zoom-out-exit" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>辅助退出：缩小到阈值以下</h3>
+        <p>如果用户 zoom &lt; 12，自动退出城市视图；如果只是平移，不自动切换城市。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="keyboard-exit" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content">
+        <h3>快捷退出：Esc</h3>
+        <p>可作为增强体验，不作为唯一出口。</p>
+      </div>
+    </div>
+  </div>
+</div>

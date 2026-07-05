@@ -1,0 +1,72 @@
+<h2>节点卡片与展开子规划如何兼容？</h2>
+<p class="subtitle">核心原则：点击节点先选择对象，进入子规划用卡片里的明确动作。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 推荐：节点点击 = 打开卡片，卡片按钮 = 展开</div>
+        <div class="mockup-body">
+          <div style="height:230px;border-radius:14px;background:linear-gradient(135deg,#e7dfd2,#f9f6ef);position:relative;overflow:hidden;border:1px solid rgba(44,36,22,.12)">
+            <div style="position:absolute;left:26px;top:112px;width:210px;height:3px;background:#9f5d3d;transform:rotate(-12deg)"></div>
+            <div style="position:absolute;left:74px;top:94px;width:36px;height:36px;border-radius:50%;background:#34586f;color:white;display:flex;align-items:center;justify-content:center;font-weight:800;box-shadow:0 0 0 7px rgba(52,88,111,.18)">2</div>
+            <div style="position:absolute;left:122px;top:38px;background:white;border:1px solid rgba(44,36,22,.14);border-radius:12px;width:230px;padding:12px;box-shadow:0 12px 28px rgba(44,36,22,.16)">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <strong style="color:#2c2416">敦煌</strong>
+                <span style="font-size:11px;color:#7a6a56">48h</span>
+              </div>
+              <div style="font-size:12px;color:#7a6a56;margin-top:6px">莫高窟、鸣沙山、夜市</div>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="mock-button" style="padding:5px 9px;background:#9f5d3d;color:white">展开市内规划</button>
+                <button class="mock-button" style="padding:5px 9px;background:#f1eadf;color:#2c2416">编辑</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Selection First</h3>
+      <p>单击节点只负责选中并打开信息卡；卡片中提供“展开市内规划”。最不冲突，也保留节点查看/编辑入口。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 节点上双热区：卡片区 / 展开区</div>
+        <div class="mockup-body">
+          <div style="height:230px;border-radius:14px;background:linear-gradient(135deg,#e7dfd2,#f9f6ef);position:relative;overflow:hidden;border:1px solid rgba(44,36,22,.12)">
+            <div style="position:absolute;left:30px;top:116px;width:210px;height:3px;background:#9f5d3d;transform:rotate(-12deg)"></div>
+            <div style="position:absolute;left:118px;top:88px;width:44px;height:44px;border-radius:50%;background:#34586f;color:white;display:flex;align-items:center;justify-content:center;font-weight:800">2</div>
+            <div style="position:absolute;left:151px;top:82px;width:18px;height:18px;border-radius:50%;background:#9f5d3d;color:white;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">↗</div>
+            <div style="position:absolute;left:66px;bottom:28px;background:white;border:1px solid rgba(44,36,22,.14);border-radius:999px;padding:7px 10px;font-size:12px;color:#7a6a56">点数字看卡片，点小箭头展开</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Two Hit Areas</h3>
+      <p>更快，但小箭头在移动端/地图上容易误触，视觉负担也更重。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. 双击节点展开</div>
+        <div class="mockup-body">
+          <div style="height:230px;border-radius:14px;background:linear-gradient(135deg,#e7dfd2,#f9f6ef);position:relative;overflow:hidden;border:1px solid rgba(44,36,22,.12)">
+            <div style="position:absolute;left:26px;top:112px;width:210px;height:3px;background:#9f5d3d;transform:rotate(-12deg)"></div>
+            <div style="position:absolute;left:118px;top:88px;width:44px;height:44px;border-radius:50%;background:#34586f;color:white;display:flex;align-items:center;justify-content:center;font-weight:800;box-shadow:0 0 0 7px rgba(52,88,111,.18)">2</div>
+            <div style="position:absolute;left:70px;bottom:28px;background:white;border:1px solid rgba(44,36,22,.14);border-radius:999px;padding:7px 10px;font-size:12px;color:#7a6a56">单击看卡片，双击展开</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Double Click</h3>
+      <p>桌面端还行，但移动端不可发现；也容易和地图双击缩放冲突。</p>
+    </div>
+  </div>
+</div>

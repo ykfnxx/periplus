@@ -106,13 +106,13 @@ describe("PhotoUploadModal", () => {
     expect(screen.getByPlaceholderText("添加描述...")).toBeInTheDocument()
   })
 
-  it("closes modal when close button is clicked", () => {
+  it("closes modal when cancel button is clicked", () => {
     storeState.uploadStep = 1
     storeState.uploadPhotos = []
     render(<PhotoUploadModal />)
 
-    const closeButton = screen.getByText("关闭")
-    fireEvent.click(closeButton)
+    const cancelButton = screen.getByText("取消")
+    fireEvent.click(cancelButton)
 
     expect(storeState.clearUploadState).toHaveBeenCalled()
   })

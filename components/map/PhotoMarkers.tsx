@@ -15,11 +15,11 @@ export default function PhotoMarkers() {
   const viewLevel = useMapStore((s) => s.viewLevel)
   const activeRouteNodeId = useMapStore((s) => s.activeRouteNodeId)
   const photoShares = useMapStore((s) => s.photoShares)
-  const selectedPhotoShare = useMapStore((s) => s.selectedPhotoShare)
+  const lightboxPhotoShare = useMapStore((s) => s.lightboxPhotoShare)
+  const setLightboxPhotoShare = useMapStore((s) => s.setLightboxPhotoShare)
   const setSelectedLocationPoint = useMapStore(
     (s) => s.setSelectedLocationPoint
   )
-  const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare)
 
   useEffect(() => {
     if (!map || photoShares.length === 0) return
@@ -63,12 +63,8 @@ export default function PhotoMarkers() {
       marker.on("click", (event) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(event as any).stopPropagation?.()
-        if (selectedPhotoShare?.id === photo.id) {
-          setSelectedPhotoShare(null)
-          return
-        }
         setSelectedLocationPoint(null)
-        setSelectedPhotoShare(photo)
+        setLightboxPhotoShare(photo)
       })
 
       markers.push(marker)
@@ -85,9 +81,8 @@ export default function PhotoMarkers() {
     viewLevel,
     activeRouteNodeId,
     photoShares,
-    selectedPhotoShare?.id,
     setSelectedLocationPoint,
-    setSelectedPhotoShare,
+    setLightboxPhotoShare,
   ])
 
   return null

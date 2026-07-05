@@ -1,0 +1,76 @@
+<h2>AI Composer 按钮布局（按现有配色风格）</h2>
+<p class="subtitle">发送/保存按钮与 Auto/Suggest 开关的底部行布局方案</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>紧凑底部行</h3>
+      <p>textarea 下方单行：左侧 Save + Send 按钮，右侧 Auto | Suggest 切换</p>
+      <div class="mockup" style="margin-top: 12px; padding: 16px; background: var(--periplus-soft-white); border-radius: 20px; border: 1px solid rgb(44 36 22 / 14%); box-shadow: 0 8px 18px rgb(44 36 22 / 8%);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <div style="display: flex; gap: 6px;">
+            <button style="display: flex; height: 36px; width: 36px; align-items: center; justify-content: center; border-radius: 999px; border: 1px solid rgb(44 36 22 / 14%); background: var(--periplus-cream); color: var(--periplus-walnut); font-size: 12px; cursor: pointer;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            </button>
+            <button style="display: flex; height: 36px; width: 36px; align-items: center; justify-content: center; border-radius: 999px; background: var(--periplus-russet); color: var(--periplus-soft-white); font-size: 12px; cursor: pointer; border: none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </div>
+          <div style="display: flex; gap: 2px; background: var(--periplus-cream); padding: 2px; border-radius: 999px; border: 1px solid rgb(44 36 22 / 12%);">
+            <span style="background: var(--periplus-ink); color: var(--periplus-soft-white); padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: bold;">Auto</span>
+            <span style="padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: bold; color: var(--periplus-teak);">Suggest</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>分组底部行</h3>
+      <p>textarea 下方单行：左侧 Auto | Suggest 切换，右侧 Save + Send 按钮</p>
+      <div class="mockup" style="margin-top: 12px; padding: 16px; background: var(--periplus-soft-white); border-radius: 20px; border: 1px solid rgb(44 36 22 / 14%); box-shadow: 0 8px 18px rgb(44 36 22 / 8%);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <div style="display: flex; gap: 2px; background: var(--periplus-cream); padding: 2px; border-radius: 999px; border: 1px solid rgb(44 36 22 / 12%);">
+            <span style="background: var(--periplus-ink); color: var(--periplus-soft-white); padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: bold;">Auto</span>
+            <span style="padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: bold; color: var(--periplus-teak);">Suggest</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button style="display: flex; height: 36px; width: 36px; align-items: center; justify-content: center; border-radius: 999px; border: 1px solid rgb(44 36 22 / 14%); background: var(--periplus-cream); color: var(--periplus-walnut); font-size: 12px; cursor: pointer;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            </button>
+            <button style="display: flex; height: 36px; width: 36px; align-items: center; justify-content: center; border-radius: 999px; background: var(--periplus-russet); color: var(--periplus-soft-white); font-size: 12px; cursor: pointer; border: none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>双层底部行</h3>
+      <p>textarea 下方两行：第一行 Auto | Suggest 切换（全宽居中），第二行 Save + Send 按钮（右对齐）</p>
+      <div class="mockup" style="margin-top: 12px; padding: 16px; background: var(--periplus-soft-white); border-radius: 20px; border: 1px solid rgb(44 36 22 / 14%); box-shadow: 0 8px 18px rgb(44 36 22 / 8%);">
+        <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+          <div style="display: flex; gap: 2px; background: var(--periplus-cream); padding: 2px; border-radius: 999px; border: 1px solid rgb(44 36 22 / 12%);">
+            <span style="background: var(--periplus-ink); color: var(--periplus-soft-white); padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: bold;">Auto</span>
+            <span style="padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: bold; color: var(--periplus-teak);">Suggest</span>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 6px;">
+          <button style="display: flex; height: 36px; width: 36px; align-items: center; justify-content: center; border-radius: 999px; border: 1px solid rgb(44 36 22 / 14%); background: var(--periplus-cream); color: var(--periplus-walnut); font-size: 12px; cursor: pointer;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          </button>
+          <button style="display: flex; height: 36px; width: 36px; align-items: center; justify-content: center; border-radius: 999px; background: var(--periplus-russet); color: var(--periplus-soft-white); font-size: 12px; cursor: pointer; border: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

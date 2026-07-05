@@ -1,0 +1,142 @@
+<h2>Preview 页面设计 — 极简时间线（区分 Edge 与 Node）</h2>
+<p class="subtitle">基于方案 C 的骨架，Node 与 Edge 视觉区分</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>方案 A：Node 实心圆点 + Edge 虚线连接</h3>
+      <p>Node 用实心圆点标记，Edge 用虚线段表示，两者在视觉上明显区分</p>
+      <div class="mockup" style="margin-top: 12px; padding: 20px; background: var(--periplus-soft-white); border-radius: 16px; border: 1px solid rgb(44 36 22 / 14%);">
+        <div style="max-width: 360px; margin: 0 auto; padding: 0 8px;">
+          <div style="position: relative; padding-left: 28px;">
+            <div style="position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--periplus-bluegray);"></div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">09:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">北京首都机场</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">出发地</p>
+            </div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-bluegray); border-radius: 999px; border: 3px solid white;"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">120km · 1.5h</p>
+              <p style="font-size: 13px; color: var(--periplus-bluegray);">驾车前往</p>
+            </div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">11:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">古北水镇</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">停留 3 小时</p>
+              <div style="display: flex; gap: 6px; margin-top: 8px; overflow-x: auto;">
+                <div style="width: 80px; height: 80px; background: #d4c4b0; border-radius: 8px; flex-shrink: 0;"></div>
+                <div style="width: 80px; height: 80px; background: #d4c4b0; border-radius: 8px; flex-shrink: 0;"></div>
+              </div>
+            </div>
+            
+            <div style="position: relative;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">18:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">承德市区酒店</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">住宿</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>方案 B：Node 大卡片 + Edge 细条</h3>
+      <p>Node 用较大的卡片展示，Edge 用细条/箭头连接，Node 突出，Edge 弱化</p>
+      <div class="mockup" style="margin-top: 12px; padding: 20px; background: var(--periplus-soft-white); border-radius: 16px; border: 1px solid rgb(44 36 22 / 14%);">
+        <div style="max-width: 360px; margin: 0 auto; padding: 0 8px;">
+          <div style="position: relative; padding-left: 28px;">
+            <div style="position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--periplus-bluegray);"></div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">09:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">北京首都机场</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">出发地</p>
+            </div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-bluegray); border-radius: 999px; border: 3px solid white;"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">120km · 1.5h</p>
+              <p style="font-size: 13px; color: var(--periplus-bluegray);">驾车前往</p>
+            </div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">11:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">古北水镇</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">停留 3 小时</p>
+              <div style="display: flex; gap: 6px; margin-top: 8px; overflow-x: auto;">
+                <div style="width: 80px; height: 80px; background: #d4c4b0; border-radius: 8px; flex-shrink: 0;"></div>
+                <div style="width: 80px; height: 80px; background: #d4c4b0; border-radius: 8px; flex-shrink: 0;"></div>
+              </div>
+            </div>
+            
+            <div style="position: relative;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">18:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">承德市区酒店</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">住宿</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>方案 C：Node 编号圆 + Edge 图标</h3>
+      <p>Node 用带编号的圆形标记，Edge 用交通方式图标（车/步行/飞机）表示，信息更丰富</p>
+      <div class="mockup" style="margin-top: 12px; padding: 20px; background: var(--periplus-soft-white); border-radius: 16px; border: 1px solid rgb(44 36 22 / 14%);">
+        <div style="max-width: 360px; margin: 0 auto; padding: 0 8px;">
+          <div style="position: relative; padding-left: 28px;">
+            <div style="position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--periplus-bluegray);"></div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">09:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">北京首都机场</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">出发地</p>
+            </div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-bluegray); border-radius: 999px; border: 3px solid white;"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">120km · 1.5h</p>
+              <p style="font-size: 13px; color: var(--periplus-bluegray);">驾车前往</p>
+            </div>
+            
+            <div style="position: relative; margin-bottom: 20px;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">11:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">古北水镇</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">停留 3 小时</p>
+              <div style="display: flex; gap: 6px; margin-top: 8px; overflow-x: auto;">
+                <div style="width: 80px; height: 80px; background: #d4c4b0; border-radius: 8px; flex-shrink: 0;"></div>
+                <div style="width: 80px; height: 80px; background: #d4c4b0; border-radius: 8px; flex-shrink: 0;"></div>
+              </div>
+            </div>
+            
+            <div style="position: relative;">
+              <div style="position: absolute; left: -24px; top: 0; width: 16px; height: 16px; background: var(--periplus-russet); border-radius: 999px; border: 3px solid white; box-shadow: 0 1px 4px rgb(0 0 0 / 20%);"></div>
+              <p style="font-size: 11px; color: var(--periplus-teak); margin-bottom: 2px;">18:00</p>
+              <p style="font-size: 14px; font-weight: bold; color: var(--periplus-ink);">承德市区酒店</p>
+              <p style="font-size: 12px; color: var(--periplus-walnut); margin-top: 2px;">住宿</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

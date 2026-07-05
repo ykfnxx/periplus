@@ -1,0 +1,325 @@
+<style>
+  .periplus-board {
+    --cream: #f5e6d3;
+    --white: #fff;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --teak: #8b7355;
+    --bluegray: #7d9ba8;
+    --coral: #e57a77;
+    color: var(--ink);
+    font-family: Avenir, "Century Gothic", Futura, system-ui, sans-serif;
+  }
+  .periplus-board .intro {
+    display: flex;
+    justify-content: space-between;
+    gap: 28px;
+    align-items: end;
+    margin-bottom: 24px;
+  }
+  .periplus-board h2 {
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: 0;
+  }
+  .periplus-board .subtitle {
+    max-width: 740px;
+    color: var(--walnut);
+  }
+  .mcm-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .mcm-card {
+    position: relative;
+    overflow: hidden;
+    min-height: 520px;
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    border-radius: 8px;
+    background: var(--cream);
+    cursor: pointer;
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    box-shadow: 0 14px 30px rgba(44, 36, 22, 0.10);
+  }
+  .mcm-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(217, 118, 66, 0.65);
+    box-shadow: 0 18px 38px rgba(44, 36, 22, 0.14);
+  }
+  .mcm-card.selected {
+    outline: 3px solid var(--russet);
+    outline-offset: 3px;
+  }
+  .mcm-preview {
+    height: 318px;
+    position: relative;
+    background:
+      radial-gradient(circle at 22% 18%, rgba(229, 122, 119, 0.24) 0 40px, transparent 42px),
+      radial-gradient(ellipse at 82% 70%, rgba(74, 124, 89, 0.18) 0 76px, transparent 78px),
+      linear-gradient(135deg, #fffaf3, var(--cream));
+  }
+  .mcm-nav {
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    top: 22px;
+    height: 38px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    color: var(--walnut);
+    font-size: 10px;
+    text-transform: uppercase;
+    box-shadow: 0 8px 18px rgba(44, 36, 22, 0.08);
+  }
+  .mcm-logo {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--russet);
+    box-shadow: 10px 0 0 var(--mustard), 20px 0 0 var(--olive);
+  }
+  .map-field {
+    position: absolute;
+    inset: 72px 18px 18px;
+    border-radius: 8px;
+    background:
+      linear-gradient(25deg, transparent 0 42%, rgba(125, 155, 168, 0.28) 43% 45%, transparent 46%),
+      linear-gradient(150deg, transparent 0 34%, rgba(139, 115, 85, 0.18) 35% 37%, transparent 38%),
+      #fff6e9;
+    border: 1px solid rgba(44, 36, 22, 0.12);
+  }
+  .floating-panel {
+    position: absolute;
+    top: 88px;
+    left: 30px;
+    width: 132px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    box-shadow: 0 12px 26px rgba(44, 36, 22, 0.13);
+    padding: 12px;
+  }
+  .line {
+    height: 7px;
+    border-radius: 20px;
+    background: rgba(44, 36, 22, 0.17);
+    margin-bottom: 8px;
+  }
+  .line.short { width: 52%; }
+  .line.med { width: 72%; }
+  .route-dot {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 3px solid var(--white);
+    background: var(--russet);
+    box-shadow: 0 5px 12px rgba(44, 36, 22, 0.20);
+  }
+  .route-dot.one { right: 66px; top: 132px; }
+  .route-dot.two { right: 128px; bottom: 58px; background: var(--olive); }
+  .route-dot.three { right: 36px; bottom: 96px; background: var(--mustard); }
+  .gallery {
+    position: absolute;
+    inset: 86px 24px 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .route-card-mini {
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    padding: 12px;
+  }
+  .route-card-mini .stamp {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--mustard);
+    margin-bottom: 18px;
+  }
+  .split-preview {
+    position: absolute;
+    inset: 82px 20px 20px;
+    display: grid;
+    grid-template-columns: 0.58fr 0.42fr;
+    gap: 12px;
+  }
+  .home-slab {
+    border-radius: 8px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(44,36,22,0.14);
+    padding: 16px;
+  }
+  .map-slab {
+    border-radius: 8px;
+    background:
+      linear-gradient(45deg, transparent 0 48%, rgba(217,118,66,.28) 49% 51%, transparent 52%),
+      #fff6e9;
+    border: 1px solid rgba(44,36,22,0.14);
+  }
+  .mcm-body {
+    padding: 18px;
+  }
+  .mcm-kicker {
+    color: var(--russet);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .mcm-body h3 {
+    margin: 0 0 8px;
+    color: var(--ink);
+    font-size: 20px;
+    line-height: 1.18;
+  }
+  .mcm-body p {
+    margin: 0;
+    color: var(--walnut);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .trade {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .chip {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    padding: 5px 8px;
+    font-size: 11px;
+    color: var(--walnut);
+  }
+  .starburst {
+    position: absolute;
+    right: 20px;
+    top: 78px;
+    width: 54px;
+    height: 54px;
+    background: conic-gradient(from 0deg, var(--russet) 0 10deg, transparent 10deg 20deg);
+    border-radius: 50%;
+    opacity: 0.8;
+  }
+  @media (max-width: 980px) {
+    .mcm-grid { grid-template-columns: 1fr; }
+    .periplus-board .intro { display: block; }
+  }
+</style>
+
+<div class="periplus-board">
+  <div class="intro">
+    <div>
+      <h2>第一期 UI 范围怎么落地？</h2>
+      <p class="subtitle">当前实现是“首页路线列表 + /map 固定侧边栏”。docs/ui_ux 已倾向 Google Maps 式单页地图。下面三种范围都会使用 Mid-Century Modern 视觉语言，但实现成本和产品重心不同。</p>
+    </div>
+  </div>
+
+  <div class="mcm-grid">
+    <div class="mcm-card" data-choice="a" onclick="toggleSelect(this)">
+      <div class="mcm-preview">
+        <div class="mcm-nav"><div class="mcm-logo"></div> Periplus · Search places, routes, notes</div>
+        <div class="map-field"></div>
+        <div class="floating-panel">
+          <div class="line med"></div>
+          <div class="line"></div>
+          <div class="line short"></div>
+        </div>
+        <div class="route-dot one"></div>
+        <div class="route-dot two"></div>
+        <div class="route-dot three"></div>
+        <div class="starburst"></div>
+      </div>
+      <div class="mcm-body">
+        <div class="mcm-kicker">A · 推荐</div>
+        <h3>地图即首页</h3>
+        <p>把 `/` 和 `/map` 的体验收束为全屏地图工作台：顶部悬浮搜索，左侧浮窗 Tabs，路线列表、已保存、探索都在浮窗里完成。</p>
+        <div class="trade">
+          <span class="chip">最贴合草案</span>
+          <span class="chip">改动最大</span>
+          <span class="chip">产品感最强</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mcm-card" data-choice="b" onclick="toggleSelect(this)">
+      <div class="mcm-preview">
+        <div class="mcm-nav"><div class="mcm-logo"></div> Periplus · Routes</div>
+        <div class="gallery">
+          <div class="route-card-mini">
+            <div class="stamp"></div>
+            <div class="line"></div>
+            <div class="line short"></div>
+          </div>
+          <div class="route-card-mini">
+            <div class="stamp" style="background: var(--olive)"></div>
+            <div class="line med"></div>
+            <div class="line short"></div>
+          </div>
+          <div class="route-card-mini">
+            <div class="stamp" style="background: var(--coral)"></div>
+            <div class="line"></div>
+            <div class="line med"></div>
+          </div>
+          <div class="route-card-mini">
+            <div class="stamp" style="background: var(--bluegray)"></div>
+            <div class="line short"></div>
+            <div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="mcm-body">
+        <div class="mcm-kicker">B · 保守</div>
+        <h3>两页都重绘，但结构不变</h3>
+        <p>`/` 继续做路线画廊，`/map` 改成复古现代编辑台。更像“先换皮 + 局部交互整理”。</p>
+        <div class="trade">
+          <span class="chip">风险最低</span>
+          <span class="chip">少改状态流</span>
+          <span class="chip">割裂感仍在</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mcm-card" data-choice="c" onclick="toggleSelect(this)">
+      <div class="mcm-preview">
+        <div class="mcm-nav"><div class="mcm-logo"></div> Periplus · Plan</div>
+        <div class="split-preview">
+          <div class="home-slab">
+            <div class="line"></div>
+            <div class="line med"></div>
+            <div class="line short"></div>
+            <div class="route-card-mini" style="margin-top: 24px">
+              <div class="stamp" style="background: var(--russet)"></div>
+              <div class="line med"></div>
+            </div>
+          </div>
+          <div class="map-slab"></div>
+        </div>
+      </div>
+      <div class="mcm-body">
+        <div class="mcm-kicker">C · 折中</div>
+        <h3>首页做精选入口，地图做主工作台</h3>
+        <p>`/` 是轻量路线发现/最近路线入口，点击后进入完整地图工作台。比 B 更完整，比 A 少一些路由重构。</p>
+        <div class="trade">
+          <span class="chip">分阶段友好</span>
+          <span class="chip">仍有首页价值</span>
+          <span class="chip">范围中等</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

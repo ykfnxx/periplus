@@ -1,0 +1,59 @@
+<div class="mockup">
+  <div class="mockup-header">修正：重叠态图标示意</div>
+  <div class="mockup-body">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px;">
+      <!-- 正常状态：显示重叠态图标 -->
+      <div style="position:relative;width:200px;height:200px;background:#e8e8e8;border-radius:8px;overflow:hidden;">
+        <!-- 重叠态图标（不是数字3，而是专门的叠加图标） -->
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="5" cy="8" r="3"/>
+            <circle cx="11" cy="8" r="3"/>
+          </svg>
+        </div>
+        <p style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#666;white-space:nowrap;">点击前：重叠态图标（不显示数字）</p>
+      </div>
+      
+      <!-- 散开状态：显示各自的真实图标 -->
+      <div style="position:relative;width:200px;height:200px;background:#e8e8e8;border-radius:8px;overflow:hidden;">
+        <!-- 弹出的锚点1（原图标） -->
+        <div style="position:absolute;top:35%;left:35%;width:32px;height:32px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);">1</div>
+        <!-- 弹出的锚点2（照片图标） -->
+        <div style="position:absolute;top:30%;left:55%;width:36px;height:36px;border-radius:50%;overflow:hidden;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.2);">
+          <img src="https://picsum.photos/36/36?random=1" style="width:100%;height:100%;object-fit:cover;">
+        </div>
+        <!-- 弹出的锚点3（原图标） -->
+        <div style="position:absolute;top:55%;left:45%;width:32px;height:32px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);">3</div>
+        <p style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#666;white-space:nowrap;">点击后：各自真实图标散开</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>确认更新后的设计</h3>
+<div class="section">
+  <p class="subtitle">更新后的理解：</p>
+  <ul style="line-height:1.8;">
+    <li><strong>重叠态：</strong>多个锚点重合时，显示一个专门的"重叠态图标"（如叠加圆圈），不显示任何单个锚点的数字/内容</li>
+    <li><strong>散开态：</strong>点击后弹出动画，每个锚点显示其<strong>真实图标</strong>（路线数字、照片缩略图等）</li>
+    <li><strong>选中：</strong>点击某个弹出的真实图标 → 选中该锚点，其他锚点恢复重叠态</li>
+    <li><strong>关闭：</strong>再次点击重叠态图标或地图其他位置 → 所有锚点恢复重叠态</li>
+  </ul>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="confirm" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>确认</h3>
+      <p>按此方案进行</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>还需调整</h3>
+      <p>请说明</p>
+    </div>
+  </div>
+</div>

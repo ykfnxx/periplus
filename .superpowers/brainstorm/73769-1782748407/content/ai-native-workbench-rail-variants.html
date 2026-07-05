@@ -1,0 +1,390 @@
+<style>
+  .periplus-preview {
+    --cream: #f5e6d3;
+    --soft: #fffaf3;
+    --white: #fff;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --teak: #8b7355;
+    --blue: #7d9ba8;
+    --coral: #e57a77;
+    color: var(--ink);
+  }
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+    margin-top: 18px;
+  }
+  .preview-card {
+    border: 2px solid rgba(44, 36, 22, 0.15);
+    border-radius: 12px;
+    background: var(--soft);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .preview-card:hover,
+  .preview-card.selected {
+    border-color: var(--russet);
+    box-shadow: 0 18px 42px rgba(44, 36, 22, 0.14);
+    transform: translateY(-2px);
+  }
+  .map-surface {
+    position: relative;
+    height: 430px;
+    background:
+      linear-gradient(90deg, rgba(44, 36, 22, 0.05) 1px, transparent 1px),
+      linear-gradient(rgba(44, 36, 22, 0.05) 1px, transparent 1px),
+      radial-gradient(circle at 76% 24%, rgba(212, 165, 116, 0.34) 0 8px, transparent 9px),
+      radial-gradient(circle at 60% 62%, rgba(74, 124, 89, 0.26) 0 8px, transparent 9px),
+      linear-gradient(135deg, rgba(125, 155, 168, 0.16), rgba(245, 230, 211, 0.88));
+    background-size: 28px 28px, 28px 28px, auto, auto, auto;
+  }
+  .route {
+    position: absolute;
+    left: 48%;
+    top: 25%;
+    width: 31%;
+    height: 45%;
+    border-top: 5px solid var(--russet);
+    border-right: 5px solid var(--russet);
+    border-bottom: 5px solid var(--russet);
+    border-radius: 70px 20px 70px 20px;
+    transform: rotate(-8deg) skew(-10deg);
+    opacity: 0.9;
+  }
+  .pin {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 3px solid var(--soft);
+    background: var(--mustard);
+    box-shadow: 0 5px 14px rgba(44, 36, 22, 0.25);
+  }
+  .pin.one { left: 53%; top: 24%; }
+  .pin.two { left: 73%; top: 44%; background: var(--olive); }
+  .pin.three { left: 61%; top: 70%; background: var(--coral); }
+  .workbench {
+    position: absolute;
+    left: 18px;
+    top: 18px;
+    bottom: 18px;
+    width: 330px;
+    border-radius: 10px;
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    background: rgba(255, 250, 243, 0.97);
+    box-shadow: 0 18px 40px rgba(44, 36, 22, 0.16);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .brand-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 12px 13px 8px;
+  }
+  .mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 50%, var(--mustard) 0 3px, transparent 4px),
+      conic-gradient(from 20deg, var(--russet), var(--mustard), var(--olive), var(--blue), var(--russet));
+  }
+  .brand-name {
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .brand-sub {
+    color: var(--teak);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+  .rail-top {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 0 12px 10px;
+  }
+  .rail-bottom {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 10px 12px 0;
+  }
+  .tool {
+    display: flex;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    background: rgba(245, 230, 211, 0.75);
+    color: var(--walnut);
+    font-size: 11px;
+    font-weight: 900;
+  }
+  .tool.active {
+    background: var(--ink);
+    color: var(--soft);
+    border-color: var(--ink);
+  }
+  .content {
+    min-height: 0;
+    flex: 1;
+    padding: 0 12px;
+    overflow: hidden;
+  }
+  .content-inner {
+    height: 100%;
+    border-radius: 8px;
+    border: 1px solid rgba(44, 36, 22, 0.12);
+    background: rgba(255, 255, 255, 0.62);
+    padding: 11px;
+    overflow: hidden;
+  }
+  .bubble {
+    margin-bottom: 8px;
+    border-radius: 12px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .bubble.ai { background: rgba(245, 230, 211, 0.9); color: var(--walnut); }
+  .bubble.user { margin-left: 42px; background: var(--ink); color: var(--soft); }
+  .panel-card {
+    margin-top: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(44, 36, 22, 0.12);
+    background: var(--white);
+    padding: 9px;
+  }
+  .panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 7px;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .small-pill {
+    border-radius: 999px;
+    background: rgba(217, 118, 66, 0.12);
+    color: var(--russet);
+    padding: 3px 6px;
+    font-size: 9px;
+    font-weight: 900;
+  }
+  .timeline-row {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    gap: 7px;
+    align-items: center;
+    padding: 5px 0;
+    font-size: 10px;
+    color: var(--walnut);
+  }
+  .num {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--mustard);
+    color: var(--ink);
+    font-weight: 900;
+  }
+  .composer-wrap {
+    padding: 10px 12px 12px;
+  }
+  .composer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    border-radius: 999px;
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    background: var(--white);
+    padding: 0 9px 0 14px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  }
+  .placeholder-text {
+    flex: 1;
+    color: var(--teak);
+    font-size: 12px;
+  }
+  .send {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--russet);
+    color: var(--soft);
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .card-body {
+    padding: 14px;
+  }
+  .card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 900;
+  }
+  .badge {
+    border-radius: 999px;
+    background: var(--cream);
+    color: var(--walnut);
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+  .card-body p {
+    margin: 0;
+    color: var(--walnut);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .map-control-note {
+    position: absolute;
+    right: 18px;
+    bottom: 18px;
+    border-radius: 999px;
+    background: rgba(255, 250, 243, 0.94);
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    padding: 9px 12px;
+    color: var(--walnut);
+    font-size: 11px;
+    font-weight: 900;
+    box-shadow: 0 10px 24px rgba(44, 36, 22, 0.12);
+  }
+  @media (max-width: 980px) {
+    .preview-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="periplus-preview">
+  <h2>C 方案变体：工具轨放在顶部还是底部？</h2>
+  <p class="subtitle">
+    两个方案都保持同一个原则：输入框常驻且不随工具切换重建；切换“规划 / 地点 / 照片 / 收藏”只替换中间内容区。
+    地图右下角不再显示高德自带缩放控件，只保留必要的自定义轻量按钮。
+  </p>
+
+  <div class="preview-grid">
+    <div class="preview-card" data-choice="top" onclick="toggleSelect(this)">
+      <div class="map-surface">
+        <div class="route"></div>
+        <div class="pin one"></div>
+        <div class="pin two"></div>
+        <div class="pin three"></div>
+        <div class="workbench">
+          <div class="brand-row">
+            <div class="mark"></div>
+            <div>
+              <div class="brand-name">Periplus</div>
+              <div class="brand-sub">AI map studio</div>
+            </div>
+          </div>
+          <div class="rail-top">
+            <div class="tool active">规划</div>
+            <div class="tool">地点</div>
+            <div class="tool">照片</div>
+            <div class="tool">收藏</div>
+          </div>
+          <div class="content">
+            <div class="content-inner">
+              <div class="bubble ai">我已经把路线按“少换酒店”重新分组，下面是当前规划。</div>
+              <div class="bubble user">第二天再轻一点。</div>
+              <div class="panel-card">
+                <div class="panel-title">
+                  关西 5 天松弛路线
+                  <span class="small-pill">规划视图</span>
+                </div>
+                <div class="timeline-row"><span class="num">1</span><span>京都老城散步</span><strong>4h</strong></div>
+                <div class="timeline-row"><span class="num">2</span><span>鸭川 · 咖啡店</span><strong>3h</strong></div>
+                <div class="timeline-row"><span class="num">3</span><span>大阪爵士酒吧</span><strong>2h</strong></div>
+              </div>
+            </div>
+          </div>
+          <div class="composer-wrap">
+            <div class="composer">
+              <span class="placeholder-text">告诉我你想怎么改路线...</span>
+              <span class="send">↗</span>
+            </div>
+          </div>
+        </div>
+        <div class="map-control-note">自定义定位 / 选点</div>
+      </div>
+      <div class="card-body">
+        <h3 class="card-title">A. 顶部工具轨 <span class="badge">更像主导航</span></h3>
+        <p>工具模式一眼可见，符合从上到下阅读：品牌、工具、内容、输入。缺点是会压缩顶部对话空间，整体更像传统面板。</p>
+      </div>
+    </div>
+
+    <div class="preview-card" data-choice="bottom" onclick="toggleSelect(this)">
+      <div class="map-surface">
+        <div class="route"></div>
+        <div class="pin one"></div>
+        <div class="pin two"></div>
+        <div class="pin three"></div>
+        <div class="workbench">
+          <div class="brand-row">
+            <div class="mark"></div>
+            <div>
+              <div class="brand-name">Periplus</div>
+              <div class="brand-sub">AI map studio</div>
+            </div>
+          </div>
+          <div class="content">
+            <div class="content-inner">
+              <div class="bubble ai">我已经把路线按“少换酒店”重新分组，下面是当前规划。</div>
+              <div class="bubble user">第二天再轻一点。</div>
+              <div class="panel-card">
+                <div class="panel-title">
+                  关西 5 天松弛路线
+                  <span class="small-pill">规划视图</span>
+                </div>
+                <div class="timeline-row"><span class="num">1</span><span>京都老城散步</span><strong>4h</strong></div>
+                <div class="timeline-row"><span class="num">2</span><span>鸭川 · 咖啡店</span><strong>3h</strong></div>
+                <div class="timeline-row"><span class="num">3</span><span>大阪爵士酒吧</span><strong>2h</strong></div>
+              </div>
+            </div>
+          </div>
+          <div class="rail-bottom">
+            <div class="tool active">规划</div>
+            <div class="tool">地点</div>
+            <div class="tool">照片</div>
+            <div class="tool">收藏</div>
+          </div>
+          <div class="composer-wrap">
+            <div class="composer">
+              <span class="placeholder-text">告诉我你想怎么改路线...</span>
+              <span class="send">↗</span>
+            </div>
+          </div>
+        </div>
+        <div class="map-control-note">自定义定位 / 选点</div>
+      </div>
+      <div class="card-body">
+        <h3 class="card-title">B. 底部工具轨 <span class="badge">更像 AI 工作台</span></h3>
+        <p>对话和结果区更完整，工具靠近输入框，像“输入前选择上下文”。缺点是工具不如顶部醒目，需要做清楚的当前模式反馈。</p>
+      </div>
+    </div>
+  </div>
+</div>

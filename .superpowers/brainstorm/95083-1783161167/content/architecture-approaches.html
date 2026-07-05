@@ -1,0 +1,59 @@
+<h2>多用户与认证架构方案</h2>
+<p class="subtitle">点击一个方案可记录选择；我推荐 A，因为它最贴合当前 Next + Prisma + 独立 agent backend 的项目形态。</p>
+
+<div class="options">
+  <div class="option" data-choice="a-next-bff" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Next BFF 作为认证与资源边界</h3>
+      <p>浏览器只访问 Next 页面和 /api；Better Auth、路线 API、图片 API 都在 Next 服务端鉴权。独立 backend 只做 agent/WS，并通过同一用户会话或内部令牌接受可信上下文。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b-backend-primary" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>独立 backend 成为主后端</h3>
+      <p>认证、路线、图片全部迁到 backend；Next 退为纯 UI。边界更纯，但本轮会变成大迁移。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c-hybrid" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>混合过渡</h3>
+      <p>认证留在 Next，部分资源 API 逐步迁移到 backend。短期灵活，但会出现两套鉴权入口，测试和安全边界更难收敛。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Recommended: A - Next BFF</div>
+    <div class="mockup-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:stretch">
+        <div class="placeholder" style="min-height:120px">
+          <strong>Browser</strong><br>
+          Landing / Auth / Map Workbench / Admin
+        </div>
+        <div class="placeholder" style="min-height:120px;background:#eef6ff;border-color:#b7d7f8">
+          <strong>Next Server</strong><br>
+          Better Auth<br>
+          Route API<br>
+          Photo API<br>
+          Authorization checks
+        </div>
+        <div class="placeholder" style="min-height:120px;background:#f7f4ec;border-color:#dbc79d">
+          <strong>SQLite + Local Files</strong><br>
+          users / sessions<br>
+          routes owned by user<br>
+          photos shared to logged-in users
+        </div>
+      </div>
+      <div style="margin:18px 0;text-align:center;color:#6b7280;font-weight:700">Next validates user context before talking to the agent backend</div>
+      <div class="placeholder" style="max-width:560px;margin:0 auto;min-height:92px;background:#f4f1ff;border-color:#cfc5ff">
+        <strong>Agent Backend</strong><br>
+        WebSocket + draft store + agent runner<br>
+        never writes routes without authenticated user context
+      </div>
+    </div>
+  </div>
+</div>

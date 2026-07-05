@@ -1,0 +1,5 @@
+{"type":"server-started","port":65138,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:65138","screen_dir":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/14607-1783225747/content","state_dir":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/14607-1783225747/state"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/14607-1783225747/content/ui-ux-options.html"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/14607-1783225747/content/anchor-scatter-design.html"}
+{"type":"screen-added","file":"/Users/yangkefan/workspace/fun/periplus/.superpowers/brainstorm/14607-1783225747/content/anchor-scatter-v2.html"}
+{"type":"server-stopped","reason":"idle timeout"}

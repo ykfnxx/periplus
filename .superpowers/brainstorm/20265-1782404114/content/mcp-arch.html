@@ -1,0 +1,187 @@
+<h2>Periplus — MCP 架构：接入 Kimi Code / Codex 等现成 Agent</h2>
+<p class="subtitle">不直接调 LLM API，而是通过 MCP 协议让 IDE Agent 成为"旅行规划助手"</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">🔌 MCP (Model Context Protocol) 数据流</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.6;">
+
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+
+  <!-- 用户 -->
+  <div style="border: 2px solid #3b82f6; border-radius: 10px; padding: 10px 16px; background: #eff6ff; width: 300px; text-align: center;">
+    <div style="font-weight: bold; color: #1e40af;">👤 用户</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">在 IDE 中："帮我规划一个7天日本关西行程"</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <!-- IDE Agent -->
+  <div style="border: 2px solid #8b5cf6; border-radius: 10px; padding: 10px 16px; background: #f5f3ff; width: 340px; text-align: center;">
+    <div style="font-weight: bold; color: #5b21b6;">🤖 IDE Agent (Kimi Code / Codex / ...)</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">理解意图 → 发现需要调用 Periplus 工具</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓ MCP 协议</div>
+
+  <!-- Periplus MCP Server -->
+  <div style="border: 2px solid #f59e0b; border-radius: 10px; padding: 10px; background: #fffbeb; width: 380px;">
+    <div style="font-weight: bold; color: #92400e; text-align: center; margin-bottom: 8px;">⚙️ Periplus MCP Server</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">plan_route</div>
+        <div style="font-size: 10px; color: #6b7280;">路线规划</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">search_spots</div>
+        <div style="font-size: 10px; color: #6b7280;">景点搜索</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">get_guide</div>
+        <div style="font-size: 10px; color: #6b7280;">攻略查询</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">upload_photo</div>
+        <div style="font-size: 10px; color: #6b7280;">照片上传</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">rate_spot</div>
+        <div style="font-size: 10px; color: #6b7280;">景点评分</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">...</div>
+        <div style="font-size: 10px; color: #6b7280;">更多工具</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓ 内部调用</div>
+
+  <!-- Periplus Backend -->
+  <div style="border: 2px solid #10b981; border-radius: 10px; padding: 10px 16px; background: #ecfdf5; width: 340px; text-align: center;">
+    <div style="font-weight: bold; color: #065f46;">🌐 Periplus Backend (Next.js)</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">执行业务逻辑 → 高德 API / 数据库 / 文件存储</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <!-- 结果返回 -->
+  <div style="border: 2px solid #ec4899; border-radius: 10px; padding: 10px 16px; background: #fdf2f8; width: 300px; text-align: center;">
+    <div style="font-weight: bold; color: #9d174d;">📊 结构化结果</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">返回 IDE Agent → 用户看到地图/路线/攻略</div>
+  </div>
+
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🎯 为什么用 MCP 而不是直接 API？</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family: monospace; font-size: 12px; line-height: 1.6;">
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px;">
+    <div style="font-weight: bold; color: #059669; margin-bottom: 6px;">✅ MCP 优势</div>
+    <ul style="font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px;">
+      <li>利用 IDE Agent 的<strong>原生搜索能力</strong> — 无需自建爬虫</li>
+      <li>Agent 自动<strong>多步推理</strong> — 搜索→规划→验证→调整</li>
+      <li>用户<strong>零配置</strong> — 安装 MCP Server 即可，无需 Key</li>
+      <li>Agent 的<strong>上下文记忆</strong> — 对话历史自动保留</li>
+      <li>Agent 的<strong>代码执行能力</strong> — 可运行脚本、处理数据</li>
+      <li>一个 MCP Server，<strong>多 IDE 通用</strong> — Kimi Code、Codex、Claude Code、Cline...</li>
+    </ul>
+  </div>
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px;">
+    <div style="font-weight: bold; color: #dc2626; margin-bottom: 6px;">⚠️ MCP 局限</div>
+    <ul style="font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px;">
+      <li>用户必须在<strong>IDE 环境</strong>中使用 — 不适合普通用户</li>
+      <li>Agent 行为<strong>不可完全控制</strong> — 依赖厂商实现</li>
+      <li>响应<strong>延迟较高</strong> — Agent 思考 + 多步工具调用</li>
+      <li>IDE 外（手机/网页）<strong>无法使用</strong> MCP</li>
+      <li>需要用户<strong>安装配置</strong> MCP Server</li>
+    </ul>
+  </div>
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🏗️ 双轨架构：MCP for IDE + API for Web/App</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family: monospace; font-size: 12px; line-height: 1.5;">
+
+<div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #fafafa; margin-bottom: 10px;">
+  <div style="font-weight: bold; color: #374151; margin-bottom: 6px;">🎯 核心洞察：MCP 和 Web API 不是互斥的</div>
+  <div style="font-size: 11px; color: #4b5563;">
+    MCP Server 和 Web API 可以<strong>共享同一套后端逻辑</strong>。MCP 是 IDE Agent 的"入口"，Web API 是浏览器/手机的"入口"。
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div style="border: 2px solid #8b5cf6; border-radius: 8px; padding: 10px; background: #f5f3ff;">
+    <div style="font-weight: bold; color: #5b21b6; margin-bottom: 6px;">🖥️ IDE 用户（MCP）</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 安装 Periplus MCP Server<br>
+      • 在 Kimi Code / Codex 中对话<br>
+      • Agent 自动调用工具规划旅行<br>
+      • 结果在 IDE 中展示（或打开浏览器）<br>
+      • <strong>适合：开发者、高级用户</strong>
+    </div>
+  </div>
+  <div style="border: 2px solid #3b82f6; border-radius: 8px; padding: 10px; background: #eff6ff;">
+    <div style="font-weight: bold; color: #1e40af; margin-bottom: 6px;">🌐 Web/App 用户（API）</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 打开 Periplus 网页/小程序<br>
+      • 表单/对话输入需求<br>
+      • 后端调用 AI API（BYOA 或平台 Key）<br>
+      • 结果在地图/UI 中可视化<br>
+      • <strong>适合：普通用户、移动端</strong>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 10px; border: 1px dashed #9ca3af; border-radius: 6px; padding: 8px; text-align: center; color: #6b7280; font-size: 11px;">
+  🔄 共享层：同一套业务逻辑、同一套数据库、同一套高德 API 调用
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🤔 关键决策：MCP 的优先级</h3>
+  <div class="options">
+    <div class="option" data-choice="mcp-first" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>MCP 优先</h3>
+        <p>先实现 MCP Server，让 IDE 用户先用起来。验证 Agent-Native 交互后，再扩展 Web 端。开发量最小，最快验证。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="web-first" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>Web 优先</h3>
+        <p>先完善 Web 端（地图可视化是核心），MCP 作为后续扩展。用户基数更大，但 AI 交互验证较慢。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="parallel" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>并行推进</h3>
+        <p>共享后端逻辑，同时实现 MCP Server 和 Web API。开发量最大，但两条线互不阻塞。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle" style="text-align: center; margin-top: 20px;">
+    💡 选择 MCP 优先级策略，我们在终端继续讨论
+  </p>
+</div>

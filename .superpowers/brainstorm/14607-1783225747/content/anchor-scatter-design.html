@@ -1,0 +1,54 @@
+<div class="mockup">
+  <div class="mockup-header">地图锚点散开交互示意</div>
+  <div class="mockup-body">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px;">
+      <!-- 正常状态 -->
+      <div style="position:relative;width:200px;height:200px;background:#e8e8e8;border-radius:8px;overflow:hidden;">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:32px;height:32px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);">3</div>
+        <p style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#666;white-space:nowrap;">点击前：3个锚点重合</p>
+      </div>
+      
+      <!-- 散开状态 -->
+      <div style="position:relative;width:200px;height:200px;background:#e8e8e8;border-radius:8px;overflow:hidden;">
+        <!-- 中心保持原位置 -->
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:32px;height:32px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);opacity:0.3;">3</div>
+        <!-- 弹出的锚点1 -->
+        <div style="position:absolute;top:35%;left:35%;width:32px;height:32px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);animation:popOut 0.3s ease-out;">1</div>
+        <!-- 弹出的锚点2 -->
+        <div style="position:absolute;top:30%;left:55%;width:32px;height:32px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);animation:popOut 0.3s ease-out 0.05s;">2</div>
+        <!-- 弹出的锚点3 -->
+        <div style="position:absolute;top:55%;left:45%;width:32px;height:32px;background:#d47642;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);animation:popOut 0.3s ease-out 0.1s;">3</div>
+        <p style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#666;white-space:nowrap;">点击后：弹开到周围，可独立选择</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>确认设计细节</h3>
+<div class="section">
+  <p class="subtitle">请确认以下理解是否正确：</p>
+  <ul style="line-height:1.8;">
+    <li><strong>判定依据：</strong>以屏幕像素距离为准（非经纬度），接近阈值内视为同一位置</li>
+    <li><strong>触发方式：</strong>点击重合锚点 → 所有接近锚点弹出到周围浮动</li>
+    <li><strong>动画：</strong>弹出动画（从中心向外扩散），0.3s ease-out</li>
+    <li><strong>关闭方式：</strong>再次点击原重合点 / 点击地图其他位置 → 恢复重合状态</li>
+    <li><strong>选中逻辑：</strong>弹出后点击某个锚点即选中它，同时恢复其他锚点原位</li>
+  </ul>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="confirm" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>确认，开始设计</h3>
+      <p>以上理解正确，按此方案进行</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>需要调整</h3>
+      <p>某些细节需要修改，请说明</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,330 @@
+<style>
+  .tabs-board {
+    --cream: #f5e6d3;
+    --white: #fff;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --teak: #8b7355;
+    --bluegray: #7d9ba8;
+    --coral: #e57a77;
+    color: var(--ink);
+    font-family: Avenir, "Century Gothic", Futura, system-ui, sans-serif;
+  }
+  .tabs-board h2 {
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: 0;
+  }
+  .tabs-board .subtitle {
+    max-width: 780px;
+    color: var(--walnut);
+  }
+  .tabs-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+  .tabs-card {
+    overflow: hidden;
+    border-radius: 8px;
+    background: #fffaf3;
+    border: 1px solid rgba(44,36,22,0.16);
+    box-shadow: 0 14px 28px rgba(44,36,22,0.10);
+    cursor: pointer;
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  }
+  .tabs-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(217,118,66,0.65);
+    box-shadow: 0 18px 38px rgba(44,36,22,0.14);
+  }
+  .tabs-card.selected {
+    outline: 3px solid var(--russet);
+    outline-offset: 3px;
+  }
+  .tabs-preview {
+    height: 338px;
+    position: relative;
+    background:
+      radial-gradient(circle at 15% 84%, rgba(212,165,116,0.26) 0 54px, transparent 56px),
+      radial-gradient(ellipse at 90% 15%, rgba(125,155,168,0.24) 0 75px, transparent 77px),
+      linear-gradient(135deg, var(--cream), #fff8ed);
+  }
+  .map {
+    position: absolute;
+    inset: 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(44,36,22,0.12);
+    background:
+      linear-gradient(24deg, transparent 0 40%, rgba(217,118,66,0.30) 41% 44%, transparent 45%),
+      linear-gradient(152deg, transparent 0 52%, rgba(74,124,89,0.22) 53% 55%, transparent 56%),
+      #fff2de;
+  }
+  .topbar {
+    position: absolute;
+    left: 38px;
+    right: 38px;
+    top: 38px;
+    height: 36px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.94);
+    border: 1px solid rgba(44,36,22,0.14);
+    box-shadow: 0 10px 20px rgba(44,36,22,0.11);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+  }
+  .dot-logo {
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--russet);
+    box-shadow: 9px 0 0 var(--mustard), 18px 0 0 var(--olive);
+    flex: none;
+  }
+  .top-line {
+    height: 7px;
+    width: 60%;
+    border-radius: 99px;
+    background: rgba(44,36,22,0.18);
+  }
+  .panel {
+    position: absolute;
+    left: 38px;
+    top: 92px;
+    bottom: 36px;
+    width: 202px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.94);
+    border: 1px solid rgba(44,36,22,0.15);
+    box-shadow: 0 14px 28px rgba(44,36,22,0.13);
+    padding: 12px;
+  }
+  .tab-row {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .tab-row.three { grid-template-columns: repeat(3, 1fr); }
+  .tab-row.four { grid-template-columns: repeat(4, 1fr); }
+  .tab {
+    height: 27px;
+    border-radius: 999px;
+    background: rgba(245,230,211,0.80);
+    border: 1px solid rgba(44,36,22,0.13);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--walnut);
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .tab.active {
+    background: var(--ink);
+    color: #fff8ed;
+    border-color: var(--ink);
+  }
+  .section-title {
+    height: 15px;
+    width: 68%;
+    border-radius: 99px;
+    background: var(--ink);
+    opacity: 0.82;
+    margin-bottom: 13px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 9px;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(44,36,22,0.08);
+  }
+  .stamp {
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    background: var(--russet);
+  }
+  .row:nth-child(3) .stamp { background: var(--mustard); }
+  .row:nth-child(4) .stamp { background: var(--olive); }
+  .line {
+    height: 7px;
+    border-radius: 99px;
+    background: rgba(44,36,22,0.18);
+  }
+  .line.short { width: 48%; margin-top: 6px; }
+  .line.med { width: 70%; }
+  .photo-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px;
+    margin-top: 13px;
+  }
+  .photo {
+    aspect-ratio: 1;
+    border-radius: 6px;
+    background:
+      radial-gradient(circle at 62% 32%, rgba(255,255,255,0.65) 0 8px, transparent 9px),
+      linear-gradient(135deg, var(--bluegray), var(--coral));
+  }
+  .pin {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 5px 13px rgba(44,36,22,0.22);
+  }
+  .pin.a { right: 58px; top: 116px; background: var(--russet); }
+  .pin.b { right: 116px; bottom: 84px; background: var(--olive); }
+  .pin.c { right: 42px; bottom: 136px; background: var(--mustard); }
+  .tabs-body {
+    padding: 17px 18px 19px;
+  }
+  .tabs-kicker {
+    color: var(--russet);
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .tabs-body h3 {
+    margin: 0 0 8px;
+    color: var(--ink);
+    font-size: 20px;
+    line-height: 1.16;
+  }
+  .tabs-body p {
+    margin: 0;
+    color: var(--walnut);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .chip {
+    border-radius: 999px;
+    background: rgba(245,230,211,0.72);
+    border: 1px solid rgba(44,36,22,0.14);
+    padding: 5px 8px;
+    font-size: 11px;
+    color: var(--walnut);
+  }
+  @media (max-width: 980px) {
+    .tabs-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="tabs-board">
+  <h2>左侧浮窗的顶层 Tab 用哪组？</h2>
+  <p class="subtitle">单页里 Tab 是主要导航，不宜太多。当前功能有路线列表、已保存路线、探索推荐、当前路线编辑、照片分享。我的倾向是让“照片”不做顶层 Tab，而作为当前路线里的素材/分享模块。</p>
+
+  <div class="tabs-grid">
+    <div class="tabs-card" data-choice="docs-tabs" onclick="toggleSelect(this)">
+      <div class="tabs-preview">
+        <div class="map"></div>
+        <div class="topbar"><div class="dot-logo"></div><div class="top-line"></div></div>
+        <div class="panel">
+          <div class="tab-row three">
+            <div class="tab active">路线</div>
+            <div class="tab">已保存</div>
+            <div class="tab">探索</div>
+          </div>
+          <div class="section-title"></div>
+          <div class="row"><div class="stamp"></div><div><div class="line"></div><div class="line short"></div></div></div>
+          <div class="row"><div class="stamp"></div><div><div class="line med"></div><div class="line short"></div></div></div>
+          <div class="row"><div class="stamp"></div><div><div class="line"></div><div class="line med"></div></div></div>
+        </div>
+        <div class="pin a"></div>
+        <div class="pin b"></div>
+      </div>
+      <div class="tabs-body">
+        <div class="tabs-kicker">选项 A</div>
+        <h3>路线 / 已保存 / 探索</h3>
+        <p>沿用 docs 草案，语义直接。当前路线和路线列表可能都叫“路线”，后续需要在面板内部再区分。</p>
+        <div class="chips">
+          <span class="chip">最稳妥</span>
+          <span class="chip">和草案一致</span>
+          <span class="chip">“路线”略泛</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs-card" data-choice="workflow-tabs" onclick="toggleSelect(this)">
+      <div class="tabs-preview">
+        <div class="map"></div>
+        <div class="topbar"><div class="dot-logo"></div><div class="top-line"></div></div>
+        <div class="panel">
+          <div class="tab-row three">
+            <div class="tab active">探索</div>
+            <div class="tab">计划</div>
+            <div class="tab">收藏</div>
+          </div>
+          <div class="section-title"></div>
+          <div class="row"><div class="stamp"></div><div><div class="line"></div><div class="line short"></div></div></div>
+          <div class="row"><div class="stamp"></div><div><div class="line med"></div><div class="line short"></div></div></div>
+          <div class="photo-strip">
+            <div class="photo"></div><div class="photo"></div><div class="photo"></div>
+          </div>
+        </div>
+        <div class="pin a"></div>
+        <div class="pin c"></div>
+      </div>
+      <div class="tabs-body">
+        <div class="tabs-kicker">选项 B · 推荐</div>
+        <h3>探索 / 计划 / 收藏</h3>
+        <p>按用户心智分组：先发现路线和地点，再编辑当前计划，再回到保存内容。照片归入“计划”里的素材/分享。</p>
+        <div class="chips">
+          <span class="chip">更产品化</span>
+          <span class="chip">适合单页</span>
+          <span class="chip">需改文案</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs-card" data-choice="object-tabs" onclick="toggleSelect(this)">
+      <div class="tabs-preview">
+        <div class="map"></div>
+        <div class="topbar"><div class="dot-logo"></div><div class="top-line"></div></div>
+        <div class="panel">
+          <div class="tab-row four">
+            <div class="tab active">路线</div>
+            <div class="tab">地点</div>
+            <div class="tab">照片</div>
+            <div class="tab">收藏</div>
+          </div>
+          <div class="section-title"></div>
+          <div class="row"><div class="stamp"></div><div><div class="line"></div><div class="line short"></div></div></div>
+          <div class="photo-strip">
+            <div class="photo"></div><div class="photo"></div><div class="photo"></div>
+          </div>
+          <div class="row"><div class="stamp"></div><div><div class="line med"></div><div class="line short"></div></div></div>
+        </div>
+        <div class="pin a"></div>
+        <div class="pin b"></div>
+        <div class="pin c"></div>
+      </div>
+      <div class="tabs-body">
+        <div class="tabs-kicker">选项 C</div>
+        <h3>路线 / 地点 / 照片 / 收藏</h3>
+        <p>按对象类型分组，清晰但顶层较重。容易把“计划路线”拆成多个工具页，单页工作台会变碎。</p>
+        <div class="chips">
+          <span class="chip">对象清楚</span>
+          <span class="chip">功能外露</span>
+          <span class="chip">导航偏重</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,365 @@
+<style>
+  .periplus-flat-preview {
+    --cream: #f5e6d3;
+    --soft: #fffaf3;
+    --white: #fff;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --teak: #8b7355;
+    --blue: #7d9ba8;
+    --coral: #e57a77;
+    color: var(--ink);
+  }
+  .stage {
+    margin-top: 18px;
+    border: 2px solid rgba(44, 36, 22, 0.14);
+    border-radius: 14px;
+    background: var(--soft);
+    overflow: hidden;
+  }
+  .map-surface {
+    position: relative;
+    height: 620px;
+    background:
+      linear-gradient(90deg, rgba(44, 36, 22, 0.04) 1px, transparent 1px),
+      linear-gradient(rgba(44, 36, 22, 0.04) 1px, transparent 1px),
+      radial-gradient(circle at 77% 23%, rgba(212, 165, 116, 0.33) 0 10px, transparent 11px),
+      radial-gradient(circle at 59% 64%, rgba(74, 124, 89, 0.28) 0 9px, transparent 10px),
+      radial-gradient(circle at 88% 72%, rgba(229, 122, 119, 0.24) 0 8px, transparent 9px),
+      linear-gradient(135deg, rgba(125, 155, 168, 0.16), rgba(245, 230, 211, 0.88));
+    background-size: 30px 30px, 30px 30px, auto, auto, auto, auto;
+  }
+  .route {
+    position: absolute;
+    left: 45%;
+    top: 21%;
+    width: 35%;
+    height: 51%;
+    border-top: 6px solid var(--russet);
+    border-right: 6px solid var(--russet);
+    border-bottom: 6px solid var(--russet);
+    border-radius: 90px 20px 90px 18px;
+    transform: rotate(-8deg) skew(-9deg);
+    opacity: 0.92;
+  }
+  .pin {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 3px solid var(--soft);
+    background: var(--mustard);
+    box-shadow: 0 5px 14px rgba(44, 36, 22, 0.26);
+  }
+  .pin.one { left: 52%; top: 22%; }
+  .pin.two { left: 75%; top: 43%; background: var(--olive); }
+  .pin.three { left: 61%; top: 71%; background: var(--coral); }
+  .workbench {
+    position: absolute;
+    top: 18px;
+    bottom: 18px;
+    left: 18px;
+    width: 370px;
+    border-radius: 10px;
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    background: rgba(255, 250, 243, 0.97);
+    box-shadow: 0 18px 42px rgba(44, 36, 22, 0.17);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .content {
+    min-height: 0;
+    flex: 1;
+    padding: 12px 12px 0;
+    overflow: hidden;
+  }
+  .content-inner {
+    height: 100%;
+    border-radius: 8px;
+    border: 1px solid rgba(44, 36, 22, 0.12);
+    background: rgba(255, 255, 255, 0.64);
+    padding: 12px;
+    overflow: hidden;
+  }
+  .mode-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .mode-label strong {
+    font-size: 13px;
+    font-weight: 950;
+  }
+  .mode-label span {
+    border-radius: 999px;
+    background: rgba(217, 118, 66, 0.13);
+    color: var(--russet);
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 950;
+  }
+  .bubble {
+    margin-bottom: 8px;
+    border-radius: 12px;
+    padding: 9px 10px;
+    font-size: 12px;
+    line-height: 1.46;
+  }
+  .bubble.ai {
+    background: rgba(245, 230, 211, 0.9);
+    color: var(--walnut);
+  }
+  .bubble.user {
+    margin-left: 56px;
+    background: var(--ink);
+    color: var(--soft);
+  }
+  .panel-card {
+    margin-top: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(44, 36, 22, 0.12);
+    background: var(--white);
+    padding: 10px;
+  }
+  .panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 950;
+  }
+  .meta {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .meta span {
+    border-radius: 999px;
+    background: rgba(245, 230, 211, 0.86);
+    color: var(--teak);
+    padding: 4px 7px;
+    font-size: 10px;
+    font-weight: 900;
+  }
+  .timeline-row {
+    display: grid;
+    grid-template-columns: 20px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-top: 1px solid rgba(44, 36, 22, 0.08);
+    font-size: 11px;
+    color: var(--walnut);
+  }
+  .timeline-row:first-of-type {
+    border-top: 0;
+  }
+  .num {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--mustard);
+    color: var(--ink);
+    font-size: 10px;
+    font-weight: 950;
+  }
+  .rail-wrap {
+    padding: 8px 12px 0;
+  }
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    height: 30px;
+    border-radius: 999px;
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    background: rgba(245, 230, 211, 0.72);
+    padding: 3px;
+  }
+  .tool {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    color: var(--walnut);
+    font-size: 10px;
+    font-weight: 950;
+    line-height: 1;
+  }
+  .tool.active {
+    background: var(--ink);
+    color: var(--soft);
+    box-shadow: 0 4px 10px rgba(44, 36, 22, 0.16);
+  }
+  .composer-wrap {
+    padding: 8px 12px 12px;
+  }
+  .composer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    border-radius: 999px;
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    background: var(--white);
+    padding: 0 8px 0 14px;
+  }
+  .placeholder-text {
+    flex: 1;
+    color: var(--teak);
+    font-size: 12px;
+  }
+  .send {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--russet);
+    color: var(--soft);
+    font-size: 13px;
+    font-weight: 950;
+  }
+  .settings-button {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    display: grid;
+    width: 42px;
+    height: 42px;
+    place-items: center;
+    border-radius: 999px;
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    background: rgba(255, 250, 243, 0.94);
+    color: var(--ink);
+    box-shadow: 0 10px 24px rgba(44, 36, 22, 0.12);
+  }
+  .settings-button svg {
+    width: 19px;
+    height: 19px;
+    stroke: currentColor;
+  }
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding: 14px;
+    background: var(--soft);
+    border-top: 1px solid rgba(44, 36, 22, 0.12);
+  }
+  .note {
+    border-radius: 8px;
+    border: 1px solid rgba(44, 36, 22, 0.12);
+    background: white;
+    padding: 10px;
+  }
+  .note strong {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .note p {
+    margin: 0;
+    color: var(--walnut);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  @media (max-width: 860px) {
+    .map-surface { height: 580px; }
+    .workbench {
+      right: 18px;
+      width: auto;
+    }
+    .notes { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="periplus-flat-preview">
+  <h2>扁平底部工具轨 + 右上设置</h2>
+  <p class="subtitle">
+    工具轨压低成 segmented bar，减少底部占用；地图右上和右下快捷浮标移除，只保留右上角齿轮设置入口。
+  </p>
+
+  <div class="stage">
+    <div class="map-surface">
+      <div class="route"></div>
+      <div class="pin one"></div>
+      <div class="pin two"></div>
+      <div class="pin three"></div>
+
+      <button class="settings-button" aria-label="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 0 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.3 7A2 2 0 0 1 7.1 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 .9-1.6V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 .9 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 0 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.6.9h.1a2 2 0 0 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"></path>
+        </svg>
+      </button>
+
+      <div class="workbench">
+        <div class="content">
+          <div class="content-inner">
+            <div class="mode-label">
+              <strong>规划</strong>
+              <span>当前工具内容</span>
+            </div>
+            <div class="bubble ai">我已经把路线按“少换酒店”重新分组。你可以继续对话，也可以切到底部工具查看地点、照片或收藏。</div>
+            <div class="bubble user">第二天再轻一点。</div>
+
+            <div class="panel-card">
+              <div class="panel-title">关西 5 天松弛路线</div>
+              <div class="meta">
+                <span>8 地点</span>
+                <span>5 天</span>
+                <span>少换酒店</span>
+              </div>
+              <div class="timeline-row"><span class="num">1</span><span>京都老城散步</span><strong>4h</strong></div>
+              <div class="timeline-row"><span class="num">2</span><span>鸭川 · 咖啡店</span><strong>3h</strong></div>
+              <div class="timeline-row"><span class="num">3</span><span>大阪爵士酒吧</span><strong>2h</strong></div>
+              <div class="timeline-row"><span class="num">4</span><span>奈良半日往返</span><strong>5h</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rail-wrap">
+          <div class="rail">
+            <div class="tool active">规划</div>
+            <div class="tool">地点</div>
+            <div class="tool">照片</div>
+            <div class="tool">收藏</div>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer">
+            <span class="placeholder-text">告诉我你想怎么改路线...</span>
+            <span class="send">↗</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes">
+      <div class="note">
+        <strong>工具轨</strong>
+        <p>高度约 30px，作为模式切换器，而不是大按钮区。</p>
+      </div>
+      <div class="note">
+        <strong>地图浮标</strong>
+        <p>删除右上角地图样式/探索按钮与右下角定位/选点按钮。</p>
+      </div>
+      <div class="note">
+        <strong>设置入口</strong>
+        <p>右上角只保留齿轮按钮，后续承载地图样式、偏好、开发设置等。</p>
+      </div>
+    </div>
+  </div>
+</div>

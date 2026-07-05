@@ -1,0 +1,33 @@
+<h2>Composer Button State Transition</h2>
+<p class="subtitle">Send button becomes Stop button during AI generation</p>
+
+<div class="mockup">
+  <div class="mockup-header">Normal State (isDraftLocked = false)</div>
+  <div class="mockup-body" style="display:flex;align-items:center;justify-content:center;min-height:120px;background:#faf8f5;">
+    <div style="display:flex;align-items:center;gap:8px;background:white;border-radius:20px;padding:12px 16px;border:1px solid rgba(44,36,22,0.14);box-shadow:0 8px 18px rgba(44,36,22,0.08);width:400px;">
+      <textarea placeholder="告诉我你想怎么改路线..." style="flex:1;border:none;outline:none;resize:none;font-size:14px;color:#2c2416;background:transparent;" rows="1"></textarea>
+      <button style="width:36px;height:36px;border-radius:50%;background:#f5e6d3;border:1px solid rgba(44,36,22,0.14);color:#6b5d4f;display:flex;align-items:center;justify-content:center;cursor:pointer;">💾</button>
+      <button style="width:36px;height:36px;border-radius:50%;background:#d97642;color:#fffaf3;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;">➤</button>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">AI Generating State (isDraftLocked = true)</div>
+  <div class="mockup-body" style="display:flex;align-items:center;justify-content:center;min-height:120px;background:#faf8f5;">
+    <div style="display:flex;align-items:center;gap:8px;background:white;border-radius:20px;padding:12px 16px;border:1px solid rgba(44,36,22,0.14);box-shadow:0 8px 18px rgba(44,36,22,0.08);width:400px;opacity:0.7;">
+      <textarea disabled placeholder="AI正在生成..." style="flex:1;border:none;outline:none;resize:none;font-size:14px;color:#2c2416;background:transparent;" rows="1"></textarea>
+      <button style="width:36px;height:36px;border-radius:50%;background:#2c2416;color:#fffaf3;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;">⏹</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Behavior</h3>
+  <ul>
+    <li><strong>Normal:</strong> Save button (disk) + Send button (paper plane, russet bg)</li>
+    <li><strong>Generating:</strong> Save button hidden, Send button becomes Stop button (square, ink bg)</li>
+    <li><strong>Double Esc:</strong> Global keyboard listener, double-tap within 500ms triggers cancel</li>
+    <li><strong>Visual feedback:</strong> Input area dims slightly when disabled</li>
+  </ul>
+</div>

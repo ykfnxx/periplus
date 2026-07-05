@@ -1,0 +1,279 @@
+<h2>Periplus — 最终架构定稿</h2>
+<p class="subtitle">Agent 自带 AI，Periplus 提供数据层 + MCP 工具；产品化后自建 Agent</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">🏗️ 完整系统架构图</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 12px; line-height: 1.5;">
+
+<!-- 顶层：用户入口 -->
+<div style="border: 2px solid #3b82f6; border-radius: 8px; padding: 8px; margin-bottom: 8px; background: #eff6ff;">
+  <div style="font-weight: bold; color: #1e40af; margin-bottom: 6px;">👤 用户入口层</div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
+    <div style="border: 1px solid #93c5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 12px;">🌐 Web 端</div>
+      <div style="font-size: 10px; color: #6b7280;">Next.js + 高德地图<br>浏览器直接使用</div>
+    </div>
+    <div style="border: 1px solid #93c5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 12px;">📱 移动端</div>
+      <div style="font-size: 10px; color: #6b7280;">小程序 / App<br>（后续扩展）</div>
+    </div>
+    <div style="border: 1px solid #93c5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 12px;">🤖 Agent 端</div>
+      <div style="font-size: 10px; color: #6b7280;">Kimi Code / Codex / ...<br>MCP 协议连接</div>
+    </div>
+  </div>
+</div>
+
+<!-- 接入层 -->
+<div style="border: 2px solid #10b981; border-radius: 8px; padding: 8px; margin-bottom: 8px; background: #ecfdf5;">
+  <div style="font-weight: bold; color: #065f46; margin-bottom: 6px;">🌐 接入层</div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+    <div style="border: 1px solid #6ee7b7; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 12px;">REST API Gateway</div>
+      <div style="font-size: 10px; color: #6b7280;">Web/App 请求入口<br>JWT / Session 鉴权</div>
+    </div>
+    <div style="border: 1px solid #6ee7b7; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 12px;">MCP Server (SSE/HTTP)</div>
+      <div style="font-size: 10px; color: #6b7280;">Agent 请求入口<br>Token 鉴权</div>
+    </div>
+  </div>
+</div>
+
+<!-- 服务层 -->
+<div style="border: 2px solid #f59e0b; border-radius: 8px; padding: 8px; margin-bottom: 8px; background: #fffbeb;">
+  <div style="font-weight: bold; color: #92400e; margin-bottom: 6px;">⚙️ 服务层 — Periplus Core</div>
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">🗺️ 地图服务</div>
+      <div style="font-size: 9px; color: #6b7280;">高德 SDK<br>POI 搜索</div>
+    </div>
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">🛣️ 路线服务</div>
+      <div style="font-size: 9px; color: #6b7280;">CRUD 路线<br>路线点管理</div>
+    </div>
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">📸 内容服务</div>
+      <div style="font-size: 9px; color: #6b7280;">照片上传<br>EXIF 解析</div>
+    </div>
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">⭐ 评分服务</div>
+      <div style="font-size: 9px; color: #6b7280;">用户评分<br>评论系统</div>
+    </div>
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">📖 攻略服务</div>
+      <div style="font-size: 9px; color: #6b7280;">预置数据查询<br>（聚合后续扩展）</div>
+    </div>
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">👤 用户服务</div>
+      <div style="font-size: 9px; color: #6b7280;">注册/登录<br>OAuth / 账户</div>
+    </div>
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">🔍 搜索服务</div>
+      <div style="font-size: 9px; color: #6b7280;">全文检索<br>POI 搜索</div>
+    </div>
+    <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">🔐 MCP 服务</div>
+      <div style="font-size: 9px; color: #6b7280;">工具暴露<br>Schema 定义</div>
+    </div>
+  </div>
+</div>
+
+<!-- 数据层 -->
+<div style="border: 2px solid #ef4444; border-radius: 8px; padding: 8px; margin-bottom: 8px; background: #fef2f2;">
+  <div style="font-weight: bold; color: #991b1b; margin-bottom: 6px;">💾 数据层（平台托管）</div>
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+    <div style="border: 1px solid #fca5a5; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">PostgreSQL</div>
+      <div style="font-size: 9px; color: #6b7280;">用户、路线<br>评论、评分</div>
+    </div>
+    <div style="border: 1px solid #fca5a5; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">PostGIS</div>
+      <div style="font-size: 9px; color: #6b7280;">空间数据<br>GeoJSON</div>
+    </div>
+    <div style="border: 1px solid #fca5a5; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">OSS / S3</div>
+      <div style="font-size: 9px; color: #6b7280;">图片、视频<br>用户头像</div>
+    </div>
+    <div style="border: 1px solid #fca5a5; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+      <div style="font-weight: bold; font-size: 11px;">Redis</div>
+      <div style="font-size: 9px; color: #6b7280;">缓存、会话<br>限流</div>
+    </div>
+  </div>
+</div>
+
+<!-- 外部服务 -->
+<div style="border: 2px dashed #6b7280; border-radius: 8px; padding: 8px; background: #f9fafb;">
+  <div style="font-weight: bold; color: #374151; margin-bottom: 6px;">🔗 外部服务</div>
+  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+    <div style="border: 1px dashed #9ca3af; border-radius: 6px; padding: 6px 12px; background: white;">🗺️ 高德地图 API</div>
+    <div style="border: 1px dashed #9ca3af; border-radius: 6px; padding: 6px 12px; background: white;">📱 社交登录（微信/微博/Google）</div>
+    <div style="border: 1px dashed #9ca3af; border-radius: 6px; padding: 6px 12px; background: white;">🤖 AI Agent（Kimi Code / Codex / ...）自带 AI 能力</div>
+  </div>
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📋 架构决策总结</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-size: 12px; line-height: 1.6;">
+
+<table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+  <tr style="background: #f3f4f6;">
+    <th style="border: 1px solid #d1d5db; padding: 6px; text-align: left;">决策点</th>
+    <th style="border: 1px solid #d1d5db; padding: 6px; text-align: left;">当前选择</th>
+    <th style="border: 1px solid #d1d5db; padding: 6px; text-align: left;">理由</th>
+  </tr>
+  <tr>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">AI 能力</td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;"><strong>Agent 自带</strong></td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">Periplus 只提供数据工具，Agent 自己思考规划。产品化后自建 Agent。</td>
+  </tr>
+  <tr style="background: #fafafa;">
+    <td style="border: 1px solid #d1d5db; padding: 6px;">Agent 接入</td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;"><strong>远程 MCP Server</strong></td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">平台托管，HTTP/SSE 协议，Token 鉴权。数据全托管，隐私由账户控制。</td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">Web 接入</td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;"><strong>REST API</strong></td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">Next.js Route Handlers，与现有代码库无缝衔接。</td>
+  </tr>
+  <tr style="background: #fafafa;">
+    <td style="border: 1px solid #d1d5db; padding: 6px;">图片-地图关联</td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;"><strong>轻量关联 MVP</strong></td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">照片 marker 绑定地图位置，后续深度功能作为 Add-on。</td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">攻略聚合</td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;"><strong>预置数据 + 后续扩展</strong></td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">早期用预置数据，三层聚合（官方+UGC+外部）后续单独 session 讨论。</td>
+  </tr>
+  <tr style="background: #fafafa;">
+    <td style="border: 1px solid #d1d5db; padding: 6px;">交互模式</td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;"><strong>Agent-Native 混合</strong></td>
+    <td style="border: 1px solid #d1d5db; padding: 6px;">Agent 生成规划 → 可视化 UI → 人类反馈 → Agent 迭代优化。</td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🗺️ MCP 工具列表（暴露给 Agent）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family: monospace; font-size: 11px; line-height: 1.5;">
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.search_spots</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: query, location, category, limit<br>
+      返回: 景点列表（名称、坐标、评分、标签）
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.get_spot_detail</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: spot_id<br>
+      返回: 景点详情（介绍、开放时间、票价、攻略片段）
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.create_route</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: name, spots[], days, preferences<br>
+      返回: 路线 ID + 结构化路线数据
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.list_my_routes</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: (无，通过 Token 识别用户)<br>
+      返回: 当前用户的路线列表
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.update_route</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: route_id, changes（增删改景点、调整顺序）<br>
+      返回: 更新后的路线
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.upload_photo</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: image_data, route_id?, spot_id?<br>
+      返回: 照片 URL + 解析出的 GPS 坐标
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.rate_spot</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: spot_id, rating, comment, tags[]<br>
+      返回: 评分成功确认
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6;">periplus.get_guide</div>
+    <div style="font-size: 10px; color: #4b5563; margin-top: 4px;">
+      参数: destination, topic, days?<br>
+      返回: 结构化攻略（吃住行游购娱）
+    </div>
+  </div>
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🚀 演进路线图</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-size: 12px; line-height: 1.6;">
+
+<div style="display: flex; flex-direction: column; gap: 8px;">
+  <div style="border-left: 4px solid #10b981; padding-left: 12px;">
+    <div style="font-weight: bold; color: #065f46;">Phase 1: MVP（当前）</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • Web 端：地图 + 路线 CRUD + 照片上传（EXIF GPS）+ 轻量关联<br>
+      • MCP Server：基础工具（search_spots, create_route, list_my_routes）<br>
+      • 数据：SQLite → 后续迁移 PostgreSQL<br>
+      • AI：Agent 自带，Periplus 只提供数据
+    </div>
+  </div>
+  <div style="border-left: 4px solid #3b82f6; padding-left: 12px;">
+    <div style="font-weight: bold; color: #1e40af;">Phase 2: 功能扩展</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 景点评分系统 + 评论<br>
+      • 攻略预置数据 + 基础查询<br>
+      • 用户账户体系（OAuth 登录）<br>
+      • MCP 工具完整化（update_route, upload_photo, rate_spot, get_guide）
+    </div>
+  </div>
+  <div style="border-left: 4px solid #8b5cf6; padding-left: 12px;">
+    <div style="font-weight: bold; color: #5b21b6;">Phase 3: 产品化</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 自建 Agent（替代外部 Agent 依赖）<br>
+      • 攻略聚合（官方+UGC+外部三层）<br>
+      • 移动端（小程序/App）<br>
+      • 社交功能（关注、Feed、分享）<br>
+      • 高级功能：故事模式、版本对比、AI 偏好学习
+    </div>
+  </div>
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle" style="text-align: center; margin-top: 24px; font-size: 14px;">
+    ✅ 架构设计讨论完成<br>
+    <span style="font-size: 12px; color: #6b7280;">确认后我将写入设计文档到 docs/superpowers/specs/</span>
+  </p>
+</div>

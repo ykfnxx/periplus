@@ -1,0 +1,155 @@
+<h2>Periplus — BYOA (Bring Your Own AI) 架构</h2>
+<p class="subtitle">用户自带 AI Key，平台零成本接入多厂商 Agent 能力</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">🔑 BYOA 数据流 — 以路线规划为例</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.6;">
+
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+
+  <!-- 用户 -->
+  <div style="border: 2px solid #3b82f6; border-radius: 10px; padding: 10px 16px; background: #eff6ff; width: 300px; text-align: center;">
+    <div style="font-weight: bold; color: #1e40af;">👤 用户</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">输入："7天日本关西，预算1万，喜欢古迹和美食"</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <!-- Next.js 前端 -->
+  <div style="border: 2px solid #10b981; border-radius: 10px; padding: 10px 16px; background: #ecfdf5; width: 340px; text-align: center;">
+    <div style="font-weight: bold; color: #065f46;">🌐 Next.js 前端</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">组装 Prompt + 结构化约束 → 调用用户配置的 AI</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓ 用户自己的 API Key（浏览器直调或经后端转发）</div>
+
+  <!-- 多厂商 AI -->
+  <div style="border: 2px solid #8b5cf6; border-radius: 10px; padding: 10px; background: #f5f3ff; width: 380px;">
+    <div style="font-weight: bold; color: #5b21b6; text-align: center; margin-bottom: 8px;">🤖 AI 厂商（用户自选其一）</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
+      <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">OpenAI</div>
+        <div style="font-size: 10px; color: #6b7280;">GPT-4o + Web Search</div>
+      </div>
+      <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">Claude</div>
+        <div style="font-size: 10px; color: #6b7280;">Sonnet + Web Search</div>
+      </div>
+      <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">DeepSeek</div>
+        <div style="font-size: 10px; color: #6b7280;">R1 + 联网搜索</div>
+      </div>
+      <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">Gemini</div>
+        <div style="font-size: 10px; color: #6b7280;">2.5 Pro + Search</div>
+      </div>
+      <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">Kimi</div>
+        <div style="font-size: 10px; color: #6b7280;">k1.5 + 联网</div>
+      </div>
+      <div style="border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">...</div>
+        <div style="font-size: 10px; color: #6b7280;">更多厂商</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓ AI 返回结构化 JSON</div>
+
+  <!-- Next.js 后端 -->
+  <div style="border: 2px solid #f59e0b; border-radius: 10px; padding: 10px 16px; background: #fffbeb; width: 340px; text-align: center;">
+    <div style="font-weight: bold; color: #92400e;">⚙️ Next.js 后端（可选）</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">校验/补全 AI 输出 → 存入数据库 → 返回前端</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <!-- 可视化 -->
+  <div style="border: 2px solid #ec4899; border-radius: 10px; padding: 10px 16px; background: #fdf2f8; width: 300px; text-align: center;">
+    <div style="font-weight: bold; color: #9d174d;">🗺️ 地图可视化</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">路线渲染、景点卡片、时间轴</div>
+  </div>
+
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📋 BYOA 架构要点</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family: monospace; font-size: 12px; line-height: 1.6;">
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px;">
+    <div style="font-weight: bold; color: #059669; margin-bottom: 6px;">✅ 优势</div>
+    <ul style="font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px;">
+      <li>平台零 AI 成本 — 用户自付 Token</li>
+      <li>天然支持多厂商 — 用户自由切换</li>
+      <li>利用厂商自带搜索 — 无需自建爬虫</li>
+      <li>隐私友好 — 用户数据不经过平台 AI</li>
+      <li>实现极简 — 前端直调或简单转发</li>
+    </ul>
+  </div>
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px;">
+    <div style="font-weight: bold; color: #dc2626; margin-bottom: 6px;">⚠️ 挑战</div>
+    <ul style="font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px;">
+      <li>不同厂商输出格式不一致 → 需统一 Schema</li>
+      <li>厂商搜索能力差异大 → 结果质量不稳定</li>
+      <li>Key 安全 — 浏览器直调暴露风险</li>
+      <li>无法做用户级 AI 偏好学习</li>
+      <li>高级功能（多轮、记忆）依赖厂商支持</li>
+    </ul>
+  </div>
+</div>
+
+<div style="margin-top: 12px; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px;">
+  <div style="font-weight: bold; color: #7c3aed; margin-bottom: 6px;">🔧 关键设计：统一 Schema 层</div>
+  <div style="font-size: 11px; color: #4b5563;">
+    无论调用哪个厂商，平台定义统一的输入/输出 Schema：<br><br>
+    <b>输入 Schema（Prompt 模板）：</b><br>
+    <code style="background: #f3f4f6; padding: 2px 4px; border-radius: 4px;">{ "intent": "plan_route", "destination": "日本关西", "days": 7, "budget": 10000, "preferences": ["古迹", "美食"], ... }</code><br><br>
+    <b>输出 Schema（AI 必须返回）：</b><br>
+    <code style="background: #f3f4f6; padding: 2px 4px; border-radius: 4px;">{ "route": { "days": [...], "spots": [...], "transport": [...], "budget_breakdown": {...} } }</code><br><br>
+    每个厂商一个 Adapter，将平台 Schema 转换为厂商特定 Prompt，将厂商输出解析为统一 Schema。
+  </div>
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔐 Key 安全策略选择</h3>
+  <div class="options">
+    <div class="option" data-choice="browser-direct" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>浏览器直调（最简单）</h3>
+        <p>用户 Key 存在浏览器 localStorage，前端直接调用 AI API。零后端成本，但 Key 完全暴露。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="backend-proxy" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>后端代理转发（推荐）</h3>
+        <p>用户 Key 加密存数据库，前端请求经后端转发到 AI 厂商。Key 不暴露，后端可做校验/缓存/限流。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>混合模式</h3>
+        <p>简单查询浏览器直调（快），复杂规划走后端代理（安全）。用户可选。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle" style="text-align: center; margin-top: 20px;">
+    💡 选择 Key 安全策略，我们在终端继续讨论
+  </p>
+</div>

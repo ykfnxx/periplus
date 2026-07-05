@@ -1,0 +1,587 @@
+<style>
+  .left-workbench-board {
+    --cream: #f5e6d3;
+    --soft-white: #fffaf3;
+    --white: #fff;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --teak: #8b7355;
+    --bluegray: #7d9ba8;
+    --coral: #e57a77;
+    color: var(--ink);
+    font-family: Avenir, "Century Gothic", Futura, system-ui, sans-serif;
+  }
+  .left-workbench-board h2 {
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: 0;
+  }
+  .left-workbench-board .subtitle {
+    max-width: 880px;
+    color: var(--walnut);
+  }
+  .preview-scroll {
+    margin-top: 22px;
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid rgba(44,36,22,0.18);
+    box-shadow: 0 18px 42px rgba(44,36,22,0.14);
+    background: var(--cream);
+  }
+  .app-screen {
+    position: relative;
+    min-width: 1120px;
+    height: 650px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 6% 90%, rgba(229,122,119,0.22) 0 88px, transparent 90px),
+      radial-gradient(ellipse at 92% 12%, rgba(125,155,168,0.23) 0 132px, transparent 134px),
+      linear-gradient(135deg, #fff8ec, var(--cream));
+  }
+  .map-canvas {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(23deg, transparent 0 36%, rgba(217,118,66,0.30) 37% 39%, transparent 40%),
+      linear-gradient(138deg, transparent 0 54%, rgba(74,124,89,0.18) 55% 57%, transparent 58%),
+      linear-gradient(70deg, transparent 0 48%, rgba(125,155,168,0.22) 49% 51%, transparent 52%),
+      #fff1dc;
+  }
+  .map-canvas:before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(44,36,22,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(44,36,22,0.045) 1px, transparent 1px);
+    background-size: 42px 42px;
+    opacity: 0.62;
+  }
+  .left-column {
+    position: absolute;
+    left: 24px;
+    top: 22px;
+    bottom: 22px;
+    width: 410px;
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    gap: 14px;
+    z-index: 4;
+  }
+  .search-bar {
+    border-radius: 999px;
+    background: rgba(255,255,255,0.95);
+    border: 1px solid rgba(44,36,22,0.16);
+    box-shadow: 0 13px 28px rgba(44,36,22,0.14);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 0 16px;
+  }
+  .brand-mark {
+    position: relative;
+    width: 44px;
+    height: 24px;
+  }
+  .brand-mark:before,
+  .brand-mark:after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+  }
+  .brand-mark:before {
+    left: 0;
+    top: 3px;
+    width: 18px;
+    height: 18px;
+    background: var(--russet);
+    box-shadow: 11px 0 0 var(--mustard), 22px 0 0 var(--olive);
+  }
+  .brand-mark:after {
+    right: -2px;
+    top: 0;
+    width: 24px;
+    height: 24px;
+    background: conic-gradient(from 0deg, var(--russet) 0 10deg, transparent 10deg 20deg);
+    opacity: 0.72;
+  }
+  .search-copy {
+    color: var(--walnut);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--mustard), var(--coral));
+    border: 3px solid rgba(255,255,255,0.92);
+    box-shadow: 0 9px 18px rgba(44,36,22,0.15);
+  }
+  .workbench {
+    border-radius: 8px;
+    background: rgba(255,250,243,0.96);
+    border: 1px solid rgba(44,36,22,0.16);
+    box-shadow: 0 18px 42px rgba(44,36,22,0.16);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 16px 16px 0;
+  }
+  .tab {
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(245,230,211,0.78);
+    color: var(--walnut);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 850;
+  }
+  .tab.active {
+    background: var(--ink);
+    color: #fff8ec;
+    border-color: var(--ink);
+  }
+  .panel-content {
+    padding: 18px 18px 0;
+    overflow: hidden;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .route-header {
+    display: grid;
+    grid-template-columns: 1fr 58px;
+    gap: 18px;
+    align-items: start;
+    margin-bottom: 14px;
+  }
+  .route-header h3 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 28px;
+    line-height: 1.04;
+  }
+  .route-header p {
+    margin: 8px 0 0;
+    color: var(--walnut);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .route-badge {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: var(--mustard);
+    border: 1px solid rgba(44,36,22,0.14);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+  }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .metric {
+    border-radius: 8px;
+    border: 1px solid rgba(44,36,22,0.12);
+    background: rgba(255,255,255,0.60);
+    padding: 10px;
+  }
+  .metric strong {
+    display: block;
+    color: var(--ink);
+    font-size: 18px;
+    line-height: 1;
+  }
+  .metric span {
+    display: block;
+    margin-top: 5px;
+    color: var(--walnut);
+    font-size: 10px;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .timeline {
+    flex: 1;
+    overflow: hidden;
+  }
+  .point-row {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    gap: 11px;
+    align-items: start;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(44,36,22,0.10);
+  }
+  .point-num {
+    width: 29px;
+    height: 29px;
+    border-radius: 50%;
+    background: var(--russet);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 900;
+    box-shadow: 0 6px 13px rgba(44,36,22,0.14);
+  }
+  .point-row:nth-child(2) .point-num { background: var(--mustard); color: var(--ink); }
+  .point-row:nth-child(3) .point-num { background: var(--olive); }
+  .point-row:nth-child(4) .point-num { background: var(--bluegray); color: var(--ink); }
+  .point-main strong {
+    display: block;
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.1;
+  }
+  .point-main span {
+    display: block;
+    color: var(--walnut);
+    font-size: 12px;
+    margin-top: 5px;
+  }
+  .inline-action {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(245,230,211,0.72);
+    color: var(--walnut);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .media-row {
+    display: grid;
+    grid-template-columns: 1fr 54px 54px 54px;
+    gap: 8px;
+    align-items: center;
+    padding: 12px 0 16px;
+  }
+  .media-label {
+    color: var(--walnut);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .photo {
+    width: 54px;
+    height: 42px;
+    border-radius: 6px;
+    background:
+      radial-gradient(circle at 62% 32%, rgba(255,255,255,0.65) 0 8px, transparent 9px),
+      linear-gradient(135deg, var(--bluegray), var(--coral));
+    border: 2px solid rgba(255,255,255,0.86);
+  }
+  .panel-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 14px 18px 18px;
+    border-top: 1px solid rgba(44,36,22,0.12);
+    background: rgba(255,250,243,0.98);
+  }
+  .panel-button {
+    height: 42px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+  }
+  .panel-button.secondary {
+    background: rgba(245,230,211,0.78);
+    border: 1px solid rgba(44,36,22,0.14);
+    color: var(--walnut);
+  }
+  .panel-button.primary {
+    background: var(--russet);
+    color: #fff8ec;
+    box-shadow: 0 10px 20px rgba(217,118,66,0.24);
+  }
+  .map-route {
+    position: absolute;
+    left: 490px;
+    right: 110px;
+    top: 162px;
+    bottom: 126px;
+    z-index: 2;
+  }
+  .route-line {
+    position: absolute;
+    left: 42px;
+    right: 86px;
+    top: 150px;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--russet);
+    transform: rotate(-12deg);
+    box-shadow: 0 2px 0 rgba(255,255,255,0.68), 0 7px 18px rgba(44,36,22,0.13);
+  }
+  .route-line:before,
+  .route-line:after {
+    content: "";
+    position: absolute;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--russet);
+  }
+  .route-line:before {
+    left: 48%;
+    top: -58px;
+    width: 170px;
+    transform: rotate(36deg);
+  }
+  .route-line:after {
+    left: 72%;
+    top: 56px;
+    width: 138px;
+    transform: rotate(34deg);
+  }
+  .route-pin {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 4px solid rgba(255,255,255,0.94);
+    box-shadow: 0 10px 22px rgba(44,36,22,0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .route-pin.one { left: 54px; top: 132px; background: var(--russet); }
+  .route-pin.two { left: 255px; top: 86px; background: var(--mustard); color: var(--ink); }
+  .route-pin.three { right: 170px; top: 140px; background: var(--olive); }
+  .route-pin.four { right: 54px; bottom: 52px; background: var(--bluegray); color: var(--ink); }
+  .photo-pin {
+    position: absolute;
+    right: 220px;
+    bottom: 140px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 4px solid #fff;
+    background:
+      radial-gradient(circle at 62% 30%, rgba(255,255,255,0.72) 0 8px, transparent 9px),
+      linear-gradient(135deg, var(--bluegray), var(--coral));
+    box-shadow: 0 12px 24px rgba(44,36,22,0.23);
+  }
+  .map-controls {
+    position: absolute;
+    right: 24px;
+    top: 22px;
+    display: grid;
+    gap: 12px;
+    z-index: 5;
+  }
+  .control-cluster {
+    border-radius: 8px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(44,36,22,0.14);
+    box-shadow: 0 12px 24px rgba(44,36,22,0.13);
+    padding: 8px;
+    display: grid;
+    gap: 7px;
+  }
+  .control {
+    width: 38px;
+    height: 34px;
+    border-radius: 6px;
+    background: rgba(245,230,211,0.74);
+    border: 1px solid rgba(44,36,22,0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink);
+    font-weight: 900;
+  }
+  .fab-stack {
+    position: absolute;
+    right: 24px;
+    bottom: 28px;
+    display: grid;
+    gap: 12px;
+    z-index: 5;
+  }
+  .fab {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(255,255,255,0.92);
+    box-shadow: 0 12px 24px rgba(44,36,22,0.14);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink);
+    font-weight: 900;
+    font-size: 22px;
+  }
+  .fab.primary {
+    background: var(--olive);
+    color: #fff;
+  }
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .note {
+    border-radius: 8px;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(255,250,243,0.88);
+    padding: 13px;
+  }
+  .note strong {
+    display: block;
+    color: var(--ink);
+    font-size: 13px;
+    margin-bottom: 5px;
+  }
+  .note span {
+    color: var(--walnut);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  @media (max-width: 980px) {
+    .notes { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="left-workbench-board">
+  <h2>修正版：左侧浮层工作台，不放到底部</h2>
+  <p class="subtitle">结构改成更接近 Google Maps：地图永远铺满视口；左侧是一列悬浮工作台，顶部搜索和下方工作台形成同一操作区；右侧只放地图控件和快捷按钮。预览区如果窗口窄，可以横向滚动查看完整桌面布局。</p>
+
+  <div class="preview-scroll">
+    <div class="app-screen">
+      <div class="map-canvas"></div>
+
+      <div class="left-column">
+        <div class="search-bar">
+          <div class="brand-mark"></div>
+          <div class="search-copy">搜索地点、路线、标签或备注</div>
+          <div class="avatar"></div>
+        </div>
+
+        <div class="workbench">
+          <div class="tabs">
+            <div class="tab">探索</div>
+            <div class="tab active">计划</div>
+            <div class="tab">收藏</div>
+          </div>
+
+          <div class="panel-content">
+            <div class="route-header">
+              <div>
+                <h3>丝绸之路</h3>
+                <p>从长安出发，穿过河西走廊，抵达天山脚下的经典西北路线。</p>
+              </div>
+              <div class="route-badge">7站</div>
+            </div>
+
+            <div class="metrics">
+              <div class="metric"><strong>7</strong><span>地点</span></div>
+              <div class="metric"><strong>9天</strong><span>建议</span></div>
+              <div class="metric"><strong>3张</strong><span>照片</span></div>
+            </div>
+
+            <div class="timeline">
+              <div class="point-row">
+                <div class="point-num">1</div>
+                <div class="point-main"><strong>西安</strong><span>古城墙、钟楼、起点补给</span></div>
+                <div class="inline-action">+</div>
+              </div>
+              <div class="point-row">
+                <div class="point-num">2</div>
+                <div class="point-main"><strong>兰州</strong><span>黄河风情线，停留 6 小时</span></div>
+                <div class="inline-action">+</div>
+              </div>
+              <div class="point-row">
+                <div class="point-num">3</div>
+                <div class="point-main"><strong>敦煌</strong><span>莫高窟、鸣沙山，建议 2 天</span></div>
+                <div class="inline-action">+</div>
+              </div>
+              <div class="point-row">
+                <div class="point-num">4</div>
+                <div class="point-main"><strong>吐鲁番</strong><span>葡萄沟与火焰山</span></div>
+                <div class="inline-action">+</div>
+              </div>
+            </div>
+
+            <div class="media-row">
+              <div class="media-label">照片素材在当前计划内展示，不作为顶层页面。</div>
+              <div class="photo"></div>
+              <div class="photo"></div>
+              <div class="photo"></div>
+            </div>
+          </div>
+
+          <div class="panel-actions">
+            <div class="panel-button secondary">地图选点</div>
+            <div class="panel-button primary">保存变更</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="map-route">
+        <div class="route-line"></div>
+        <div class="route-pin one">1</div>
+        <div class="route-pin two">2</div>
+        <div class="route-pin three">3</div>
+        <div class="route-pin four">4</div>
+        <div class="photo-pin"></div>
+      </div>
+
+      <div class="map-controls">
+        <div class="control-cluster">
+          <div class="control">+</div>
+          <div class="control">-</div>
+        </div>
+        <div class="control-cluster">
+          <div class="control">图</div>
+          <div class="control">星</div>
+        </div>
+      </div>
+
+      <div class="fab-stack">
+        <div class="fab">⌖</div>
+        <div class="fab primary">+</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note"><strong>布局原则</strong><span>左侧浮层是唯一核心工作台；地图不被切成主内容区和底部面板。</span></div>
+    <div class="note"><strong>桌面优先</strong><span>桌面和平板横屏保持左侧；窄屏后续可单独讨论，不在主设计里偷换成底部。</span></div>
+    <div class="note"><strong>交互归属</strong><span>搜索、Tabs、路线详情、照片素材、添加/保存都在左侧列完成。</span></div>
+    <div class="note"><strong>地图归属</strong><span>右侧地图只承担空间反馈、标记、路线、定位、缩放和地图样式控件。</span></div>
+  </div>
+</div>

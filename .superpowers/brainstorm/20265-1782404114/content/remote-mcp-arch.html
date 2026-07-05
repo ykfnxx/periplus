@@ -1,0 +1,198 @@
+<h2>Periplus — 远程 MCP Server 架构</h2>
+<p class="subtitle">平台托管 MCP Server，用户通过账户授权，Agent 远程调用</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">🔌 远程 MCP 数据流 — 用户 → Agent → Periplus MCP Server</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.6;">
+
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+
+  <!-- 用户 -->
+  <div style="border: 2px solid #3b82f6; border-radius: 10px; padding: 10px 16px; background: #eff6ff; width: 300px; text-align: center;">
+    <div style="font-weight: bold; color: #1e40af;">👤 用户</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">终端执行：kimi -p "帮我规划7天日本关西行程"</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <!-- 命令行 Agent -->
+  <div style="border: 2px solid #8b5cf6; border-radius: 10px; padding: 10px 16px; background: #f5f3ff; width: 340px; text-align: center;">
+    <div style="font-weight: bold; color: #5b21b6;">🤖 命令行 Agent（Kimi Code / Codex / ...）</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">理解意图 → 发现需要调用 periplus.plan_route</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓ MCP over HTTP/SSE</div>
+
+  <!-- Periplus MCP Server -->
+  <div style="border: 2px solid #f59e0b; border-radius: 10px; padding: 10px; background: #fffbeb; width: 380px;">
+    <div style="font-weight: bold; color: #92400e; text-align: center; margin-bottom: 8px;">⚙️ Periplus MCP Server（平台托管）</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">plan_route</div>
+        <div style="font-size: 10px; color: #6b7280;">路线规划</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">search_spots</div>
+        <div style="font-size: 10px; color: #6b7280;">景点搜索</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">get_guide</div>
+        <div style="font-size: 10px; color: #6b7280;">攻略查询</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">upload_photo</div>
+        <div style="font-size: 10px; color: #6b7280;">照片上传</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">list_my_routes</div>
+        <div style="font-size: 10px; color: #6b7280;">我的路线</div>
+      </div>
+      <div style="border: 1px solid #fcd34d; border-radius: 6px; padding: 6px; background: white; text-align: center;">
+        <div style="font-weight: bold; font-size: 12px;">rate_spot</div>
+        <div style="font-size: 10px; color: #6b7280;">景点评分</div>
+      </div>
+    </div>
+    <div style="margin-top: 8px; padding: 6px; border: 1px dashed #9ca3af; border-radius: 4px; text-align: center; font-size: 10px; color: #6b7280;">
+      🔐 鉴权：OAuth 2.0 / API Key — 识别用户身份，访问个人数据
+    </div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓ 内部调用</div>
+
+  <!-- Periplus Backend -->
+  <div style="border: 2px solid #10b981; border-radius: 10px; padding: 10px 16px; background: #ecfdf5; width: 340px; text-align: center;">
+    <div style="font-weight: bold; color: #065f46;">🌐 Periplus Backend（Next.js / 独立服务）</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">业务逻辑 → 高德 API / 数据库 / 文件存储 / AI 聚合</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <!-- 数据层 -->
+  <div style="border: 2px solid #ef4444; border-radius: 10px; padding: 10px; background: #fef2f2; width: 320px; text-align: center;">
+    <div style="font-weight: bold; color: #991b1b;">💾 平台托管数据</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">PostgreSQL + OSS + Redis + 向量数据库</div>
+  </div>
+
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔐 鉴权流程：Agent 如何知道"我是谁"</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family: monospace; font-size: 12px; line-height: 1.6;">
+
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #fafafa; width: 360px;">
+    <div style="font-weight: bold; color: #374151; margin-bottom: 6px;">Step 1: 用户在 Periplus 平台生成 MCP Token</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      登录 Periplus Web → 设置 → MCP 集成 → 生成 Token<br>
+      <code style="background: #f3f4f6; padding: 2px 4px; border-radius: 4px;">periplus_mcp_token_xxxxxxxx</code>
+    </div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #fafafa; width: 360px;">
+    <div style="font-weight: bold; color: #374151; margin-bottom: 6px;">Step 2: 配置 Agent 的 MCP 设置</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      在 Kimi Code / Codex 的 MCP 配置中添加：<br>
+      <pre style="background: #f3f4f6; padding: 6px; border-radius: 4px; margin-top: 4px; font-size: 10px;">{
+  "mcpServers": {
+    "periplus": {
+      "url": "https://mcp.periplus.travel/sse",
+      "headers": {
+        "Authorization": "Bearer periplus_mcp_token_xxx"
+      }
+    }
+  }
+}</pre>
+    </div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 14px;">↓</div>
+
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #fafafa; width: 360px;">
+    <div style="font-weight: bold; color: #374151; margin-bottom: 6px;">Step 3: Agent 调用工具时自动携带 Token</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      MCP 协议每次请求都带 Authorization Header<br>
+      Periplus MCP Server 验证 Token → 识别用户 → 返回该用户的数据
+    </div>
+  </div>
+
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📋 远程 MCP 架构要点</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family: monospace; font-size: 12px; line-height: 1.6;">
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px;">
+    <div style="font-weight: bold; color: #059669; margin-bottom: 6px;">✅ 优势</div>
+    <ul style="font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px;">
+      <li>数据全平台托管，用户无需本地部署</li>
+      <li>统一账户体系，Web/App/Agent 数据互通</li>
+      <li>平台控制隐私和权限，可精细化授权</li>
+      <li>一个 MCP Server，多 Agent 通用</li>
+      <li>服务端可统一限流、监控、审计</li>
+      <li>AI 能力可平台统一配置（非 BYOA）</li>
+    </ul>
+  </div>
+  <div style="border: 1px solid #d1d5db; border-radius: 8px; padding: 10px;">
+    <div style="font-weight: bold; color: #dc2626; margin-bottom: 6px;">⚠️ 挑战</div>
+    <ul style="font-size: 11px; color: #4b5563; margin: 0; padding-left: 16px;">
+      <li>需要维护 MCP Server 服务稳定性</li>
+      <li>远程调用延迟 vs 本地直调</li>
+      <li>需要支持 SSE/HTTP 流式传输</li>
+      <li>Token 安全：传输加密 + 定期轮换</li>
+      <li>Agent 侧配置门槛（需手动添加 MCP）</li>
+      <li>平台需承担 AI 调用成本（非 BYOA）</li>
+    </ul>
+  </div>
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🤔 关键决策：AI 能力由谁提供？</h3>
+  <div class="options">
+    <div class="option" data-choice="platform-ai" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>平台统一 AI（推荐）</h3>
+        <p>Periplus 平台配置 AI（OpenAI/Claude/DeepSeek），MCP Server 内部调用。Agent 只负责"意图理解+工具调用"，规划逻辑由平台 AI 完成。平台控制质量，用户无需配置。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="agent-ai" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>Agent 自带 AI</h3>
+        <p>Agent（Kimi Code / Codex）自己思考+搜索，Periplus MCP 只提供"数据工具"（查景点、存路线、读照片）。Agent 用自带 AI 做规划，Periplus 只做数据层。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="hybrid-ai" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>混合模式</h3>
+        <p>简单查询（查景点、读路线）走 Agent 自带 AI；复杂规划（多约束路线生成）走平台 AI。Agent 根据任务类型自动选择。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle" style="text-align: center; margin-top: 20px;">
+    💡 选择 AI 能力归属策略，我们在终端继续讨论
+  </p>
+</div>

@@ -1,0 +1,42 @@
+<h2>设计细节 1/4：左侧面板 — AI 对话中心</h2>
+<p class="subtitle">取消工具栏，面板 = 聊天区域</p>
+
+<div class="mockup">
+  <div class="mockup-header">左侧面板布局</div>
+  <div class="mockup-body" style="padding: 16px; background: #f5e6d3; border-radius: 8px; min-height: 400px; display: flex; flex-direction: column;">
+    <!-- 预设气泡区域 -->
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+      <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer;">规划一条丝绸之路路线</div>
+      <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer;">北京周边徒步推荐</div>
+      <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer;">7天新疆自驾游</div>
+      <div style="background: #d97642; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer;">帮我找有历史感的古镇</div>
+    </div>
+    <!-- 对话历史 -->
+    <div style="flex: 1; overflow-y: auto; margin-bottom: 12px;">
+      <div style="margin-bottom: 12px;">
+        <div style="font-size: 11px; color: #8b7355; margin-bottom: 2px;">用户</div>
+        <div style="background: white; padding: 10px 12px; border-radius: 12px; border-top-left-radius: 2px; font-size: 14px; color: #2c2416;">规划一条从北京到西安的路线</div>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <div style="font-size: 11px; color: #8b7355; margin-bottom: 2px;">AI</div>
+        <div style="background: #fffaf3; padding: 10px 12px; border-radius: 12px; border-top-right-radius: 2px; font-size: 14px; color: #2c2416; border: 1px solid #d4a574;">好的，我为你规划了一条路线：北京 → 保定 → 石家庄 → 太原 → 临汾 → 西安。全程约 1100 公里，建议分 3 天行驶。</div>
+      </div>
+    </div>
+    <!-- 输入框 -->
+    <div style="border-top: 1px solid #d4a574; padding-top: 10px;">
+      <div style="background: white; border-radius: 20px; padding: 10px 16px; font-size: 14px; color: #8b7355; border: 1px solid #d4a574;">告诉我你想怎么改路线... <span style="float: right; color: #d97642;">↵</span></div>
+      <div style="font-size: 11px; color: #8b7355; margin-top: 4px; text-align: right;">Enter 发送 · Shift+Enter 换行</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>关键设计点</h3>
+  <ul>
+    <li><strong>取消工具栏</strong>：不再显示"规划、地点、照片、收藏"切换栏</li>
+    <li><strong>预设气泡</strong>：首次进入或对话为空时显示 4 个预设 prompt 气泡，点击直接发送</li>
+    <li><strong>对话样式</strong>：用户消息白底左圆角，AI 消息 cream 底右圆角，带 sender 标签</li>
+    <li><strong>输入框</strong>：圆角输入框，Enter 直接发送，Shift+Enter 换行（提示文字在输入框下方）</li>
+    <li><strong>发送按钮</strong>：保留圆形发送按钮，但 Enter 是主要交互方式</li>
+  </ul>
+</div>

@@ -143,10 +143,11 @@ export default function OverlapCluster() {
   const anchorCluster = useMapStore((s) => s.anchorCluster)
   const expandCluster = useMapStore((s) => s.expandCluster)
   const collapseCluster = useMapStore((s) => s.collapseCluster)
+  const selectedLocationPoint = useMapStore((state) => state.selectedLocationPoint)
   const setSelectedLocationPoint = useMapStore(
     (s) => s.setSelectedLocationPoint
   )
-  const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare)
+  const setLightboxPhotoShare = useMapStore((s) => s.setLightboxPhotoShare)
   const enterCityView = useMapStore((s) => s.enterCityView)
 
   const [clusters, setClusters] = useState<ClusterGroup[]>([])
@@ -397,7 +398,7 @@ export default function OverlapCluster() {
               enterCityView(point.id)
               return
             }
-            if (useMapStore.getState().selectedLocationPoint?.id === point.id) {
+            if (selectedLocationPoint?.id === point.id) {
               setSelectedLocationPoint(null)
               return
             }
@@ -406,11 +407,7 @@ export default function OverlapCluster() {
         } else {
           const photo = photoShares.find((p) => `photo-${p.id}` === anchor.id)
           if (photo) {
-            if (useMapStore.getState().selectedPhotoShare?.id === photo.id) {
-              setSelectedPhotoShare(null)
-              return
-            }
-            setSelectedPhotoShare(photo, lngLatToAnchor(scatteredLngLat))
+            setLightboxPhotoShare(photo)
           }
         }
       })
@@ -444,7 +441,6 @@ export default function OverlapCluster() {
     collapseCluster,
     enterCityView,
     setSelectedLocationPoint,
-    setSelectedPhotoShare,
     updateRouteNodeMeta,
   ])
 

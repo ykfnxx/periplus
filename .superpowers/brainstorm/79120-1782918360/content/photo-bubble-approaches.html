@@ -1,0 +1,30 @@
+<h2>Photo Bubble Design Approaches</h2>
+<p class="subtitle">Three ways to handle the photo marker bubble on the map</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Minimal Bubble — Image Only</h3>
+      <p>48px circular thumbnail on map. Click → expands to 120px rounded bubble with narrow border, small triangle pointer pointing down at the marker. No text inside bubble, date shown below the bubble. Delete button: small circular transparent button at bottom-right of bubble, trash icon, opaque on hover.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Rich Bubble — Image + Caption Preview</h3>
+      <p>Same as A but bubble shows 2-line caption preview inside. Date at bottom. More info density but busier.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="content">
+      <h3>Hover Tooltip — No Click Needed</h3>
+      <p>Hover over marker shows bubble, click marker jumps directly to lightbox. Faster but less discoverable.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Lightbox Layout</h3>
+  <p>All options use the same lightbox: centered overlay, darkened backdrop, click outside to close. Inside: left 65% image, right 35% info panel (uploader avatar + name, location name, description, date). Warm russet/terracotta accent colors.</p>
+</div>

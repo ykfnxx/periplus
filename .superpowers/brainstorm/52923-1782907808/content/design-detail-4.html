@@ -1,0 +1,66 @@
+<h2>设计细节 4/4：地图角落极简控件</h2>
+<p class="subtitle">地图右上角放置 2-3 个小型图标按钮，平时半透明，hover 时高亮</p>
+
+<div class="mockup">
+  <div class="mockup-header">地图控件 — 默认状态（半透明）</div>
+  <div class="mockup-body" style="padding: 24px; background: #d4c4a8; border-radius: 8px; min-height: 200px; position: relative;">
+    <!-- 模拟地图背景 -->
+    <div style="position: absolute; inset: 0; background: #c4b498; border-radius: 8px;"></div>
+    <!-- 右上角控件组 -->
+    <div style="position: absolute; right: 16px; top: 16px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b5d4f; font-size: 16px; cursor: pointer; transition: all 0.2s ease;">📷</div>
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b5d4f; font-size: 16px; cursor: pointer; transition: all 0.2s ease;">⭐</div>
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b5d4f; font-size: 16px; cursor: pointer; transition: all 0.2s ease;">⚙️</div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">地图控件 — Hover 状态（高亮）</div>
+  <div class="mockup-body" style="padding: 24px; background: #d4c4a8; border-radius: 8px; min-height: 200px; position: relative;">
+    <!-- 模拟地图背景 -->
+    <div style="position: absolute; inset: 0; background: #c4b498; border-radius: 8px;"></div>
+    <!-- 右上角控件组 -->
+    <div style="position: absolute; right: 16px; top: 16px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.95); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #2c2416; font-size: 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">📷</div>
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b5d4f; font-size: 16px; cursor: pointer; transition: all 0.2s ease;">⭐</div>
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b5d4f; font-size: 16px; cursor: pointer; transition: all 0.2s ease;">⚙️</div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">照片上传面板（点击 📷 后弹出）</div>
+  <div class="mockup-body" style="padding: 24px; background: #d4c4a8; border-radius: 8px; min-height: 200px; position: relative;">
+    <!-- 模拟地图背景 -->
+    <div style="position: absolute; inset: 0; background: #c4b498; border-radius: 8px;"></div>
+    <!-- 右上角控件组 -->
+    <div style="position: absolute; right: 16px; top: 16px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.95); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #d97642; font-size: 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">📷</div>
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b5d4f; font-size: 16px; cursor: pointer; transition: all 0.2s ease;">⭐</div>
+      <div style="width: 36px; height: 36px; background: rgba(255,250,243,0.6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b5d4f; font-size: 16px; cursor: pointer; transition: all 0.2s ease;">⚙️</div>
+    </div>
+    <!-- 照片上传面板 -->
+    <div style="position: absolute; right: 64px; top: 16px; width: 240px; background: #fffaf3; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); padding: 16px;">
+      <div style="font-size: 14px; font-weight: 600; color: #2c2416; margin-bottom: 12px;">上传照片</div>
+      <div style="border: 2px dashed #d4a574; border-radius: 8px; padding: 24px; text-align: center; color: #8b7355; font-size: 13px;">
+        拖拽照片到此处<br>或点击选择文件
+      </div>
+      <div style="font-size: 11px; color: #8b7355; margin-top: 8px; text-align: center;">支持 JPG、PNG，最大 5MB</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>关键设计点</h3>
+  <ul>
+    <li><strong>位置</strong>：地图右上角，与现有地图控件（缩放、比例尺）不重叠</li>
+    <li><strong>控件组</strong>：垂直排列，3 个按钮（照片 📷、收藏 ⭐、设置 ⚙️）</li>
+    <li><strong>默认状态</strong>：半透明背景（rgba(255,250,243,0.6)）， muted 文字颜色</li>
+    <li><strong>Hover 状态</strong>：不透明背景（rgba(255,250,243,0.95)），深色文字，添加阴影</li>
+    <li><strong>点击展开</strong>：点击按钮后弹出临时面板，面板从按钮左侧滑出</li>
+    <li><strong>面板关闭</strong>：点击地图其他区域或再次点击按钮关闭面板</li>
+    <li><strong>单面板原则</strong>：同时只能有一个面板展开</li>
+    <li><strong>图标方案</strong>：使用 lucide-react 图标（Image、Star、Settings）</li>
+  </ul>
+</div>

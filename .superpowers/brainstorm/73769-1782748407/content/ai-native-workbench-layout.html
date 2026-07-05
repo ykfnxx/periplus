@@ -1,0 +1,259 @@
+<style>
+  .periplus-board {
+    --cream: #f5e6d3;
+    --soft: #fffaf3;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --blue: #7d9ba8;
+    --coral: #e57a77;
+    color: var(--ink);
+  }
+  .layout-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+  .layout-card {
+    border: 2px solid rgba(44, 36, 22, 0.16);
+    border-radius: 12px;
+    background: var(--soft);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .layout-card:hover,
+  .layout-card.selected {
+    border-color: var(--russet);
+    box-shadow: 0 16px 36px rgba(44, 36, 22, 0.14);
+    transform: translateY(-2px);
+  }
+  .layout-card-body {
+    padding: 14px;
+  }
+  .mini-map {
+    position: relative;
+    height: 260px;
+    background:
+      radial-gradient(circle at 78% 20%, rgba(212, 165, 116, 0.32) 0 6px, transparent 7px),
+      radial-gradient(circle at 58% 62%, rgba(74, 124, 89, 0.28) 0 7px, transparent 8px),
+      linear-gradient(120deg, rgba(125, 155, 168, 0.18), rgba(245, 230, 211, 0.8));
+  }
+  .mini-route {
+    position: absolute;
+    inset: 52px 42px 70px 180px;
+    border-top: 4px solid var(--russet);
+    border-right: 4px solid var(--russet);
+    transform: skew(-18deg);
+    border-radius: 80px 16px 80px 16px;
+    opacity: 0.9;
+  }
+  .point {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--mustard);
+    border: 3px solid var(--soft);
+    box-shadow: 0 4px 10px rgba(44, 36, 22, 0.25);
+  }
+  .p1 { left: 57%; top: 24%; }
+  .p2 { left: 72%; top: 54%; background: var(--olive); }
+  .p3 { left: 49%; top: 72%; background: var(--coral); }
+  .workbench {
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 14px;
+    width: 38%;
+    min-width: 150px;
+    border-radius: 10px;
+    background: rgba(255, 250, 243, 0.96);
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    box-shadow: 0 14px 30px rgba(44, 36, 22, 0.16);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .bubble {
+    border-radius: 12px;
+    padding: 8px 9px;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .bubble.ai { background: rgba(245, 230, 211, 0.86); color: var(--walnut); }
+  .bubble.user { background: var(--ink); color: var(--soft); margin-left: 18px; }
+  .composer {
+    margin-top: auto;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(44, 36, 22, 0.16);
+    background: white;
+  }
+  .context-card {
+    border-radius: 8px;
+    border: 1px solid rgba(44, 36, 22, 0.14);
+    background: white;
+    padding: 8px;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .chip {
+    border-radius: 999px;
+    background: rgba(217, 118, 66, 0.13);
+    color: var(--russet);
+    padding: 4px 7px;
+    font-size: 9px;
+    font-weight: 800;
+  }
+  .rail {
+    width: 34px;
+    border-radius: 999px;
+    background: var(--ink);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+  }
+  .rail-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--soft);
+    opacity: 0.9;
+  }
+  .rail-dot.active { background: var(--russet); }
+  .split-workbench {
+    flex-direction: row;
+  }
+  .chat-col {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 900;
+  }
+  .badge {
+    border-radius: 999px;
+    background: var(--cream);
+    color: var(--walnut);
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+  .layout-card p {
+    margin: 0;
+    color: var(--walnut);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  @media (max-width: 980px) {
+    .layout-options { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="periplus-board">
+  <h2>AI Native 左侧工作台：结构化操作放在哪里？</h2>
+  <p class="subtitle">
+    地图仍然是首页和主画布；右下角高德自带缩放控件可以移除。这里先只讨论左侧浮层的交互骨架。
+  </p>
+
+  <div class="layout-options">
+    <div class="layout-card" data-choice="a" onclick="toggleSelect(this)">
+      <div class="mini-map">
+        <div class="mini-route"></div>
+        <div class="point p1"></div>
+        <div class="point p2"></div>
+        <div class="point p3"></div>
+        <div class="workbench">
+          <div class="bubble ai">我可以帮你把 5 天关西行程压成更松弛的节奏。</div>
+          <div class="bubble user">想少换酒店，多留咖啡店。</div>
+          <div class="context-card">
+            <strong>当前计划</strong><br>
+            京都 2 晚 · 大阪 2 晚 · 8 个地点
+          </div>
+          <div class="chips">
+            <span class="chip">调整路线</span>
+            <span class="chip">加地点</span>
+            <span class="chip">保存</span>
+          </div>
+          <div class="composer"></div>
+        </div>
+      </div>
+      <div class="layout-card-body">
+        <h3 class="card-title">A. 对话主导 + 情境卡片 <span class="badge">推荐</span></h3>
+        <p>聊天是入口；当前路线、候选地点、保存、地图选点等操作以“上下文卡片”出现在对话下方或消息之间。</p>
+      </div>
+    </div>
+
+    <div class="layout-card" data-choice="b" onclick="toggleSelect(this)">
+      <div class="mini-map">
+        <div class="mini-route"></div>
+        <div class="point p1"></div>
+        <div class="point p2"></div>
+        <div class="point p3"></div>
+        <div class="workbench">
+          <div class="bubble ai">告诉我你想去哪、几天、偏好什么。</div>
+          <div class="bubble user">东京 4 天，偏建筑和爵士酒吧。</div>
+          <div class="bubble ai">我生成了一个初版。要我继续压缩通勤吗？</div>
+          <div class="bubble user">把第二天放轻一点。</div>
+          <div class="composer"></div>
+        </div>
+      </div>
+      <div class="layout-card-body">
+        <h3 class="card-title">B. 纯对话控制台</h3>
+        <p>几乎所有操作都在聊天里完成，结构化按钮只作为消息内联元素。最 AI Native，但路线编辑和收藏可能变得不够可见。</p>
+      </div>
+    </div>
+
+    <div class="layout-card" data-choice="c" onclick="toggleSelect(this)">
+      <div class="mini-map">
+        <div class="mini-route"></div>
+        <div class="point p1"></div>
+        <div class="point p2"></div>
+        <div class="point p3"></div>
+        <div class="workbench split-workbench">
+          <div class="rail">
+            <div class="rail-dot active"></div>
+            <div class="rail-dot"></div>
+            <div class="rail-dot"></div>
+            <div class="rail-dot"></div>
+          </div>
+          <div class="chat-col">
+            <div class="bubble ai">我会按当前工具模式处理你的请求。</div>
+            <div class="context-card">
+              <strong>路线工具</strong><br>
+              时间线 · 地点 · 照片 · 收藏
+            </div>
+            <div class="bubble user">把酒店附近的点排前面。</div>
+            <div class="composer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="layout-card-body">
+        <h3 class="card-title">C. 对话主导 + 细工具轨</h3>
+        <p>聊天仍是主体；左侧或顶部保留很窄的工具入口，路线、地点、照片、收藏可以随时切换，发现性更强。</p>
+      </div>
+    </div>
+  </div>
+</div>

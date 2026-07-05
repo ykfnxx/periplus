@@ -1,0 +1,617 @@
+<style>
+  .overall-board {
+    --cream: #f5e6d3;
+    --soft-white: #fffaf3;
+    --white: #fff;
+    --ink: #2c2416;
+    --russet: #d97642;
+    --mustard: #d4a574;
+    --olive: #4a7c59;
+    --walnut: #6b5d4f;
+    --teak: #8b7355;
+    --bluegray: #7d9ba8;
+    --coral: #e57a77;
+    color: var(--ink);
+    font-family: Avenir, "Century Gothic", Futura, system-ui, sans-serif;
+  }
+  .overall-board h2 {
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: 0;
+  }
+  .overall-board .subtitle {
+    max-width: 860px;
+    color: var(--walnut);
+  }
+  .app-frame {
+    margin-top: 22px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(44,36,22,0.18);
+    box-shadow: 0 18px 42px rgba(44,36,22,0.14);
+    background: var(--cream);
+  }
+  .app-screen {
+    position: relative;
+    height: 610px;
+    background:
+      radial-gradient(circle at 8% 85%, rgba(229,122,119,0.22) 0 78px, transparent 80px),
+      radial-gradient(ellipse at 92% 12%, rgba(125,155,168,0.22) 0 120px, transparent 122px),
+      linear-gradient(135deg, #fff8ec, var(--cream));
+    overflow: hidden;
+  }
+  .map-canvas {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(23deg, transparent 0 36%, rgba(217,118,66,0.32) 37% 39%, transparent 40%),
+      linear-gradient(138deg, transparent 0 54%, rgba(74,124,89,0.18) 55% 57%, transparent 58%),
+      linear-gradient(70deg, transparent 0 48%, rgba(125,155,168,0.22) 49% 51%, transparent 52%),
+      #fff1dc;
+  }
+  .map-canvas:before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(44,36,22,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(44,36,22,0.045) 1px, transparent 1px);
+    background-size: 42px 42px;
+    opacity: 0.6;
+  }
+  .top-shell {
+    position: absolute;
+    left: 30px;
+    right: 30px;
+    top: 24px;
+    height: 58px;
+    display: grid;
+    grid-template-columns: 210px minmax(320px, 620px) 1fr 42px;
+    gap: 14px;
+    align-items: center;
+  }
+  .brand {
+    height: 48px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.92);
+    border: 1px solid rgba(44,36,22,0.14);
+    box-shadow: 0 10px 22px rgba(44,36,22,0.10);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 16px;
+  }
+  .brand-mark {
+    position: relative;
+    width: 40px;
+    height: 24px;
+    flex: none;
+  }
+  .brand-mark:before,
+  .brand-mark:after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+  }
+  .brand-mark:before {
+    left: 0;
+    top: 3px;
+    width: 18px;
+    height: 18px;
+    background: var(--russet);
+    box-shadow: 11px 0 0 var(--mustard), 22px 0 0 var(--olive);
+  }
+  .brand-mark:after {
+    right: -2px;
+    top: 0;
+    width: 24px;
+    height: 24px;
+    background: conic-gradient(from 0deg, var(--russet) 0 10deg, transparent 10deg 20deg);
+    opacity: 0.75;
+  }
+  .brand-word {
+    font-weight: 850;
+    font-size: 18px;
+    color: var(--ink);
+  }
+  .search-shell {
+    height: 52px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.94);
+    border: 1px solid rgba(44,36,22,0.14);
+    box-shadow: 0 12px 24px rgba(44,36,22,0.11);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 18px;
+  }
+  .search-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--russet);
+    position: relative;
+    flex: none;
+  }
+  .search-icon:after {
+    content: "";
+    position: absolute;
+    right: -7px;
+    bottom: -5px;
+    width: 9px;
+    height: 2px;
+    background: var(--russet);
+    transform: rotate(45deg);
+    border-radius: 99px;
+  }
+  .search-copy {
+    color: var(--walnut);
+    font-size: 14px;
+  }
+  .top-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  .action-chip {
+    height: 40px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.82);
+    border: 1px solid rgba(44,36,22,0.14);
+    color: var(--walnut);
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--mustard), var(--coral));
+    border: 3px solid rgba(255,255,255,0.88);
+    box-shadow: 0 10px 20px rgba(44,36,22,0.14);
+  }
+  .side-panel {
+    position: absolute;
+    top: 102px;
+    left: 30px;
+    bottom: 28px;
+    width: 372px;
+    border-radius: 8px;
+    background: rgba(255,250,243,0.95);
+    border: 1px solid rgba(44,36,22,0.16);
+    box-shadow: 0 18px 38px rgba(44,36,22,0.15);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+  }
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .tab {
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(245,230,211,0.76);
+    color: var(--walnut);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 850;
+  }
+  .tab.active {
+    background: var(--ink);
+    color: #fff8ec;
+    border-color: var(--ink);
+  }
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 18px;
+    margin-bottom: 12px;
+  }
+  .panel-header h3 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 26px;
+    line-height: 1.05;
+  }
+  .panel-header p {
+    margin: 7px 0 0;
+    color: var(--walnut);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .panel-badge {
+    flex: none;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: var(--mustard);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    border: 1px solid rgba(44,36,22,0.14);
+  }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 14px 0;
+  }
+  .metric {
+    border-radius: 8px;
+    border: 1px solid rgba(44,36,22,0.12);
+    background: rgba(255,255,255,0.60);
+    padding: 10px;
+  }
+  .metric strong {
+    display: block;
+    color: var(--ink);
+    font-size: 18px;
+    line-height: 1;
+  }
+  .metric span {
+    display: block;
+    margin-top: 5px;
+    color: var(--walnut);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .timeline {
+    flex: 1;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .point-row {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    gap: 11px;
+    align-items: start;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(44,36,22,0.10);
+  }
+  .point-num {
+    width: 29px;
+    height: 29px;
+    border-radius: 50%;
+    background: var(--russet);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 900;
+    box-shadow: 0 6px 13px rgba(44,36,22,0.14);
+  }
+  .point-row:nth-child(2) .point-num { background: var(--mustard); color: var(--ink); }
+  .point-row:nth-child(3) .point-num { background: var(--olive); }
+  .point-row:nth-child(4) .point-num { background: var(--bluegray); color: var(--ink); }
+  .point-main strong {
+    display: block;
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.1;
+  }
+  .point-main span {
+    display: block;
+    color: var(--walnut);
+    font-size: 12px;
+    margin-top: 5px;
+  }
+  .edit-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(245,230,211,0.72);
+    color: var(--walnut);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .panel-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(44,36,22,0.12);
+  }
+  .panel-button {
+    height: 42px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+  }
+  .panel-button.secondary {
+    background: rgba(245,230,211,0.76);
+    border: 1px solid rgba(44,36,22,0.14);
+    color: var(--walnut);
+  }
+  .panel-button.primary {
+    background: var(--russet);
+    color: #fff8ec;
+    box-shadow: 0 10px 20px rgba(217,118,66,0.24);
+  }
+  .map-route {
+    position: absolute;
+    left: 455px;
+    right: 100px;
+    top: 180px;
+    bottom: 128px;
+  }
+  .route-line {
+    position: absolute;
+    left: 40px;
+    right: 80px;
+    top: 130px;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--russet);
+    transform: rotate(-12deg);
+    box-shadow: 0 2px 0 rgba(255,255,255,0.68), 0 7px 18px rgba(44,36,22,0.13);
+  }
+  .route-line:before,
+  .route-line:after {
+    content: "";
+    position: absolute;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--russet);
+  }
+  .route-line:before {
+    left: 48%;
+    top: -58px;
+    width: 170px;
+    transform: rotate(36deg);
+  }
+  .route-line:after {
+    left: 70%;
+    top: 56px;
+    width: 138px;
+    transform: rotate(34deg);
+  }
+  .route-pin {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 4px solid rgba(255,255,255,0.94);
+    box-shadow: 0 10px 22px rgba(44,36,22,0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .route-pin.one { left: 54px; top: 112px; background: var(--russet); }
+  .route-pin.two { left: 255px; top: 66px; background: var(--mustard); color: var(--ink); }
+  .route-pin.three { right: 170px; top: 120px; background: var(--olive); }
+  .route-pin.four { right: 54px; bottom: 70px; background: var(--bluegray); color: var(--ink); }
+  .photo-pin {
+    position: absolute;
+    right: 214px;
+    bottom: 160px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 4px solid #fff;
+    background:
+      radial-gradient(circle at 62% 30%, rgba(255,255,255,0.72) 0 8px, transparent 9px),
+      linear-gradient(135deg, var(--bluegray), var(--coral));
+    box-shadow: 0 12px 24px rgba(44,36,22,0.23);
+  }
+  .fab-stack {
+    position: absolute;
+    right: 30px;
+    bottom: 32px;
+    display: grid;
+    gap: 12px;
+  }
+  .fab {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(255,255,255,0.92);
+    box-shadow: 0 12px 24px rgba(44,36,22,0.14);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink);
+    font-weight: 900;
+    font-size: 22px;
+  }
+  .fab.primary {
+    background: var(--olive);
+    color: #fff;
+  }
+  .map-style-control {
+    position: absolute;
+    right: 30px;
+    top: 104px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(44,36,22,0.14);
+    box-shadow: 0 12px 24px rgba(44,36,22,0.13);
+    padding: 8px;
+    display: flex;
+    gap: 6px;
+  }
+  .map-style-control span {
+    width: 32px;
+    height: 28px;
+    border-radius: 5px;
+    background: var(--cream);
+    border: 1px solid rgba(44,36,22,0.12);
+  }
+  .map-style-control span:nth-child(2) { background: var(--bluegray); }
+  .map-style-control span:nth-child(3) { background: var(--teak); }
+  .legend {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .legend-item {
+    border-radius: 8px;
+    border: 1px solid rgba(44,36,22,0.14);
+    background: rgba(255,250,243,0.88);
+    padding: 13px;
+  }
+  .legend-item strong {
+    display: block;
+    color: var(--ink);
+    font-size: 13px;
+    margin-bottom: 5px;
+  }
+  .legend-item span {
+    color: var(--walnut);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  @media (max-width: 980px) {
+    .app-screen { height: 720px; }
+    .top-shell {
+      left: 18px;
+      right: 18px;
+      grid-template-columns: 1fr 42px;
+      height: auto;
+    }
+    .brand { display: none; }
+    .search-shell { grid-column: 1; }
+    .top-actions { display: none; }
+    .side-panel {
+      left: 18px;
+      right: 18px;
+      top: auto;
+      bottom: 18px;
+      width: auto;
+      height: 420px;
+    }
+    .map-style-control { right: 18px; top: 92px; }
+    .fab-stack { right: 18px; bottom: 456px; }
+    .legend { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="overall-board">
+  <h2>Periplus 单页地图工作台 · 设计概览</h2>
+  <p class="subtitle">已合并你的选择：地图即首页；左侧为探索 / 计划 / 收藏；路线详情默认可读，局部渐进编辑；添加地点走搜索为主、地图点选兜底；视觉风格为 Mid-Century Modern 的温暖、实用、乐观地图工作台。</p>
+
+  <div class="app-frame">
+    <div class="app-screen">
+      <div class="map-canvas"></div>
+
+      <div class="top-shell">
+        <div class="brand">
+          <div class="brand-mark"></div>
+          <div class="brand-word">Periplus</div>
+        </div>
+        <div class="search-shell">
+          <div class="search-icon"></div>
+          <div class="search-copy">搜索地点、路线、标签或备注</div>
+        </div>
+        <div class="top-actions">
+          <div class="action-chip">导入照片</div>
+          <div class="action-chip">新路线</div>
+        </div>
+        <div class="avatar"></div>
+      </div>
+
+      <div class="side-panel">
+        <div class="tabs">
+          <div class="tab">探索</div>
+          <div class="tab active">计划</div>
+          <div class="tab">收藏</div>
+        </div>
+
+        <div class="panel-header">
+          <div>
+            <h3>丝绸之路</h3>
+            <p>从长安出发，穿过河西走廊，抵达天山脚下的经典西北路线。</p>
+          </div>
+          <div class="panel-badge">7站</div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric"><strong>7</strong><span>地点</span></div>
+          <div class="metric"><strong>9天</strong><span>建议</span></div>
+          <div class="metric"><strong>3张</strong><span>照片</span></div>
+        </div>
+
+        <div class="timeline">
+          <div class="point-row">
+            <div class="point-num">1</div>
+            <div class="point-main"><strong>西安</strong><span>古城墙、钟楼、起点补给</span></div>
+            <div class="edit-dot">+</div>
+          </div>
+          <div class="point-row">
+            <div class="point-num">2</div>
+            <div class="point-main"><strong>兰州</strong><span>黄河风情线，停留 6 小时</span></div>
+            <div class="edit-dot">+</div>
+          </div>
+          <div class="point-row">
+            <div class="point-num">3</div>
+            <div class="point-main"><strong>敦煌</strong><span>莫高窟、鸣沙山，建议 2 天</span></div>
+            <div class="edit-dot">+</div>
+          </div>
+          <div class="point-row">
+            <div class="point-num">4</div>
+            <div class="point-main"><strong>吐鲁番</strong><span>葡萄沟与火焰山</span></div>
+            <div class="edit-dot">+</div>
+          </div>
+        </div>
+
+        <div class="panel-actions">
+          <div class="panel-button secondary">地图选点</div>
+          <div class="panel-button primary">保存变更</div>
+        </div>
+      </div>
+
+      <div class="map-route">
+        <div class="route-line"></div>
+        <div class="route-pin one">1</div>
+        <div class="route-pin two">2</div>
+        <div class="route-pin three">3</div>
+        <div class="route-pin four">4</div>
+        <div class="photo-pin"></div>
+      </div>
+
+      <div class="map-style-control"><span></span><span></span><span></span></div>
+      <div class="fab-stack">
+        <div class="fab">⌖</div>
+        <div class="fab primary">+</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><strong>主界面</strong><span>`/` 即地图工作台；`/map` 可迁移或重定向；debug 仍可保留为开发者功能。</span></div>
+    <div class="legend-item"><strong>信息架构</strong><span>探索放推荐和搜索结果，计划放当前路线与照片，收藏放已保存路线。</span></div>
+    <div class="legend-item"><strong>交互方式</strong><span>默认浏览路线详情，点击行内控件展开编辑；新增地点可搜索或地图选点。</span></div>
+    <div class="legend-item"><strong>视觉系统</strong><span>米色底、深棕文字、橙红主操作、芥末/橄榄辅助，8px 半径与轻阴影。</span></div>
+  </div>
+</div>

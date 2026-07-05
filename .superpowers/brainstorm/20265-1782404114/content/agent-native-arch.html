@@ -1,0 +1,145 @@
+<h2>Periplus — Agent-Native 交互架构</h2>
+<p class="subtitle">AI Agent 驱动规划，人类通过交互式 UI 反馈订正</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">🔄 Agent-Native 人机协作循环</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.6;">
+
+<!-- 循环图 -->
+<div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+
+  <!-- 用户意图 -->
+  <div style="border: 2px solid #3b82f6; border-radius: 10px; padding: 12px 20px; background: #eff6ff; width: 280px; text-align: center;">
+    <div style="font-weight: bold; color: #1e40af;">👤 用户意图</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">自然语言 / 地图圈选 / 表单填写</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 16px;">↓</div>
+
+  <!-- Agent 理解 -->
+  <div style="border: 2px solid #8b5cf6; border-radius: 10px; padding: 12px 20px; background: #f5f3ff; width: 320px; text-align: center;">
+    <div style="font-weight: bold; color: #5b21b6;">🧠 Agent 理解 & 结构化</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">LLM 解析意图 → 提取约束条件 → 生成结构化规划</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 16px;">↓</div>
+
+  <!-- 可视化呈现 -->
+  <div style="border: 2px solid #10b981; border-radius: 10px; padding: 12px 20px; background: #ecfdf5; width: 320px; text-align: center;">
+    <div style="font-weight: bold; color: #065f46;">🗺️ 可视化呈现（地图 + UI）</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">路线渲染、景点卡片、时间轴、预算 breakdown</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 16px;">↓</div>
+
+  <!-- 人类反馈 -->
+  <div style="border: 2px solid #f59e0b; border-radius: 10px; padding: 12px 20px; background: #fffbeb; width: 320px; text-align: center;">
+    <div style="font-weight: bold; color: #92400e;">✋ 人类反馈 & 订正</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">拖拽调整顺序、删除/添加景点、修改天数、圈选替代方案</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 16px;">↓</div>
+
+  <!-- Agent 迭代 -->
+  <div style="border: 2px solid #ec4899; border-radius: 10px; padding: 12px 20px; background: #fdf2f8; width: 320px; text-align: center;">
+    <div style="font-weight: bold; color: #9d174d;">🔄 Agent 重新优化</div>
+    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">接收反馈 → 局部重算 / 全局重排 → 更新规划</div>
+  </div>
+
+  <div style="color: #6b7280; font-size: 16px;">↻ 循环直到满意</div>
+
+</div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🎛️ 交互式反馈的具体形式</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="drag-reorder" onclick="toggleSelect(this)">
+      <div class="letter">🎯</div>
+      <div class="content">
+        <h3>地图直接操作</h3>
+        <p>拖拽景点改变顺序、在地图上圈选"不去这里"、点击地图空白处"添加新景点"、调整路线走向</p>
+      </div>
+    </div>
+    <div class="option" data-choice="chat-feedback" onclick="toggleSelect(this)">
+      <div class="letter">💬</div>
+      <div class="content">
+        <h3>对话式反馈</h3>
+        <p>"第三天太赶了，拆成两天"、"把京都换成奈良"、"预算控制在8000以内"——Agent 理解并重新规划</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ui-widgets" onclick="toggleSelect(this)">
+      <div class="letter">🎚️</div>
+      <div class="content">
+        <h3>UI 控件微调</h3>
+        <p>滑块调整预算/天数、开关切换交通方式、下拉选择住宿等级、复选框选择兴趣标签</p>
+      </div>
+    </div>
+    <div class="option" data-choice="version-compare" onclick="toggleSelect(this)">
+      <div class="letter">📊</div>
+      <div class="content">
+        <h3>版本对比 & A/B</h3>
+        <p>Agent 同时生成 2-3 个方案，用户对比选择，选中方案的反馈用于优化 Agent 偏好模型</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🧠 Agent 架构示意</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family: monospace; font-size: 12px; line-height: 1.5;">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div style="border: 1px solid #c4b5fd; border-radius: 8px; padding: 10px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6; margin-bottom: 6px;">🎯 Planner Agent</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 接收：用户意图 + 约束条件<br>
+      • 调用：地图 API、POI 搜索、交通数据<br>
+      • 输出：结构化路线（天-景点-交通-时间）<br>
+      • 状态：规划上下文（planning_context）
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 8px; padding: 10px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6; margin-bottom: 6px;">🔍 Guide Agent</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 接收：景点/路线查询<br>
+      • 调用：爬虫、第三方 API、向量搜索<br>
+      • 输出：结构化攻略（吃住行游购娱）<br>
+      • 状态：知识库上下文（knowledge_context）
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 8px; padding: 10px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6; margin-bottom: 6px;">💬 Conversational Agent</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 接收：用户自然语言<br>
+      • 调用：路由到其他 Agent / 直接回答<br>
+      • 输出：对话回复 + 结构化指令<br>
+      • 状态：对话历史（conversation_history）
+    </div>
+  </div>
+  <div style="border: 1px solid #c4b5fd; border-radius: 8px; padding: 10px; background: #fafafa;">
+    <div style="font-weight: bold; color: #5b21b6; margin-bottom: 6px;">🏷️ Content Agent</div>
+    <div style="font-size: 11px; color: #4b5563;">
+      • 接收：图片/视频/文本<br>
+      • 调用：CV 模型、OCR、LLM<br>
+      • 输出：地点标注、标签、描述、相册组织<br>
+      • 状态：内容索引（content_index）
+    </div>
+  </div>
+</div>
+<div style="margin-top: 10px; padding: 8px; border: 1px dashed #9ca3af; border-radius: 6px; text-align: center; color: #6b7280; font-size: 11px;">
+  🔄 所有 Agent 共享：用户画像（preferences）、实时上下文（session_context）、长期记忆（memory_store）
+</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle" style="text-align: center; margin-top: 20px;">
+    💡 点击你感兴趣的交互反馈形式，我们在终端继续讨论
+  </p>
+</div>

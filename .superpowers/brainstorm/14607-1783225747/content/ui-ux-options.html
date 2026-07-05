@@ -1,0 +1,83 @@
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">方案 A：最小改动</div>
+    <div class="mockup-body">
+      <div style="display:flex;flex-direction:column;height:280px;width:240px;border:1px solid #ddd;border-radius:8px;overflow:hidden;font-family:sans-serif;font-size:12px;background:#f5f5f5;">
+        <!-- 顶部栏空间 -->
+        <div style="height:36px;background:#fff;border-bottom:none;flex-shrink:0;"></div>
+        <!-- 消息区域 -->
+        <div style="flex:1;overflow-y:auto;padding:12px 20px;background:#fff;">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+            <div style="max-width:80%;background:#333;color:#fff;padding:8px 12px;border-radius:12px;border-bottom-right-radius:3px;">用户消息</div>
+          </div>
+          <div style="margin-bottom:8px;">
+            <div style="background:#f0f0f0;padding:8px 12px;border-radius:12px;">AI 回复内容...</div>
+          </div>
+        </div>
+        <!-- 输入框 -->
+        <div style="padding:8px 12px;background:#fff;border-top:1px solid #eee;">
+          <div style="display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:16px;padding:6px 10px;background:#fff;">
+            <input style="flex:1;border:none;outline:none;font-size:12px;" placeholder="输入消息...">
+            <button style="width:24px;height:24px;border-radius:50%;background:#333;color:#fff;border:none;font-size:10px;">→</button>
+          </div>
+          <!-- 保存状态保留 -->
+          <div style="display:flex;justify-content:flex-end;padding:2px 4px 0;font-size:10px;color:#999;">保存成功</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#666;margin-top:8px;">仅移除键盘提示，padding 从 pl-4/pr-2 改为 pl-5/pr-5（+4px 两侧）</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">方案 B：统一间距 + 顶部空间</div>
+    <div class="mockup-body">
+      <div style="display:flex;flex-direction:column;height:280px;width:240px;border:1px solid #ddd;border-radius:8px;overflow:hidden;font-family:sans-serif;font-size:12px;background:#f5f5f5;">
+        <!-- 顶部栏空间 -->
+        <div style="height:36px;background:#fff;border-bottom:none;flex-shrink:0;"></div>
+        <!-- 消息区域 -->
+        <div style="flex:1;overflow-y:auto;padding:12px 20px;background:#fff;">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+            <div style="max-width:80%;background:#333;color:#fff;padding:8px 12px;border-radius:12px;border-bottom-right-radius:3px;">用户消息</div>
+          </div>
+          <div style="margin-bottom:8px;">
+            <div style="background:#f0f0f0;padding:8px 12px;border-radius:12px;">AI 回复内容...</div>
+          </div>
+        </div>
+        <!-- 输入框 -->
+        <div style="padding:8px 12px;background:#fff;border-top:1px solid #eee;">
+          <div style="display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:16px;padding:6px 10px;background:#fff;">
+            <input style="flex:1;border:none;outline:none;font-size:12px;" placeholder="输入消息...">
+            <button style="width:24px;height:24px;border-radius:50%;background:#333;color:#fff;border:none;font-size:10px;">→</button>
+          </div>
+          <div style="display:flex;justify-content:flex-end;padding:2px 4px 0;font-size:10px;color:#999;">保存成功</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#666;margin-top:8px;">统一 padding 为 px-5，顶部栏空间通过 padding-top 实现，无分割线</p>
+    </div>
+  </div>
+</div>
+
+<h3>地图锚点切换方案</h3>
+<div class="options">
+  <div class="option" data-choice="cycle" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>循环切换（推荐）</h3>
+      <p>同一位置多次点击，按顺序循环切换选中该位置的所有锚点。简单直观，无需额外UI。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="popup" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>弹出列表选择</h3>
+      <p>点击重叠锚点时弹出一个小列表，显示该位置所有锚点名称，用户手动选择。更明确但增加交互步骤。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="marker-offset" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>自动偏移分散</h3>
+      <p>同一位置的锚点在视觉上自动偏移散开（如花瓣状），每个都可独立点击。视觉变化大，可能破坏地图精度感。</p>
+    </div>
+  </div>
+</div>
