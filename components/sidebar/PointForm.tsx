@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { RoutePoint } from '@/types/route';
+import type { RouteNode } from '@/types/route';
 
 interface PointFormProps {
-  point?: RoutePoint | null;
-  onSubmit: (data: Omit<RoutePoint, 'id'>) => void;
+  point?: RouteNode | null;
+  onSubmit: (data: Omit<RouteNode, 'id' | 'routeId'>) => void;
   onCancel: () => void;
 }
 
@@ -13,7 +13,11 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
   const [name, setName] = useState(point?.name || '');
   const [lat, setLat] = useState(point?.lat?.toString() || '');
   const [lng, setLng] = useState(point?.lng?.toString() || '');
-  const [stayHours, setStayHours] = useState(point?.stayHours?.toString() || '');
+  const [stayHours, setStayHours] = useState(
+    point?.durationMinutes !== undefined
+      ? String(point.durationMinutes / 60)
+      : ''
+  );
   const [notes, setNotes] = useState(point?.notes || '');
   const [error, setError] = useState('');
 
@@ -21,7 +25,11 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
     setName(point?.name || '');
     setLat(point?.lat?.toString() || '');
     setLng(point?.lng?.toString() || '');
-    setStayHours(point?.stayHours?.toString() || '');
+    setStayHours(
+      point?.durationMinutes !== undefined
+        ? String(point.durationMinutes / 60)
+        : ''
+    );
     setNotes(point?.notes || '');
     setError('');
   }, [point]);
@@ -53,7 +61,8 @@ export default function PointForm({ point, onSubmit, onCancel }: PointFormProps)
       lat: latNum,
       lng: lngNum,
       order: point?.order ?? 0,
-      stayHours: stayHours ? parseFloat(stayHours) : undefined,
+      category: point?.category ?? 'PLACE',
+      durationMinutes: stayHours ? Math.round(parseFloat(stayHours) * 60) : undefined,
       notes: notes.trim() || undefined,
     });
   };

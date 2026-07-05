@@ -9,9 +9,9 @@ export default function RoutePolyline() {
   const currentRoute = useMapStore((s) => s.currentRoute);
 
   useEffect(() => {
-    if (!map || !currentRoute || currentRoute.points.length < 2) return;
+    if (!map || !currentRoute || currentRoute.nodes.length < 2) return;
 
-    const path = [...currentRoute.points]
+    const path = [...currentRoute.nodes]
       .sort((a, b) => a.order - b.order)
       .map((p) => new AMap.LngLat(p.lng, p.lat));
 

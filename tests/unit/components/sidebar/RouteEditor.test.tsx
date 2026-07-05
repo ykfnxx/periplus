@@ -31,7 +31,9 @@ describe('RouteEditor', () => {
       id: 'preset-test',
       name: 'Test Route',
       description: 'A test route',
-      points: [],
+      nodes: [],
+      edges: [],
+      subPlans: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -50,7 +52,9 @@ describe('RouteEditor', () => {
     const route = {
       id: 'preset-test',
       name: 'Test Route',
-      points: [],
+      nodes: [],
+      edges: [],
+      subPlans: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -69,7 +73,9 @@ describe('RouteEditor', () => {
     const route = {
       id: 'preset-test',
       name: 'Test Route',
-      points: [],
+      nodes: [],
+      edges: [],
+      subPlans: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -90,19 +96,22 @@ describe('RouteEditor', () => {
 
     expect(mockSetCurrentRoute).toHaveBeenCalled();
     const updatedRoute = mockSetCurrentRoute.mock.calls[0][0];
-    expect(updatedRoute.points).toHaveLength(1);
-    expect(updatedRoute.points[0].name).toBe('New Point');
-    expect(updatedRoute.points[0].order).toBe(0);
+    expect(updatedRoute.nodes).toHaveLength(1);
+    expect(updatedRoute.nodes[0].name).toBe('New Point');
+    expect(updatedRoute.nodes[0].order).toBe(0);
+    expect(updatedRoute.edges).toEqual([]);
   });
 
   it('deletes a point and reorders', () => {
     const route = {
       id: 'preset-test',
       name: 'Test Route',
-      points: [
+      nodes: [
         { id: 'p1', name: 'Point A', lat: 1, lng: 1, order: 0 },
         { id: 'p2', name: 'Point B', lat: 2, lng: 2, order: 1 },
       ],
+      edges: [{ id: 'e1', routeId: 'preset-test', fromNodeId: 'p1', toNodeId: 'p2', status: 'INCOMPLETE' }],
+      subPlans: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -118,15 +127,18 @@ describe('RouteEditor', () => {
 
     expect(mockSetCurrentRoute).toHaveBeenCalled();
     const updatedRoute = mockSetCurrentRoute.mock.calls[0][0];
-    expect(updatedRoute.points).toHaveLength(1);
-    expect(updatedRoute.points[0].order).toBe(0);
+    expect(updatedRoute.nodes).toHaveLength(1);
+    expect(updatedRoute.nodes[0].order).toBe(0);
+    expect(updatedRoute.edges).toEqual([]);
   });
 
   it('saves route with POST for preset routes', async () => {
     const route = {
       id: 'preset-test',
       name: 'Test Route',
-      points: [],
+      nodes: [],
+      edges: [],
+      subPlans: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -157,7 +169,9 @@ describe('RouteEditor', () => {
     const route = {
       id: 'existing-id',
       name: 'Test Route',
-      points: [],
+      nodes: [],
+      edges: [],
+      subPlans: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

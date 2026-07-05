@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
     data: {
       name: silkRoadRoute.name,
       description: silkRoadRoute.description,
-      points: silkRoadRoute.points,
+      nodes: silkRoadRoute.nodes,
+      edges: silkRoadRoute.edges,
+      subPlans: silkRoadRoute.subPlans,
     },
   });
 }

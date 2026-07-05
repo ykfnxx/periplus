@@ -20,11 +20,11 @@ export default function RouteMarkers() {
   const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare)
 
   useEffect(() => {
-    if (!map || !currentRoute || currentRoute.points.length === 0) return
+    if (!map || !currentRoute || currentRoute.nodes.length === 0) return
 
     const markers: AMap.Marker[] = []
 
-    const sortedPoints = [...currentRoute.points].sort(
+    const sortedPoints = [...currentRoute.nodes].sort(
       (a, b) => a.order - b.order
     )
 

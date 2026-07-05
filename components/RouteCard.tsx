@@ -18,10 +18,10 @@ export default function RouteCard({ route }: RouteCardProps) {
             <p className="text-sm text-slate-500 mt-1 line-clamp-2">{route.description}</p>
           )}
         </div>
-        <span className="text-2xl">🗺️</span>
+        <span className="text-sm font-semibold text-slate-400">路线</span>
       </div>
       <div className="mt-3 flex items-center gap-3 text-xs text-slate-400">
-        <span>{route.points.length} 个地点</span>
+        <span>{route.nodes.length} 个节点</span>
         <span>•</span>
         <span>{new Date(route.updatedAt).toLocaleDateString('zh-CN')}</span>
       </div>

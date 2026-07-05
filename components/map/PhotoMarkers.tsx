@@ -23,16 +23,16 @@ export default function PhotoMarkers() {
 
     const markers: AMap.Marker[] = []
 
-    const routePoints =
-      currentRoute?.points.map((point) => ({
-        id: point.id,
-        lat: point.lat,
-        lng: point.lng,
-        order: point.order,
-        name: point.name,
+    const routeNodes =
+      currentRoute?.nodes.map((node) => ({
+        id: node.id,
+        lat: node.lat,
+        lng: node.lng,
+        order: node.order,
+        name: node.name,
       })) ?? []
     const clusters = calculateAnchorClusters(
-      createAnchorItems(routePoints, photoShares),
+      createAnchorItems(routeNodes, photoShares),
       (anchor) => {
         const pixel = map.lngLatToContainer(
           new AMap.LngLat(anchor.lng, anchor.lat)

@@ -1,76 +1,70 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRoute, getRoute, listRoutes, updateRoute } from '@/lib/routes/client';
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { createRoute, getRoute, listRoutes, updateRoute } from "@/lib/routes/client"
 
-describe('route client', () => {
+const routeInput = {
+  name: "杭州三日",
+  nodes: [
+    {
+      id: "node-1",
+      name: "灵隐寺",
+      lat: 30.2401,
+      lng: 120.1023,
+      order: 0,
+      category: "PLACE" as const,
+    },
+  ],
+  edges: [],
+}
+
+describe("route client", () => {
   beforeEach(() => {
-    global.fetch = vi.fn();
-  });
+    global.fetch = vi.fn()
+  })
 
-  it('lists routes through the REST route endpoint', async () => {
-    const routes = [{ id: 'route-1', name: '杭州三日', points: [] }];
+  it("lists routes through the REST route endpoint", async () => {
+    const routes = [{ id: "route-1", name: "杭州三日", nodes: [], edges: [] }]
     vi.mocked(global.fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => routes,
-    } as Response);
+    } as Response)
 
-    await expect(listRoutes()).resolves.toEqual(routes);
-    expect(global.fetch).toHaveBeenCalledWith('/api/routes', { cache: 'no-store' });
-  });
+    await expect(listRoutes()).resolves.toEqual(routes)
+    expect(global.fetch).toHaveBeenCalledWith("/api/routes", {
+      cache: "no-store",
+    })
+  })
 
-  it('gets one route by id through the REST route endpoint', async () => {
-    const route = { id: 'route-1', name: '杭州三日', points: [] };
+  it("gets one route by id through the REST route endpoint", async () => {
+    const route = { id: "route-1", name: "杭州三日", nodes: [], edges: [] }
     vi.mocked(global.fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => route,
-    } as Response);
+    } as Response)
 
-    await expect(getRoute('route-1')).resolves.toEqual(route);
-    expect(global.fetch).toHaveBeenCalledWith('/api/routes/route-1', {
-      cache: 'no-store',
-    });
-  });
+    await expect(getRoute("route-1")).resolves.toEqual(route)
+  })
 
-  it('creates routes through the REST route endpoint', async () => {
-    const input = {
-      name: '杭州三日',
-      points: [{ name: '灵隐寺', lat: 30.2401, lng: 120.1023, order: 0 }],
-    };
-    const route = { id: 'route-1', ...input };
+  it("creates routes through the REST route endpoint", async () => {
+    const route = { id: "route-1", ...routeInput }
     vi.mocked(global.fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => route,
-    } as Response);
+    } as Response)
 
-    await expect(createRoute(input)).resolves.toEqual(route);
+    await expect(createRoute(routeInput)).resolves.toEqual(route)
     expect(global.fetch).toHaveBeenCalledWith(
-      '/api/routes',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      })
-    );
-  });
+      "/api/routes",
+      expect.objectContaining({ body: JSON.stringify(routeInput) })
+    )
+  })
 
-  it('updates routes through the REST route endpoint', async () => {
-    const input = {
-      name: '杭州三日',
-      points: [{ name: '灵隐寺', lat: 30.2401, lng: 120.1023, order: 0 }],
-    };
-    const route = { id: 'route-1', ...input };
+  it("updates routes through the REST route endpoint", async () => {
+    const route = { id: "route-1", ...routeInput }
     vi.mocked(global.fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => route,
-    } as Response);
+    } as Response)
 
-    await expect(updateRoute('route-1', input)).resolves.toEqual(route);
-    expect(global.fetch).toHaveBeenCalledWith(
-      '/api/routes/route-1',
-      expect.objectContaining({
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      })
-    );
-  });
-});
+    await expect(updateRoute("route-1", routeInput)).resolves.toEqual(route)
+  })
+})

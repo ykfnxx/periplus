@@ -19,7 +19,8 @@ describe('PointForm', () => {
       lat: 34.5,
       lng: 108.9,
       order: 0,
-      stayHours: 2.5,
+      category: 'PLACE' as const,
+      durationMinutes: 150,
       notes: 'Test notes',
     };
 
@@ -49,7 +50,8 @@ describe('PointForm', () => {
       lat: 35.0,
       lng: 110.0,
       order: 0,
-      stayHours: 1.5,
+      category: 'PLACE',
+      durationMinutes: 90,
       notes: 'Some notes',
     });
   });
@@ -67,6 +69,7 @@ describe('PointForm', () => {
       lat: 34.5,
       lng: 108.9,
       order: 5,
+      category: 'PLACE' as const,
     };
 
     render(<PointForm point={point} onSubmit={mockOnSubmit} onCancel={mockOnCancel} />);

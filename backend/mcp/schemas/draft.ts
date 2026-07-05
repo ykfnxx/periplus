@@ -1,32 +1,163 @@
-import { z } from 'zod';
-import {
-  pointPositionSchema,
-  routeInputSchema,
-  routePointCreateSchema,
-  routePointPatchSchema,
-} from '@/mcp/schemas/routes';
+import { z } from "zod"
 
-export const getCurrentDraftInputSchema = z.object({});
+const nodeCategorySchema = z.enum([
+  "CITY",
+  "PLACE",
+  "SIGHT",
+  "RESTAURANT",
+  "HOTEL",
+  "ACTIVITY",
+  "TRANSIT",
+])
+
+const edgeStatusSchema = z.enum(["PLANNED", "INCOMPLETE"])
+
+const transportModeSchema = z.enum([
+  "FLIGHT",
+  "TRAIN",
+  "CAR",
+  "BUS",
+  "WALK",
+  "TAXI",
+  "SUBWAY",
+  "RENTAL",
+])
+
+const nodeCreateSchema = z.object({
+  id: z.string().min(1).optional(),
+  name: z.string().min(1),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  category: nodeCategorySchema,
+  durationMinutes: z.number().int().nonnegative().optional(),
+  notes: z.string().optional(),
+})
+
+const nodePatchSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    lat: z.number().min(-90).max(90).optional(),
+    lng: z.number().min(-180).max(180).optional(),
+    category: nodeCategorySchema.optional(),
+    durationMinutes: z.number().int().nonnegative().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one patch field is required",
+  })
+
+const edgeCreateSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    fromNodeId: z.string().min(1).optional(),
+    toNodeId: z.string().min(1).optional(),
+    status: edgeStatusSchema,
+    transportMode: transportModeSchema.optional(),
+    durationMinutes: z.number().int().nonnegative().optional(),
+    distanceKm: z.number().nonnegative().optional(),
+    costEstimate: z.number().nonnegative().optional(),
+    notes: z.string().optional(),
+  })
+  .refine(
+    (value) => value.status !== "PLANNED" || Boolean(value.transportMode),
+    { message: "PLANNED edges require transportMode" }
+  )
+
+const edgePatchSchema = z
+  .object({
+    status: edgeStatusSchema.optional(),
+    transportMode: transportModeSchema.nullable().optional(),
+    durationMinutes: z.number().int().nonnegative().nullable().optional(),
+    distanceKm: z.number().nonnegative().nullable().optional(),
+    costEstimate: z.number().nonnegative().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one patch field is required",
+  })
+
+export const getCurrentDraftInputSchema = z.object({})
 
 export const replaceDraftInputSchema = z.object({
-  route: routeInputSchema.nullable(),
-});
+  route: z.unknown().nullable(),
+})
 
-export const addDraftPointInputSchema = z.object({
-  point: routePointCreateSchema,
-  position: pointPositionSchema.optional(),
-});
+export const routeAddStartNodeInputSchema = z.object({
+  route: z
+    .object({
+      name: z.string().min(1).optional(),
+      description: z.string().optional(),
+    })
+    .optional(),
+  node: nodeCreateSchema,
+})
 
-export const updateDraftPointInputSchema = z.object({
-  pointId: z.string().min(1),
-  patch: routePointPatchSchema.optional(),
-  position: pointPositionSchema.optional(),
-});
+export const appendNodeInputSchema = z.object({
+  node: nodeCreateSchema,
+  edge: edgeCreateSchema,
+})
 
-export const deleteDraftPointInputSchema = z.object({
-  pointId: z.string().min(1),
-});
+export const insertNodeInputSchema = z.object({
+  beforeNodeId: z.string().min(1),
+  node: nodeCreateSchema,
+  beforeEdge: edgeCreateSchema.optional(),
+  afterEdge: edgeCreateSchema,
+})
 
-export const reorderDraftPointsInputSchema = z.object({
-  pointIds: z.array(z.string().min(1)).min(1),
-});
+export const removeNodeRangeInputSchema = z.object({
+  startNodeId: z.string().min(1),
+  endNodeId: z.string().min(1),
+  bridgeEdge: edgeCreateSchema.optional(),
+})
+
+export const updateNodeInputSchema = z.object({
+  nodeId: z.string().min(1),
+  patch: nodePatchSchema,
+})
+
+export const updateEdgeInputSchema = z
+  .object({
+    edgeId: z.string().min(1).optional(),
+    fromNodeId: z.string().min(1).optional(),
+    toNodeId: z.string().min(1).optional(),
+    patch: edgePatchSchema,
+  })
+  .refine(
+    (value) =>
+      Boolean(value.edgeId) || (Boolean(value.fromNodeId) && Boolean(value.toNodeId)),
+    { message: "edgeId or fromNodeId/toNodeId is required" }
+  )
+
+export const subPlanCreateInputSchema = z.object({
+  routeNodeId: z.string().min(1),
+  subPlan: z
+    .object({
+      id: z.string().min(1).optional(),
+      nodes: z
+        .array(nodeCreateSchema.extend({ order: z.number().int().nonnegative().optional() }))
+        .optional(),
+      edges: z.array(edgeCreateSchema).optional(),
+    })
+    .optional(),
+})
+
+export const subPlanNodeInputSchema = appendNodeInputSchema.extend({
+  routeNodeId: z.string().min(1),
+})
+
+export const subPlanInsertNodeInputSchema = insertNodeInputSchema.extend({
+  routeNodeId: z.string().min(1),
+})
+
+export const subPlanRemoveNodeRangeInputSchema =
+  removeNodeRangeInputSchema.extend({
+    routeNodeId: z.string().min(1),
+  })
+
+export const subPlanUpdateNodeInputSchema = updateNodeInputSchema.extend({
+  routeNodeId: z.string().min(1),
+})
+
+export const subPlanUpdateEdgeInputSchema = updateEdgeInputSchema.extend({
+  routeNodeId: z.string().min(1),
+})

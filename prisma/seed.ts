@@ -60,21 +60,34 @@ async function upsertSampleRoute(ownerId: string, name: string) {
       ownerId,
       name,
       description: "开发环境样例路线",
-      points: {
+      nodes: {
         create: [
           {
+            id: `${ownerId}-${name}-start`,
             name: "起点",
             lat: 30.246,
             lng: 120.146,
             order: 0,
-            stayHours: 1,
+            category: "PLACE",
+            durationMinutes: 60,
           },
           {
+            id: `${ownerId}-${name}-end`,
             name: "终点",
             lat: 30.24,
             lng: 120.171,
             order: 1,
-            stayHours: 2,
+            category: "PLACE",
+            durationMinutes: 120,
+          },
+        ],
+      },
+      edges: {
+        create: [
+          {
+            fromNodeId: `${ownerId}-${name}-start`,
+            toNodeId: `${ownerId}-${name}-end`,
+            status: "INCOMPLETE",
           },
         ],
       },

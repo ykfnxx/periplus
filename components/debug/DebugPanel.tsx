@@ -52,15 +52,25 @@ export default function DebugPanel() {
         description: "通过坐标调试工具创建",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        points: parsed.map(
+        nodes: parsed.map(
           (p: { name: string; lat: number; lng: number }, i: number) => ({
-            id: `debug-p-${i}`,
+            id: `debug-node-${i}`,
+            routeId: "debug",
             name: p.name,
             lat: p.lat,
             lng: p.lng,
             order: i,
+            category: "PLACE" as const,
           })
         ),
+        edges: parsed.slice(1).map((_: unknown, i: number) => ({
+          id: `debug-edge-${i}`,
+          routeId: "debug",
+          fromNodeId: `debug-node-${i}`,
+          toNodeId: `debug-node-${i + 1}`,
+          status: "INCOMPLETE" as const,
+        })),
+        subPlans: [],
       }
 
       setCurrentRoute(route)

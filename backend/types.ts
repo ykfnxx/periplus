@@ -1,11 +1,121 @@
 import type { AuthContext } from "@/lib/auth-context"
 import type {
+  PathEdgeCreateInput,
+  PathEdgePatchInput,
+  PathNodeCreateInput,
+  PathNodePatchInput,
   Route,
   RouteInput,
-  RoutePointCreateInput,
-  RoutePointPatchInput,
-  RoutePointPosition,
 } from "@/types/route"
+
+export interface RouteAddStartNodeInput {
+  route?: {
+    name?: string
+    description?: string
+  }
+  node: PathNodeCreateInput
+}
+
+export interface AppendNodeInput {
+  node: PathNodeCreateInput
+  edge: PathEdgeCreateInput
+}
+
+export interface InsertNodeInput {
+  beforeNodeId: string
+  node: PathNodeCreateInput
+  beforeEdge?: PathEdgeCreateInput
+  afterEdge: PathEdgeCreateInput
+}
+
+export interface RemoveNodeRangeInput {
+  startNodeId: string
+  endNodeId: string
+  bridgeEdge?: PathEdgeCreateInput
+}
+
+export interface UpdateNodeInput {
+  nodeId: string
+  patch: PathNodePatchInput
+}
+
+export interface UpdateEdgeInput {
+  edgeId?: string
+  fromNodeId?: string
+  toNodeId?: string
+  patch: PathEdgePatchInput
+}
+
+export interface SubPlanCreateInput {
+  routeNodeId: string
+  subPlan?: {
+    id?: string
+    nodes?: Array<PathNodeCreateInput & { id?: string; order?: number }>
+    edges?: Array<PathEdgeCreateInput & { id?: string }>
+  }
+}
+
+export interface SubPlanNodeInput extends AppendNodeInput {
+  routeNodeId: string
+}
+
+export interface SubPlanInsertNodeInput extends InsertNodeInput {
+  routeNodeId: string
+}
+
+export interface SubPlanRemoveNodeRangeInput extends RemoveNodeRangeInput {
+  routeNodeId: string
+}
+
+export interface SubPlanUpdateNodeInput extends UpdateNodeInput {
+  routeNodeId: string
+}
+
+export interface SubPlanUpdateEdgeInput extends UpdateEdgeInput {
+  routeNodeId: string
+}
+
+export type DraftToolName =
+  | "get_current_draft"
+  | "replace_draft"
+  | "route.add_start_node"
+  | "route.append_node"
+  | "route.insert_node"
+  | "route.remove_node_range"
+  | "route.update_node"
+  | "route.update_edge"
+  | "subplan.create"
+  | "subplan.add_start_node"
+  | "subplan.append_node"
+  | "subplan.insert_node"
+  | "subplan.remove_node_range"
+  | "subplan.update_node"
+  | "subplan.update_edge"
+
+export interface ToolCallSuggestionCall {
+  tool: DraftToolName
+  input: Record<string, unknown>
+}
+
+export interface ToolCallSuggestion {
+  id: string
+  title: string
+  summary: string
+  toolCalls: ToolCallSuggestionCall[]
+  draftRevision: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ToolCallSuggestionSummary {
+  id: string
+  title: string
+  summary: string
+  toolCallCount: number
+  draftRevision: number
+  createdAt: string
+  updatedAt: string
+}
 
 export interface SessionDraft {
   sessionId: string
@@ -14,6 +124,8 @@ export interface SessionDraft {
   sourceRouteId: string | null
   lockedByRunId: string | null
   conversationMessages: AgentConversationMessage[]
+  pendingSuggestions: ToolCallSuggestion[]
+  revision: number
   updatedAt: string
 }
 
@@ -23,28 +135,26 @@ export interface DraftSnapshot {
   sourceRouteId: string | null
   isLocked: boolean
   lockedByRunId: string | null
+  revision: number
+  pendingSuggestions: ToolCallSuggestionSummary[]
   updatedAt: string
 }
-
-export type DraftToolName =
-  | "get_current_draft"
-  | "replace_draft"
-  | "add_draft_point"
-  | "update_draft_point"
-  | "delete_draft_point"
-  | "reorder_draft_points"
 
 export type DraftToolInput =
   | Record<string, never>
   | { route: RouteInput | Route | null }
-  | { point: RoutePointCreateInput; position?: RoutePointPosition }
-  | {
-      pointId: string
-      patch?: RoutePointPatchInput
-      position?: RoutePointPosition
-    }
-  | { pointId: string }
-  | { pointIds: string[] }
+  | RouteAddStartNodeInput
+  | AppendNodeInput
+  | InsertNodeInput
+  | RemoveNodeRangeInput
+  | UpdateNodeInput
+  | UpdateEdgeInput
+  | SubPlanCreateInput
+  | SubPlanNodeInput
+  | SubPlanInsertNodeInput
+  | SubPlanRemoveNodeRangeInput
+  | SubPlanUpdateNodeInput
+  | SubPlanUpdateEdgeInput
 
 export interface AgentEvent {
   type: string

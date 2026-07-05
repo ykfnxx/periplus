@@ -1,25 +1,45 @@
 import { randomUUID } from "node:crypto"
 import type { AuthContext } from "@/lib/auth-context"
-import { createRoute, getRoute, updateRoute } from "@/lib/routes/service"
 import {
-  validateRouteInput,
-  validateRoutePointCreateInput,
-  validateRoutePointPatchInput,
-  validateRoutePointPosition,
-} from "@/lib/routes/validation"
+  findContinuousNodeRange,
+  planAppendNode,
+  planInsertNodeBefore,
+  planRemoveNodeRange,
+  sortPathNodes,
+  sortPathEdgesByOrder,
+} from "@/lib/routes/path-graph"
+import { createRoute, getRoute, updateRoute } from "@/lib/routes/service"
+import { validateDraftRouteInput } from "@/lib/routes/validation"
 import type {
+  PathEdgeCreateInput,
+  PathEdgePatchInput,
+  PathNodeCreateInput,
+  PathNodePatchInput,
   Route,
+  RouteEdge,
   RouteInput,
-  RoutePoint,
-  RoutePointCreateInput,
-  RoutePointPatchInput,
-  RoutePointPosition,
+  RouteNode,
+  SubPlan,
+  SubPlanEdge,
+  SubPlanNode,
 } from "@/types/route"
 import type {
   AgentConversationMessage,
+  AppendNodeInput,
   DraftSnapshot,
   DraftToolName,
+  InsertNodeInput,
+  RemoveNodeRangeInput,
+  RouteAddStartNodeInput,
   SessionDraft,
+  SubPlanCreateInput,
+  SubPlanInsertNodeInput,
+  SubPlanNodeInput,
+  SubPlanRemoveNodeRangeInput,
+  SubPlanUpdateEdgeInput,
+  SubPlanUpdateNodeInput,
+  UpdateEdgeInput,
+  UpdateNodeInput,
 } from "./types"
 
 export class DraftInputError extends Error {
@@ -29,143 +49,246 @@ export class DraftInputError extends Error {
   }
 }
 
-interface UpdateDraftPointInput {
-  patch?: RoutePointPatchInput
-  position?: RoutePointPosition
-}
-
 function nowIso() {
   return new Date().toISOString()
 }
 
+function draftId(prefix: string) {
+  return `draft-${prefix}-${randomUUID()}`
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 function cloneRoute(route: Route): Route {
-  return JSON.parse(JSON.stringify(route)) as Route
+  return clone(route)
 }
 
-function validatedRouteInput(input: unknown): RouteInput {
-  const result = validateRouteInput(input)
-  if (!result.ok) throw new DraftInputError(result.error)
-  return result.data
-}
-
-function validatedPointCreateInput(input: unknown): RoutePointCreateInput {
-  const result = validateRoutePointCreateInput(input)
-  if (!result.ok) throw new DraftInputError(result.error)
-  return result.data
-}
-
-function validatedPointPatchInput(input: unknown): RoutePointPatchInput {
-  const result = validateRoutePointPatchInput(input)
-  if (!result.ok) throw new DraftInputError(result.error)
-  return result.data
-}
-
-function validatedPointPosition(input: unknown): RoutePointPosition {
-  const result = validateRoutePointPosition(input)
-  if (!result.ok) throw new DraftInputError(result.error)
-  return result.data
+function pendingSuggestionSummaries(session: SessionDraft) {
+  return session.pendingSuggestions.map((suggestion) => ({
+    id: suggestion.id,
+    title: suggestion.title,
+    summary: suggestion.summary,
+    toolCallCount: suggestion.toolCalls.length,
+    draftRevision: suggestion.draftRevision,
+    createdAt: suggestion.createdAt,
+    updatedAt: suggestion.updatedAt,
+  }))
 }
 
 function isPersistedRoute(input: RouteInput | Route): input is Route {
-  return typeof (input as Route).id === "string"
+  return (
+    typeof (input as Route).createdAt === "string" &&
+    typeof (input as Route).updatedAt === "string"
+  )
 }
 
-function orderedIdsWithPosition(
-  pointIds: string[],
-  movingPointId: string,
-  position: RoutePointPosition
-): string[] {
-  const remainingIds = pointIds.filter((pointId) => pointId !== movingPointId)
-
-  if (position.placement === "start") return [movingPointId, ...remainingIds]
-  if (position.placement === "end") return [...remainingIds, movingPointId]
-
-  if (position.pointId === movingPointId) {
-    throw new DraftInputError(
-      "Invalid point position: point cannot be positioned relative to itself"
-    )
-  }
-
-  const anchorIndex = remainingIds.indexOf(position.pointId)
-  if (anchorIndex === -1) {
-    throw new DraftInputError(
-      "Invalid point position: anchor point must belong to the draft"
-    )
-  }
-
-  const insertIndex =
-    position.placement === "before" ? anchorIndex : anchorIndex + 1
-  return [
-    ...remainingIds.slice(0, insertIndex),
-    movingPointId,
-    ...remainingIds.slice(insertIndex),
-  ]
-}
-
-function normalizePointOrders(
-  points: RoutePoint[],
-  orderedPointIds?: string[]
-) {
-  const pointById = new Map(points.map((point) => [point.id, point]))
-  const ids =
-    orderedPointIds ??
-    [...points].sort((a, b) => a.order - b.order).map((point) => point.id)
-
-  return ids.map((pointId, order) => ({
-    ...pointById.get(pointId)!,
-    order,
-  }))
+function validatedDraftRoute(input: unknown): RouteInput {
+  const result = validateDraftRouteInput(input)
+  if (!result.ok) throw new DraftInputError(result.error)
+  return result.data
 }
 
 function toRouteInput(route: Route): RouteInput {
   return {
+    id: route.id,
+    ownerId: route.ownerId,
     name: route.name,
     description: route.description,
-    points: normalizePointOrders(route.points).map((point) => ({
-      name: point.name,
-      lat: point.lat,
-      lng: point.lng,
-      order: point.order,
-      stayHours: point.stayHours,
-      notes: point.notes,
+    nodes: sortPathNodes(route.nodes),
+    edges: sortPathEdgesByOrder(route.nodes, route.edges),
+    subPlans: route.subPlans.map((subPlan) => ({
+      ...subPlan,
+      nodes: sortPathNodes(subPlan.nodes),
+      edges: sortPathEdgesByOrder(subPlan.nodes, subPlan.edges),
     })),
   }
 }
 
 function toDraftRoute(input: RouteInput | Route): Route {
-  const routeInput = validatedRouteInput(input)
+  const data = validatedDraftRoute(input)
   const persistedRoute = isPersistedRoute(input) ? input : null
   const timestamp = nowIso()
+  const routeId = data.id ?? persistedRoute?.id ?? draftId("route")
 
   return {
-    id: persistedRoute?.id ?? `draft-route-${randomUUID()}`,
-    ownerId: persistedRoute?.ownerId ?? "draft-owner",
-    name: routeInput.name,
-    description: routeInput.description,
-    points: [...routeInput.points]
-      .sort((a, b) => a.order - b.order)
-      .map((point, order) => {
-        const originalPoint = input.points.find(
-          (candidate) => candidate.order === point.order
-        )
-        const originalId =
-          originalPoint && typeof (originalPoint as RoutePoint).id === "string"
-            ? (originalPoint as RoutePoint).id
-            : undefined
-
-        return {
-          id: originalId ?? `draft-point-${randomUUID()}`,
-          name: point.name,
-          lat: point.lat,
-          lng: point.lng,
-          order,
-          stayHours: point.stayHours,
-          notes: point.notes,
-        }
-      }),
+    id: routeId,
+    ownerId: data.ownerId ?? persistedRoute?.ownerId ?? "draft-owner",
+    name: data.name,
+    description: data.description,
+    nodes: sortPathNodes(data.nodes).map((node) => ({
+      ...node,
+      routeId,
+    })),
+    edges: sortPathEdgesByOrder(data.nodes, data.edges).map((edge) => ({
+      ...edge,
+      routeId,
+    })),
+    subPlans: (data.subPlans ?? []).map((subPlan) => {
+      const subPlanId = subPlan.id
+      return {
+        ...subPlan,
+        id: subPlanId,
+        nodes: sortPathNodes(subPlan.nodes).map((node) => ({
+          ...node,
+          subPlanId,
+        })),
+        edges: sortPathEdgesByOrder(subPlan.nodes, subPlan.edges).map(
+          (edge) => ({
+            ...edge,
+            subPlanId,
+          })
+        ),
+      }
+    }),
     createdAt: persistedRoute?.createdAt ?? timestamp,
     updatedAt: timestamp,
   }
+}
+
+function makeRouteNode(
+  routeId: string,
+  input: PathNodeCreateInput,
+  order: number
+): RouteNode {
+  return {
+    id: input.id ?? draftId("node"),
+    routeId,
+    name: input.name,
+    lat: input.lat,
+    lng: input.lng,
+    order,
+    category: input.category,
+    durationMinutes: input.durationMinutes,
+    notes: input.notes,
+  }
+}
+
+function makeSubPlanNode(
+  subPlanId: string,
+  input: PathNodeCreateInput,
+  order: number
+): SubPlanNode {
+  return {
+    id: input.id ?? draftId("subplan-node"),
+    subPlanId,
+    name: input.name,
+    lat: input.lat,
+    lng: input.lng,
+    order,
+    category: input.category,
+    durationMinutes: input.durationMinutes,
+    notes: input.notes,
+  }
+}
+
+function makeRouteEdge(
+  routeId: string,
+  fromNodeId: string,
+  toNodeId: string,
+  input: PathEdgeCreateInput
+): RouteEdge {
+  return {
+    id: input.id ?? draftId("edge"),
+    routeId,
+    fromNodeId,
+    toNodeId,
+    status: input.status,
+    transportMode: input.transportMode,
+    durationMinutes: input.durationMinutes,
+    distanceKm: input.distanceKm,
+    costEstimate: input.costEstimate,
+    notes: input.notes,
+  }
+}
+
+function makeSubPlanEdge(
+  subPlanId: string,
+  fromNodeId: string,
+  toNodeId: string,
+  input: PathEdgeCreateInput
+): SubPlanEdge {
+  return {
+    id: input.id ?? draftId("subplan-edge"),
+    subPlanId,
+    fromNodeId,
+    toNodeId,
+    status: input.status,
+    transportMode: input.transportMode,
+    durationMinutes: input.durationMinutes,
+    distanceKm: input.distanceKm,
+    costEstimate: input.costEstimate,
+    notes: input.notes,
+  }
+}
+
+function applyNodePatch<TNode extends RouteNode | SubPlanNode>(
+  node: TNode,
+  patch: PathNodePatchInput
+): TNode {
+  return {
+    ...node,
+    ...patch,
+    durationMinutes:
+      patch.durationMinutes === null
+        ? undefined
+        : (patch.durationMinutes ?? node.durationMinutes),
+    notes: patch.notes === null ? undefined : (patch.notes ?? node.notes),
+  }
+}
+
+function applyEdgePatch<TEdge extends RouteEdge | SubPlanEdge>(
+  edge: TEdge,
+  patch: PathEdgePatchInput
+): TEdge {
+  return {
+    ...edge,
+    ...patch,
+    transportMode:
+      patch.transportMode === null
+        ? undefined
+        : (patch.transportMode ?? edge.transportMode),
+    durationMinutes:
+      patch.durationMinutes === null
+        ? undefined
+        : (patch.durationMinutes ?? edge.durationMinutes),
+    distanceKm:
+      patch.distanceKm === null
+        ? undefined
+        : (patch.distanceKm ?? edge.distanceKm),
+    costEstimate:
+      patch.costEstimate === null
+        ? undefined
+        : (patch.costEstimate ?? edge.costEstimate),
+    notes: patch.notes === null ? undefined : (patch.notes ?? edge.notes),
+  }
+}
+
+function findRouteEdge(route: Route, input: UpdateEdgeInput) {
+  return route.edges.find((edge) => {
+    if (input.edgeId) return edge.id === input.edgeId
+    return (
+      edge.fromNodeId === input.fromNodeId && edge.toNodeId === input.toNodeId
+    )
+  })
+}
+
+function findSubPlanEdge(subPlan: SubPlan, input: SubPlanUpdateEdgeInput) {
+  return subPlan.edges.find((edge) => {
+    if (input.edgeId) return edge.id === input.edgeId
+    return (
+      edge.fromNodeId === input.fromNodeId && edge.toNodeId === input.toNodeId
+    )
+  })
+}
+
+function normalizeRouteNodeOrders(nodes: RouteNode[]) {
+  return sortPathNodes(nodes).map((node, order) => ({ ...node, order }))
+}
+
+function normalizeSubPlanNodeOrders(nodes: SubPlanNode[]) {
+  return sortPathNodes(nodes).map((node, order) => ({ ...node, order }))
 }
 
 export class DraftStore {
@@ -179,6 +302,8 @@ export class DraftStore {
       sourceRouteId: session.sourceRouteId,
       isLocked: Boolean(session.lockedByRunId),
       lockedByRunId: session.lockedByRunId,
+      revision: session.revision,
+      pendingSuggestions: pendingSuggestionSummaries(session),
       updatedAt: session.updatedAt,
     }
   }
@@ -260,9 +385,9 @@ export class DraftStore {
     if (!route) throw new DraftInputError("Route not found")
 
     const session = this.ensureSession(sessionId)
-    session.route = cloneRoute(route)
+    session.route = toDraftRoute(route)
     session.sourceRouteId = route.id
-    session.updatedAt = nowIso()
+    this.touchSession(session)
     return this.getSnapshot(sessionId)
   }
 
@@ -277,156 +402,352 @@ export class DraftStore {
       !route.id.startsWith("temp-")
         ? route.id
         : null
-    session.updatedAt = nowIso()
+    this.touchSession(session)
     return this.getSnapshot(sessionId)
   }
 
-  addDraftPoint(
-    sessionId: string,
-    input: { point: RoutePointCreateInput; position?: RoutePointPosition }
-  ) {
+  routeAddStartNode(sessionId: string, input: RouteAddStartNodeInput) {
     const session = this.ensureSession(sessionId)
-    if (!session.route) throw new DraftInputError("Draft route is empty")
-
-    const point = validatedPointCreateInput(input.point)
-    const position = validatedPointPosition(input.position)
-    const createdPoint: RoutePoint = {
-      id: `draft-point-${randomUUID()}`,
-      name: point.name,
-      lat: point.lat,
-      lng: point.lng,
-      order: session.route.points.length,
-      stayHours: point.stayHours,
-      notes: point.notes,
+    if (session.route && session.route.nodes.length > 0) {
+      throw new DraftInputError("Draft route already has a start node")
     }
-    const orderedPointIds = orderedIdsWithPosition(
-      [
-        ...session.route.points.map((routePoint) => routePoint.id),
-        createdPoint.id,
-      ],
-      createdPoint.id,
-      position
+
+    const timestamp = nowIso()
+    const routeId = session.route?.id ?? draftId("route")
+    const route: Route = {
+      id: routeId,
+      ownerId: session.route?.ownerId ?? "draft-owner",
+      name: input.route?.name?.trim() || session.route?.name || "未命名路线",
+      description: input.route?.description ?? session.route?.description,
+      nodes: [makeRouteNode(routeId, input.node, 0)],
+      edges: [],
+      subPlans: [],
+      createdAt: session.route?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    }
+
+    return this.commitRoute(sessionId, route)
+  }
+
+  routeAppendNode(sessionId: string, input: AppendNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const plan = planAppendNode(route.nodes)
+    if (!plan.previousNode) {
+      throw new DraftInputError("Use route.add_start_node for an empty route")
+    }
+
+    const node = makeRouteNode(route.id, input.node, plan.order)
+    route.nodes = [...route.nodes, node]
+    route.edges = [
+      ...route.edges,
+      makeRouteEdge(route.id, plan.previousNode.id, node.id, input.edge),
+    ]
+    return this.commitRoute(sessionId, route)
+  }
+
+  routeInsertNode(sessionId: string, input: InsertNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const planResult = planInsertNodeBefore(
+      route.nodes,
+      input.beforeNodeId,
+      "route path graph"
+    )
+    if (!planResult.ok) throw new DraftInputError(planResult.error)
+
+    const plan = planResult.plan
+    if (plan.previousNode && !input.beforeEdge) {
+      throw new DraftInputError("beforeEdge is required for middle insertion")
+    }
+
+    const node = makeRouteNode(route.id, input.node, plan.order)
+    const oldEdgeIds = new Set(
+      route.edges
+        .filter(
+          (edge) =>
+            edge.fromNodeId === plan.previousNode?.id &&
+            edge.toNodeId === plan.nextNode?.id
+        )
+        .map((edge) => edge.id)
     )
 
-    session.route = {
-      ...session.route,
-      points: normalizePointOrders(
-        [...session.route.points, createdPoint],
-        orderedPointIds
+    route.nodes = route.nodes.map((existingNode) => {
+      const update = plan.orderUpdates.find(
+        (orderUpdate) => orderUpdate.nodeId === existingNode.id
+      )
+      return update ? { ...existingNode, order: update.order } : existingNode
+    })
+    route.nodes.push(node)
+    route.edges = route.edges.filter((edge) => !oldEdgeIds.has(edge.id))
+    if (plan.previousNode && input.beforeEdge) {
+      route.edges.push(
+        makeRouteEdge(route.id, plan.previousNode.id, node.id, input.beforeEdge)
+      )
+    }
+    if (!plan.nextNode) {
+      throw new DraftInputError("Insert target node is missing")
+    }
+    route.edges.push(
+      makeRouteEdge(route.id, node.id, plan.nextNode.id, input.afterEdge)
+    )
+
+    return this.commitRoute(sessionId, route)
+  }
+
+  routeRemoveNodeRange(sessionId: string, input: RemoveNodeRangeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const planResult = planRemoveNodeRange(
+      { nodes: route.nodes, edges: route.edges },
+      input.startNodeId,
+      input.endNodeId,
+      "route path graph"
+    )
+    if (!planResult.ok) throw new DraftInputError(planResult.error)
+
+    const plan = planResult.plan
+    if (plan.requiresBridgeEdge && !input.bridgeEdge) {
+      throw new DraftInputError("bridgeEdge is required for middle deletion")
+    }
+
+    const removedNodeIds = new Set(plan.nodesToRemove.map((node) => node.id))
+    const removedEdgeIds = new Set(plan.edgesToRemove.map((edge) => edge.id))
+    route.nodes = normalizeRouteNodeOrders(
+      route.nodes.filter((node) => !removedNodeIds.has(node.id))
+    )
+    route.edges = route.edges.filter((edge) => !removedEdgeIds.has(edge.id))
+    route.subPlans = route.subPlans.filter(
+      (subPlan) => !removedNodeIds.has(subPlan.routeNodeId)
+    )
+
+    if (
+      plan.requiresBridgeEdge &&
+      plan.bridgeFromNode &&
+      plan.bridgeToNode &&
+      input.bridgeEdge
+    ) {
+      route.edges.push(
+        makeRouteEdge(
+          route.id,
+          plan.bridgeFromNode.id,
+          plan.bridgeToNode.id,
+          input.bridgeEdge
+        )
+      )
+    }
+
+    return this.commitRoute(sessionId, route)
+  }
+
+  routeUpdateNode(sessionId: string, input: UpdateNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    if (!route.nodes.some((node) => node.id === input.nodeId)) {
+      throw new DraftInputError("Route node not found")
+    }
+    route.nodes = route.nodes.map((node) =>
+      node.id === input.nodeId ? applyNodePatch(node, input.patch) : node
+    )
+    return this.commitRoute(sessionId, route)
+  }
+
+  routeUpdateEdge(sessionId: string, input: UpdateEdgeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const edge = findRouteEdge(route, input)
+    if (!edge) throw new DraftInputError("Route edge not found")
+    route.edges = route.edges.map((candidate) =>
+      candidate.id === edge.id ? applyEdgePatch(candidate, input.patch) : candidate
+    )
+    return this.commitRoute(sessionId, route)
+  }
+
+  subPlanCreate(sessionId: string, input: SubPlanCreateInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    if (!route.nodes.some((node) => node.id === input.routeNodeId)) {
+      throw new DraftInputError("Route node not found")
+    }
+    if (route.subPlans.some((subPlan) => subPlan.routeNodeId === input.routeNodeId)) {
+      throw new DraftInputError("SubPlan already exists for route node")
+    }
+
+    const subPlanId = input.subPlan?.id ?? draftId("subplan")
+    const subPlan: SubPlan = {
+      id: subPlanId,
+      routeNodeId: input.routeNodeId,
+      nodes: (input.subPlan?.nodes ?? []).map((node, order) =>
+        makeSubPlanNode(subPlanId, node, node.order ?? order)
       ),
-      updatedAt: nowIso(),
+      edges: (input.subPlan?.edges ?? []).map((edge) => {
+        if (!edge.fromNodeId || !edge.toNodeId) {
+          throw new DraftInputError(
+            "SubPlan replacement edges require endpoints"
+          )
+        }
+        return makeSubPlanEdge(
+          subPlanId,
+          edge.fromNodeId,
+          edge.toNodeId,
+          edge
+        )
+      }),
     }
-    session.updatedAt = session.route.updatedAt
-    return this.getSnapshot(sessionId)
+    route.subPlans = [...route.subPlans, subPlan]
+    return this.commitRoute(sessionId, route)
   }
 
-  updateDraftPoint(
+  subPlanAddStartNode(sessionId: string, input: SubPlanNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
+    if (subPlan.nodes.length > 0) {
+      throw new DraftInputError("SubPlan already has a start node")
+    }
+    subPlan.nodes = [makeSubPlanNode(subPlan.id, input.node, 0)]
+    return this.commitRoute(sessionId, route)
+  }
+
+  subPlanAppendNode(sessionId: string, input: SubPlanNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
+    const plan = planAppendNode(subPlan.nodes)
+    if (!plan.previousNode) {
+      throw new DraftInputError("Use subplan.add_start_node for an empty subplan")
+    }
+    const node = makeSubPlanNode(subPlan.id, input.node, plan.order)
+    subPlan.nodes = [...subPlan.nodes, node]
+    subPlan.edges = [
+      ...subPlan.edges,
+      makeSubPlanEdge(subPlan.id, plan.previousNode.id, node.id, input.edge),
+    ]
+    return this.commitRoute(sessionId, route)
+  }
+
+  subPlanInsertNode(sessionId: string, input: SubPlanInsertNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
+    const planResult = planInsertNodeBefore(
+      subPlan.nodes,
+      input.beforeNodeId,
+      "subplan path graph"
+    )
+    if (!planResult.ok) throw new DraftInputError(planResult.error)
+    const plan = planResult.plan
+    if (plan.previousNode && !input.beforeEdge) {
+      throw new DraftInputError("beforeEdge is required for middle insertion")
+    }
+    if (!plan.nextNode) {
+      throw new DraftInputError("Insert target node is missing")
+    }
+
+    const node = makeSubPlanNode(subPlan.id, input.node, plan.order)
+    const oldEdgeIds = new Set(
+      subPlan.edges
+        .filter(
+          (edge) =>
+            edge.fromNodeId === plan.previousNode?.id &&
+            edge.toNodeId === plan.nextNode?.id
+        )
+        .map((edge) => edge.id)
+    )
+    subPlan.nodes = subPlan.nodes.map((existingNode) => {
+      const update = plan.orderUpdates.find(
+        (orderUpdate) => orderUpdate.nodeId === existingNode.id
+      )
+      return update ? { ...existingNode, order: update.order } : existingNode
+    })
+    subPlan.nodes.push(node)
+    subPlan.edges = subPlan.edges.filter((edge) => !oldEdgeIds.has(edge.id))
+    if (plan.previousNode && input.beforeEdge) {
+      subPlan.edges.push(
+        makeSubPlanEdge(
+          subPlan.id,
+          plan.previousNode.id,
+          node.id,
+          input.beforeEdge
+        )
+      )
+    }
+    subPlan.edges.push(
+      makeSubPlanEdge(subPlan.id, node.id, plan.nextNode.id, input.afterEdge)
+    )
+    return this.commitRoute(sessionId, route)
+  }
+
+  subPlanRemoveNodeRange(
     sessionId: string,
-    pointId: string,
-    input: UpdateDraftPointInput
+    input: SubPlanRemoveNodeRangeInput
   ) {
-    const session = this.ensureSession(sessionId)
-    if (!session.route) throw new DraftInputError("Draft route is empty")
-
-    const patch =
-      input.patch === undefined
-        ? undefined
-        : validatedPointPatchInput(input.patch)
-    const position =
-      input.position === undefined
-        ? undefined
-        : validatedPointPosition(input.position)
-    if (!patch && !position)
-      throw new DraftInputError(
-        "Invalid point update: patch or position required"
-      )
-
-    const existingPoint = session.route.points.find(
-      (point) => point.id === pointId
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
+    const planResult = planRemoveNodeRange(
+      { nodes: subPlan.nodes, edges: subPlan.edges },
+      input.startNodeId,
+      input.endNodeId,
+      "subplan path graph"
     )
-    if (!existingPoint) throw new DraftInputError("Route point not found")
+    if (!planResult.ok) throw new DraftInputError(planResult.error)
+    const plan = planResult.plan
+    if (plan.requiresBridgeEdge && !input.bridgeEdge) {
+      throw new DraftInputError("bridgeEdge is required for middle deletion")
+    }
 
-    const patchedPoints = session.route.points.map((point) =>
-      point.id === pointId
-        ? {
-            ...point,
-            ...patch,
-            stayHours:
-              patch?.stayHours === null
-                ? undefined
-                : (patch?.stayHours ?? point.stayHours),
-            notes:
-              patch?.notes === null ? undefined : (patch?.notes ?? point.notes),
-          }
-        : point
+    const removedNodeIds = new Set(plan.nodesToRemove.map((node) => node.id))
+    const removedEdgeIds = new Set(plan.edgesToRemove.map((edge) => edge.id))
+    subPlan.nodes = normalizeSubPlanNodeOrders(
+      subPlan.nodes.filter((node) => !removedNodeIds.has(node.id))
     )
-    const orderedPointIds = position
-      ? orderedIdsWithPosition(
-          session.route.points.map((point) => point.id),
-          pointId,
-          position
+    subPlan.edges = subPlan.edges.filter((edge) => !removedEdgeIds.has(edge.id))
+    if (
+      plan.requiresBridgeEdge &&
+      plan.bridgeFromNode &&
+      plan.bridgeToNode &&
+      input.bridgeEdge
+    ) {
+      subPlan.edges.push(
+        makeSubPlanEdge(
+          subPlan.id,
+          plan.bridgeFromNode.id,
+          plan.bridgeToNode.id,
+          input.bridgeEdge
         )
-      : undefined
-
-    session.route = {
-      ...session.route,
-      points: normalizePointOrders(patchedPoints, orderedPointIds),
-      updatedAt: nowIso(),
-    }
-    session.updatedAt = session.route.updatedAt
-    return this.getSnapshot(sessionId)
-  }
-
-  deleteDraftPoint(sessionId: string, pointId: string) {
-    const session = this.ensureSession(sessionId)
-    if (!session.route) throw new DraftInputError("Draft route is empty")
-
-    const points = session.route.points.filter((point) => point.id !== pointId)
-    if (points.length === session.route.points.length)
-      throw new DraftInputError("Route point not found")
-
-    session.route = {
-      ...session.route,
-      points: normalizePointOrders(points),
-      updatedAt: nowIso(),
-    }
-    session.updatedAt = session.route.updatedAt
-    return this.getSnapshot(sessionId)
-  }
-
-  reorderDraftPoints(sessionId: string, pointIds: string[]) {
-    const session = this.ensureSession(sessionId)
-    if (!session.route) throw new DraftInputError("Draft route is empty")
-
-    const expectedPointIds = new Set(
-      session.route.points.map((point) => point.id)
-    )
-    if (pointIds.length !== expectedPointIds.size) {
-      throw new DraftInputError(
-        "Invalid point reorder: pointIds must include every draft point exactly once"
       )
     }
-    for (const pointId of pointIds) {
-      if (!expectedPointIds.has(pointId)) {
-        throw new DraftInputError(
-          "Invalid point reorder: pointIds must include every draft point exactly once"
-        )
-      }
-    }
+    return this.commitRoute(sessionId, route)
+  }
 
-    session.route = {
-      ...session.route,
-      points: normalizePointOrders(session.route.points, pointIds),
-      updatedAt: nowIso(),
+  subPlanUpdateNode(sessionId: string, input: SubPlanUpdateNodeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
+    if (!subPlan.nodes.some((node) => node.id === input.nodeId)) {
+      throw new DraftInputError("SubPlan node not found")
     }
-    session.updatedAt = session.route.updatedAt
-    return this.getSnapshot(sessionId)
+    subPlan.nodes = subPlan.nodes.map((node) =>
+      node.id === input.nodeId ? applyNodePatch(node, input.patch) : node
+    )
+    return this.commitRoute(sessionId, route)
+  }
+
+  subPlanUpdateEdge(sessionId: string, input: SubPlanUpdateEdgeInput) {
+    const session = this.ensureRouteSession(sessionId)
+    const route = cloneRoute(session.route)
+    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
+    const edge = findSubPlanEdge(subPlan, input)
+    if (!edge) throw new DraftInputError("SubPlan edge not found")
+    subPlan.edges = subPlan.edges.map((candidate) =>
+      candidate.id === edge.id ? applyEdgePatch(candidate, input.patch) : candidate
+    )
+    return this.commitRoute(sessionId, route)
   }
 
   async saveDraft(context: AuthContext, sessionId: string) {
-    const session = this.ensureSession(sessionId)
-    if (!session.route) throw new DraftInputError("Draft route is empty")
-
+    const session = this.ensureRouteSession(sessionId)
     const routeInput = toRouteInput(session.route)
     const savedRoute = session.sourceRouteId
       ? await updateRoute(context, session.sourceRouteId, routeInput)
@@ -434,9 +755,9 @@ export class DraftStore {
 
     if (!savedRoute) throw new DraftInputError("Route not found")
 
-    session.route = cloneRoute(savedRoute)
+    session.route = toDraftRoute(savedRoute)
     session.sourceRouteId = savedRoute.id
-    session.updatedAt = nowIso()
+    this.touchSession(session)
     return this.getSnapshot(sessionId)
   }
 
@@ -446,40 +767,96 @@ export class DraftStore {
     input: Record<string, unknown>
   ) {
     if (tool === "get_current_draft") return this.getSnapshot(sessionId)
-    if (tool === "replace_draft")
+    if (tool === "replace_draft") {
       return this.replaceDraft(
         sessionId,
         input.route as RouteInput | Route | null
       )
-    if (tool === "add_draft_point") {
-      return this.addDraftPoint(sessionId, {
-        point: input.point as RoutePointCreateInput,
-        position: input.position as RoutePointPosition | undefined,
-      })
     }
-    if (tool === "update_draft_point") {
-      return this.updateDraftPoint(sessionId, input.pointId as string, {
-        patch: input.patch as RoutePointPatchInput | undefined,
-        position: input.position as RoutePointPosition | undefined,
-      })
+    if (tool === "route.add_start_node") {
+      return this.routeAddStartNode(sessionId, input as never)
     }
-    if (tool === "delete_draft_point") {
-      return this.deleteDraftPoint(sessionId, input.pointId as string)
+    if (tool === "route.append_node") {
+      return this.routeAppendNode(sessionId, input as never)
     }
-    return this.reorderDraftPoints(sessionId, input.pointIds as string[])
+    if (tool === "route.insert_node") {
+      return this.routeInsertNode(sessionId, input as never)
+    }
+    if (tool === "route.remove_node_range") {
+      return this.routeRemoveNodeRange(sessionId, input as never)
+    }
+    if (tool === "route.update_node") {
+      return this.routeUpdateNode(sessionId, input as never)
+    }
+    if (tool === "route.update_edge") {
+      return this.routeUpdateEdge(sessionId, input as never)
+    }
+    if (tool === "subplan.create") {
+      return this.subPlanCreate(sessionId, input as never)
+    }
+    if (tool === "subplan.add_start_node") {
+      return this.subPlanAddStartNode(sessionId, input as never)
+    }
+    if (tool === "subplan.append_node") {
+      return this.subPlanAppendNode(sessionId, input as never)
+    }
+    if (tool === "subplan.insert_node") {
+      return this.subPlanInsertNode(sessionId, input as never)
+    }
+    if (tool === "subplan.remove_node_range") {
+      return this.subPlanRemoveNodeRange(sessionId, input as never)
+    }
+    if (tool === "subplan.update_node") {
+      return this.subPlanUpdateNode(sessionId, input as never)
+    }
+    return this.subPlanUpdateEdge(sessionId, input as never)
+  }
+
+  private mutableSubPlan(route: Route, routeNodeId: string) {
+    const subPlan = route.subPlans.find(
+      (candidate) => candidate.routeNodeId === routeNodeId
+    )
+    if (!subPlan) throw new DraftInputError("SubPlan not found")
+    return subPlan
+  }
+
+  private commitRoute(sessionId: string, route: Route) {
+    const session = this.ensureSession(sessionId)
+    const timestamp = nowIso()
+    const nextRoute = { ...route, updatedAt: timestamp }
+    validatedDraftRoute(toRouteInput(nextRoute))
+    session.route = nextRoute
+    this.touchSession(session)
+    return this.getSnapshot(sessionId)
+  }
+
+  private ensureRouteSession(sessionId: string) {
+    const session = this.ensureSession(sessionId)
+    if (!session.route) throw new DraftInputError("Draft route is empty")
+    return session as SessionDraft & { route: Route }
+  }
+
+  private touchSession(session: SessionDraft) {
+    session.revision += 1
+    session.updatedAt = nowIso()
+    session.pendingSuggestions = session.pendingSuggestions.filter(
+      (suggestion) => suggestion.draftRevision === session.revision
+    )
   }
 
   private ensureSession(sessionId: string) {
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
 
-    const session = {
+    const session: SessionDraft = {
       sessionId,
       userContext: null,
       route: null,
       sourceRouteId: null,
       lockedByRunId: null,
       conversationMessages: [],
+      pendingSuggestions: [],
+      revision: 0,
       updatedAt: nowIso(),
     }
     this.sessions.set(sessionId, session)

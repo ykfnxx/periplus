@@ -20,10 +20,10 @@ export default function WorkbenchShell() {
             <InitialChatState />
           ) : (
             <>
-              <div className="periplus-chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-4 pr-2 pl-4">
+              <div className="periplus-chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pt-10">
                 <ChatHistory />
               </div>
-              <div className="px-3 pt-1 pb-3">
+              <div className="px-5 pt-1 pb-3">
                 <AIComposer />
               </div>
             </>

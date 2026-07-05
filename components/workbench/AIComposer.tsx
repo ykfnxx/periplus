@@ -131,8 +131,7 @@ export default function AIComposer() {
           )}
         </button>
       </form>
-      <div className="flex items-center justify-between px-2 text-[11px] font-bold text-[var(--periplus-teak)]">
-        <span>Enter 发送 · Shift+Enter 换行</span>
+      <div className="flex items-center justify-end px-2 text-[11px] font-bold text-[var(--periplus-teak)]">
         {draftSaveState === "success" && <span>保存成功</span>}
         {draftSaveState === "error" && (
           <span className="text-[var(--periplus-coral)]">保存失败</span>

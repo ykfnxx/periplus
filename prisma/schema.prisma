@@ -7,32 +7,125 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum EdgeStatus {
+  PLANNED
+  INCOMPLETE
+}
+
+enum TransportMode {
+  FLIGHT
+  TRAIN
+  CAR
+  BUS
+  WALK
+  TAXI
+  SUBWAY
+  RENTAL
+}
+
+enum NodeCategory {
+  CITY
+  PLACE
+  SIGHT
+  RESTAURANT
+  HOTEL
+  ACTIVITY
+  TRANSIT
+}
+
 model Route {
-  id          String       @id @default(uuid())
+  id          String      @id @default(uuid())
   ownerId     String
-  owner       User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  owner       User        @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   name        String
   description String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  points      RoutePoint[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  nodes       RouteNode[]
+  edges       RouteEdge[]
 
   @@index([ownerId])
 }
 
-model RoutePoint {
-  id        String  @id @default(uuid())
-  routeId   String
-  route     Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  name      String
-  lat       Float
-  lng       Float
-  order     Int
-  stayHours Float?
-  notes     String?
+model RouteNode {
+  id              String       @id @default(uuid())
+  routeId         String
+  route           Route        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  name            String
+  lat             Float
+  lng             Float
+  order           Int
+  category        NodeCategory
+  durationMinutes Int?
+  notes           String?
+  subPlan         SubPlan?
+  outgoingEdges   RouteEdge[]  @relation("RouteEdgeFrom")
+  incomingEdges   RouteEdge[]  @relation("RouteEdgeTo")
 
   @@unique([routeId, order])
   @@index([routeId])
+}
+
+model RouteEdge {
+  id              String         @id @default(uuid())
+  routeId         String
+  route           Route          @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  fromNodeId      String         @unique
+  fromNode        RouteNode      @relation("RouteEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNodeId        String         @unique
+  toNode          RouteNode      @relation("RouteEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+  status          EdgeStatus
+  transportMode   TransportMode?
+  durationMinutes Int?
+  distanceKm      Float?
+  costEstimate    Float?
+  notes           String?
+
+  @@index([routeId])
+}
+
+model SubPlan {
+  id          String        @id @default(uuid())
+  routeNodeId String        @unique
+  routeNode   RouteNode     @relation(fields: [routeNodeId], references: [id], onDelete: Cascade)
+  nodes       SubPlanNode[]
+  edges       SubPlanEdge[]
+}
+
+model SubPlanNode {
+  id              String        @id @default(uuid())
+  subPlanId       String
+  subPlan         SubPlan       @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
+  name            String
+  lat             Float
+  lng             Float
+  order           Int
+  category        NodeCategory
+  durationMinutes Int?
+  notes           String?
+  outgoingEdges   SubPlanEdge[] @relation("SubPlanEdgeFrom")
+  incomingEdges   SubPlanEdge[] @relation("SubPlanEdgeTo")
+
+  @@unique([subPlanId, order])
+  @@index([subPlanId])
+}
+
+model SubPlanEdge {
+  id              String         @id @default(uuid())
+  subPlanId       String
+  subPlan         SubPlan        @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
+  fromNodeId      String         @unique
+  fromNode        SubPlanNode    @relation("SubPlanEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNodeId        String         @unique
+  toNode          SubPlanNode    @relation("SubPlanEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+  status          EdgeStatus
+  transportMode   TransportMode?
+  durationMinutes Int?
+  distanceKm      Float?
+  costEstimate    Float?
+  notes           String?
+
+  @@index([subPlanId])
 }
 
 model User {

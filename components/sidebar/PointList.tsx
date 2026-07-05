@@ -1,10 +1,10 @@
 "use client"
 
 import { useMapStore } from "@/stores/mapStore"
-import type { RoutePoint } from "@/types/route"
+import type { RouteNode } from "@/types/route"
 
 interface PointListProps {
-  onEdit: (point: RoutePoint) => void
+  onEdit: (point: RouteNode) => void
   onDelete: (pointId: string) => void
 }
 
@@ -15,11 +15,11 @@ export default function PointList({ onEdit, onDelete }: PointListProps) {
     (s) => s.setSelectedLocationPoint
   )
 
-  if (!currentRoute || currentRoute.points.length === 0) {
+  if (!currentRoute || currentRoute.nodes.length === 0) {
     return <p className="text-sm text-slate-400">暂无地点，点击添加</p>
   }
 
-  const sortedPoints = [...currentRoute.points].sort(
+  const sortedPoints = [...currentRoute.nodes].sort(
     (a, b) => a.order - b.order
   )
 
@@ -60,9 +60,9 @@ export default function PointList({ onEdit, onDelete }: PointListProps) {
               </button>
             </div>
           </div>
-          {point.stayHours && (
+          {point.durationMinutes !== undefined && (
             <p className="mt-1 text-xs text-slate-500">
-              停留 {point.stayHours} 小时
+              停留 {Math.round(point.durationMinutes / 60)} 小时
             </p>
           )}
           {point.notes && (

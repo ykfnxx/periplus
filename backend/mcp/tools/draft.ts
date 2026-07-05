@@ -1,19 +1,27 @@
 import { readFileSync } from "node:fs"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { ZodError } from "zod"
+import { ZodError, type ZodObject, type ZodRawShape } from "zod"
 import { loadProjectEnv } from "@/config/env.server"
 import { periplusServerConfig } from "@/config/periplus.server"
 import { mcpErrorResult, mcpJsonResult } from "@/mcp/errors"
-import {
-  addDraftPointInputSchema,
-  deleteDraftPointInputSchema,
-  getCurrentDraftInputSchema,
-  reorderDraftPointsInputSchema,
-  replaceDraftInputSchema,
-  updateDraftPointInputSchema,
-} from "../schemas/draft"
 import type { DraftToolName } from "../../types"
+import {
+  appendNodeInputSchema,
+  getCurrentDraftInputSchema,
+  insertNodeInputSchema,
+  removeNodeRangeInputSchema,
+  replaceDraftInputSchema,
+  routeAddStartNodeInputSchema,
+  subPlanCreateInputSchema,
+  subPlanInsertNodeInputSchema,
+  subPlanNodeInputSchema,
+  subPlanRemoveNodeRangeInputSchema,
+  subPlanUpdateEdgeInputSchema,
+  subPlanUpdateNodeInputSchema,
+  updateEdgeInputSchema,
+  updateNodeInputSchema,
+} from "../schemas/draft"
 
 type ToolInput = Record<string, unknown>
 type McpResult = ReturnType<typeof mcpJsonResult>
@@ -93,72 +101,62 @@ async function callDraftBackend(
   return asCallToolResult(mcpJsonResult(body.result))
 }
 
+function draftHandler<TSchema extends ZodObject<ZodRawShape>>(
+  tool: DraftToolName,
+  schema: TSchema
+) {
+  return async (input: ToolInput) => {
+    try {
+      return callDraftBackend(tool, schema.parse(input))
+    } catch (error) {
+      return toolErrorResult(error)
+    }
+  }
+}
+
 export const draftToolHandlers = {
-  async getCurrentDraft(input: ToolInput) {
-    try {
-      return callDraftBackend(
-        "get_current_draft",
-        getCurrentDraftInputSchema.parse(input)
-      )
-    } catch (error) {
-      return toolErrorResult(error)
-    }
-  },
-
-  async replaceDraft(input: ToolInput) {
-    try {
-      return callDraftBackend(
-        "replace_draft",
-        replaceDraftInputSchema.parse(input)
-      )
-    } catch (error) {
-      return toolErrorResult(error)
-    }
-  },
-
-  async addDraftPoint(input: ToolInput) {
-    try {
-      return callDraftBackend(
-        "add_draft_point",
-        addDraftPointInputSchema.parse(input)
-      )
-    } catch (error) {
-      return toolErrorResult(error)
-    }
-  },
-
-  async updateDraftPoint(input: ToolInput) {
-    try {
-      return callDraftBackend(
-        "update_draft_point",
-        updateDraftPointInputSchema.parse(input)
-      )
-    } catch (error) {
-      return toolErrorResult(error)
-    }
-  },
-
-  async deleteDraftPoint(input: ToolInput) {
-    try {
-      return callDraftBackend(
-        "delete_draft_point",
-        deleteDraftPointInputSchema.parse(input)
-      )
-    } catch (error) {
-      return toolErrorResult(error)
-    }
-  },
-
-  async reorderDraftPoints(input: ToolInput) {
-    try {
-      return callDraftBackend(
-        "reorder_draft_points",
-        reorderDraftPointsInputSchema.parse(input)
-      )
-    } catch (error) {
-      return toolErrorResult(error)
-    }
-  },
+  getCurrentDraft: draftHandler(
+    "get_current_draft",
+    getCurrentDraftInputSchema
+  ),
+  replaceDraft: draftHandler("replace_draft", replaceDraftInputSchema),
+  routeAddStartNode: draftHandler(
+    "route.add_start_node",
+    routeAddStartNodeInputSchema
+  ),
+  routeAppendNode: draftHandler("route.append_node", appendNodeInputSchema),
+  routeInsertNode: draftHandler("route.insert_node", insertNodeInputSchema),
+  routeRemoveNodeRange: draftHandler(
+    "route.remove_node_range",
+    removeNodeRangeInputSchema
+  ),
+  routeUpdateNode: draftHandler("route.update_node", updateNodeInputSchema),
+  routeUpdateEdge: draftHandler("route.update_edge", updateEdgeInputSchema),
+  subPlanCreate: draftHandler("subplan.create", subPlanCreateInputSchema),
+  subPlanAddStartNode: draftHandler(
+    "subplan.add_start_node",
+    subPlanNodeInputSchema
+  ),
+  subPlanAppendNode: draftHandler(
+    "subplan.append_node",
+    subPlanNodeInputSchema
+  ),
+  subPlanInsertNode: draftHandler(
+    "subplan.insert_node",
+    subPlanInsertNodeInputSchema
+  ),
+  subPlanRemoveNodeRange: draftHandler(
+    "subplan.remove_node_range",
+    subPlanRemoveNodeRangeInputSchema
+  ),
+  subPlanUpdateNode: draftHandler(
+    "subplan.update_node",
+    subPlanUpdateNodeInputSchema
+  ),
+  subPlanUpdateEdge: draftHandler(
+    "subplan.update_edge",
+    subPlanUpdateEdgeInputSchema
+  ),
 }
 
 function callTool(
@@ -168,67 +166,144 @@ function callTool(
   return handler(input as ToolInput)
 }
 
+function registerDraftTool(
+  server: McpServer,
+  name: string,
+  title: string,
+  description: string,
+  schema: ZodObject<ZodRawShape>,
+  handler: (input: ToolInput) => Promise<CallToolResult>
+) {
+  server.registerTool(
+    name,
+    {
+      title,
+      description,
+      inputSchema: schema.shape,
+    },
+    (input) => callTool(handler, input)
+  )
+}
+
 export function registerDraftTools(server: McpServer): void {
-  server.registerTool(
+  registerDraftTool(
+    server,
     "periplus.get_current_draft",
-    {
-      title: "Get current draft",
-      description: "Read the current Periplus draft route for this session.",
-      inputSchema: getCurrentDraftInputSchema.shape,
-    },
-    (input) => callTool(draftToolHandlers.getCurrentDraft, input)
+    "Get current draft",
+    "Read the current Periplus draft route for this session.",
+    getCurrentDraftInputSchema,
+    draftToolHandlers.getCurrentDraft
   )
-
-  server.registerTool(
+  registerDraftTool(
+    server,
     "periplus.replace_draft",
-    {
-      title: "Replace draft",
-      description: "Replace the full current draft route without saving it.",
-      inputSchema: replaceDraftInputSchema.shape,
-    },
-    (input) => callTool(draftToolHandlers.replaceDraft, input)
+    "Replace draft",
+    "Replace the full current draft route without saving it.",
+    replaceDraftInputSchema,
+    draftToolHandlers.replaceDraft
   )
-
-  server.registerTool(
-    "periplus.add_draft_point",
-    {
-      title: "Add draft point",
-      description:
-        "Add a point to the current draft at an optional relative position.",
-      inputSchema: addDraftPointInputSchema.shape,
-    },
-    (input) => callTool(draftToolHandlers.addDraftPoint, input)
+  registerDraftTool(
+    server,
+    "periplus.route.add_start_node",
+    "Add route start node",
+    "Create the first node for an empty route path graph.",
+    routeAddStartNodeInputSchema,
+    draftToolHandlers.routeAddStartNode
   )
-
-  server.registerTool(
-    "periplus.update_draft_point",
-    {
-      title: "Update draft point",
-      description:
-        "Patch a draft point and optionally move it by relative position.",
-      inputSchema: updateDraftPointInputSchema.shape,
-    },
-    (input) => callTool(draftToolHandlers.updateDraftPoint, input)
+  registerDraftTool(
+    server,
+    "periplus.route.append_node",
+    "Append route node",
+    "Append a node to the route path with an incoming edge.",
+    appendNodeInputSchema,
+    draftToolHandlers.routeAppendNode
   )
-
-  server.registerTool(
-    "periplus.delete_draft_point",
-    {
-      title: "Delete draft point",
-      description: "Delete a point from the current draft.",
-      inputSchema: deleteDraftPointInputSchema.shape,
-    },
-    (input) => callTool(draftToolHandlers.deleteDraftPoint, input)
+  registerDraftTool(
+    server,
+    "periplus.route.insert_node",
+    "Insert route node",
+    "Insert a node before an existing route node with explicit new edges.",
+    insertNodeInputSchema,
+    draftToolHandlers.routeInsertNode
   )
-
-  server.registerTool(
-    "periplus.reorder_draft_points",
-    {
-      title: "Reorder draft points",
-      description:
-        "Replace the current draft point ordering with a complete point id list.",
-      inputSchema: reorderDraftPointsInputSchema.shape,
-    },
-    (input) => callTool(draftToolHandlers.reorderDraftPoints, input)
+  registerDraftTool(
+    server,
+    "periplus.route.remove_node_range",
+    "Remove route node range",
+    "Remove a continuous range of route nodes, with bridge edge when needed.",
+    removeNodeRangeInputSchema,
+    draftToolHandlers.routeRemoveNodeRange
+  )
+  registerDraftTool(
+    server,
+    "periplus.route.update_node",
+    "Update route node",
+    "Patch route node fields.",
+    updateNodeInputSchema,
+    draftToolHandlers.routeUpdateNode
+  )
+  registerDraftTool(
+    server,
+    "periplus.route.update_edge",
+    "Update route edge",
+    "Patch route edge fields.",
+    updateEdgeInputSchema,
+    draftToolHandlers.routeUpdateEdge
+  )
+  registerDraftTool(
+    server,
+    "periplus.subplan.create",
+    "Create subplan",
+    "Create an empty or populated subplan for a route node.",
+    subPlanCreateInputSchema,
+    draftToolHandlers.subPlanCreate
+  )
+  registerDraftTool(
+    server,
+    "periplus.subplan.add_start_node",
+    "Add subplan start node",
+    "Create the first node for an empty subplan path graph.",
+    subPlanNodeInputSchema,
+    draftToolHandlers.subPlanAddStartNode
+  )
+  registerDraftTool(
+    server,
+    "periplus.subplan.append_node",
+    "Append subplan node",
+    "Append a node to a subplan path with an incoming edge.",
+    subPlanNodeInputSchema,
+    draftToolHandlers.subPlanAppendNode
+  )
+  registerDraftTool(
+    server,
+    "periplus.subplan.insert_node",
+    "Insert subplan node",
+    "Insert a node before an existing subplan node with explicit new edges.",
+    subPlanInsertNodeInputSchema,
+    draftToolHandlers.subPlanInsertNode
+  )
+  registerDraftTool(
+    server,
+    "periplus.subplan.remove_node_range",
+    "Remove subplan node range",
+    "Remove a continuous range of subplan nodes, with bridge edge when needed.",
+    subPlanRemoveNodeRangeInputSchema,
+    draftToolHandlers.subPlanRemoveNodeRange
+  )
+  registerDraftTool(
+    server,
+    "periplus.subplan.update_node",
+    "Update subplan node",
+    "Patch subplan node fields.",
+    subPlanUpdateNodeInputSchema,
+    draftToolHandlers.subPlanUpdateNode
+  )
+  registerDraftTool(
+    server,
+    "periplus.subplan.update_edge",
+    "Update subplan edge",
+    "Patch subplan edge fields.",
+    subPlanUpdateEdgeInputSchema,
+    draftToolHandlers.subPlanUpdateEdge
   )
 }

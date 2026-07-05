@@ -40,11 +40,12 @@ describe('DebugPanel', () => {
     const route = mockSetCurrentRoute.mock.calls[0][0];
     expect(route.name).toBe('调试路线');
     expect(route.description).toBe('通过坐标调试工具创建');
-    expect(route.points).toHaveLength(3);
-    expect(route.points[0].name).toBe('北京');
-    expect(route.points[0].lat).toBe(39.9042);
-    expect(route.points[0].lng).toBe(116.4074);
-    expect(route.points[0].order).toBe(0);
+    expect(route.nodes).toHaveLength(3);
+    expect(route.nodes[0].name).toBe('北京');
+    expect(route.nodes[0].lat).toBe(39.9042);
+    expect(route.nodes[0].lng).toBe(116.4074);
+    expect(route.nodes[0].order).toBe(0);
+    expect(route.edges).toHaveLength(2);
   });
 
   it('shows error for invalid JSON', () => {

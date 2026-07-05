@@ -150,6 +150,7 @@ describe("mapStore UI state", () => {
       lat: 31.23,
       lng: 121.47,
       order: 0,
+      category: "PLACE" as const,
     }
     const photo = {
       id: "photo-1",
@@ -190,6 +191,7 @@ describe("mapStore UI state", () => {
       lat: 31.23,
       lng: 121.47,
       order: 0,
+      category: "PLACE" as const,
     }
     const photo = {
       id: "photo-1",

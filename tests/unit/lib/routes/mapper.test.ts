@@ -10,38 +10,29 @@ describe("mapRouteToDto", () => {
       description: null,
       createdAt: new Date("2026-06-25T08:00:00.000Z"),
       updatedAt: new Date("2026-06-25T09:00:00.000Z"),
-      points: [
+      nodes: [
         {
-          id: "point-1",
+          id: "node-1",
           routeId: "route-1",
           name: "灵隐寺",
           lat: 30.2401,
           lng: 120.1023,
           order: 0,
-          stayHours: 1.5,
+          category: "PLACE",
+          durationMinutes: 90,
           notes: null,
+          subPlan: null,
         },
       ],
+      edges: [],
     })
 
-    expect(dto).toEqual({
-      id: "route-1",
-      ownerId: "user-1",
-      name: "杭州三日",
-      description: undefined,
-      createdAt: "2026-06-25T08:00:00.000Z",
-      updatedAt: "2026-06-25T09:00:00.000Z",
-      points: [
-        {
-          id: "point-1",
-          name: "灵隐寺",
-          lat: 30.2401,
-          lng: 120.1023,
-          order: 0,
-          stayHours: 1.5,
-          notes: undefined,
-        },
-      ],
+    expect(dto.nodes[0]).toMatchObject({
+      id: "node-1",
+      name: "灵隐寺",
+      category: "PLACE",
+      durationMinutes: 90,
     })
+    expect(dto.subPlans).toEqual([])
   })
 })

@@ -70,9 +70,9 @@ export default function LocationInfoBubble() {
             {selectedLocationPoint.notes}
           </p>
         )}
-        {selectedLocationPoint.stayHours !== undefined && (
+        {selectedLocationPoint.durationMinutes !== undefined && (
           <p className="mt-3 border-t border-[rgb(44_36_22_/_12%)] pt-2 text-xs font-bold text-[var(--periplus-teak)]">
-            停留 {selectedLocationPoint.stayHours} 小时
+            停留 {Math.round(selectedLocationPoint.durationMinutes / 60)} 小时
           </p>
         )}
         <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-x-8 border-t-8 border-x-transparent border-t-[var(--periplus-soft-white)]" />

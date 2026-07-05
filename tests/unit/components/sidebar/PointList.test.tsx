@@ -36,7 +36,7 @@ describe("PointList", () => {
     ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) => {
         const state = {
-          currentRoute: { points: [] },
+          currentRoute: { nodes: [] },
           selectedLocationPoint: null,
           setSelectedLocationPoint: mockSetSelectedLocationPoint,
         }
@@ -50,7 +50,7 @@ describe("PointList", () => {
 
   it("renders points in order", () => {
     const route = {
-      points: [
+      nodes: [
         { id: "p2", name: "Point B", lat: 2, lng: 2, order: 1 },
         { id: "p1", name: "Point A", lat: 1, lng: 1, order: 0 },
       ],
@@ -75,7 +75,7 @@ describe("PointList", () => {
 
   it("calls onEdit when edit button clicked", () => {
     const point = { id: "p1", name: "Point A", lat: 1, lng: 1, order: 0 }
-    const route = { points: [point] }
+    const route = { nodes: [point] }
 
     ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) => {
@@ -95,7 +95,7 @@ describe("PointList", () => {
 
   it("calls onDelete when delete button clicked", () => {
     const point = { id: "p1", name: "Point A", lat: 1, lng: 1, order: 0 }
-    const route = { points: [point] }
+    const route = { nodes: [point] }
 
     ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) => {
@@ -120,10 +120,10 @@ describe("PointList", () => {
       lat: 1,
       lng: 1,
       order: 0,
-      stayHours: 1.5,
+      durationMinutes: 90,
       notes: "Some notes",
     }
-    const route = { points: [point] }
+    const route = { nodes: [point] }
 
     ;(useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) => {
@@ -137,7 +137,7 @@ describe("PointList", () => {
     )
 
     render(<PointList onEdit={mockOnEdit} onDelete={mockOnDelete} />)
-    expect(screen.getByText("停留 1.5 小时")).toBeInTheDocument()
+    expect(screen.getByText("停留 2 小时")).toBeInTheDocument()
     expect(screen.getByText("Some notes")).toBeInTheDocument()
   })
 })

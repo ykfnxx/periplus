@@ -1,23 +1,24 @@
 import { prisma } from "@/lib/prisma"
 import type { AuthContext } from "@/lib/auth-context"
 import { isAdmin } from "@/lib/auth-context"
-import type {
-  CreateRouteInput,
-  RouteDto,
-  RoutePointCreateInput,
-  RoutePointPatchInput,
-  RoutePointPosition,
-  UpdateRouteInput,
-} from "@/types/route"
+import type { CreateRouteInput, RouteDto, UpdateRouteInput } from "@/types/route"
 import { mapRouteToDto } from "./mapper"
-import {
-  validateRouteInput,
-  validateRoutePointCreateInput,
-  validateRoutePointPatchInput,
-  validateRoutePointPosition,
-} from "./validation"
+import { validateRouteInput } from "./validation"
 
-const routeInclude = { points: { orderBy: { order: "asc" as const } } }
+const routeInclude = {
+  nodes: {
+    orderBy: { order: "asc" as const },
+    include: {
+      subPlan: {
+        include: {
+          nodes: { orderBy: { order: "asc" as const } },
+          edges: true,
+        },
+      },
+    },
+  },
+  edges: true,
+}
 
 export class RouteInputError extends Error {
   constructor(message: string) {
@@ -26,77 +27,10 @@ export class RouteInputError extends Error {
   }
 }
 
-interface AddRoutePointInput {
-  point: RoutePointCreateInput
-  position?: RoutePointPosition
-}
-
-interface UpdateRoutePointInput {
-  patch?: RoutePointPatchInput
-  position?: RoutePointPosition
-}
-
 function validatedRouteInput(input: unknown): CreateRouteInput {
   const result = validateRouteInput(input)
-  if (!result.ok) {
-    throw new RouteInputError(result.error)
-  }
+  if (!result.ok) throw new RouteInputError(result.error)
   return result.data
-}
-
-function validatedPointCreateInput(input: unknown): RoutePointCreateInput {
-  const result = validateRoutePointCreateInput(input)
-  if (!result.ok) {
-    throw new RouteInputError(result.error)
-  }
-  return result.data
-}
-
-function validatedPointPatchInput(input: unknown): RoutePointPatchInput {
-  const result = validateRoutePointPatchInput(input)
-  if (!result.ok) {
-    throw new RouteInputError(result.error)
-  }
-  return result.data
-}
-
-function validatedPointPosition(input: unknown): RoutePointPosition {
-  const result = validateRoutePointPosition(input)
-  if (!result.ok) {
-    throw new RouteInputError(result.error)
-  }
-  return result.data
-}
-
-function pointCreateData(point: CreateRouteInput["points"][number]) {
-  return {
-    name: point.name,
-    lat: point.lat,
-    lng: point.lng,
-    order: point.order,
-    stayHours: point.stayHours,
-    notes: point.notes,
-  }
-}
-
-function maxPointOrder(points: { order: number }[]): number {
-  return points.reduce((maxOrder, point) => Math.max(maxOrder, point.order), -1)
-}
-
-function nextTemporaryOrderBase(points: { order: number }[]): number {
-  return maxPointOrder(points) + 1
-}
-
-function pointPatchData(patch: RoutePointPatchInput) {
-  return Object.fromEntries(
-    Object.entries({
-      name: patch.name,
-      lat: patch.lat,
-      lng: patch.lng,
-      stayHours: patch.stayHours,
-      notes: patch.notes,
-    }).filter(([, value]) => value !== undefined)
-  )
 }
 
 function routeScopeWhere(context: AuthContext, id: string) {
@@ -107,69 +41,88 @@ function routeListWhere(context: AuthContext) {
   return isAdmin(context) ? {} : { ownerId: context.userId }
 }
 
-function orderedIdsWithPosition(
-  pointIds: string[],
-  movingPointId: string,
-  position: RoutePointPosition
-): string[] {
-  const remainingIds = pointIds.filter((pointId) => pointId !== movingPointId)
-
-  if (position.placement === "start") {
-    return [movingPointId, ...remainingIds]
-  }
-
-  if (position.placement === "end") {
-    return [...remainingIds, movingPointId]
-  }
-
-  if (position.pointId === movingPointId) {
-    throw new RouteInputError(
-      "Invalid point position: point cannot be positioned relative to itself"
-    )
-  }
-
-  const anchorIndex = remainingIds.indexOf(position.pointId)
-  if (anchorIndex === -1) {
-    throw new RouteInputError(
-      "Invalid point position: anchor point must belong to the same route"
-    )
-  }
-
-  const insertIndex =
-    position.placement === "before" ? anchorIndex : anchorIndex + 1
-  return [
-    ...remainingIds.slice(0, insertIndex),
-    movingPointId,
-    ...remainingIds.slice(insertIndex),
-  ]
-}
-
-interface RoutePointOrderWriter {
-  routePoint: {
-    update(args: {
-      where: { id: string }
-      data: { order: number }
-    }): Promise<unknown>
+function nodeCreateData(routeId: string, node: CreateRouteInput["nodes"][number]) {
+  return {
+    id: node.id,
+    routeId,
+    name: node.name,
+    lat: node.lat,
+    lng: node.lng,
+    order: node.order,
+    category: node.category,
+    durationMinutes: node.durationMinutes,
+    notes: node.notes,
   }
 }
 
-async function normalizePointOrders(
-  db: RoutePointOrderWriter,
-  orderedPointIds: string[],
-  tempBase: number
-): Promise<void> {
-  for (const [index, pointId] of orderedPointIds.entries()) {
-    await db.routePoint.update({
-      where: { id: pointId },
-      data: { order: tempBase + index },
-    })
+function edgeCreateData(routeId: string, edge: CreateRouteInput["edges"][number]) {
+  return {
+    id: edge.id,
+    routeId,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    status: edge.status,
+    transportMode: edge.transportMode,
+    durationMinutes: edge.durationMinutes,
+    distanceKm: edge.distanceKm,
+    costEstimate: edge.costEstimate,
+    notes: edge.notes,
+  }
+}
+
+async function writeRouteGraph(
+  tx: typeof prisma,
+  routeId: string,
+  data: CreateRouteInput
+) {
+  for (const node of data.nodes) {
+    await tx.routeNode.create({ data: nodeCreateData(routeId, node) })
   }
 
-  for (const [index, pointId] of orderedPointIds.entries()) {
-    await db.routePoint.update({
-      where: { id: pointId },
-      data: { order: index },
+  for (const edge of data.edges) {
+    await tx.routeEdge.create({ data: edgeCreateData(routeId, edge) })
+  }
+
+  for (const subPlan of data.subPlans ?? []) {
+    await tx.subPlan.create({
+      data: {
+        id: subPlan.id,
+        routeNodeId: subPlan.routeNodeId,
+      },
     })
+
+    for (const node of subPlan.nodes) {
+      await tx.subPlanNode.create({
+        data: {
+          id: node.id,
+          subPlanId: subPlan.id,
+          name: node.name,
+          lat: node.lat,
+          lng: node.lng,
+          order: node.order,
+          category: node.category,
+          durationMinutes: node.durationMinutes,
+          notes: node.notes,
+        },
+      })
+    }
+
+    for (const edge of subPlan.edges) {
+      await tx.subPlanEdge.create({
+        data: {
+          id: edge.id,
+          subPlanId: subPlan.id,
+          fromNodeId: edge.fromNodeId,
+          toNodeId: edge.toNodeId,
+          status: edge.status,
+          transportMode: edge.transportMode,
+          durationMinutes: edge.durationMinutes,
+          distanceKm: edge.distanceKm,
+          costEstimate: edge.costEstimate,
+          notes: edge.notes,
+        },
+      })
+    }
   }
 }
 
@@ -198,18 +151,25 @@ export async function createRoute(
   input: CreateRouteInput
 ): Promise<RouteDto> {
   const data = validatedRouteInput(input)
-  const route = await prisma.route.create({
-    data: {
-      ownerId: context.userId,
-      name: data.name,
-      description: data.description,
-      points: {
-        create: data.points.map(pointCreateData),
+
+  return prisma.$transaction(async (tx) => {
+    const route = await tx.route.create({
+      data: {
+        id: data.id,
+        ownerId: context.userId,
+        name: data.name,
+        description: data.description,
       },
-    },
-    include: routeInclude,
+    })
+    await writeRouteGraph(tx as typeof prisma, route.id, data)
+
+    const createdRoute = await tx.route.findUnique({
+      where: { id: route.id },
+      include: routeInclude,
+    })
+    if (!createdRoute) throw new RouteInputError("Route not found")
+    return mapRouteToDto(createdRoute)
   })
-  return mapRouteToDto(route)
 }
 
 export async function updateRoute(
@@ -223,19 +183,28 @@ export async function updateRoute(
   if (!existing) return null
 
   const data = validatedRouteInput(input)
-  const route = await prisma.route.update({
-    where: { id },
-    data: {
-      name: data.name,
-      description: data.description,
-      points: {
-        deleteMany: {},
-        create: data.points.map(pointCreateData),
+
+  return prisma.$transaction(async (tx) => {
+    await tx.subPlan.deleteMany({
+      where: { routeNode: { routeId: id } },
+    })
+    await tx.routeEdge.deleteMany({ where: { routeId: id } })
+    await tx.routeNode.deleteMany({ where: { routeId: id } })
+    await tx.route.update({
+      where: { id },
+      data: {
+        name: data.name,
+        description: data.description,
       },
-    },
-    include: routeInclude,
+    })
+    await writeRouteGraph(tx as typeof prisma, id, data)
+
+    const updatedRoute = await tx.route.findUnique({
+      where: { id },
+      include: routeInclude,
+    })
+    return updatedRoute ? mapRouteToDto(updatedRoute) : null
   })
-  return mapRouteToDto(route)
 }
 
 export async function deleteRoute(
@@ -249,206 +218,4 @@ export async function deleteRoute(
 
   await prisma.route.delete({ where: { id } })
   return true
-}
-
-export async function addRoutePoint(
-  context: AuthContext,
-  routeId: string,
-  input: AddRoutePointInput
-): Promise<RouteDto | null> {
-  const point = validatedPointCreateInput(input?.point)
-  const position = validatedPointPosition(input?.position)
-
-  return prisma.$transaction(async (tx) => {
-    const route = await tx.route.findFirst({
-      where: routeScopeWhere(context, routeId),
-      include: routeInclude,
-    })
-    if (!route) return null
-
-    if (
-      (position.placement === "before" || position.placement === "after") &&
-      !route.points.some((routePoint) => routePoint.id === position.pointId)
-    ) {
-      throw new RouteInputError(
-        "Invalid point position: anchor point must belong to the same route"
-      )
-    }
-
-    const createdPoint = await tx.routePoint.create({
-      data: {
-        routeId,
-        name: point.name,
-        lat: point.lat,
-        lng: point.lng,
-        order: maxPointOrder(route.points) + 1,
-        stayHours: point.stayHours,
-        notes: point.notes,
-      },
-    })
-
-    const orderedPointIds = orderedIdsWithPosition(
-      [...route.points.map((routePoint) => routePoint.id), createdPoint.id],
-      createdPoint.id,
-      position
-    )
-    await normalizePointOrders(
-      tx,
-      orderedPointIds,
-      nextTemporaryOrderBase([...route.points, createdPoint])
-    )
-
-    const updatedRoute = await tx.route.findUnique({
-      where: { id: routeId },
-      include: routeInclude,
-    })
-    return updatedRoute ? mapRouteToDto(updatedRoute) : null
-  })
-}
-
-export async function updateRoutePoint(
-  context: AuthContext,
-  routeId: string,
-  pointId: string,
-  input: UpdateRoutePointInput
-): Promise<RouteDto | null> {
-  const patch =
-    input?.patch === undefined
-      ? undefined
-      : validatedPointPatchInput(input.patch)
-  const position =
-    input?.position === undefined
-      ? undefined
-      : validatedPointPosition(input.position)
-  if (!patch && !position) {
-    throw new RouteInputError(
-      "Invalid point update: patch or position required"
-    )
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const route = await tx.route.findFirst({
-      where: routeScopeWhere(context, routeId),
-      include: routeInclude,
-    })
-    if (!route) return null
-
-    const existingPoint = route.points.find((point) => point.id === pointId)
-    if (!existingPoint) return null
-
-    const orderedPointIds = position
-      ? orderedIdsWithPosition(
-          route.points.map((point) => point.id),
-          pointId,
-          position
-        )
-      : route.points.map((point) => point.id)
-
-    if (patch) {
-      await tx.routePoint.update({
-        where: { id: pointId },
-        data: pointPatchData(patch),
-      })
-    }
-    await normalizePointOrders(
-      tx,
-      orderedPointIds,
-      nextTemporaryOrderBase(route.points)
-    )
-
-    const updatedRoute = await tx.route.findUnique({
-      where: { id: routeId },
-      include: routeInclude,
-    })
-    return updatedRoute ? mapRouteToDto(updatedRoute) : null
-  })
-}
-
-export async function deleteRoutePoint(
-  context: AuthContext,
-  routeId: string,
-  pointId: string
-): Promise<RouteDto | null> {
-  return prisma.$transaction(async (tx) => {
-    const route = await tx.route.findFirst({
-      where: routeScopeWhere(context, routeId),
-      include: routeInclude,
-    })
-    if (!route) return null
-
-    const existingPoint = route.points.find((point) => point.id === pointId)
-    if (!existingPoint) return null
-
-    await tx.routePoint.delete({
-      where: { id: pointId },
-    })
-
-    await normalizePointOrders(
-      tx,
-      route.points
-        .filter((point) => point.id !== pointId)
-        .map((point) => point.id),
-      nextTemporaryOrderBase(route.points)
-    )
-
-    const updatedRoute = await tx.route.findUnique({
-      where: { id: routeId },
-      include: routeInclude,
-    })
-    return updatedRoute ? mapRouteToDto(updatedRoute) : null
-  })
-}
-
-export async function reorderRoutePoints(
-  context: AuthContext,
-  routeId: string,
-  pointIds: string[]
-): Promise<RouteDto | null> {
-  if (
-    !Array.isArray(pointIds) ||
-    pointIds.some((pointId) => typeof pointId !== "string")
-  ) {
-    throw new RouteInputError(
-      "Invalid point reorder: pointIds must be an array of point IDs"
-    )
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const route = await tx.route.findFirst({
-      where: routeScopeWhere(context, routeId),
-      include: routeInclude,
-    })
-    if (!route) return null
-
-    const routePointIds = route.points.map((point) => point.id)
-    const expectedPointIds = new Set(routePointIds)
-    const seenPointIds = new Set<string>()
-
-    if (pointIds.length !== routePointIds.length) {
-      throw new RouteInputError(
-        "Invalid point reorder: pointIds must include every route point exactly once"
-      )
-    }
-
-    for (const pointId of pointIds) {
-      if (!expectedPointIds.has(pointId) || seenPointIds.has(pointId)) {
-        throw new RouteInputError(
-          "Invalid point reorder: pointIds must include every route point exactly once"
-        )
-      }
-      seenPointIds.add(pointId)
-    }
-
-    await normalizePointOrders(
-      tx,
-      pointIds,
-      nextTemporaryOrderBase(route.points)
-    )
-
-    const updatedRoute = await tx.route.findUnique({
-      where: { id: routeId },
-      include: routeInclude,
-    })
-    return updatedRoute ? mapRouteToDto(updatedRoute) : null
-  })
 }

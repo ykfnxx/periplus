@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { Route, RoutePoint } from "@/types/route"
+import type { Route, RouteNode } from "@/types/route"
 
 export type MapType = "standard" | "satellite" | "terrain"
 export type LocationSelectionMode = "none" | "photo" | "point"
@@ -75,10 +75,10 @@ interface MapState {
   clearChatMessages: () => void
   sendAgentEvent: AgentSender | null
   setAgentSender: (sendAgentEvent: AgentSender | null) => void
-  selectedLocationPoint: RoutePoint | null
+  selectedLocationPoint: RouteNode | null
   selectedLocationAnchor: MapAnchor | null
   setSelectedLocationPoint: (
-    point: RoutePoint | null,
+    point: RouteNode | null,
     anchor?: MapAnchor
   ) => void
   mapType: MapType

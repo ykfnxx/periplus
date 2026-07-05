@@ -11,7 +11,7 @@ export default function RouteListItem({ route, onSelect }: RouteListItemProps) {
       type="button"
       onClick={() => onSelect(route)}
       className="w-full rounded-lg border border-[rgb(44_36_22_/_14%)] bg-white/70 p-3 text-left transition hover:border-[var(--periplus-russet)] hover:shadow-[var(--periplus-soft-shadow)]"
-      aria-label={`${route.name}，${route.points.length} 个地点`}
+      aria-label={`${route.name}，${route.nodes.length} 个节点`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -25,7 +25,7 @@ export default function RouteListItem({ route, onSelect }: RouteListItemProps) {
           )}
         </div>
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--periplus-mustard)] text-xs font-black text-[var(--periplus-ink)]">
-          {route.points.length}
+          {route.nodes.length}
         </span>
       </div>
     </button>

@@ -1,6 +1,6 @@
 import type { AnchorType } from "@/stores/mapStore"
 
-export interface AnchorRoutePoint {
+export interface AnchorRouteNode {
   id: string
   lat: number
   lng: number
@@ -46,18 +46,18 @@ function getPixelDistance(
 }
 
 export function createAnchorItems(
-  routePoints: AnchorRoutePoint[],
+  routeNodes: AnchorRouteNode[],
   photoShares: AnchorPhotoShare[]
 ): AnchorItem[] {
   return [
-    ...routePoints.map((point) => ({
-      id: `route-${point.id}`,
-      sourceId: point.id,
+    ...routeNodes.map((node) => ({
+      id: `route-${node.id}`,
+      sourceId: node.id,
       type: "route" as const,
-      lat: point.lat,
-      lng: point.lng,
-      order: point.order,
-      name: point.name,
+      lat: node.lat,
+      lng: node.lng,
+      order: node.order,
+      name: node.name,
     })),
     ...photoShares.map((photo) => ({
       id: `photo-${photo.id}`,

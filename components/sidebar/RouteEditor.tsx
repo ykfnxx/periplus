@@ -3,15 +3,26 @@
 import { useEffect, useState } from 'react';
 import { createRoute, updateRoute } from '@/lib/routes/client';
 import { useMapStore } from '@/stores/mapStore';
-import type { RoutePoint } from '@/types/route';
+import type { RouteEdge, RouteNode } from '@/types/route';
 import PointList from './PointList';
 import PointForm from './PointForm';
+
+function edgesForNodes(routeId: string, nodes: RouteNode[]): RouteEdge[] {
+  const sortedNodes = [...nodes].sort((a, b) => a.order - b.order)
+  return sortedNodes.slice(1).map((node, index) => ({
+    id: `temp-edge-${index}-${Date.now()}`,
+    routeId,
+    fromNodeId: sortedNodes[index].id,
+    toNodeId: node.id,
+    status: "INCOMPLETE",
+  }))
+}
 
 export default function RouteEditor() {
   const currentRoute = useMapStore((s) => s.currentRoute);
   const setCurrentRoute = useMapStore((s) => s.setCurrentRoute);
   const currentRouteId = currentRoute?.id ?? null;
-  const [editingPoint, setEditingPoint] = useState<RoutePoint | null>(null);
+  const [editingPoint, setEditingPoint] = useState<RouteNode | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{
     routeId: string;
@@ -25,31 +36,34 @@ export default function RouteEditor() {
     );
   }, [currentRouteId]);
 
-  const handleAdd = (data: Omit<RoutePoint, 'id'>) => {
+  const handleAdd = (data: Omit<RouteNode, 'id' | 'routeId'>) => {
     if (!currentRoute) return;
 
-    const newPoint: RoutePoint = {
+    const newPoint: RouteNode = {
       ...data,
       id: `temp-${Date.now()}`,
-      order: currentRoute.points.length,
+      routeId: currentRoute.id,
+      order: currentRoute.nodes.length,
     };
+    const nodes = [...currentRoute.nodes, newPoint]
 
     setCurrentRoute({
       ...currentRoute,
-      points: [...currentRoute.points, newPoint],
+      nodes,
+      edges: edgesForNodes(currentRoute.id, nodes),
     });
     setSaveStatus(null);
     setShowForm(false);
   };
 
-  const handleEdit = (data: Omit<RoutePoint, 'id'>) => {
+  const handleEdit = (data: Omit<RouteNode, 'id' | 'routeId'>) => {
     if (!currentRoute || !editingPoint) return;
 
-    const updatedPoints = currentRoute.points.map((p) =>
+    const updatedPoints = currentRoute.nodes.map((p) =>
       p.id === editingPoint.id ? { ...p, ...data } : p
     );
 
-    setCurrentRoute({ ...currentRoute, points: updatedPoints });
+    setCurrentRoute({ ...currentRoute, nodes: updatedPoints });
     setSaveStatus(null);
     setEditingPoint(null);
   };
@@ -57,11 +71,17 @@ export default function RouteEditor() {
   const handleDelete = (pointId: string) => {
     if (!currentRoute) return;
 
-    const filtered = currentRoute.points.filter((p) => p.id !== pointId);
-    // Reorder
+    const filtered = currentRoute.nodes.filter((p) => p.id !== pointId);
     const reordered = filtered.map((p, i) => ({ ...p, order: i }));
 
-    setCurrentRoute({ ...currentRoute, points: reordered });
+    setCurrentRoute({
+      ...currentRoute,
+      nodes: reordered,
+      edges: edgesForNodes(currentRoute.id, reordered),
+      subPlans: currentRoute.subPlans.filter(
+        (subPlan) => subPlan.routeNodeId !== pointId
+      ),
+    });
     setSaveStatus(null);
   };
 
@@ -76,7 +96,9 @@ export default function RouteEditor() {
       const input = {
         name: currentRoute.name,
         description: currentRoute.description,
-        points: currentRoute.points,
+        nodes: currentRoute.nodes,
+        edges: currentRoute.edges,
+        subPlans: currentRoute.subPlans,
       };
       const saved = method === 'POST'
         ? await createRoute(input)

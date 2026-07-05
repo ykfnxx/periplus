@@ -13,10 +13,17 @@ import type { Route } from "@/types/route"
 
 const routeInput = {
   name: "杭州周末",
-  points: [
-    { name: "西湖", lat: 30.246, lng: 120.146, order: 0 },
-    { name: "灵隐寺", lat: 30.24, lng: 120.102, order: 1 },
+  nodes: [
+    {
+      id: "node-1",
+      name: "西湖",
+      lat: 30.246,
+      lng: 120.146,
+      order: 0,
+      category: "PLACE" as const,
+    },
   ],
+  edges: [],
 }
 
 const userContext = { userId: "user-1", role: "user" as const }
@@ -26,23 +33,27 @@ describe("DraftStore", () => {
     vi.clearAllMocks()
   })
 
-  it("adds draft points by relative position and normalizes order", () => {
+  it("appends route nodes with explicit edges", () => {
     const store = new DraftStore()
-    const initial = store.replaceDraft("session-1", routeInput)
-    const firstPointId = initial.route!.points[0].id
+    store.replaceDraft("session-1", routeInput)
 
-    const snapshot = store.addDraftPoint("session-1", {
-      point: { name: "龙井村", lat: 30.223, lng: 120.091, stayHours: 2 },
-      position: { placement: "before", pointId: firstPointId },
+    const snapshot = store.routeAppendNode("session-1", {
+      node: {
+        id: "node-2",
+        name: "灵隐寺",
+        lat: 30.24,
+        lng: 120.102,
+        category: "PLACE",
+      },
+      edge: { id: "edge-1", status: "INCOMPLETE" },
     })
 
-    expect(snapshot.route!.points.map((point) => point.name)).toEqual([
-      "龙井村",
+    expect(snapshot.route!.nodes.map((node) => node.name)).toEqual([
       "西湖",
       "灵隐寺",
     ])
-    expect(snapshot.route!.points.map((point) => point.order)).toEqual([
-      0, 1, 2,
+    expect(snapshot.route!.edges).toMatchObject([
+      { fromNodeId: "node-1", toNodeId: "node-2", status: "INCOMPLETE" },
     ])
   })
 
@@ -51,10 +62,9 @@ describe("DraftStore", () => {
       id: "route-saved",
       ownerId: "user-1",
       name: "杭州周末",
-      points: [
-        { id: "point-1", name: "西湖", lat: 30.246, lng: 120.146, order: 0 },
-        { id: "point-2", name: "灵隐寺", lat: 30.24, lng: 120.102, order: 1 },
-      ],
+      nodes: [{ ...routeInput.nodes[0], routeId: "route-saved" }],
+      edges: [],
+      subPlans: [],
       createdAt: "2026-06-30T00:00:00.000Z",
       updatedAt: "2026-06-30T01:00:00.000Z",
     }
@@ -66,7 +76,13 @@ describe("DraftStore", () => {
 
     expect(routeServiceMocks.createRoute).toHaveBeenCalledWith(
       userContext,
-      routeInput
+      expect.objectContaining({
+        name: "杭州周末",
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ id: "node-1", name: "西湖" }),
+        ]),
+        edges: [],
+      })
     )
     expect(snapshot.sourceRouteId).toBe("route-saved")
     expect(snapshot.route!.id).toBe("route-saved")

@@ -12,7 +12,7 @@ describe('RouteCard', () => {
 
   it('renders point count and updated date', () => {
     render(<RouteCard route={silkRoadRoute} />);
-    expect(screen.getByText('7 个地点')).toBeInTheDocument();
+    expect(screen.getByText('7 个节点')).toBeInTheDocument();
   });
 
   it('links to map with route id', () => {

@@ -16,7 +16,7 @@ import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
 // 动画时长
 const ANIMATION_DURATION = 300
 
-type RoutePointMeta = Record<string, { index: number; color: string }>
+type RouteNodeMeta = Record<string, { index: number; color: string }>
 
 function shouldUseDarkMarkerText(color: string) {
   return color === periplusColors.mustard || color === periplusColors.bluegray
@@ -24,10 +24,10 @@ function shouldUseDarkMarkerText(color: string) {
 
 function createRouteIcon(
   anchor: AnchorItem,
-  routePointMeta: RoutePointMeta,
+  routeNodeMeta: RouteNodeMeta,
   variant: "marker" | "preview"
 ) {
-  const meta = routePointMeta[anchor.id]
+  const meta = routeNodeMeta[anchor.id]
   const color = meta?.color || periplusColors.russet
   const label = meta ? `${meta.index}` : anchor.sourceId
 
@@ -76,18 +76,18 @@ function createPhotoIcon(
 
 function createAnchorIcon(
   anchor: AnchorItem,
-  routePointMeta: RoutePointMeta,
+  routeNodeMeta: RouteNodeMeta,
   photoShares: PhotoShare[],
   variant: "marker" | "preview"
 ) {
   return anchor.type === "route"
-    ? createRouteIcon(anchor, routePointMeta, variant)
+    ? createRouteIcon(anchor, routeNodeMeta, variant)
     : createPhotoIcon(anchor, photoShares, variant)
 }
 
 function createClusterIcon(
   cluster: ClusterGroup,
-  routePointMeta: RoutePointMeta,
+  routeNodeMeta: RouteNodeMeta,
   photoShares: PhotoShare[],
   dimmed = false
 ) {
@@ -99,7 +99,7 @@ function createClusterIcon(
   cluster.anchors.slice(0, 2).forEach((anchor, index) => {
     const icon = createAnchorIcon(
       anchor,
-      routePointMeta,
+      routeNodeMeta,
       photoShares,
       "preview"
     )
@@ -151,20 +151,20 @@ export default function OverlapCluster() {
   const dimmedClusterMarkersRef = useRef<AMap.Marker[]>([])
   const scatterLinesRef = useRef<AMap.Polyline[]>([])
   const isMapDraggingRef = useRef(false)
-  const routePointMetaRef = useRef<{
+  const routeNodeMetaRef = useRef<{
     [id: string]: { index: number; color: string }
   }>({})
 
   const recalculateClusters = useCallback(() => {
     if (!map) return
 
-    const routePoints =
-      currentRoute?.points.map((p) => ({
-        id: p.id,
-        lat: p.lat,
-        lng: p.lng,
-        order: p.order,
-        name: p.name,
+    const routeNodes =
+      currentRoute?.nodes.map((node) => ({
+        id: node.id,
+        lat: node.lat,
+        lng: node.lng,
+        order: node.order,
+        name: node.name,
       })) ?? []
 
     const photos = photoShares.map((p) => ({
@@ -174,28 +174,28 @@ export default function OverlapCluster() {
       imageDataUrl: p.imageDataUrl,
     }))
 
-    const anchors = createAnchorItems(routePoints, photos)
+    const anchors = createAnchorItems(routeNodes, photos)
     const newClusters = calculateAnchorClusters(anchors, (anchor) =>
       projectAnchor(map, anchor)
     )
     setClusters(newClusters)
   }, [map, currentRoute, photoShares])
 
-  // 预计算 route 点元数据
-  const updateRoutePointMeta = useCallback(() => {
-    const meta: RoutePointMeta = {}
+  // 预计算 route node 元数据
+  const updateRouteNodeMeta = useCallback(() => {
+    const meta: RouteNodeMeta = {}
     if (currentRoute) {
-      const sortedPoints = [...currentRoute.points].sort(
+      const sortedNodes = [...currentRoute.nodes].sort(
         (a, b) => a.order - b.order
       )
-      sortedPoints.forEach((point, index) => {
-        meta[`route-${point.id}`] = {
+      sortedNodes.forEach((node, index) => {
+        meta[`route-${node.id}`] = {
           index: index + 1,
           color: routeMarkerColors[index % routeMarkerColors.length],
         }
       })
     }
-    routePointMetaRef.current = meta
+    routeNodeMetaRef.current = meta
   }, [currentRoute])
 
   // 创建/更新重叠态 AMap Marker
@@ -206,7 +206,7 @@ export default function OverlapCluster() {
     clusterMarkersRef.current.forEach((m) => map.remove(m))
     clusterMarkersRef.current = []
 
-    updateRoutePointMeta()
+    updateRouteNodeMeta()
     const markers: AMap.Marker[] = []
     const activeAnchorIds = new Set(
       anchorCluster.scatteredAnchors.map((anchor) => anchor.id)
@@ -222,7 +222,7 @@ export default function OverlapCluster() {
 
       const content = createClusterIcon(
         cluster,
-        routePointMetaRef.current,
+        routeNodeMetaRef.current,
         photoShares
       )
 
@@ -268,7 +268,7 @@ export default function OverlapCluster() {
     anchorCluster.isScattered,
     anchorCluster.scatteredAnchors,
     expandCluster,
-    updateRoutePointMeta,
+    updateRouteNodeMeta,
   ])
 
   // 散开态：创建弹开的 AMap Marker + 渐暗的原地重叠图标
@@ -276,7 +276,7 @@ export default function OverlapCluster() {
     if (!map || !anchorCluster.isScattered || !anchorCluster.scatterCenter)
       return
 
-    updateRoutePointMeta()
+    updateRouteNodeMeta()
 
     // 清理旧 marker
     scatteredMarkersRef.current.forEach((m) => map.remove(m))
@@ -299,7 +299,7 @@ export default function OverlapCluster() {
     if (activeCluster) {
       const dimmedContent = createClusterIcon(
         activeCluster,
-        routePointMetaRef.current,
+        routeNodeMetaRef.current,
         photoShares,
         true
       )
@@ -341,7 +341,7 @@ export default function OverlapCluster() {
           lat: 0,
           lng: 0,
         },
-        routePointMetaRef.current,
+        routeNodeMetaRef.current,
         photoShares,
         "marker"
       )
@@ -378,7 +378,7 @@ export default function OverlapCluster() {
         ;(e as any).stopPropagation?.()
         // 不再收起，只选中，并传递弹出位置的像素坐标
         if (anchor.type === "route") {
-          const point = currentRoute?.points.find(
+          const point = currentRoute?.nodes.find(
             (p) => `route-${p.id}` === anchor.id
           )
           if (point) {
@@ -427,7 +427,7 @@ export default function OverlapCluster() {
     collapseCluster,
     setSelectedLocationPoint,
     setSelectedPhotoShare,
-    updateRoutePointMeta,
+    updateRouteNodeMeta,
   ])
 
   // 地图事件监听：zoom/pan 时重新计算聚类
