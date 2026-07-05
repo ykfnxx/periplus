@@ -4,6 +4,7 @@ import { useRef, useCallback, useState } from "react"
 import { useMapStore } from "@/stores/mapStore"
 import { parseExifGps, wgs84ToGcj02, readFileAsDataURL } from "@/lib/exif"
 import { photoDtoToShare, uploadPhoto } from "@/lib/photos/client"
+import PhotoUploadModal from "@/components/map/PhotoUploadModal"
 
 export default function PhotoUploader() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -18,6 +19,8 @@ export default function PhotoUploader() {
   const locationSelectionMode = useMapStore((s) => s.locationSelectionMode)
   const isSelectingPhotoLocation =
     isSelectingLocation && locationSelectionMode === "photo"
+  const uploadModalOpen = useMapStore((s) => s.uploadModalOpen)
+  const setUploadModalOpen = useMapStore((s) => s.setUploadModalOpen)
 
   const clearInput = useCallback(() => {
     if (inputRef.current) {
@@ -105,7 +108,7 @@ export default function PhotoUploader() {
       ) : (
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
+          onClick={() => setUploadModalOpen(true)}
           disabled={isUploading}
           className="h-9 w-full rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
         >
@@ -117,6 +120,7 @@ export default function PhotoUploader() {
           {validationError}
         </p>
       )}
+      <PhotoUploadModal />
     </div>
   )
 }
