@@ -5,7 +5,6 @@ import { loadAMap } from "@/lib/amap"
 import RoutePolyline from "./RoutePolyline"
 import RouteMarkers from "./RouteMarkers"
 import PhotoMarkers from "./PhotoMarkers"
-import PhotoInfoWindow from "./PhotoInfoWindow"
 import PhotoLightbox from "./PhotoLightbox"
 import PhotoSync from "./PhotoSync"
 import LocationSelector from "./LocationSelector"
@@ -75,7 +74,6 @@ export default function MapContainer() {
       <LocationInfoBubble key="location-info" />
       <PhotoSync key="photo-sync" />
       <PhotoMarkers key="photo-markers" />
-      <PhotoInfoWindow key="photo-info" />
       <PhotoLightbox key="photo-lightbox" />
       <LocationSelector key="location-selector" />
       <OverlapCluster key="overlap-cluster" />

@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import PhotoMaterials from "@/components/workbench/PhotoMaterials"
 
-const setSelectedPhotoShare = vi.fn()
+const setLightboxPhotoShare = vi.fn()
 
 vi.mock("@/stores/mapStore", () => ({
   useMapStore: (selector: (state: unknown) => unknown) =>
@@ -17,7 +17,7 @@ vi.mock("@/stores/mapStore", () => ({
           createdAt: 1,
         },
       ],
-      setSelectedPhotoShare,
+      setLightboxPhotoShare,
     }),
 }))
 

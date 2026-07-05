@@ -1,6 +1,8 @@
 "use client"
 
+import { Trash2 } from "lucide-react"
 import { type MouseEvent, useCallback, useEffect } from "react"
+import { deletePhoto } from "@/lib/photos/client"
 import { useMapStore } from "@/stores/mapStore"
 
 function formatUploadDate(timestamp: number) {
@@ -13,10 +15,22 @@ export default function PhotoLightbox() {
   const setLightboxPhotoShare = useMapStore(
     (state) => state.setLightboxPhotoShare
   )
+  const removePhotoShare = useMapStore((state) => state.removePhotoShare)
 
   const closeLightbox = useCallback(() => {
     setLightboxPhotoShare(null)
   }, [setLightboxPhotoShare])
+
+  const handleDelete = useCallback(
+    async (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      if (!lightboxPhotoShare?.canDelete) return
+      await deletePhoto(lightboxPhotoShare.id)
+      removePhotoShare(lightboxPhotoShare.id)
+      setLightboxPhotoShare(null)
+    },
+    [lightboxPhotoShare, removePhotoShare, setLightboxPhotoShare]
+  )
 
   useEffect(() => {
     if (!lightboxPhotoShare) return
@@ -87,6 +101,18 @@ export default function PhotoLightbox() {
           <div className="mt-4 border-t border-ink-10 pt-4 text-xs text-teak">
             上传于 {formatUploadDate(lightboxPhotoShare.createdAt)}
           </div>
+          {lightboxPhotoShare.canDelete && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              aria-label="删除照片"
+              title="删除"
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-4 py-2 text-sm text-[var(--periplus-coral)] transition hover:bg-[var(--periplus-coral)] hover:text-white"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              删除
+            </button>
+          )}
         </aside>
       </div>
     </div>
