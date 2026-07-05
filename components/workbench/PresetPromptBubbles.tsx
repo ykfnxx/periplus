@@ -18,6 +18,7 @@ export default function PresetPromptBubbles() {
   const addUserMessage = useMapStore((state) => state.addUserMessage)
   const setComposerInput = useMapStore((state) => state.setComposerInput)
   const agentMode = useMapStore((state) => state.agentMode)
+  const setWorkbenchTab = useMapStore((state) => state.setWorkbenchTab)
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
@@ -30,6 +31,7 @@ export default function PresetPromptBubbles() {
   const sendPrompt = (prompt: string) => {
     if (!sendAgentEvent || isDraftLocked) return
     addUserMessage(prompt)
+    setWorkbenchTab("chat")
     sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
     setComposerInput("")
   }

@@ -15,4 +15,13 @@ describe("silkRoadRoute", () => {
     expect(sorted[0].name).toBe("西安")
     expect(sorted[6].name).toBe("乌鲁木齐")
   })
+
+  it("includes a nested path for 西安", () => {
+    const subPlan = silkRoadRoute.subPlans.find(
+      (candidate) => candidate.routeNodeId === "node-xian"
+    )
+
+    expect(subPlan?.nodes).toHaveLength(3)
+    expect(subPlan?.edges).toHaveLength(2)
+  })
 })

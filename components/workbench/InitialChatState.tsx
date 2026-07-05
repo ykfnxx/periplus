@@ -13,12 +13,14 @@ export default function InitialChatState() {
   const addUserMessage = useMapStore((state) => state.addUserMessage)
   const isDraftLocked = useMapStore((state) => state.isDraftLocked)
   const agentMode = useMapStore((state) => state.agentMode)
+  const setWorkbenchTab = useMapStore((state) => state.setWorkbenchTab)
 
   const sendPrompt = () => {
     const prompt = composerInput.trim()
     if (!prompt || !sendAgentEvent || isDraftLocked) return
 
     addUserMessage(prompt)
+    setWorkbenchTab("chat")
     sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
     setComposerInput("")
   }

@@ -14,6 +14,7 @@ export default function AIComposer() {
   const currentRoute = useMapStore((state) => state.currentRoute)
   const composerInput = useMapStore((state) => state.composerInput)
   const agentMode = useMapStore((state) => state.agentMode)
+  const setWorkbenchTab = useMapStore((state) => state.setWorkbenchTab)
   const setComposerInput = useMapStore((state) => state.setComposerInput)
   const sendAgentEvent = useMapStore((state) => state.sendAgentEvent)
   const addUserMessage = useMapStore((state) => state.addUserMessage)
@@ -56,6 +57,7 @@ export default function AIComposer() {
     if (!prompt || !sendAgentEvent || isDraftLocked) return
 
     addUserMessage(prompt)
+    setWorkbenchTab("chat")
     sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
     setComposerInput("")
   }

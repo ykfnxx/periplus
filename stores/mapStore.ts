@@ -8,6 +8,7 @@ export type DraftSaveState = "idle" | "saving" | "success" | "error"
 export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
 export type ChatMessageRole = "user" | "assistant"
 export type AgentMode = "auto" | "suggest"
+export type WorkbenchTab = "preview" | "chat"
 export type AgentSender = (type: string, payload?: unknown) => void
 export type AnchorType = "route" | "photo"
 
@@ -88,6 +89,8 @@ interface MapState {
   setDraftSaveState: (draftSaveState: DraftSaveState) => void
   agentMode: AgentMode
   setAgentMode: (agentMode: AgentMode) => void
+  workbenchTab: WorkbenchTab
+  setWorkbenchTab: (workbenchTab: WorkbenchTab) => void
   pendingSuggestions: PendingSuggestion[]
   setPendingSuggestions: (pendingSuggestions: PendingSuggestion[]) => void
   chatMessages: ChatMessage[]
@@ -205,6 +208,8 @@ export const useMapStore = create<MapState>((set) => ({
   setDraftSaveState: (draftSaveState) => set({ draftSaveState }),
   agentMode: "auto",
   setAgentMode: (agentMode) => set({ agentMode }),
+  workbenchTab: "preview",
+  setWorkbenchTab: (workbenchTab) => set({ workbenchTab }),
   pendingSuggestions: [],
   setPendingSuggestions: (pendingSuggestions) => set({ pendingSuggestions }),
   chatMessages: [],
