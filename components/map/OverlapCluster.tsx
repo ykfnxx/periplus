@@ -10,6 +10,7 @@ import {
   type AnchorItem,
   type ClusterGroup,
 } from "@/lib/map/anchor-clusters"
+import { getActivePathView } from "@/lib/routes/active-path"
 import { useMapStore, type PhotoShare } from "@/stores/mapStore"
 import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
 
@@ -136,6 +137,8 @@ function lngLatToAnchor(lngLat: AMap.LngLat) {
 export default function OverlapCluster() {
   const map = useMapStore((s) => s.map)
   const currentRoute = useMapStore((s) => s.currentRoute)
+  const viewLevel = useMapStore((s) => s.viewLevel)
+  const activeRouteNodeId = useMapStore((s) => s.activeRouteNodeId)
   const photoShares = useMapStore((s) => s.photoShares)
   const anchorCluster = useMapStore((s) => s.anchorCluster)
   const expandCluster = useMapStore((s) => s.expandCluster)
@@ -158,14 +161,15 @@ export default function OverlapCluster() {
   const recalculateClusters = useCallback(() => {
     if (!map) return
 
+    const view = getActivePathView(currentRoute, viewLevel, activeRouteNodeId)
     const routeNodes =
-      currentRoute?.nodes.map((node) => ({
+      view.nodes.map((node) => ({
         id: node.id,
         lat: node.lat,
         lng: node.lng,
         order: node.order,
         name: node.name,
-      })) ?? []
+      }))
 
     const photos = photoShares.map((p) => ({
       id: p.id,
@@ -179,13 +183,14 @@ export default function OverlapCluster() {
       projectAnchor(map, anchor)
     )
     setClusters(newClusters)
-  }, [map, currentRoute, photoShares])
+  }, [map, currentRoute, viewLevel, activeRouteNodeId, photoShares])
 
   // 预计算 route node 元数据
   const updateRouteNodeMeta = useCallback(() => {
     const meta: RouteNodeMeta = {}
     if (currentRoute) {
-      const sortedNodes = [...currentRoute.nodes].sort(
+      const view = getActivePathView(currentRoute, viewLevel, activeRouteNodeId)
+      const sortedNodes = [...view.nodes].sort(
         (a, b) => a.order - b.order
       )
       sortedNodes.forEach((node, index) => {
@@ -196,7 +201,7 @@ export default function OverlapCluster() {
       })
     }
     routeNodeMetaRef.current = meta
-  }, [currentRoute])
+  }, [currentRoute, viewLevel, activeRouteNodeId])
 
   // 创建/更新重叠态 AMap Marker
   useEffect(() => {
@@ -378,7 +383,12 @@ export default function OverlapCluster() {
         ;(e as any).stopPropagation?.()
         // 不再收起，只选中，并传递弹出位置的像素坐标
         if (anchor.type === "route") {
-          const point = currentRoute?.nodes.find(
+          const view = getActivePathView(
+            currentRoute,
+            viewLevel,
+            activeRouteNodeId
+          )
+          const point = view.nodes.find(
             (p) => `route-${p.id}` === anchor.id
           )
           if (point) {
@@ -424,6 +434,8 @@ export default function OverlapCluster() {
     clusters,
     photoShares,
     currentRoute,
+    viewLevel,
+    activeRouteNodeId,
     collapseCluster,
     setSelectedLocationPoint,
     setSelectedPhotoShare,

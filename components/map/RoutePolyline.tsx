@@ -1,39 +1,80 @@
-'use client';
+"use client"
 
-import { useEffect } from 'react';
-import { useMapStore } from '@/stores/mapStore';
-import { periplusColors } from '@/lib/ui/map-theme';
+import { useEffect } from "react"
+import { getActivePathView } from "@/lib/routes/active-path"
+import { useMapStore } from "@/stores/mapStore"
+import { periplusColors } from "@/lib/ui/map-theme"
 
 export default function RoutePolyline() {
-  const map = useMapStore((s) => s.map);
-  const currentRoute = useMapStore((s) => s.currentRoute);
+  const map = useMapStore((s) => s.map)
+  const currentRoute = useMapStore((s) => s.currentRoute)
+  const viewLevel = useMapStore((s) => s.viewLevel)
+  const activeRouteNodeId = useMapStore((s) => s.activeRouteNodeId)
+  const selectedEdgeId = useMapStore((s) => s.selectedEdgeId)
+  const setSelectedEdgeId = useMapStore((s) => s.setSelectedEdgeId)
 
   useEffect(() => {
-    if (!map || !currentRoute || currentRoute.nodes.length < 2) return;
+    if (!map || !currentRoute) return
 
-    const path = [...currentRoute.nodes]
-      .sort((a, b) => a.order - b.order)
-      .map((p) => new AMap.LngLat(p.lng, p.lat));
+    const view = getActivePathView(currentRoute, viewLevel, activeRouteNodeId)
+    const nodeById = new Map(view.nodes.map((node) => [node.id, node]))
+    const polylines: AMap.Polyline[] = []
 
-    const polyline = new AMap.Polyline({
-      path,
-      strokeColor: periplusColors.russet,
-      strokeWeight: 6,
-      strokeOpacity: 0.9,
-      lineJoin: 'round',
-      lineCap: 'round',
-      showDir: true,
-    });
+    for (const edge of view.edges) {
+      const fromNode = nodeById.get(edge.fromNodeId)
+      const toNode = nodeById.get(edge.toNodeId)
+      if (!fromNode || !toNode) continue
 
-    map.add(polyline);
+      const polyline = new AMap.Polyline({
+        path: [
+          new AMap.LngLat(fromNode.lng, fromNode.lat),
+          new AMap.LngLat(toNode.lng, toNode.lat),
+        ],
+        strokeColor:
+          edge.status === "INCOMPLETE"
+            ? periplusColors.coral
+            : periplusColors.russet,
+        strokeWeight: selectedEdgeId === edge.id ? 7 : 5,
+        strokeOpacity: selectedEdgeId === edge.id ? 1 : 0.88,
+        strokeStyle: edge.status === "INCOMPLETE" ? "dashed" : "solid",
+        strokeDasharray: edge.status === "INCOMPLETE" ? [8, 8] : undefined,
+        lineJoin: "round",
+        lineCap: "round",
+        showDir: true,
+        zIndex: selectedEdgeId === edge.id ? 130 : 80,
+      })
 
-    // Fit bounds
-    map.setFitView([polyline], false, [60, 60, 60, 60], 10);
+      polyline.on("click", (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(event as any).stopPropagation?.()
+        setSelectedEdgeId(selectedEdgeId === edge.id ? null : edge.id)
+      })
+
+      polylines.push(polyline)
+    }
+
+    if (polylines.length) {
+      map.add(polylines)
+      map.setFitView(polylines, false, [80, 80, 80, 460], 12)
+    } else if (view.nodes.length === 1) {
+      const node = view.nodes[0]
+      map.setZoomAndCenter(
+        view.level === "city" ? 13 : 8,
+        new AMap.LngLat(node.lng, node.lat)
+      )
+    }
 
     return () => {
-      map.remove(polyline);
-    };
-  }, [map, currentRoute]);
+      if (polylines.length) map.remove(polylines)
+    }
+  }, [
+    map,
+    currentRoute,
+    viewLevel,
+    activeRouteNodeId,
+    selectedEdgeId,
+    setSelectedEdgeId,
+  ])
 
-  return null;
+  return null
 }

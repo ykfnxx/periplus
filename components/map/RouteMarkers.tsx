@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { getActivePathView } from "@/lib/routes/active-path"
 import {
   calculateAnchorClusters,
   collectClusteredSourceIds,
@@ -12,19 +13,26 @@ import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
 export default function RouteMarkers() {
   const map = useMapStore((s) => s.map)
   const currentRoute = useMapStore((s) => s.currentRoute)
+  const viewLevel = useMapStore((s) => s.viewLevel)
+  const activeRouteNodeId = useMapStore((s) => s.activeRouteNodeId)
   const photoShares = useMapStore((s) => s.photoShares)
   const selectedLocationPoint = useMapStore((s) => s.selectedLocationPoint)
   const setSelectedLocationPoint = useMapStore(
     (s) => s.setSelectedLocationPoint
   )
   const setSelectedPhotoShare = useMapStore((s) => s.setSelectedPhotoShare)
+  const enterCityView = useMapStore((s) => s.enterCityView)
 
   useEffect(() => {
-    if (!map || !currentRoute || currentRoute.nodes.length === 0) return
+    if (!map || !currentRoute) return
+
+    const view = getActivePathView(currentRoute, viewLevel, activeRouteNodeId)
+    if (view.nodes.length === 0) return
 
     const markers: AMap.Marker[] = []
+    const longPressTimers: Array<ReturnType<typeof setTimeout>> = []
 
-    const sortedPoints = [...currentRoute.nodes].sort(
+    const sortedPoints = [...view.nodes].sort(
       (a, b) => a.order - b.order
     )
 
@@ -64,12 +72,36 @@ export default function RouteMarkers() {
       marker.on("click", (event) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(event as any).stopPropagation?.()
+        if (view.level === "overview") {
+          enterCityView(point.id)
+          return
+        }
         if (selectedLocationPoint?.id === point.id) {
           setSelectedLocationPoint(null)
           return
         }
         setSelectedPhotoShare(null)
         setSelectedLocationPoint(point)
+      })
+      marker.on("mouseover", () => {
+        setSelectedPhotoShare(null)
+        setSelectedLocationPoint(point)
+      })
+      marker.on("mouseout", () => {
+        setSelectedLocationPoint(null)
+      })
+      marker.on("touchstart", () => {
+        const timer = setTimeout(() => {
+          setSelectedPhotoShare(null)
+          setSelectedLocationPoint(point)
+        }, 500)
+        longPressTimers.push(timer)
+      })
+      marker.on("touchmove", () => {
+        longPressTimers.splice(0).forEach(clearTimeout)
+      })
+      marker.on("touchend", () => {
+        longPressTimers.splice(0).forEach(clearTimeout)
       })
 
       markers.push(marker)
@@ -78,13 +110,17 @@ export default function RouteMarkers() {
     map.add(markers)
 
     return () => {
+      longPressTimers.splice(0).forEach(clearTimeout)
       map.remove(markers)
     }
   }, [
     map,
     currentRoute,
+    viewLevel,
+    activeRouteNodeId,
     photoShares,
     selectedLocationPoint?.id,
+    enterCityView,
     setSelectedLocationPoint,
     setSelectedPhotoShare,
   ])

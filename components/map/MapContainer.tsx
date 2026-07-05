@@ -11,6 +11,7 @@ import PhotoSync from "./PhotoSync"
 import LocationSelector from "./LocationSelector"
 import LocationInfoBubble from "./LocationInfoBubble"
 import MapCornerControls from "./MapCornerControls"
+import MapRouteLevelControls from "./MapRouteLevelControls"
 import OverlapCluster from "./OverlapCluster"
 import { useMapStore } from "@/stores/mapStore"
 
@@ -79,6 +80,7 @@ export default function MapContainer() {
       <LocationSelector key="location-selector" />
       <OverlapCluster key="overlap-cluster" />
       {!error && <MapCornerControls key="map-corner-controls" />}
+      {!error && <MapRouteLevelControls key="map-route-level-controls" />}
     </>
   )
 }

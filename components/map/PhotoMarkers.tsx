@@ -6,11 +6,14 @@ import {
   collectClusteredSourceIds,
   createAnchorItems,
 } from "@/lib/map/anchor-clusters"
+import { getActivePathView } from "@/lib/routes/active-path"
 import { useMapStore } from "@/stores/mapStore"
 
 export default function PhotoMarkers() {
   const map = useMapStore((s) => s.map)
   const currentRoute = useMapStore((s) => s.currentRoute)
+  const viewLevel = useMapStore((s) => s.viewLevel)
+  const activeRouteNodeId = useMapStore((s) => s.activeRouteNodeId)
   const photoShares = useMapStore((s) => s.photoShares)
   const selectedPhotoShare = useMapStore((s) => s.selectedPhotoShare)
   const setSelectedLocationPoint = useMapStore(
@@ -23,14 +26,15 @@ export default function PhotoMarkers() {
 
     const markers: AMap.Marker[] = []
 
+    const view = getActivePathView(currentRoute, viewLevel, activeRouteNodeId)
     const routeNodes =
-      currentRoute?.nodes.map((node) => ({
+      view.nodes.map((node) => ({
         id: node.id,
         lat: node.lat,
         lng: node.lng,
         order: node.order,
         name: node.name,
-      })) ?? []
+      }))
     const clusters = calculateAnchorClusters(
       createAnchorItems(routeNodes, photoShares),
       (anchor) => {
@@ -78,6 +82,8 @@ export default function PhotoMarkers() {
   }, [
     map,
     currentRoute,
+    viewLevel,
+    activeRouteNodeId,
     photoShares,
     selectedPhotoShare?.id,
     setSelectedLocationPoint,

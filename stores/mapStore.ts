@@ -1,5 +1,6 @@
 import { create } from "zustand"
-import type { Route, RouteNode } from "@/types/route"
+import type { PathNode, Route } from "@/types/route"
+import type { RouteViewLevel } from "@/lib/routes/active-path"
 
 export type MapType = "standard" | "satellite" | "terrain"
 export type LocationSelectionMode = "none" | "photo" | "point"
@@ -75,6 +76,12 @@ interface MapState {
   setMap: (map: AMap.Map | null) => void
   currentRoute: Route | null
   setCurrentRoute: (route: Route | null) => void
+  viewLevel: RouteViewLevel
+  activeRouteNodeId: string | null
+  enterCityView: (routeNodeId: string) => void
+  returnToOverview: () => void
+  selectedEdgeId: string | null
+  setSelectedEdgeId: (edgeId: string | null) => void
   isDraftLocked: boolean
   setDraftLocked: (isDraftLocked: boolean) => void
   draftSaveState: DraftSaveState
@@ -90,10 +97,10 @@ interface MapState {
   clearChatMessages: () => void
   sendAgentEvent: AgentSender | null
   setAgentSender: (sendAgentEvent: AgentSender | null) => void
-  selectedLocationPoint: RouteNode | null
+  selectedLocationPoint: PathNode | null
   selectedLocationAnchor: MapAnchor | null
   setSelectedLocationPoint: (
-    point: RouteNode | null,
+    point: PathNode | null,
     anchor?: MapAnchor
   ) => void
   mapType: MapType
@@ -142,7 +149,56 @@ export const useMapStore = create<MapState>((set) => ({
   map: null,
   setMap: (map) => set({ map }),
   currentRoute: null,
-  setCurrentRoute: (currentRoute) => set({ currentRoute }),
+  setCurrentRoute: (currentRoute) =>
+    set((state) => {
+      const activeRouteNodeStillExists = Boolean(
+        currentRoute?.nodes.some((node) => node.id === state.activeRouteNodeId)
+      )
+      return {
+        currentRoute,
+        ...(currentRoute && activeRouteNodeStillExists
+          ? {}
+          : {
+              viewLevel: "overview" as const,
+              activeRouteNodeId: null,
+              selectedEdgeId: null,
+              selectedLocationPoint: null,
+              selectedLocationAnchor: null,
+            }),
+      }
+    }),
+  viewLevel: "overview",
+  activeRouteNodeId: null,
+  enterCityView: (activeRouteNodeId) =>
+    set({
+      viewLevel: "city",
+      activeRouteNodeId,
+      selectedEdgeId: null,
+      selectedLocationPoint: null,
+      selectedLocationAnchor: null,
+      selectedPhotoShare: null,
+      selectedPhotoAnchor: null,
+      anchorCluster: {
+        isScattered: false,
+        scatterCenter: null,
+        scatteredAnchors: [],
+      },
+    }),
+  returnToOverview: () =>
+    set({
+      viewLevel: "overview",
+      activeRouteNodeId: null,
+      selectedEdgeId: null,
+      selectedLocationPoint: null,
+      selectedLocationAnchor: null,
+      anchorCluster: {
+        isScattered: false,
+        scatterCenter: null,
+        scatteredAnchors: [],
+      },
+    }),
+  selectedEdgeId: null,
+  setSelectedEdgeId: (selectedEdgeId) => set({ selectedEdgeId }),
   isDraftLocked: false,
   setDraftLocked: (isDraftLocked) => set({ isDraftLocked }),
   draftSaveState: "idle",
