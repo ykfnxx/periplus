@@ -12,7 +12,7 @@ export default function PhotoMaterials() {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-xs font-black text-[var(--periplus-ink)]">
+        <h3 className="text-xs font-bold text-ink">
           照片素材
         </h3>
       </div>
@@ -20,7 +20,7 @@ export default function PhotoMaterials() {
       <PhotoUploader />
 
       {photoShares.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[rgb(44_36_22_/_18%)] bg-[var(--periplus-soft-white)]/70 p-3 text-xs font-bold text-[var(--periplus-walnut)]">
+        <p className="rounded-lg border border-dashed border-ink-20 bg-soft-white/70 p-3 text-xs font-bold text-walnut">
           暂无照片素材
         </p>
       ) : (
@@ -30,7 +30,7 @@ export default function PhotoMaterials() {
               key={photo.id}
               type="button"
               onClick={() => setSelectedPhotoShare(photo)}
-              className="group overflow-hidden rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] transition hover:border-[var(--periplus-russet)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--periplus-russet)]"
+              className="group overflow-hidden rounded-lg border border-ink-15 bg-soft-white transition hover:border-russet focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-russet"
             >
               <img
                 src={photo.imageDataUrl}

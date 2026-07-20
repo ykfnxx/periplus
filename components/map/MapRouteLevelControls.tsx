@@ -53,16 +53,16 @@ export default function MapRouteLevelControls() {
 
   return (
     <div className="pointer-events-none absolute top-5 left-[min(460px,calc(100vw-112px))] z-20">
-      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)]/95 px-2 py-2 shadow-[var(--periplus-soft-shadow)] backdrop-blur-sm">
+      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-ink-15 bg-soft-white/95 px-2 py-2 shadow-periplus-soft backdrop-blur-sm">
         <button
           type="button"
           onClick={returnToOverview}
-          className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--periplus-ink)] px-3 text-xs font-bold text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-russet)]"
+          className="flex h-8 items-center gap-1.5 rounded-full bg-ink px-3 text-xs font-bold text-soft-white transition hover:bg-russet"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           概览
         </button>
-        <span className="max-w-[180px] truncate pr-2 text-xs font-bold text-[var(--periplus-walnut)]">
+        <span className="max-w-[180px] truncate pr-2 text-xs font-bold text-walnut">
           {view.title}
         </span>
       </div>

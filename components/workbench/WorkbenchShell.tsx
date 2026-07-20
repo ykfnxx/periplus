@@ -23,9 +23,9 @@ export default function WorkbenchShell() {
     <>
       <AgentSync />
       <section className="pointer-events-none absolute top-5 bottom-5 left-5 z-20 w-[min(420px,calc(100vw-40px))]">
-        <div className="pointer-events-auto flex h-full min-h-0 flex-col overflow-hidden rounded-[12px] border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)]/95 shadow-[var(--periplus-shadow)] backdrop-blur-sm">
-          <div className="border-b border-[rgb(44_36_22_/_10%)] px-4 pt-4 pb-3">
-            <div className="flex rounded-full bg-[rgb(44_36_22_/_6%)] p-1">
+        <div className="pointer-events-auto flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-ink-15 bg-soft-white/95 shadow-periplus backdrop-blur-sm">
+          <div className="border-b border-ink-10 px-4 pt-4 pb-3">
+            <div className="flex rounded-full bg-ink-5 p-1">
               {tabs.map((tab) => (
                 <button
                   key={tab.value}
@@ -33,8 +33,8 @@ export default function WorkbenchShell() {
                   onClick={() => setWorkbenchTab(tab.value)}
                   className={`h-8 flex-1 rounded-full text-xs font-bold transition ${
                     workbenchTab === tab.value
-                      ? "bg-[var(--periplus-soft-white)] text-[var(--periplus-ink)] shadow-[0_4px_12px_rgb(44_36_22_/_8%)]"
-                      : "text-[var(--periplus-teak)] hover:text-[var(--periplus-ink)]"
+                      ? "bg-soft-white text-ink shadow-[0_4px_12px_var(--color-ink-10)]"
+                      : "text-teak hover:text-ink"
                   }`}
                 >
                   {tab.label}

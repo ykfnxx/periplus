@@ -38,7 +38,7 @@ export default function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-black text-[var(--periplus-walnut)]">
+        <label className="text-xs font-semibold text-walnut">
           邮箱
         </label>
         <input
@@ -47,11 +47,11 @@ export default function LoginForm() {
           onChange={(event) => setEmail(event.target.value)}
           required
           autoComplete="email"
-          className="h-11 w-full rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] px-3 text-sm transition outline-none focus:border-[var(--periplus-russet)]"
+          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
         />
       </div>
       <div className="space-y-2">
-        <label className="text-xs font-black text-[var(--periplus-walnut)]">
+        <label className="text-xs font-semibold text-walnut">
           密码
         </label>
         <input
@@ -60,29 +60,29 @@ export default function LoginForm() {
           onChange={(event) => setPassword(event.target.value)}
           required
           autoComplete="current-password"
-          className="h-11 w-full rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] px-3 text-sm transition outline-none focus:border-[var(--periplus-russet)]"
+          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
         />
       </div>
       {error && (
-        <p className="text-sm font-bold text-[var(--periplus-coral)]">
+        <p className="text-sm font-bold text-coral">
           {error}
         </p>
       )}
       <button
         type="submit"
         disabled={isSubmitting}
-        className="h-11 w-full rounded-lg bg-[var(--periplus-ink)] px-4 text-sm font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-russet)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="h-11 w-full rounded-lg bg-ink px-4 text-sm font-bold text-soft-white transition hover:bg-russet disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isSubmitting ? "登录中..." : "登录"}
       </button>
-      <p className="text-center text-sm font-bold text-[var(--periplus-walnut)]">
+      <p className="text-center text-sm font-bold text-walnut">
         没有账号？{" "}
-        <Link href="/register" className="text-[var(--periplus-russet)]">
+        <Link href="/register" className="text-russet">
           注册
         </Link>
       </p>
       {periplusPublicConfig.dev.showMockAccounts && (
-        <div className="rounded-lg border border-[rgb(44_36_22_/_10%)] bg-[var(--periplus-soft-white)] p-3 text-left text-xs leading-5 font-bold text-[var(--periplus-walnut)]">
+        <div className="rounded-lg border border-ink-10 bg-soft-white p-3 text-left text-xs leading-5 font-bold text-walnut">
           <p>开发账号：admin@periplus.local</p>
           <p>开发账号：user1@periplus.local</p>
           <p>开发账号：user2@periplus.local</p>

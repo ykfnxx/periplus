@@ -19,14 +19,14 @@ export default function ChatHistory() {
       {chatMessages.map((message) =>
         message.role === "user" ? (
           <div key={message.id} className="flex justify-end">
-            <div className="max-w-[85%] rounded-[18px] rounded-br-[4px] bg-[var(--periplus-ink)] px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap text-[var(--periplus-soft-white)]">
+            <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-ink px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap text-soft-white">
               {message.content}
             </div>
           </div>
         ) : (
           <div
             key={message.id}
-            className="periplus-markdown text-sm leading-6 text-[var(--periplus-ink)]"
+            className="periplus-markdown text-sm leading-6 text-ink"
           >
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {message.content}
@@ -35,24 +35,24 @@ export default function ChatHistory() {
         )
       )}
       {isDraftLocked && (
-        <div className="text-xs font-bold text-[var(--periplus-teak)]">
+        <div className="text-xs font-bold text-teak">
           正在规划...
         </div>
       )}
       {pendingSuggestions.map((suggestion) => (
         <div
           key={suggestion.id}
-          className="rounded-[12px] border border-[rgb(44_36_22_/_12%)] bg-[var(--periplus-white)] p-3 shadow-[0_8px_18px_rgb(44_36_22_/_6%)]"
+          className="rounded-xl border border-ink-10 bg-white p-3 shadow-[0_8px_18px_var(--color-ink-5)]"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-[var(--periplus-ink)]">
+              <h3 className="text-sm font-semibold text-ink">
                 {suggestion.title}
               </h3>
-              <p className="mt-1 text-xs leading-5 text-[var(--periplus-walnut)]">
+              <p className="mt-1 text-xs leading-5 text-walnut">
                 {suggestion.summary}
               </p>
-              <p className="mt-1 text-[11px] font-bold text-[var(--periplus-teak)]">
+              <p className="mt-1 text-[11px] font-bold text-teak">
                 {suggestion.toolCallCount} 项变更
               </p>
             </div>
@@ -66,7 +66,7 @@ export default function ChatHistory() {
                   suggestionId: suggestion.id,
                 })
               }
-              className="rounded-full border border-[rgb(44_36_22_/_14%)] px-3 py-1.5 text-xs font-bold text-[var(--periplus-teak)] transition hover:border-[var(--periplus-walnut)] hover:text-[var(--periplus-ink)] disabled:cursor-not-allowed disabled:opacity-55"
+              className="rounded-full border border-ink-15 px-3 py-1.5 text-xs font-bold text-teak transition hover:border-walnut hover:text-ink disabled:cursor-not-allowed disabled:opacity-55"
             >
               拒绝
             </button>
@@ -78,7 +78,7 @@ export default function ChatHistory() {
                   suggestionId: suggestion.id,
                 })
               }
-              className="rounded-full bg-[var(--periplus-russet)] px-3 py-1.5 text-xs font-bold text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)] disabled:cursor-not-allowed disabled:opacity-55"
+              className="rounded-full bg-russet px-3 py-1.5 text-xs font-bold text-soft-white transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-55"
             >
               接受
             </button>

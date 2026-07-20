@@ -91,13 +91,13 @@ export default function PhotoUploader() {
       />
       {isSelectingPhotoLocation ? (
         <div className="space-y-2">
-          <p className="text-xs font-bold text-[var(--periplus-russet)]">
+          <p className="text-xs font-bold text-russet">
             照片没有 GPS 信息，请在地图上点击选择位置
           </p>
           <button
             type="button"
             onClick={handleCancelSelection}
-            className="h-9 w-full rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] px-4 text-xs font-black text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)]"
+            className="h-9 w-full rounded-full border border-ink-15 bg-cream px-4 text-xs font-bold text-walnut transition hover:border-russet"
           >
             取消选点
           </button>
@@ -107,13 +107,13 @@ export default function PhotoUploader() {
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={isUploading}
-          className="h-9 w-full rounded-full bg-[var(--periplus-russet)] px-4 text-xs font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-ink)]"
+          className="h-9 w-full rounded-full bg-russet px-4 text-xs font-bold text-soft-white transition hover:bg-ink"
         >
           {isUploading ? "上传中..." : "添加照片素材"}
         </button>
       )}
       {validationError && (
-        <p className="text-xs leading-5 font-bold text-[var(--periplus-coral)]">
+        <p className="text-xs leading-5 font-bold text-coral">
           {validationError}
         </p>
       )}

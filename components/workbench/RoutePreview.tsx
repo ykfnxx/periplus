@@ -66,14 +66,14 @@ function NodeCard({
     <button
       type="button"
       onClick={onSelect}
-      className="w-full rounded-lg border border-[rgb(44_36_22_/_12%)] bg-[var(--periplus-white)] p-3 text-left shadow-[0_8px_18px_rgb(44_36_22_/_5%)] transition hover:border-[var(--periplus-russet)]"
+      className="w-full rounded-lg border border-ink-10 bg-white p-3 text-left shadow-[0_8px_18px_var(--color-ink-5)] transition hover:border-russet"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold text-[var(--periplus-ink)]">
+          <h3 className="truncate text-base font-semibold text-ink">
             {index + 1}. {node.name}
           </h3>
-          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-bold text-[var(--periplus-teak)]">
+          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-bold text-teak">
             <span>{categoryLabels[node.category] ?? node.category}</span>
             {duration && <span>{duration}</span>}
             {subPlanCount !== undefined && (
@@ -84,13 +84,13 @@ function NodeCard({
           </div>
         </div>
         {relatedStatuses.length > 0 && (
-          <span className="shrink-0 rounded-full bg-[rgb(44_36_22_/_7%)] px-2 py-1 text-[11px] font-bold text-[var(--periplus-walnut)]">
+          <span className="shrink-0 rounded-full bg-ink-5 px-2 py-1 text-[11px] font-bold text-walnut">
             {relatedStatuses.includes("待补全") ? "待补全" : "已规划"}
           </span>
         )}
       </div>
       {node.notes && (
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--periplus-walnut)]">
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-walnut">
           {node.notes}
         </p>
       )}
@@ -116,13 +116,13 @@ function EdgeSummary({
     <button
       type="button"
       onClick={onSelect}
-      className="ml-4 flex w-[calc(100%-1rem)] items-center gap-2 py-3 text-left text-xs font-bold text-[var(--periplus-teak)] transition hover:text-[var(--periplus-ink)]"
+      className="ml-4 flex w-[calc(100%-1rem)] items-center gap-2 py-3 text-left text-xs font-bold text-teak transition hover:text-ink"
     >
       <span
         className={`h-px flex-1 ${
           edge.status === "INCOMPLETE"
-            ? "border-t border-dashed border-[var(--periplus-coral)]"
-            : "bg-[rgb(44_36_22_/_20%)]"
+            ? "border-t border-dashed border-coral"
+            : "bg-ink-20"
         }`}
       />
       <span>{details.length ? details.join(" · ") : statusLabel(edge.status)}</span>
@@ -130,8 +130,8 @@ function EdgeSummary({
       <span
         className={`h-px flex-1 ${
           edge.status === "INCOMPLETE"
-            ? "border-t border-dashed border-[var(--periplus-coral)]"
-            : "bg-[rgb(44_36_22_/_20%)]"
+            ? "border-t border-dashed border-coral"
+            : "bg-ink-20"
         }`}
       />
     </button>
@@ -181,7 +181,7 @@ export default function RoutePreview() {
 
   if (!currentRoute) {
     return (
-      <div className="flex h-full items-center justify-center px-6 text-center text-sm leading-6 text-[var(--periplus-teak)]">
+      <div className="flex h-full items-center justify-center px-6 text-center text-sm leading-6 text-teak">
         暂无路线预览
       </div>
     )
@@ -190,16 +190,16 @@ export default function RoutePreview() {
   return (
     <div className="space-y-4 px-5 pt-4 pb-5">
       <div>
-        <h2 className="text-lg font-semibold text-[var(--periplus-ink)]">
+        <h2 className="text-lg font-semibold text-ink">
           {view.title}
         </h2>
-        <p className="mt-1 text-xs font-bold text-[var(--periplus-teak)]">
+        <p className="mt-1 text-xs font-bold text-teak">
           {view.level === "overview" ? "顶层路线" : "次级路线"}
         </p>
       </div>
 
       {view.isEmptyCity && (
-        <div className="rounded-lg border border-dashed border-[rgb(44_36_22_/_18%)] bg-[rgb(255_250_243_/_72%)] p-3 text-sm leading-6 text-[var(--periplus-walnut)]">
+        <div className="rounded-lg border border-dashed border-ink-20 bg-soft-white/72 p-3 text-sm leading-6 text-walnut">
           暂无次级规划
         </div>
       )}

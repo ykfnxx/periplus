@@ -7,7 +7,7 @@ import WorkbenchShell from "./WorkbenchShell"
 
 export default function MapWorkspace() {
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[var(--periplus-cream)] text-[var(--periplus-ink)]">
+    <div className="relative h-screen w-screen overflow-hidden bg-cream text-ink">
       <Suspense fallback={null}>
         <MapRouteLoader />
       </Suspense>

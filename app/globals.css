@@ -1,36 +1,47 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: Avenir, "Century Gothic", Futura, system-ui, sans-serif;
-}
+  --font-sans: Avenir, "Century Gothic", Futura, var(--font-noto-sans-sc),
+    "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei",
+    system-ui, sans-serif;
 
-:root {
-  --periplus-cream: #f5e6d3;
-  --periplus-soft-white: #fffaf3;
-  --periplus-white: #fff;
-  --periplus-ink: #2c2416;
-  --periplus-russet: #d97642;
-  --periplus-mustard: #d4a574;
-  --periplus-olive: #4a7c59;
-  --periplus-walnut: #6b5d4f;
-  --periplus-teak: #8b7355;
-  --periplus-bluegray: #7d9ba8;
-  --periplus-coral: #e57a77;
-  --periplus-shadow: 0 18px 42px rgb(44 36 22 / 16%);
-  --periplus-soft-shadow: 0 12px 24px rgb(44 36 22 / 13%);
+  /* 色板与 lib/ui/map-theme.ts 中的 JS 常量一一对应，改色需双改 */
+  --color-cream: #f5e6d3;
+  --color-soft-white: #fffaf3;
+  --color-white: #fff;
+  --color-ink: #2c2416;
+  --color-russet: #d97642;
+  --color-mustard: #d4a574;
+  --color-olive: #4a7c59;
+  --color-walnut: #6b5d4f;
+  --color-teak: #8b7355;
+  --color-bluegray: #7d9ba8;
+  --color-coral: #e57a77;
+
+  /* ink 标准 alpha 档：描边/底色用 5/10/15，更深的蒙层用 20/30/40/70 */
+  --color-ink-5: rgb(44 36 22 / 5%);
+  --color-ink-10: rgb(44 36 22 / 10%);
+  --color-ink-15: rgb(44 36 22 / 15%);
+  --color-ink-20: rgb(44 36 22 / 20%);
+  --color-ink-30: rgb(44 36 22 / 30%);
+  --color-ink-40: rgb(44 36 22 / 40%);
+  --color-ink-70: rgb(44 36 22 / 70%);
+
+  --shadow-periplus: 0 18px 42px var(--color-ink-15);
+  --shadow-periplus-soft: 0 12px 24px var(--color-ink-15);
 }
 
 body {
-  color: var(--periplus-ink);
-  background: var(--periplus-cream);
-  font-family: Avenir, "Century Gothic", Futura, system-ui, sans-serif;
+  color: var(--color-ink);
+  background: var(--color-cream);
+  font-family: var(--font-sans);
 }
 
 .periplus-map-marker {
   align-items: center;
   border-radius: 999px;
   box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
-  color: var(--periplus-white);
+  color: var(--color-white);
   cursor: pointer;
   display: flex;
   font-size: 12px;
@@ -47,13 +58,13 @@ body {
 }
 
 .periplus-map-marker--mustard {
-  color: var(--periplus-ink);
+  color: var(--color-ink);
 }
 
 .periplus-photo-marker {
-  border: 2px solid var(--periplus-white);
+  border: 2px solid var(--color-white);
   border-radius: 999px;
-  box-shadow: 0 12px 24px rgb(44 36 22 / 23%);
+  box-shadow: 0 12px 24px var(--color-ink-20);
   cursor: pointer;
   height: 48px;
   overflow: hidden;
@@ -84,9 +95,9 @@ body {
 
 .periplus-overlap-anchor-icon {
   align-items: center;
-  border: 2px solid var(--periplus-soft-white);
+  border: 2px solid var(--color-soft-white);
   border-radius: 999px;
-  box-shadow: 0 8px 18px rgb(44 36 22 / 22%);
+  box-shadow: 0 8px 18px var(--color-ink-20);
   display: flex;
   font-size: 11px;
   font-weight: 900;
@@ -100,11 +111,11 @@ body {
 }
 
 .periplus-overlap-anchor-icon--route {
-  color: var(--periplus-white);
+  color: var(--color-white);
 }
 
 .periplus-overlap-anchor-icon--photo {
-  background: var(--periplus-teak);
+  background: var(--color-teak);
 }
 
 .periplus-overlap-anchor-icon--1 {
@@ -121,11 +132,11 @@ body {
 
 .periplus-overlap-cluster__count {
   align-items: center;
-  background: var(--periplus-ink);
-  border: 1px solid var(--periplus-soft-white);
+  background: var(--color-ink);
+  border: 1px solid var(--color-soft-white);
   border-radius: 999px;
   bottom: 0;
-  color: var(--periplus-soft-white);
+  color: var(--color-soft-white);
   display: flex;
   font-size: 10px;
   font-weight: 900;
@@ -152,7 +163,7 @@ body {
 }
 
 .periplus-chat-scroll {
-  scrollbar-color: rgb(44 36 22 / 20%) transparent;
+  scrollbar-color: var(--color-ink-20) transparent;
   scrollbar-width: thin;
 }
 
@@ -165,12 +176,12 @@ body {
 }
 
 .periplus-chat-scroll::-webkit-scrollbar-thumb {
-  background: rgb(44 36 22 / 18%);
+  background: var(--color-ink-20);
   border-radius: 999px;
 }
 
 .periplus-chat-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(44 36 22 / 32%);
+  background: var(--color-ink-30);
 }
 
 .scrollbar-hidden {
@@ -229,7 +240,7 @@ body {
 
 .periplus-markdown code {
   border-radius: 6px;
-  background: rgb(44 36 22 / 8%);
+  background: var(--color-ink-10);
   padding: 0.1rem 0.3rem;
   font-size: 0.85em;
 }
@@ -237,7 +248,7 @@ body {
 .periplus-markdown pre {
   overflow: auto;
   border-radius: 8px;
-  background: rgb(44 36 22 / 8%);
+  background: var(--color-ink-10);
   padding: 0.75rem;
 }
 

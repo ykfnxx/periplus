@@ -56,7 +56,7 @@ export default function PresetPromptBubbles() {
           type="button"
           onClick={() => sendPrompt(prompt)}
           disabled={!sendAgentEvent || isDraftLocked}
-          className="shrink-0 rounded-full bg-[rgb(217_118_66_/_10%)] px-3.5 py-2 text-[13px] text-[var(--periplus-russet)] transition hover:bg-[rgb(217_118_66_/_16%)] disabled:cursor-not-allowed disabled:opacity-55"
+          className="shrink-0 rounded-full bg-russet/10 px-3.5 py-2 text-[13px] text-russet transition hover:bg-russet/16 disabled:cursor-not-allowed disabled:opacity-55"
         >
           {prompt}
         </button>

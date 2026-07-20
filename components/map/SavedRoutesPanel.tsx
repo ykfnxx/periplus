@@ -42,13 +42,13 @@ export default function SavedRoutesPanel() {
 
   if (isLoading) {
     return (
-      <div className="text-sm text-[var(--periplus-walnut)]">正在加载...</div>
+      <div className="text-sm text-walnut">正在加载...</div>
     )
   }
 
   if (hasError) {
     return (
-      <div className="text-sm text-[var(--periplus-walnut)]">
+      <div className="text-sm text-walnut">
         保存路线加载失败
       </div>
     )
@@ -56,7 +56,7 @@ export default function SavedRoutesPanel() {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-sm font-black text-[var(--periplus-ink)]">
+      <h2 className="text-sm font-bold text-ink">
         收藏路线
       </h2>
       <div className="space-y-2">
@@ -69,7 +69,7 @@ export default function SavedRoutesPanel() {
             />
           ))
         ) : (
-          <p className="text-sm text-[var(--periplus-walnut)]">暂无收藏路线</p>
+          <p className="text-sm text-walnut">暂无收藏路线</p>
         )}
       </div>
     </div>

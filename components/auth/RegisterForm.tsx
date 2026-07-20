@@ -38,7 +38,7 @@ export default function RegisterForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-black text-[var(--periplus-walnut)]">
+        <label className="text-xs font-semibold text-walnut">
           名称
         </label>
         <input
@@ -47,11 +47,11 @@ export default function RegisterForm() {
           onChange={(event) => setName(event.target.value)}
           required
           autoComplete="name"
-          className="h-11 w-full rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] px-3 text-sm transition outline-none focus:border-[var(--periplus-russet)]"
+          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
         />
       </div>
       <div className="space-y-2">
-        <label className="text-xs font-black text-[var(--periplus-walnut)]">
+        <label className="text-xs font-semibold text-walnut">
           邮箱
         </label>
         <input
@@ -60,11 +60,11 @@ export default function RegisterForm() {
           onChange={(event) => setEmail(event.target.value)}
           required
           autoComplete="email"
-          className="h-11 w-full rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] px-3 text-sm transition outline-none focus:border-[var(--periplus-russet)]"
+          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
         />
       </div>
       <div className="space-y-2">
-        <label className="text-xs font-black text-[var(--periplus-walnut)]">
+        <label className="text-xs font-semibold text-walnut">
           密码
         </label>
         <input
@@ -74,24 +74,24 @@ export default function RegisterForm() {
           required
           minLength={8}
           autoComplete="new-password"
-          className="h-11 w-full rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] px-3 text-sm transition outline-none focus:border-[var(--periplus-russet)]"
+          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
         />
       </div>
       {error && (
-        <p className="text-sm font-bold text-[var(--periplus-coral)]">
+        <p className="text-sm font-bold text-coral">
           {error}
         </p>
       )}
       <button
         type="submit"
         disabled={isSubmitting}
-        className="h-11 w-full rounded-lg bg-[var(--periplus-ink)] px-4 text-sm font-black text-[var(--periplus-soft-white)] transition hover:bg-[var(--periplus-russet)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="h-11 w-full rounded-lg bg-ink px-4 text-sm font-bold text-soft-white transition hover:bg-russet disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isSubmitting ? "注册中..." : "注册"}
       </button>
-      <p className="text-center text-sm font-bold text-[var(--periplus-walnut)]">
+      <p className="text-center text-sm font-bold text-walnut">
         已有账号？{" "}
-        <Link href="/login" className="text-[var(--periplus-russet)]">
+        <Link href="/login" className="text-russet">
           登录
         </Link>
       </p>

@@ -88,7 +88,7 @@ export default function AIComposer() {
     <div className="space-y-1.5">
       <form
         onSubmit={submitPrompt}
-        className="rounded-[20px] border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-white)] px-3 py-2 shadow-[0_8px_18px_rgb(44_36_22_/_8%)]"
+        className="rounded-2xl border border-ink-15 bg-white px-3 py-2 shadow-[0_8px_18px_var(--color-ink-10)]"
       >
         <div className="flex items-end gap-2">
           <textarea
@@ -99,7 +99,7 @@ export default function AIComposer() {
             aria-label="AI 输入"
             placeholder="告诉我你想怎么改路线..."
             disabled={isDraftLocked}
-            className="periplus-textarea-hidden-scroll max-h-24 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm leading-5 text-[var(--periplus-ink)] outline-none placeholder:text-[var(--periplus-teak)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="periplus-textarea-hidden-scroll max-h-24 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
           {!isDraftLocked && (
             <button
@@ -110,7 +110,7 @@ export default function AIComposer() {
               disabled={
                 !currentRoute || !sendAgentEvent || draftSaveState === "saving"
               }
-              className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-cream)] text-[var(--periplus-walnut)] transition hover:border-[var(--periplus-russet)] hover:text-[var(--periplus-russet)] disabled:cursor-default disabled:opacity-45"
+              className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-ink-15 bg-cream text-walnut transition hover:border-russet hover:text-russet disabled:cursor-default disabled:opacity-45"
             >
               <Save className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -123,10 +123,10 @@ export default function AIComposer() {
             disabled={
               !isDraftLocked && (!composerInput.trim() || !sendAgentEvent)
             }
-            className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--periplus-soft-white)] transition disabled:cursor-default disabled:opacity-55 ${
+            className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-soft-white transition disabled:cursor-default disabled:opacity-55 ${
               isDraftLocked
-                ? "bg-[var(--periplus-ink)] hover:bg-[var(--periplus-russet)]"
-                : "bg-[var(--periplus-russet)] hover:bg-[var(--periplus-ink)] disabled:bg-[var(--periplus-mustard)] disabled:text-[var(--periplus-ink)]"
+                ? "bg-ink hover:bg-russet"
+                : "bg-russet hover:bg-ink disabled:bg-mustard disabled:text-ink"
             }`}
           >
             {isDraftLocked ? (
@@ -140,10 +140,10 @@ export default function AIComposer() {
           <AgentModeToggle />
         </div>
       </form>
-      <div className="flex items-center justify-end px-2 text-[11px] font-bold text-[var(--periplus-teak)]">
+      <div className="flex items-center justify-end px-2 text-[11px] font-bold text-teak">
         {draftSaveState === "success" && <span>保存成功</span>}
         {draftSaveState === "error" && (
-          <span className="text-[var(--periplus-coral)]">保存失败</span>
+          <span className="text-coral">保存失败</span>
         )}
       </div>
     </div>

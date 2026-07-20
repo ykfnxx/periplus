@@ -57,10 +57,10 @@ export default function MapCornerControls() {
               }}
               aria-label={control.label}
               title={control.label}
-              className={`flex h-9 w-9 items-center justify-center rounded-lg border border-[rgb(44_36_22_/_12%)] transition ${
+              className={`flex h-9 w-9 items-center justify-center rounded-lg border border-ink-10 transition ${
                 isActive
-                  ? "bg-[var(--periplus-soft-white)] text-[var(--periplus-ink)] shadow-[var(--periplus-soft-shadow)]"
-                  : "bg-[rgb(255_250_243_/_60%)] text-[var(--periplus-teak)] hover:bg-[rgb(255_250_243_/_95%)] hover:text-[var(--periplus-ink)] hover:shadow-[var(--periplus-soft-shadow)]"
+                  ? "bg-soft-white text-ink shadow-periplus-soft"
+                  : "bg-soft-white/60 text-teak hover:bg-soft-white/95 hover:text-ink hover:shadow-periplus-soft"
               }`}
             >
               <Icon aria-hidden="true" className="h-4.5 w-4.5" />
@@ -71,7 +71,7 @@ export default function MapCornerControls() {
       {activeMapPanel !== "none" && (
         <div
           onClick={(event) => event.stopPropagation()}
-          className="pointer-events-auto absolute top-5 right-16 max-h-[calc(100vh-40px)] w-[min(300px,calc(100vw-96px))] overflow-auto rounded-[12px] border border-[rgb(44_36_22_/_14%)] bg-[var(--periplus-soft-white)] p-3 shadow-[var(--periplus-shadow)]"
+          className="pointer-events-auto absolute top-5 right-16 max-h-[calc(100vh-40px)] w-[min(300px,calc(100vw-96px))] overflow-auto rounded-xl border border-ink-15 bg-soft-white p-3 shadow-periplus"
         >
           {activeMapPanel === "photo" && <PhotoUploadPanel />}
           {activeMapPanel === "saved" && <SavedRoutesPanel />}

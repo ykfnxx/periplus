@@ -41,6 +41,7 @@
 ### 2.2 其他规范
 
 - 遵循现有代码风格（TypeScript 严格模式、Tailwind CSS、shadcn/ui 组件）
+- 颜色/阴影一律使用 `app/globals.css` `@theme` 中注册的 token 类（如 `bg-ink`、`text-russet`、`border-ink-10`、`shadow-periplus`），禁止再写 `var(--periplus-*)` 或 `rgb(44_36_22_/N%)` 形式的 arbitrary value；地图 SDK 相关的 JS 色值常量在 `lib/ui/map-theme.ts`，与 CSS token 双改
 - 每个文件一个明确职责，保持小而聚焦
 - 使用 Zustand 进行客户端状态管理
 - 地图相关操作通过 `lib/amap.ts` 统一加载 AMap SDK

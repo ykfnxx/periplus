@@ -93,7 +93,7 @@ export default function PhotoInfoWindow() {
       className="absolute z-50 -translate-x-1/2 -translate-y-full"
       style={{ pointerEvents: "auto" }}
     >
-      <div className="relative h-[120px] w-[120px] rounded-xl border border-[rgb(44_36_22_/_10%)] bg-[var(--periplus-soft-white)] p-1 shadow-[0_4px_16px_rgb(44_36_22_/_12%)]">
+      <div className="relative h-[120px] w-[120px] rounded-xl border border-ink-10 bg-soft-white p-1 shadow-[0_4px_16px_var(--color-ink-10)]">
         <img
           src={selectedPhotoShare.imageDataUrl}
           alt="照片"
@@ -106,14 +106,14 @@ export default function PhotoInfoWindow() {
             onClick={handleDelete}
             aria-label="删除照片"
             title="删除"
-            className="absolute right-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full bg-[rgb(44_36_22_/_40%)] text-[var(--periplus-soft-white)] transition hover:bg-[rgb(229_122_119_/_90%)]"
+            className="absolute right-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full bg-ink-40 text-soft-white transition hover:bg-coral/90"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
           </button>
         )}
       </div>
-      <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-t-4 border-r-4 border-l-4 border-t-[var(--periplus-soft-white)] border-r-transparent border-l-transparent" />
-      <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-full border border-[rgb(44_36_22_/_8%)] bg-[rgb(255_250_243_/_95%)] px-2 py-0.5 text-[11px] whitespace-nowrap text-[var(--periplus-teak)]">
+      <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-t-4 border-r-4 border-l-4 border-t-soft-white border-r-transparent border-l-transparent" />
+      <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 rounded-full border border-ink-10 bg-soft-white/95 px-2 py-0.5 text-[11px] whitespace-nowrap text-teak">
         {formatUploadDate(selectedPhotoShare.createdAt)}
       </div>
     </div>

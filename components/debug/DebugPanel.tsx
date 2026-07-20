@@ -87,13 +87,13 @@ export default function DebugPanel() {
   return (
     <div className="w-full max-w-md space-y-4">
       <div>
-        <label className="mb-2 block text-sm font-medium">
+        <label className="mb-2 block text-sm font-medium text-walnut">
           输入 JSON 坐标数组：
         </label>
         <textarea
           value={jsonInput}
           onChange={(e) => setJsonInput(e.target.value)}
-          className="h-48 w-full resize-none rounded-lg border px-3 py-2 font-mono text-sm"
+          className="h-48 w-full resize-none rounded-lg border border-ink-15 bg-soft-white px-3 py-2 font-mono text-sm text-ink"
           placeholder='[{"name":"A","lat":x,"lng":y}, ...]'
         />
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
@@ -101,13 +101,13 @@ export default function DebugPanel() {
       <div className="flex gap-3">
         <button
           onClick={handleDraw}
-          className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+          className="flex-1 rounded-lg bg-russet px-4 py-2 text-soft-white hover:bg-ink"
         >
           绘制轨迹
         </button>
         <button
           onClick={handleClear}
-          className="flex-1 rounded-lg bg-slate-100 px-4 py-2 hover:bg-slate-200"
+          className="flex-1 rounded-lg bg-cream px-4 py-2 text-ink hover:bg-ink-10"
         >
           清空
         </button>

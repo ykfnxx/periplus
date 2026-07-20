@@ -57,25 +57,25 @@ export default function LocationInfoBubble() {
       className="absolute z-50 w-[200px] -translate-x-1/2 -translate-y-full"
       style={{ pointerEvents: "auto" }}
     >
-      <div className="relative rounded-[12px] border border-[rgb(44_36_22_/_12%)] bg-[var(--periplus-soft-white)] p-3 text-[var(--periplus-ink)] shadow-[var(--periplus-shadow)]">
+      <div className="relative rounded-xl border border-ink-10 bg-soft-white p-3 text-ink shadow-periplus">
         <h3 className="text-base leading-5 font-semibold">
           {selectedLocationPoint.name}
         </h3>
-        <p className="mt-1 text-xs font-bold text-[var(--periplus-teak)]">
+        <p className="mt-1 text-xs font-bold text-teak">
           {selectedLocationPoint.lat.toFixed(4)},{" "}
           {selectedLocationPoint.lng.toFixed(4)}
         </p>
         {selectedLocationPoint.notes && (
-          <p className="mt-2 text-[13px] leading-5 text-[var(--periplus-walnut)]">
+          <p className="mt-2 text-[13px] leading-5 text-walnut">
             {selectedLocationPoint.notes}
           </p>
         )}
         {selectedLocationPoint.durationMinutes !== undefined && (
-          <p className="mt-3 border-t border-[rgb(44_36_22_/_12%)] pt-2 text-xs font-bold text-[var(--periplus-teak)]">
+          <p className="mt-3 border-t border-ink-10 pt-2 text-xs font-bold text-teak">
             停留 {Math.round(selectedLocationPoint.durationMinutes / 60)} 小时
           </p>
         )}
-        <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-x-8 border-t-8 border-x-transparent border-t-[var(--periplus-soft-white)]" />
+        <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-x-8 border-t-8 border-x-transparent border-t-soft-white" />
       </div>
     </div>
   )
