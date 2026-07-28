@@ -23,6 +23,15 @@ const transportModeSchema = z.enum([
   "RENTAL",
 ])
 
+const requestModeSchema = z.enum(["DRIVE", "WALK", "TRANSIT"])
+const routePreferenceSchema = z.enum([
+  "RECOMMENDED",
+  "FASTEST",
+  "LOW_COST",
+  "FEWER_TRANSFERS",
+  "LESS_WALKING",
+])
+
 const nodeCreateSchema = z.object({
   id: z.string().min(1).optional(),
   name: z.string().min(1),
@@ -65,6 +74,9 @@ const edgeCreateSchema = z
     distanceKm: z.number().nonnegative().optional(),
     costEstimate: z.number().nonnegative().optional(),
     notes: z.string().optional(),
+    requestMode: requestModeSchema.optional(),
+    departAt: z.string().datetime({ offset: true }).optional(),
+    preference: routePreferenceSchema.optional(),
   })
   .refine(
     (value) => value.status !== "PLANNED" || Boolean(value.transportMode),
@@ -79,6 +91,10 @@ const edgePatchSchema = z
     distanceKm: z.number().nonnegative().nullable().optional(),
     costEstimate: z.number().nonnegative().nullable().optional(),
     notes: z.string().nullable().optional(),
+    requestMode: requestModeSchema.nullable().optional(),
+    departAt: z.string().datetime({ offset: true }).nullable().optional(),
+    preference: routePreferenceSchema.nullable().optional(),
+    selectedPlanId: z.string().min(1).nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one patch field is required",
@@ -154,6 +170,15 @@ export const updateEdgeInputSchema = z
       (Boolean(value.fromNodeId) && Boolean(value.toNodeId)),
     { message: "edgeId or fromNodeId/toNodeId is required" }
   )
+
+export const planEdgeInputSchema = z.object({
+  edgeId: z.string().min(1),
+  routeNodeId: z.string().min(1).optional(),
+})
+
+export const selectRoutePlanInputSchema = planEdgeInputSchema.extend({
+  planId: z.string().min(1),
+})
 
 export const subPlanCreateInputSchema = z.object({
   routeNodeId: z.string().min(1),

@@ -1,10 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { ZodError } from "zod"
 import { periplusServerConfig } from "@/config/periplus.server"
-import { DraftInputError, DraftStore } from "./draft-store"
+import {
+  DraftInputError,
+  DraftSessionService,
+} from "@/modules/workspace/server/draft-session-service"
+import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { ensureSessionId } from "./session"
-import type { AuthContext } from "@/lib/auth-context"
-import type { AgentEventEmitter, DraftToolName } from "./types"
+import type { AuthContext } from "@/modules/auth/server/context"
+import type { DraftToolName } from "@/modules/workspace/server/contracts"
+import type { AgentEventEmitter } from "./types"
 
 type JsonBody = Record<string, unknown>
 
@@ -61,7 +66,8 @@ function parseAuthContext(body: JsonBody): AuthContext {
 export async function handleInternalRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  store: DraftStore,
+  drafts: DraftSessionService,
+  commands: WorkspaceCommandService,
   broadcast: AgentEventEmitter
 ) {
   applyCors(req, res)
@@ -78,8 +84,8 @@ export async function handleInternalRequest(
     const sessionId = ensureSessionId(req, res)
     sendJson(res, 200, {
       sessionId,
-      draft: store.getSnapshot(sessionId),
-      messages: store.getConversationMessages(sessionId),
+      draft: drafts.getSnapshot(sessionId),
+      messages: drafts.getConversationMessages(sessionId),
     })
     return
   }
@@ -92,11 +98,11 @@ export async function handleInternalRequest(
         typeof body.sessionId === "string" && body.sessionId
           ? body.sessionId
           : ensureSessionId(req, res)
-      store.bindSessionContext(sessionId, context)
+      drafts.bindSessionContext(sessionId, context)
       sendJson(res, 200, {
         sessionId,
-        draft: store.getSnapshot(sessionId),
-        messages: store.getConversationMessages(sessionId),
+        draft: drafts.getSnapshot(sessionId),
+        messages: drafts.getConversationMessages(sessionId),
       })
     } catch (error) {
       sendJson(res, 400, errorBody(error))
@@ -108,7 +114,7 @@ export async function handleInternalRequest(
     try {
       const body = await readJson(req)
       const sessionId = String(body.sessionId)
-      const result = await store.callTool(
+      const result = await commands.executeDraftTool(
         sessionId,
         body.tool as DraftToolName,
         (body.input as Record<string, unknown> | undefined) ?? {}

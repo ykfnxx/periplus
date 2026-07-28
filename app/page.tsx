@@ -1,10 +1,10 @@
-import MapWorkspace from "@/components/workbench/MapWorkspace"
-import LandingGate from "@/components/auth/LandingGate"
-import { getCurrentUser } from "@/lib/auth-context"
+import { redirect } from "next/navigation"
+import LandingGate from "@/modules/auth/ui/LandingGate"
+import { getCurrentUser } from "@/modules/auth/server/context"
 
 export default async function HomePage() {
   const currentUser = await getCurrentUser()
-  if (!currentUser) return <LandingGate />
+  if (currentUser) redirect("/workspace")
 
-  return <MapWorkspace />
+  return <LandingGate />
 }

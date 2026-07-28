@@ -36,6 +36,7 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 docs/superpowers/
+.superpowers/
 .worktrees/
 uploads/
 public/uploads/

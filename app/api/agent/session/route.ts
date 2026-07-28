@@ -1,7 +1,10 @@
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { periplusServerConfig } from "@/config/periplus.server"
-import { AuthRequiredError, requireCurrentUser } from "@/lib/auth-context"
+import {
+  AuthRequiredError,
+  requireCurrentUser,
+} from "@/modules/auth/server/context"
 
 const agentSessionCookie = "periplus_agent_session"
 const agentBackendUrl = periplusServerConfig.agentBackend.url
@@ -12,16 +15,29 @@ export async function GET() {
     const cookieStore = await cookies()
     const existingSessionId = cookieStore.get(agentSessionCookie)?.value
 
-    const backendResponse = await fetch(`${agentBackendUrl}/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: existingSessionId,
-        userId: context.userId,
-        role: context.role,
-      }),
-      cache: "no-store",
-    })
+    let backendResponse: Response
+    try {
+      backendResponse = await fetch(`${agentBackendUrl}/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: existingSessionId,
+          userId: context.userId,
+          role: context.role,
+        }),
+        cache: "no-store",
+      })
+    } catch {
+      return NextResponse.json(
+        {
+          error: {
+            code: "agent_unavailable",
+            message: "Agent backend is unavailable",
+          },
+        },
+        { status: 503 }
+      )
+    }
 
     const body = await backendResponse.json()
     if (!backendResponse.ok) {

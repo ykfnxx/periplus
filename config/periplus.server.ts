@@ -41,10 +41,16 @@ export const periplusServerConfig = {
   },
   amap: {
     get webServiceKey() {
-      return (
-        envString("PERIPLUS_AMAP_WEB_SERVICE_KEY") ||
-        envString("NEXT_PUBLIC_AMAP_KEY")
-      )
+      // JS API 与 Web 服务使用不同类型的 Key，不能互相回退。
+      return envString("PERIPLUS_AMAP_WEB_SERVICE_KEY")
+    },
+  },
+  routePlanning: {
+    get retention() {
+      return envString("PERIPLUS_ROUTE_PLAN_RETENTION", "SESSION_ONLY") ===
+        "PERSISTED"
+        ? ("PERSISTED" as const)
+        : ("SESSION_ONLY" as const)
     },
   },
   agentBackend: {

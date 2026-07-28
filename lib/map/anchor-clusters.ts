@@ -1,4 +1,4 @@
-import type { AnchorType } from "@/stores/mapStore"
+import type { AnchorType } from "@/modules/workspace/state/types"
 
 export interface AnchorRouteNode {
   id: string

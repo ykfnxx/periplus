@@ -23,6 +23,20 @@ enum TransportMode {
   RENTAL
 }
 
+enum RouteRequestMode {
+  DRIVE
+  WALK
+  TRANSIT
+}
+
+enum RoutePreference {
+  RECOMMENDED
+  FASTEST
+  LOW_COST
+  FEWER_TRANSFERS
+  LESS_WALKING
+}
+
 enum NodeCategory {
   CITY
   PLACE
@@ -58,6 +72,8 @@ model Route {
   id          String      @id @default(uuid())
   ownerId     String
   owner       User        @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  version     Int         @default(1)
+  visibility  String      @default("private")
   name        String
   description String?
   createdAt   DateTime    @default(now())
@@ -94,19 +110,26 @@ model RouteNode {
 }
 
 model RouteEdge {
-  id              String         @id @default(uuid())
+  id              String            @id @default(uuid())
   routeId         String
-  route           Route          @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  fromNodeId      String         @unique
-  fromNode        RouteNode      @relation("RouteEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
-  toNodeId        String         @unique
-  toNode          RouteNode      @relation("RouteEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+  route           Route             @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  fromNodeId      String            @unique
+  fromNode        RouteNode         @relation("RouteEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNodeId        String            @unique
+  toNode          RouteNode         @relation("RouteEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
   status          EdgeStatus
   transportMode   TransportMode?
   durationMinutes Int?
   distanceKm      Float?
   costEstimate    Float?
   notes           String?
+  requestMode     RouteRequestMode?
+  departAt        DateTime?
+  preference      RoutePreference?
+  selectedPlanId  String?
+  planningStatus  String?
+  planningWarning String?
+  plans           RoutePlan[]       @relation("RouteEdgePlans")
 
   @@index([routeId])
 }
@@ -144,21 +167,77 @@ model SubPlanNode {
 }
 
 model SubPlanEdge {
-  id              String         @id @default(uuid())
+  id              String            @id @default(uuid())
   subPlanId       String
-  subPlan         SubPlan        @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
-  fromNodeId      String         @unique
-  fromNode        SubPlanNode    @relation("SubPlanEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
-  toNodeId        String         @unique
-  toNode          SubPlanNode    @relation("SubPlanEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+  subPlan         SubPlan           @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
+  fromNodeId      String            @unique
+  fromNode        SubPlanNode       @relation("SubPlanEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNodeId        String            @unique
+  toNode          SubPlanNode       @relation("SubPlanEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
   status          EdgeStatus
   transportMode   TransportMode?
   durationMinutes Int?
   distanceKm      Float?
   costEstimate    Float?
   notes           String?
+  requestMode     RouteRequestMode?
+  departAt        DateTime?
+  preference      RoutePreference?
+  selectedPlanId  String?
+  planningStatus  String?
+  planningWarning String?
+  plans           RoutePlan[]       @relation("SubPlanEdgePlans")
 
   @@index([subPlanId])
+}
+
+model RoutePlan {
+  id                 String         @id
+  routeEdgeId        String?
+  routeEdge          RouteEdge?     @relation("RouteEdgePlans", fields: [routeEdgeId], references: [id], onDelete: Cascade)
+  subPlanEdgeId      String?
+  subPlanEdge        SubPlanEdge?   @relation("SubPlanEdgePlans", fields: [subPlanEdgeId], references: [id], onDelete: Cascade)
+  provider           String
+  rank               Int
+  label              String
+  strategy           String
+  distanceMeters     Float
+  durationSeconds    Int
+  fareAmount         Float?
+  trafficBasis       String
+  calculatedAt       DateTime
+  validUntil         DateTime?
+  requestFingerprint String
+  segments           RouteSegment[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([routeEdgeId])
+  @@index([subPlanEdgeId])
+  @@index([requestFingerprint])
+}
+
+model RouteSegment {
+  id                  String    @id
+  routePlanId         String
+  routePlan           RoutePlan @relation(fields: [routePlanId], references: [id], onDelete: Cascade)
+  order               Int
+  mode                String
+  fromName            String?
+  toName              String?
+  lineName            String?
+  distanceMeters      Float?
+  durationSeconds     Int?
+  fareAmount          Float?
+  departAt            DateTime?
+  arriveAt            DateTime?
+  coordinateSystem    String
+  geometryKind        String
+  positionsJson       String
+  trafficSectionsJson String?
+
+  @@unique([routePlanId, order])
+  @@index([routePlanId])
 }
 
 model User {
@@ -386,4 +465,12 @@ model ProviderUsageLog {
 
   @@index([provider, purpose])
   @@index([createdAt])
+}
+
+model EdgeGeometryCache {
+  key       String   @id
+  source    String
+  positions String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

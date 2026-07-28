@@ -1,4 +1,10 @@
-import type { PathEdge, PathNode, Route, RouteNode, SubPlan } from "@/types/route"
+import type {
+  PathEdge,
+  PathNode,
+  RouteDocument,
+  RouteNode,
+  SubPlan,
+} from "@/types/route"
 
 export type RouteViewLevel = "overview" | "city"
 
@@ -12,12 +18,15 @@ export interface ActivePathView {
   isEmptyCity: boolean
 }
 
-export function findRouteSubPlan(route: Route, routeNodeId: string) {
-  return route.subPlans.find((subPlan) => subPlan.routeNodeId === routeNodeId) ?? null
+export function findRouteSubPlan(route: RouteDocument, routeNodeId: string) {
+  return (
+    route.subPlans.find((subPlan) => subPlan.routeNodeId === routeNodeId) ??
+    null
+  )
 }
 
 export function getActivePathView(
-  route: Route | null,
+  route: RouteDocument | null,
   level: RouteViewLevel,
   activeRouteNodeId: string | null
 ): ActivePathView {

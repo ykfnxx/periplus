@@ -130,6 +130,34 @@ export interface PlaceResolveInput {
   requireExact?: boolean
 }
 
+export interface PlaceResolveForRouteInput extends PlaceResolveInput {
+  nodeId: string
+  routeNodeId?: string
+}
+
+export type PlaceResolveForRouteResult =
+  | {
+      status: "ready"
+      place: PlaceSearchResult
+      linkToolCall: {
+        tool: "route.link_place_to_node"
+        input: {
+          nodeId: string
+          routeNodeId?: string
+          place: {
+            placeId?: string
+            name: string
+            category: string
+            address?: string
+            providerPlaceId?: string
+            coordinate: PlaceCoordinate
+          }
+        }
+      }
+      warnings: ProviderWarning[]
+    }
+  | Exclude<PlaceResolveResult, { status: "resolved" }>
+
 export type PlaceResolveResult =
   | {
       status: "resolved"
@@ -156,6 +184,18 @@ export interface PlaceEnrichInput {
   fields: Array<
     "coordinates" | "aliases" | "description" | "provider_match" | "categories"
   >
+}
+
+export interface PlaceEnrichResult extends PlaceSearchResponse {
+  placeId?: string
+  matchStatus: "AUTO_APPROVED" | "PENDING_REVIEW" | "NO_MATCH"
+  reviewCandidateId?: string
+  reason: string
+}
+
+export interface PlaceEnrichmentTarget {
+  placeId: string
+  name: string
 }
 
 export interface PlaceCandidate {

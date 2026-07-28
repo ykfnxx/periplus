@@ -3,6 +3,8 @@ import type { Route } from "@/types/route"
 export const silkRoadRoute: Route = {
   id: "preset-silk-road",
   ownerId: "preset",
+  version: 1,
+  visibility: "private",
   name: "丝绸之路",
   description: "从长安出发，经河西走廊至西域的经典路线",
   createdAt: new Date().toISOString(),

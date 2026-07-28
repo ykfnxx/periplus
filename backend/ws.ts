@@ -1,7 +1,11 @@
 import type { Server } from "node:http"
 import { WebSocket, WebSocketServer } from "ws"
-import { AgentRunner } from "./agent-runner"
-import { DraftInputError, DraftStore } from "./draft-store"
+import { AgentGateway } from "./agent/gateway"
+import {
+  DraftInputError,
+  DraftSessionService,
+} from "@/modules/workspace/server/draft-session-service"
+import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { getSessionId } from "./session"
 import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
 
@@ -25,8 +29,9 @@ function errorEvent(error: unknown): AgentEvent {
 
 export function createAgentWebSocketServer(
   server: Server,
-  store: DraftStore,
-  agentRunner: AgentRunner
+  drafts: DraftSessionService,
+  commands: WorkspaceCommandService,
+  agentGateway: AgentGateway
 ) {
   const wss = new WebSocketServer({ noServer: true })
   const socketsBySession = new Map<string, Set<WebSocket>>()
@@ -56,7 +61,7 @@ export function createAgentWebSocketServer(
       socket.close()
       return
     }
-    const context = store.getSessionContext(sessionId)
+    const context = drafts.getSessionContext(sessionId)
     if (!context) {
       send(socket, {
         type: "error",
@@ -72,7 +77,7 @@ export function createAgentWebSocketServer(
     socketsBySession.set(sessionId, sessionSockets)
     send(socket, {
       type: "session.ready",
-      payload: store.getSnapshot(sessionId),
+      payload: drafts.getSnapshot(sessionId),
     })
 
     socket.on("message", async (rawMessage) => {
@@ -83,12 +88,12 @@ export function createAgentWebSocketServer(
         if (message.type === "draft.get") {
           send(socket, {
             type: "draft.updated",
-            payload: store.getSnapshot(sessionId),
+            payload: drafts.getSnapshot(sessionId),
           })
           return
         }
         if (message.type === "draft.load_saved_route") {
-          const snapshot = await store.loadSavedRoute(
+          const snapshot = await commands.loadSavedRoute(
             context,
             sessionId,
             String(payload.routeId)
@@ -97,17 +102,20 @@ export function createAgentWebSocketServer(
           return
         }
         if (message.type === "draft.replace") {
-          const snapshot = store.replaceDraft(sessionId, payload.route as never)
+          const snapshot = commands.replaceDraft(
+            sessionId,
+            payload.route as never
+          )
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return
         }
         if (message.type === "draft.reset") {
-          const snapshot = store.replaceDraft(sessionId, null)
+          const snapshot = commands.resetDraft(sessionId)
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return
         }
         if (message.type === "draft.save") {
-          const snapshot = await store.saveDraft(context, sessionId)
+          const snapshot = await commands.saveDraft(context, sessionId)
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           broadcast(sessionId, { type: "draft.saved", payload: snapshot })
           return
@@ -115,7 +123,7 @@ export function createAgentWebSocketServer(
         if (message.type === "agent.run.start") {
           const mode: AgentMode =
             payload.mode === "suggest" ? "suggest" : "auto"
-          await agentRunner.start(
+          await agentGateway.start(
             sessionId,
             String(payload.prompt),
             mode,
@@ -124,25 +132,31 @@ export function createAgentWebSocketServer(
           return
         }
         if (message.type === "agent.run.cancel") {
-          agentRunner.cancel(sessionId)
+          agentGateway.cancel(sessionId)
           return
         }
         if (message.type === "agent.diff.accept") {
-          const snapshot = await store.acceptSuggestion(
+          const snapshot = await commands.acceptSuggestion(
             sessionId,
             String(payload.suggestionId)
           )
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          broadcast(sessionId, { type: "agent.diff.accepted", payload: snapshot })
+          broadcast(sessionId, {
+            type: "agent.diff.accepted",
+            payload: snapshot,
+          })
           return
         }
         if (message.type === "agent.diff.reject") {
-          const snapshot = store.rejectSuggestion(
+          const snapshot = commands.rejectSuggestion(
             sessionId,
             String(payload.suggestionId)
           )
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          broadcast(sessionId, { type: "agent.diff.rejected", payload: snapshot })
+          broadcast(sessionId, {
+            type: "agent.diff.rejected",
+            payload: snapshot,
+          })
         }
       } catch (error) {
         send(socket, errorEvent(error))

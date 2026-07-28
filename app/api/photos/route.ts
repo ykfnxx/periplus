@@ -2,8 +2,15 @@ import { randomUUID } from "node:crypto"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { NextRequest, NextResponse } from "next/server"
-import { AuthRequiredError, requireCurrentUser } from "@/lib/auth-context"
-import { createPhoto, listPhotos, PhotoInputError } from "@/lib/photos/service"
+import {
+  AuthRequiredError,
+  requireCurrentUser,
+} from "@/modules/auth/server/context"
+import {
+  createPhoto,
+  listPhotos,
+  PhotoInputError,
+} from "@/modules/data/photos/photo-repository"
 
 const maxPhotoSize = 5 * 1024 * 1024
 const uploadRoot = path.join(process.cwd(), "public", "uploads", "photos")

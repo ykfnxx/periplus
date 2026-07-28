@@ -1,12 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ZodError, type z, type ZodObject, type ZodRawShape } from "zod"
-import { createPlaceIntelligenceService } from "@/lib/places/search-service"
+import { createPlaceIntelligenceService } from "@/modules/data/places/place-service"
 import { mcpErrorResult, mcpJsonResult } from "../errors"
 import {
   eventSearchInputSchema,
   placeEnrichInputSchema,
   placeResolveInputSchema,
+  placeResolveForRouteInputSchema,
   placeSearchInputSchema,
 } from "../schemas/place"
 
@@ -76,6 +77,16 @@ export function registerPlaceTools(server: McpServer): void {
     "Search the Periplus place catalog with optional live map-provider fallback.",
     placeSearchInputSchema,
     placeHandler(placeSearchInputSchema, (input) => service.searchPlaces(input))
+  )
+  registerPlaceTool(
+    server,
+    "periplus.place.resolve_for_route",
+    "Resolve place for route",
+    "Resolve a place and return a ready-to-call route.link_place_to_node payload.",
+    placeResolveForRouteInputSchema,
+    placeHandler(placeResolveForRouteInputSchema, (input) =>
+      service.resolvePlaceForRoute(input)
+    )
   )
   registerPlaceTool(
     server,

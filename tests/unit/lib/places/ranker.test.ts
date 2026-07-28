@@ -61,4 +61,60 @@ describe("rankPlaceCandidates", () => {
     expect(result.canAddToRoute).toBe(true)
     expect(result.needsUserConfirmation).toBe(false)
   })
+
+  it("merges a live provider result into the matching catalog place", () => {
+    const query = normalizePlaceSearchInput({
+      query: "故宫博物院",
+      city: "北京",
+      categories: ["SIGHT"],
+    })
+    const catalog: PlaceCandidate = {
+      candidateId: "place-place-mct-palace",
+      placeId: "place-mct-palace",
+      provider: "periplus",
+      name: "故宫博物院",
+      normalizedName: "故宫博物院",
+      aliases: [],
+      category: "SIGHT",
+      province: "北京",
+      city: "北京市",
+      coordinates: [],
+      sources: [{ provider: "mct", providerId: "mct-palace" }],
+      sourceConfidence: 0.95,
+      fromLiveProvider: false,
+    }
+    const live: PlaceCandidate = {
+      candidateId: "amap-B000A8UIN8",
+      provider: "amap",
+      providerId: "B000A8UIN8",
+      name: "故宫博物院",
+      normalizedName: "故宫博物院",
+      aliases: [],
+      category: "SIGHT",
+      province: "北京市",
+      city: "北京市",
+      coordinates: [
+        {
+          provider: "amap",
+          coordinateSystem: "GCJ02",
+          lat: 39.916,
+          lng: 116.397,
+          accuracy: "provider_poi",
+          source: "provider_search",
+        },
+      ],
+      sources: [{ provider: "amap", providerId: "B000A8UIN8" }],
+      sourceConfidence: 0.8,
+      fromLiveProvider: true,
+    }
+
+    const [result] = rankPlaceCandidates(query, [catalog, live])
+
+    expect(result.placeId).toBe("place-mct-palace")
+    expect(result.sources.map((source) => source.provider)).toEqual(
+      expect.arrayContaining(["mct", "amap"])
+    )
+    expect(result.bestCoordinate.coordinateSystem).toBe("GCJ02")
+    expect(result.canAddToRoute).toBe(true)
+  })
 })

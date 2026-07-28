@@ -13,6 +13,95 @@ export const TRANSPORT_MODES = [
 ] as const
 export type TransportMode = (typeof TRANSPORT_MODES)[number]
 
+export const ROUTE_REQUEST_MODES = ["DRIVE", "WALK", "TRANSIT"] as const
+export type RouteRequestMode = (typeof ROUTE_REQUEST_MODES)[number]
+
+export const ROUTE_PREFERENCES = [
+  "RECOMMENDED",
+  "FASTEST",
+  "LOW_COST",
+  "FEWER_TRANSFERS",
+  "LESS_WALKING",
+] as const
+export type RoutePreference = (typeof ROUTE_PREFERENCES)[number]
+
+export const ROUTE_PLANNING_STATUSES = [
+  "EMPTY",
+  "PLANNING",
+  "READY",
+  "STALE",
+  "FAILED",
+] as const
+export type RoutePlanningStatus = (typeof ROUTE_PLANNING_STATUSES)[number]
+
+export const ROUTE_TRAFFIC_BASES = [
+  "REALTIME",
+  "PREDICTED",
+  "TYPICAL",
+  "SCHEDULED",
+] as const
+export type RouteTrafficBasis = (typeof ROUTE_TRAFFIC_BASES)[number]
+
+export const ROUTE_SEGMENT_MODES = [
+  "WALK",
+  "DRIVE",
+  "BUS",
+  "SUBWAY",
+  "RAIL",
+  "TAXI",
+  "FLIGHT",
+] as const
+export type RouteSegmentMode = (typeof ROUTE_SEGMENT_MODES)[number]
+
+export const ROUTE_GEOMETRY_KINDS = [
+  "ROAD_NETWORK",
+  "TRANSIT_LINE",
+  "SCHEMATIC",
+  "NONE",
+] as const
+export type RouteGeometryKind = (typeof ROUTE_GEOMETRY_KINDS)[number]
+
+export type RouteLngLat = [number, number]
+
+export interface RouteTrafficSection {
+  status: "UNKNOWN" | "FREE_FLOW" | "SLOW" | "CONGESTED" | "SEVERE"
+  positions: RouteLngLat[]
+}
+
+export interface RouteSegment {
+  id: string
+  order: number
+  mode: RouteSegmentMode
+  fromName?: string
+  toName?: string
+  lineName?: string
+  distanceMeters?: number
+  durationSeconds?: number
+  fareAmount?: number
+  departAt?: string
+  arriveAt?: string
+  coordinateSystem: "GCJ02"
+  geometryKind: RouteGeometryKind
+  positions: RouteLngLat[]
+  trafficSections?: RouteTrafficSection[]
+}
+
+export interface RoutePlan {
+  id: string
+  provider: "amap" | "mock"
+  rank: number
+  label: string
+  strategy: string
+  distanceMeters: number
+  durationSeconds: number
+  fareAmount?: number
+  trafficBasis: RouteTrafficBasis
+  calculatedAt: string
+  validUntil?: string
+  requestFingerprint: string
+  segments: RouteSegment[]
+}
+
 export const NODE_CATEGORIES = [
   "CITY",
   "PLACE",
@@ -59,6 +148,14 @@ export interface PathEdge {
   distanceKm?: number
   costEstimate?: number
   notes?: string
+  requestMode?: RouteRequestMode
+  departAt?: string
+  preference?: RoutePreference
+  planningStatus?: RoutePlanningStatus
+  planningFingerprint?: string
+  planningWarning?: string
+  selectedPlanId?: string
+  plans?: RoutePlan[]
   createdAt?: string
   updatedAt?: string
 }
@@ -78,14 +175,27 @@ export interface SubPlan {
   edges: SubPlanEdge[]
 }
 
-export interface Route {
-  id: string
-  ownerId: string
+export interface RouteDocument {
   name: string
   description?: string
   nodes: RouteNode[]
   edges: RouteEdge[]
   subPlans: SubPlan[]
+}
+
+export interface DraftRoute extends RouteDocument {
+  // Draft 内部 ID 只用于稳定标识节点/路径归属，不可用于分享或持久化读取。
+  id: string
+}
+
+export const ROUTE_VISIBILITIES = ["private", "unlisted", "public"] as const
+export type RouteVisibility = (typeof ROUTE_VISIBILITIES)[number]
+
+export interface Route extends RouteDocument {
+  id: string
+  ownerId: string
+  version: number
+  visibility: RouteVisibility
   createdAt: string
   updatedAt: string
 }
@@ -166,6 +276,9 @@ export interface PathEdgeCreateInput {
   distanceKm?: number
   costEstimate?: number
   notes?: string
+  requestMode?: RouteRequestMode
+  departAt?: string
+  preference?: RoutePreference
 }
 
 export type RouteEdgeCreateInput = PathEdgeCreateInput
@@ -178,6 +291,10 @@ export interface PathEdgePatchInput {
   distanceKm?: number | null
   costEstimate?: number | null
   notes?: string | null
+  requestMode?: RouteRequestMode | null
+  departAt?: string | null
+  preference?: RoutePreference | null
+  selectedPlanId?: string | null
 }
 
 export type RouteEdgePatchInput = PathEdgePatchInput

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
-import { AuthRequiredError, requireCurrentUser } from "@/lib/auth-context"
+import {
+  AuthRequiredError,
+  requireCurrentUser,
+} from "@/modules/auth/server/context"
 import {
   deleteRoute,
   getRoute,
   RouteInputError,
   updateRoute,
-} from "@/lib/routes/service"
+} from "@/modules/data/routes/route-repository"
 
 export async function GET(
   _request: NextRequest,
