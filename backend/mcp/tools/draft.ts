@@ -4,7 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ZodError, type ZodObject, type ZodRawShape } from "zod"
 import { loadProjectEnv } from "@/config/env.server"
 import { periplusServerConfig } from "@/config/periplus.server"
-import type { DraftToolName } from "../../types"
+import type { DraftToolName } from "@/modules/workspace/server/contracts"
 import { mcpErrorResult, mcpJsonResult } from "../errors"
 import {
   appendNodeInputSchema,
@@ -13,6 +13,7 @@ import {
   linkPlaceToNodeInputSchema,
   removeNodeRangeInputSchema,
   replaceDraftInputSchema,
+  planEdgeInputSchema,
   routeAddStartNodeInputSchema,
   subPlanCreateInputSchema,
   subPlanInsertNodeInputSchema,
@@ -22,6 +23,7 @@ import {
   subPlanUpdateNodeInputSchema,
   updateEdgeInputSchema,
   updateNodeInputSchema,
+  selectRoutePlanInputSchema,
 } from "../schemas/draft"
 
 type ToolInput = Record<string, unknown>
@@ -136,6 +138,11 @@ export const draftToolHandlers = {
   routeLinkPlaceToNode: draftHandler(
     "route.link_place_to_node",
     linkPlaceToNodeInputSchema
+  ),
+  routePlanEdge: draftHandler("route.plan_edge", planEdgeInputSchema),
+  routeSelectPlan: draftHandler(
+    "route.select_plan",
+    selectRoutePlanInputSchema
   ),
   subPlanCreate: draftHandler("subplan.create", subPlanCreateInputSchema),
   subPlanAddStartNode: draftHandler(
@@ -262,6 +269,22 @@ export function registerDraftTools(server: McpServer): void {
     "Link a resolved place result to an existing route or subplan node.",
     linkPlaceToNodeInputSchema,
     draftToolHandlers.routeLinkPlaceToNode
+  )
+  registerDraftTool(
+    server,
+    "periplus.route.plan_edge",
+    "Plan real route edge",
+    "Resolve an edge through the configured map provider and attach real route alternatives, segments, distance, and duration to the current draft.",
+    planEdgeInputSchema,
+    draftToolHandlers.routePlanEdge
+  )
+  registerDraftTool(
+    server,
+    "periplus.route.select_plan",
+    "Select route alternative",
+    "Select one of the resolved route alternatives for an edge.",
+    selectRoutePlanInputSchema,
+    draftToolHandlers.routeSelectPlan
   )
   registerDraftTool(
     server,

@@ -3,13 +3,12 @@ import {
   AuthRequiredError,
   PermissionDeniedError,
   requireAdmin,
-} from "@/lib/auth-context"
+} from "@/modules/auth/server/context"
 import {
   createAdminUser,
-  adminUserSelect,
+  listAdminUsers,
   normalizeAdminRole,
-} from "@/lib/admin/users"
-import { prisma } from "@/lib/prisma"
+} from "@/modules/data/users/user-repository"
 
 function authErrorResponse(error: unknown) {
   if (error instanceof AuthRequiredError) {
@@ -27,10 +26,7 @@ function authErrorResponse(error: unknown) {
 export async function GET() {
   try {
     await requireAdmin()
-    const users = await prisma.user.findMany({
-      select: adminUserSelect(),
-      orderBy: { createdAt: "desc" },
-    })
+    const users = await listAdminUsers()
     return NextResponse.json(users)
   } catch (error) {
     const response = authErrorResponse(error)

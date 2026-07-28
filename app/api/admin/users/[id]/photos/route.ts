@@ -3,8 +3,8 @@ import {
   AuthRequiredError,
   PermissionDeniedError,
   requireAdmin,
-} from "@/lib/auth-context"
-import { listPhotosForOwner } from "@/lib/photos/service"
+} from "@/modules/auth/server/context"
+import { listPhotosForOwner } from "@/modules/data/photos/photo-repository"
 
 export async function GET(
   _request: Request,

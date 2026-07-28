@@ -4,12 +4,12 @@ import {
   AuthRequiredError,
   PermissionDeniedError,
   requireCurrentUser,
-} from "@/lib/auth-context"
+} from "@/modules/auth/server/context"
 import {
   deletePhoto,
   updatePhotoCaption,
   PhotoInputError,
-} from "@/lib/photos/service"
+} from "@/modules/data/photos/photo-repository"
 
 export async function PATCH(
   request: NextRequest,

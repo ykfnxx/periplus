@@ -9,7 +9,7 @@ import {
 
 loadProjectEnv()
 
-const { prisma } = await import("@/lib/prisma")
+const { prisma } = await import("@/modules/data/db/prisma")
 
 function hasFlag(name: string) {
   return process.argv.includes(name)

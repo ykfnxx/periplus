@@ -36,6 +36,11 @@ export const placeResolveInputSchema = z.object({
   requireExact: z.boolean().default(false),
 })
 
+export const placeResolveForRouteInputSchema = placeResolveInputSchema.extend({
+  nodeId: z.string().min(1),
+  routeNodeId: z.string().min(1).optional(),
+})
+
 export const placeEnrichInputSchema = z.object({
   placeId: z.string().min(1).optional(),
   provider: z

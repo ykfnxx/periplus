@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test"
 
 test.describe("Map Page", () => {
   test("loads map-first home page with AI workbench", async ({ page }) => {
-    await page.goto("/")
+    await page.goto("/workspace")
     await expect(page.getByRole("tab", { name: "规划" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "地点" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "照片" })).toBeVisible()
@@ -19,7 +19,7 @@ test.describe("Map Page", () => {
 
   test("keeps the workbench on the left side on desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await page.goto("/")
+    await page.goto("/workspace")
     const tablist = page.getByRole("tablist", { name: "AI 工作台工具" })
     await expect(tablist).toBeVisible()
     const box = await tablist.boundingBox()
@@ -29,7 +29,7 @@ test.describe("Map Page", () => {
   })
 
   test("tool switching keeps composer text", async ({ page }) => {
-    await page.goto("/")
+    await page.goto("/workspace")
     const composer = page.getByRole("textbox", { name: "AI 输入" })
     await composer.fill("帮我把敦煌多留半天")
     await page.getByRole("tab", { name: "地点" }).click()
@@ -39,7 +39,7 @@ test.describe("Map Page", () => {
 
   test("/map preserves route query on redirect", async ({ page }) => {
     await page.goto("/map?route=preset-silk-road")
-    await page.waitForURL(/\/\?route=preset-silk-road/)
+    await page.waitForURL(/\/workspace\?route=preset-silk-road/)
     await expect(page.getByText("丝绸之路")).toBeVisible()
   })
 

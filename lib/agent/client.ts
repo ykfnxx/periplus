@@ -1,4 +1,4 @@
-import type { Route } from "@/types/route"
+import type { DraftRoute } from "@/types/route"
 import { periplusPublicConfig } from "@/config/periplus"
 
 export interface ToolCallSuggestionSummary {
@@ -13,8 +13,10 @@ export interface ToolCallSuggestionSummary {
 
 export interface DraftSnapshot {
   sessionId: string
-  route: Route | null
+  document: DraftRoute | null
   sourceRouteId: string | null
+  baseVersion: number | null
+  dirty: boolean
   isLocked: boolean
   lockedByRunId: string | null
   revision: number

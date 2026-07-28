@@ -8,8 +8,16 @@ import type {
   SubPlanInput,
   SubPlanNodeInput,
   TransportMode,
+  RoutePreference,
+  RouteRequestMode,
 } from "@/types/route"
-import { EDGE_STATUSES, NODE_CATEGORIES, TRANSPORT_MODES } from "@/types/route"
+import {
+  EDGE_STATUSES,
+  NODE_CATEGORIES,
+  ROUTE_PREFERENCES,
+  ROUTE_REQUEST_MODES,
+  TRANSPORT_MODES,
+} from "@/types/route"
 import {
   validateRoutePathGraph,
   validateSubPlanPathGraph,
@@ -27,6 +35,8 @@ export interface RouteValidationOptions {
 const edgeStatusSet = new Set<string>(EDGE_STATUSES)
 const transportModeSet = new Set<string>(TRANSPORT_MODES)
 const nodeCategorySet = new Set<string>(NODE_CATEGORIES)
+const routeRequestModeSet = new Set<string>(ROUTE_REQUEST_MODES)
+const routePreferenceSet = new Set<string>(ROUTE_PREFERENCES)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
@@ -129,6 +139,21 @@ function validateOptionalNonNegativeNumber(
   }
 
   return { ok: true, data: value }
+}
+
+function validateOptionalEnum<T extends string>(
+  value: unknown,
+  allowed: Set<string>,
+  fieldName: string,
+  context: string
+): ValidationResult<T | undefined> {
+  if (value === undefined || value === null) {
+    return { ok: true, data: undefined }
+  }
+  if (typeof value !== "string" || !allowed.has(value)) {
+    return { ok: false, error: `${context}: invalid ${fieldName}` }
+  }
+  return { ok: true, data: value as T }
 }
 
 function validateNodeCategory(
@@ -303,6 +328,30 @@ function validatePathEdge(
   )
   if (!costEstimate.ok) return costEstimate
 
+  const requestMode = validateOptionalEnum<RouteRequestMode>(
+    input.requestMode,
+    routeRequestModeSet,
+    "requestMode",
+    context
+  )
+  if (!requestMode.ok) return requestMode
+
+  const preference = validateOptionalEnum<RoutePreference>(
+    input.preference,
+    routePreferenceSet,
+    "preference",
+    context
+  )
+  if (!preference.ok) return preference
+
+  if (
+    input.departAt !== undefined &&
+    (typeof input.departAt !== "string" ||
+      Number.isNaN(new Date(input.departAt).getTime()))
+  ) {
+    return { ok: false, error: `${context}: departAt must be an ISO date` }
+  }
+
   if (!isOptionalString(input.notes)) {
     return { ok: false, error: `${context}: notes must be a string` }
   }
@@ -319,6 +368,9 @@ function validatePathEdge(
       distanceKm: distanceKm.data,
       costEstimate: costEstimate.data,
       notes: trimOptionalString(input.notes),
+      requestMode: requestMode.data,
+      departAt: trimOptionalString(input.departAt as string | undefined),
+      preference: preference.data,
     },
   }
 }

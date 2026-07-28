@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useMapStore } from "@/stores/mapStore"
+import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 const EXAMPLE_JSON = `[
   {"name": "北京", "lat": 39.9042, "lng": 116.4074},
@@ -12,7 +12,7 @@ const EXAMPLE_JSON = `[
 export default function DebugPanel() {
   const [jsonInput, setJsonInput] = useState(EXAMPLE_JSON)
   const [error, setError] = useState("")
-  const setCurrentRoute = useMapStore((s) => s.setCurrentRoute)
+  const setDraftRoute = useWorkspaceStore((s) => s.setDraftRoute)
 
   const handleDraw = () => {
     setError("")
@@ -73,14 +73,14 @@ export default function DebugPanel() {
         subPlans: [],
       }
 
-      setCurrentRoute(route)
+      setDraftRoute(route)
     } catch (e) {
       setError(`JSON 解析错误: ${e instanceof Error ? e.message : "未知错误"}`)
     }
   }
 
   const handleClear = () => {
-    setCurrentRoute(null)
+    setDraftRoute(null)
     setError("")
   }
 

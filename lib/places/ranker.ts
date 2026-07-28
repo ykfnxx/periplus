@@ -110,10 +110,31 @@ function mergeKey(candidate: PlaceCandidate) {
   return `name:${candidate.normalizedName}:${candidate.city ?? ""}:${candidate.district ?? ""}`
 }
 
+function locationsCompatible(a: PlaceCandidate, b: PlaceCandidate) {
+  if (a.city && b.city) {
+    return a.city.includes(b.city) || b.city.includes(a.city)
+  }
+  if (a.province && b.province) {
+    return a.province.includes(b.province) || b.province.includes(a.province)
+  }
+  return true
+}
+
+function samePlaceIdentity(a: PlaceCandidate, b: PlaceCandidate) {
+  if (!locationsCompatible(a, b)) return false
+  if (a.normalizedName === b.normalizedName) return true
+  return (
+    a.aliases.includes(b.normalizedName) || b.aliases.includes(a.normalizedName)
+  )
+}
+
 function mergeCandidates(candidates: PlaceCandidate[]) {
   const groups = new Map<string, PlaceCandidate>()
   for (const candidate of candidates) {
-    const key = mergeKey(candidate)
+    const matchingEntry = Array.from(groups.entries()).find(([, existing]) =>
+      samePlaceIdentity(existing, candidate)
+    )
+    const key = matchingEntry?.[0] ?? mergeKey(candidate)
     const existing = groups.get(key)
     if (!existing) {
       groups.set(key, candidate)
@@ -121,7 +142,7 @@ function mergeCandidates(candidates: PlaceCandidate[]) {
     }
 
     groups.set(key, {
-      ...existing,
+      ...(candidate.placeId && !existing.placeId ? candidate : existing),
       aliases: Array.from(new Set([...existing.aliases, ...candidate.aliases])),
       coordinates: [...existing.coordinates, ...candidate.coordinates],
       sources: [...existing.sources, ...candidate.sources],

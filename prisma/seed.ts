@@ -3,7 +3,7 @@ import { loadProjectEnv } from "@/config/env.server"
 
 loadProjectEnv()
 
-const { prisma } = await import("@/lib/prisma")
+const { prisma } = await import("@/modules/data/db/prisma")
 
 const password = "periplus123"
 

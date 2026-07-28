@@ -1,20 +1,20 @@
-import MapContainer from '@/components/map/MapContainer';
-import DebugPanel from '@/components/debug/DebugPanel';
+import MapSurface from "@/modules/map-renderer/ui/MapSurface"
+import DebugPanel from "@/components/debug/DebugPanel"
 
 export default function DebugPage() {
   return (
-    <div className="h-screen flex flex-col">
-      <header className="bg-white border-b border-slate-200 px-4 py-3">
+    <div className="flex h-screen flex-col">
+      <header className="border-b border-slate-200 bg-white px-4 py-3">
         <h1 className="text-lg font-semibold">坐标调试工具</h1>
       </header>
-      <div className="flex-1 flex overflow-hidden">
-        <aside className="w-96 border-r border-slate-200 bg-white p-4 overflow-auto">
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="w-96 overflow-auto border-r border-slate-200 bg-white p-4">
           <DebugPanel />
         </aside>
-        <main className="flex-1 relative">
-          <MapContainer />
+        <main className="relative flex-1">
+          <MapSurface />
         </main>
       </div>
     </div>
-  );
+  )
 }

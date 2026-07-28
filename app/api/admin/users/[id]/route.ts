@@ -3,13 +3,12 @@ import {
   AuthRequiredError,
   PermissionDeniedError,
   requireAdmin,
-} from "@/lib/auth-context"
+} from "@/modules/auth/server/context"
 import {
-  adminUserSelect,
+  disableAdminUser,
   normalizeAdminRole,
-  setCredentialPassword,
-} from "@/lib/admin/users"
-import { prisma } from "@/lib/prisma"
+  updateAdminUser,
+} from "@/modules/data/users/user-repository"
 
 function authErrorResponse(error: unknown) {
   if (error instanceof AuthRequiredError) {
@@ -39,29 +38,21 @@ export async function PATCH(
 
     const data: {
       name?: string
-      role?: string
+      role?: "user" | "admin"
       banned?: boolean
-      banReason?: string | null
-      banExpires?: Date | null
+      password?: string
     } = {}
 
     if ("name" in body && typeof body.name === "string") data.name = body.name
     if ("role" in body) data.role = normalizeAdminRole(body.role)
     if ("banned" in body && typeof body.banned === "boolean") {
       data.banned = body.banned
-      data.banReason = body.banned ? "Disabled by admin" : null
-      data.banExpires = null
     }
-
-    const user = await prisma.user.update({
-      where: { id },
-      data,
-      select: adminUserSelect(),
-    })
-
     if ("password" in body && typeof body.password === "string") {
-      await setCredentialPassword(id, body.password)
+      data.password = body.password
     }
+
+    const user = await updateAdminUser(id, data)
 
     return NextResponse.json(user)
   } catch (error) {
@@ -79,15 +70,7 @@ export async function DELETE(
 
   try {
     await requireAdmin()
-    const user = await prisma.user.update({
-      where: { id },
-      data: {
-        banned: true,
-        banReason: "Disabled by admin",
-        banExpires: null,
-      },
-      select: adminUserSelect(),
-    })
+    const user = await disableAdminUser(id)
     return NextResponse.json(user)
   } catch (error) {
     const response = authErrorResponse(error)

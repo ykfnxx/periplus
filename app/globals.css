@@ -29,7 +29,8 @@ body {
 .periplus-map-marker {
   align-items: center;
   border-radius: 999px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+  border: 2px solid var(--periplus-soft-white);
+  box-shadow: 0 8px 18px rgb(44 36 22 / 22%);
   color: var(--periplus-white);
   cursor: pointer;
   display: flex;
@@ -46,6 +47,7 @@ body {
   transform: scale(1.4);
 }
 
+.periplus-map-marker--bright,
 .periplus-map-marker--mustard {
   color: var(--periplus-ink);
 }

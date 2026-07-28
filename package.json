@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "tsx scripts/dev.ts",
+    "dev:web": "next dev -p 3001",
     "dev:backend": "tsx backend/server.ts",
     "dev:mcp:draft": "tsx backend/mcp/server.ts",
     "build": "next build",
@@ -16,7 +17,9 @@
     "test:e2e": "playwright test",
     "db:seed": "tsx prisma/seed.ts",
     "places:import-mct-5a": "tsx scripts/import-mct-5a.ts",
-    "places:import-mct-5a:mock": "tsx scripts/import-mct-5a.ts --mock"
+    "places:import-mct-5a:mock": "tsx scripts/import-mct-5a.ts --mock",
+    "places:enrich-mct-5a": "tsx scripts/enrich-mct-5a.ts",
+    "places:review-matches": "tsx scripts/review-place-matches.ts"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",

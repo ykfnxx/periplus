@@ -3,8 +3,8 @@ import {
   AuthRequiredError,
   PermissionDeniedError,
   requireAdmin,
-} from "@/lib/auth-context"
-import { listRoutes } from "@/lib/routes/service"
+} from "@/modules/auth/server/context"
+import { listRoutes } from "@/modules/data/routes/route-repository"
 
 export async function GET(
   _request: Request,

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DebugPanel from '@/components/debug/DebugPanel';
-import { useMapStore } from '@/stores/mapStore';
+import { useWorkspaceStore } from '@/modules/workspace/state/workspace-store';
 
-vi.mock('@/stores/mapStore', () => ({
-  useMapStore: vi.fn(),
+vi.mock('@/modules/workspace/state/workspace-store', () => ({
+  useWorkspaceStore: vi.fn(),
 }));
 
 describe('DebugPanel', () => {
@@ -12,9 +12,9 @@ describe('DebugPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (useMapStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+    (useWorkspaceStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (selector: (s: unknown) => unknown) => {
-        const state = { setCurrentRoute: mockSetCurrentRoute };
+        const state = { setDraftRoute: mockSetCurrentRoute };
         return selector(state);
       }
     );
