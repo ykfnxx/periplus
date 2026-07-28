@@ -2,7 +2,7 @@
 
 @theme {
   --font-sans:
-    Avenir, "Century Gothic", Futura, var(--font-noto-sans-sc), "PingFang SC",
+    Avenir, "Century Gothic", Futura, "Noto Sans SC", "PingFang SC",
     "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui,
     sans-serif;
 
