@@ -6,9 +6,7 @@ import { getEdgePathPositions } from "@/lib/routes/edge-geometry"
 import { selectedRoutePlan } from "@/lib/routes/planning"
 import {
   getRouteSegmentStyle,
-  getTransportEdgeStyle,
   periplusColors,
-  routeMarkerColors,
   trafficSectionColors,
 } from "@/lib/ui/map-theme"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
@@ -47,21 +45,16 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
       })
     }
 
-    for (const [edgeIndex, edge] of view.edges.entries()) {
+    for (const edge of view.edges) {
       const from = nodeById.get(edge.fromNodeId)
       const to = nodeById.get(edge.toNodeId)
       if (!from || !to) continue
       const selected = selectedRoutePlan(edge)
       const isSelected = selectedEdgeId === edge.id
       const isDimmed = selectedEdgeId !== null && !isSelected
-      const routeColor =
-        view.level === "overview"
-          ? routeMarkerColors[edgeIndex % routeMarkerColors.length]
-          : periplusColors.routeBlue
+      const routeColor = periplusColors.routeBlue
 
-      if (
-        selected?.segments.some((segment) => segment.positions.length >= 2)
-      ) {
+      if (selected?.segments.some((segment) => segment.positions.length >= 2)) {
         if (isSelected) {
           for (const candidate of edge.plans ?? []) {
             if (candidate.id === selected.id) continue
@@ -82,21 +75,33 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
       }
 
       const positions = getEdgePathPositions(from, to, edge.transportMode)
-      const style = getTransportEdgeStyle(edge.transportMode)
+      const fallbackCasing = new AMap.Polyline({
+        path: lngLatPath(positions),
+        strokeColor: periplusColors.softWhite,
+        strokeWeight: isSelected ? 11 : 9,
+        strokeOpacity:
+          edge.planningStatus === "FAILED" || isDimmed ? 0.25 : 0.85,
+        strokeStyle: "dashed",
+        strokeDasharray: [10, 9],
+        lineJoin: "round",
+        lineCap: "round",
+        zIndex: isSelected ? 119 : 69,
+      })
       const fallback = new AMap.Polyline({
         path: lngLatPath(positions),
-        strokeColor: style.color,
-        strokeWeight: isSelected ? 7 : 5,
+        strokeColor: periplusColors.routeBluePending,
+        strokeWeight: isSelected ? 7 : 6,
         strokeOpacity:
-          edge.planningStatus === "FAILED" || isDimmed ? 0.25 : 0.55,
+          edge.planningStatus === "FAILED" || isDimmed ? 0.25 : 0.9,
         strokeStyle: "dashed",
-        strokeDasharray: style.dasharray ?? [8, 8],
+        strokeDasharray: [10, 9],
         lineJoin: "round",
         lineCap: "round",
         zIndex: isSelected ? 120 : 70,
       })
+      bindSelection(fallbackCasing, edge)
       bindSelection(fallback, edge)
-      polylines.push(fallback)
+      polylines.push(fallbackCasing, fallback)
     }
 
     const overlays = [...polylines, ...transferMarkers]
@@ -105,14 +110,7 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
     return () => {
       if (overlays.length) map.remove(overlays)
     }
-  }, [
-    map,
-    draftRoute,
-    viewLevel,
-    activeRouteNodeId,
-    selectedEdgeId,
-    onIntent,
-  ])
+  }, [map, draftRoute, viewLevel, activeRouteNodeId, selectedEdgeId, onIntent])
 
   return null
 }
@@ -123,7 +121,7 @@ function drawCandidate(plan: RoutePlan, polylines: AMap.Polyline[]) {
     polylines.push(
       new AMap.Polyline({
         path: lngLatPath(segment.positions),
-        strokeColor: "#8fa1a8",
+        strokeColor: periplusColors.routeAlternative,
         strokeWeight: 4,
         strokeOpacity: 0.42,
         strokeStyle: segment.geometryKind === "SCHEMATIC" ? "dashed" : "solid",
@@ -153,7 +151,7 @@ function drawSelectedPlan(
     const path = lngLatPath(segment.positions)
     const casing = new AMap.Polyline({
       path,
-      strokeColor: "#fffaf3",
+      strokeColor: periplusColors.softWhite,
       strokeWeight: isSelected ? 14 : 12,
       strokeOpacity:
         edge.planningStatus === "STALE" ? 0.58 : isDimmed ? 0.42 : 0.96,

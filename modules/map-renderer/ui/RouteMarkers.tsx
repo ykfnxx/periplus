@@ -9,7 +9,7 @@ import {
 } from "@/lib/map/anchor-clusters"
 import type { MapIntent } from "@/modules/workspace/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { routeMarkerColors } from "@/lib/ui/map-theme"
+import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
 
 interface RouteMarkersProps {
   onIntent?: (intent: MapIntent) => void
@@ -78,9 +78,7 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       content.className = [
         "periplus-map-marker",
         "periplus-map-marker--bright",
-        hoveredRouteNodeId === point.id
-          ? "periplus-map-marker--hovered"
-          : "",
+        hoveredRouteNodeId === point.id ? "periplus-map-marker--hovered" : "",
         selectedLocationPoint?.id === point.id
           ? "periplus-map-marker--selected"
           : "",
@@ -90,16 +88,21 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       content.setAttribute("role", "button")
       content.setAttribute("aria-label", `选择地点 ${point.name}`)
       const colorIndex = index % routeMarkerColors.length
-      content.style.background = routeMarkerColors[colorIndex]
+      content.style.background =
+        view.level === "overview"
+          ? routeMarkerColors[colorIndex]
+          : periplusColors.routeBlue
       content.style.color =
-        colorIndex === 2 ? "var(--color-ink)" : "var(--color-white)"
+        view.level === "overview" && colorIndex === 2
+          ? periplusColors.ink
+          : periplusColors.white
       content.textContent = `${index + 1}`
 
       const marker = new AMap.Marker({
         content,
         position: new AMap.LngLat(point.lng, point.lat),
         title: point.name,
-        offset: new AMap.Pixel(-14, -14),
+        offset: new AMap.Pixel(-18, -18),
       })
 
       marker.on("click", (event) => {

@@ -92,7 +92,7 @@ export default function AIComposer() {
     <div className="space-y-1.5">
       <form
         onSubmit={submitPrompt}
-        className="rounded-2xl border border-ink-15 bg-white px-3 py-2 shadow-[0_8px_18px_var(--color-ink-10)]"
+        className="rounded-2xl border border-ink-15 bg-white px-4 py-3 shadow-periplus-soft"
       >
         <div className="flex items-end">
           <textarea
@@ -103,7 +103,7 @@ export default function AIComposer() {
             aria-label="AI 输入"
             placeholder="告诉我你想怎么改路线..."
             disabled={isDraftLocked}
-            className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent py-2 text-sm leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
+            className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent py-1 text-[13px] leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
         <div className="mt-1.5 flex items-center justify-between">

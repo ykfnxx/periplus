@@ -88,8 +88,8 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
         style={{ minHeight: "100%" }}
       />
       {mapError && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[var(--color-cream)]">
-          <div className="max-w-sm rounded-lg border border-[rgb(44_36_22_/_14%)] bg-[var(--color-soft-white)] p-4 text-sm text-[var(--color-walnut)] shadow-[var(--shadow-periplus-soft)]">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-cream">
+          <div className="max-w-sm rounded-lg border border-ink-15 bg-soft-white p-4 text-sm text-walnut shadow-periplus-soft">
             {mapError}
           </div>
         </div>

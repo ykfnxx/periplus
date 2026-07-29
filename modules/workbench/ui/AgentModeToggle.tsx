@@ -4,8 +4,8 @@ import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import type { AgentMode } from "@/modules/workspace/state/types"
 
 const options: Array<{ value: AgentMode; label: string }> = [
-  { value: "auto", label: "Auto" },
-  { value: "suggest", label: "Suggest" },
+  { value: "auto", label: "自动" },
+  { value: "suggest", label: "建议" },
 ]
 
 export default function AgentModeToggle() {
@@ -14,10 +14,7 @@ export default function AgentModeToggle() {
   const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
 
   return (
-    <div
-      aria-label="Agent 模式"
-      className="flex rounded-full border border-ink-10 bg-cream p-0.5"
-    >
+    <div aria-label="Agent 模式" className="flex rounded-full bg-cream p-0.5">
       {options.map((option) => (
         <button
           key={option.value}

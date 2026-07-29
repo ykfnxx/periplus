@@ -3,10 +3,12 @@
 import { Send } from "lucide-react"
 import { type FormEvent, type KeyboardEvent } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import AIComposer from "./AIComposer"
 import AgentModeToggle from "./AgentModeToggle"
 import PresetPromptBubbles from "./PresetPromptBubbles"
 
 export default function InitialChatState() {
+  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
   const composerInput = useWorkspaceStore((state) => state.composerInput)
   const setComposerInput = useWorkspaceStore((state) => state.setComposerInput)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
@@ -37,15 +39,36 @@ export default function InitialChatState() {
     }
   }
 
+  if (draftRoute) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="periplus-chat-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-6">
+          <p className="text-[13px] leading-6 text-walnut">
+            我已按当前范围整理好行程。选择城市或地点后，地图会同步显示对应路线。
+          </p>
+          <p className="mt-7 text-[13px] leading-6 text-walnut">
+            你可以继续调整停留时间、交通方式或每天的行程强度。
+          </p>
+          <p className="mt-8 mb-2.5 text-[11px] font-black text-teak">
+            你还可以继续问
+          </p>
+          <PresetPromptBubbles
+            prompts={["优化跨城交通时间", "检查每天是否太赶", "加入历史类景点"]}
+            stacked
+          />
+        </div>
+        <div className="shrink-0 px-5 pt-3 pb-4">
+          <AIComposer />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-5">
       <div className="mb-5 text-center">
-        <h1 className="text-xl font-semibold text-ink">
-          开始你的旅程
-        </h1>
-        <p className="mt-2 text-sm text-teak">
-          告诉我你想去哪里，我来帮你规划
-        </p>
+        <h1 className="text-xl font-semibold text-ink">开始你的旅程</h1>
+        <p className="mt-2 text-sm text-teak">告诉我你想去哪里，我来帮你规划</p>
       </div>
       <div className="w-full max-w-[480px]">
         <form

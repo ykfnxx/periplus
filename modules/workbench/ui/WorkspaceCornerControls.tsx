@@ -1,6 +1,15 @@
 "use client"
 
-import { Image as ImageIcon, Settings, Star } from "lucide-react"
+import { useState, type ReactNode } from "react"
+import {
+  Image as ImageIcon,
+  LocateFixed,
+  Menu,
+  Minus,
+  Plus,
+  Settings,
+  Star,
+} from "lucide-react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import type { ActiveMapPanel } from "@/modules/workspace/state/types"
 import PhotoUploadPanel from "./PhotoUploadPanel"
@@ -18,53 +27,117 @@ const controls: Array<{
 ]
 
 export default function WorkspaceCornerControls() {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const map = useWorkspaceStore((state) => state.map)
+  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
   const activeMapPanel = useWorkspaceStore((state) => state.activeMapPanel)
   const setActiveMapPanel = useWorkspaceStore(
     (state) => state.setActiveMapPanel
   )
+  const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
-  const togglePanel = (panel: ActiveMapPanel) => {
+  const openPanel = (panel: Exclude<ActiveMapPanel, "none">) => {
     setActiveMapPanel(activeMapPanel === panel ? "none" : panel)
+    setMenuOpen(false)
   }
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       <div className="pointer-events-auto absolute top-5 right-5 flex flex-col gap-2">
-        {controls.map((control) => {
-          const Icon = control.icon
-          const isActive = activeMapPanel === control.panel
-
-          return (
-            <button
-              key={control.panel}
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                togglePanel(control.panel)
-              }}
-              aria-label={control.label}
-              title={control.label}
-              className={`flex h-9 w-9 items-center justify-center rounded-lg border border-ink-10 transition ${
-                isActive
-                  ? "bg-soft-white text-ink shadow-periplus-soft"
-                  : "bg-soft-white/60 text-teak hover:bg-soft-white/95 hover:text-ink hover:shadow-periplus-soft"
-              }`}
-            >
-              <Icon aria-hidden="true" className="h-4.5 w-4.5" />
-            </button>
-          )
-        })}
+        <MapControlButton
+          label="地图菜单"
+          active={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+        </MapControlButton>
+        <MapControlButton
+          label="放大地图"
+          disabled={!map}
+          onClick={() => map?.zoomIn()}
+        >
+          <Plus className="h-5 w-5" aria-hidden="true" />
+        </MapControlButton>
+        <MapControlButton
+          label="缩小地图"
+          disabled={!map}
+          onClick={() => map?.zoomOut()}
+        >
+          <Minus className="h-5 w-5" aria-hidden="true" />
+        </MapControlButton>
+        <MapControlButton
+          label="定位当前行程"
+          disabled={!draftRoute}
+          onClick={() => requestMapFocus({ type: "active-route", maxZoom: 15 })}
+        >
+          <LocateFixed className="h-5 w-5" aria-hidden="true" />
+        </MapControlButton>
       </div>
-      {activeMapPanel !== "none" && (
+
+      {menuOpen ? (
+        <div className="pointer-events-auto absolute top-5 right-[72px] flex gap-2 rounded-xl border border-ink-15 bg-soft-white p-2 shadow-periplus-soft">
+          {controls.map((control) => {
+            const Icon = control.icon
+            return (
+              <button
+                key={control.panel}
+                type="button"
+                onClick={() => openPanel(control.panel)}
+                className="flex h-10 items-center gap-2 rounded-lg bg-cream px-3 text-[11px] font-black text-teak transition hover:bg-ink hover:text-soft-white"
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {control.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
+      {activeMapPanel !== "none" ? (
         <div
           onClick={(event) => event.stopPropagation()}
-          className="pointer-events-auto absolute top-5 right-16 max-h-[calc(100vh-40px)] w-[min(300px,calc(100vw-96px))] overflow-auto rounded-xl border border-ink-15 bg-soft-white p-3 shadow-periplus"
+          className="pointer-events-auto absolute top-5 right-[72px] max-h-[calc(100vh-40px)] w-[min(300px,calc(100vw-96px))] overflow-auto rounded-xl border border-ink-15 bg-soft-white p-3 shadow-periplus"
         >
-          {activeMapPanel === "photo" && <PhotoUploadPanel />}
-          {activeMapPanel === "saved" && <SavedRoutesPanel />}
-          {activeMapPanel === "settings" && <WorkspaceSettingsPanel />}
+          {activeMapPanel === "photo" ? <PhotoUploadPanel /> : null}
+          {activeMapPanel === "saved" ? <SavedRoutesPanel /> : null}
+          {activeMapPanel === "settings" ? <WorkspaceSettingsPanel /> : null}
         </div>
-      )}
+      ) : null}
     </div>
+  )
+}
+
+function MapControlButton({
+  label,
+  active = false,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  label: string
+  active?: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={active || undefined}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      className={`flex h-10 w-10 items-center justify-center rounded-[10px] border border-ink-10 shadow-periplus-soft transition disabled:cursor-not-allowed disabled:opacity-45 ${
+        active
+          ? "bg-russet text-soft-white"
+          : "bg-soft-white/90 text-walnut hover:bg-ink hover:text-soft-white"
+      }`}
+    >
+      {children}
+    </button>
   )
 }

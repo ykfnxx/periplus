@@ -12,7 +12,7 @@ export default function MapWorkspace() {
   const { handleMapIntent } = useWorkspaceController()
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[var(--color-cream)] text-[var(--color-ink)]">
+    <div className="relative h-screen w-screen overflow-hidden bg-cream text-ink">
       <WorkspaceController />
       <Suspense fallback={null}>
         <MapRouteLoader />

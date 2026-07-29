@@ -63,7 +63,7 @@ export default function EdgeBadgeLayer({ onIntent }: EdgeBadgeLayerProps) {
       const plan = selectedRoutePlan(edge)
       if (!plan || edge.planningStatus === "FAILED") return []
       const anchor = routeBadgeAnchor(plan)
-      if (!anchor || anchor.segment.geometryKind === "SCHEMATIC") return []
+      if (!anchor) return []
 
       // 总览只保留较长的关键交通段，城市详情才展示短距离标签。
       const minimumDistance = view.level === "overview" ? 15_000 : 180
@@ -109,7 +109,12 @@ export default function EdgeBadgeLayer({ onIntent }: EdgeBadgeLayerProps) {
         .filter(Boolean)
         .join(" ")
       content.setAttribute("aria-label", `选择路线段 ${descriptor.label}`)
-      content.textContent = descriptor.label
+      const dot = document.createElement("span")
+      dot.className = "periplus-route-badge__dot"
+      dot.setAttribute("aria-hidden", "true")
+      const label = document.createElement("span")
+      label.textContent = descriptor.label
+      content.append(dot, label)
 
       const selectEdge = (event: Event) => {
         event.stopPropagation()

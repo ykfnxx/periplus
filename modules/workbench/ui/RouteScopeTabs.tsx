@@ -34,7 +34,7 @@ export default function RouteScopeTabs() {
       ref={railRef}
       role="tablist"
       aria-label="行程范围"
-      className="scrollbar-hidden flex gap-1 overflow-x-auto border-b border-ink-10 px-4"
+      className="scrollbar-hidden flex gap-2 overflow-x-auto pt-4 pb-0.5"
     >
       <ScopeTab
         label="总览"
@@ -45,9 +45,7 @@ export default function RouteScopeTabs() {
         <ScopeTab
           key={node.id}
           label={node.name}
-          selected={
-            viewLevel === "city" && activeRouteNodeId === node.id
-          }
+          selected={viewLevel === "city" && activeRouteNodeId === node.id}
           onSelect={() => selectCity(node.id)}
         />
       ))}
@@ -70,14 +68,13 @@ function ScopeTab({
       role="tab"
       aria-selected={selected}
       onClick={onSelect}
-      className={`relative h-11 shrink-0 px-3 text-xs font-bold transition ${
-        selected ? "text-russet" : "text-teak hover:text-ink"
+      className={`h-[30px] shrink-0 rounded-full px-4 text-[11px] font-black transition ${
+        selected
+          ? "bg-russet text-ink"
+          : "bg-cream text-teak hover:bg-ink hover:text-soft-white"
       }`}
     >
       {label}
-      {selected ? (
-        <span className="absolute right-2 bottom-0 left-2 h-0.5 bg-russet" />
-      ) : null}
     </button>
   )
 }

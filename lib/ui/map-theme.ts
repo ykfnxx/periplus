@@ -6,7 +6,7 @@ export const periplusColors = {
   softWhite: "#fffaf3",
   white: "#fff",
   ink: "#2c2416",
-  russet: "#a94f2b",
+  russet: "#d97642",
   mustard: "#d4a574",
   olive: "#4a7c59",
   walnut: "#6b5d4f",
@@ -15,15 +15,16 @@ export const periplusColors = {
   coral: "#a84643",
   routeBlue: "#5fb7ff",
   routeBluePending: "#9dd8ff",
+  routeAlternative: "#8fa1a8",
 } as const
 
 export const routeMarkerColors = [
-  periplusColors.russet,
-  periplusColors.olive,
-  periplusColors.mustard,
-  periplusColors.bluegray,
+  "#ff8a4c",
+  "#48c9a9",
+  "#ffd166",
+  "#a78bfa",
   periplusColors.coral,
-  "#7c6f64",
+  periplusColors.bluegray,
 ] as const
 
 export interface TransportEdgeStyle {

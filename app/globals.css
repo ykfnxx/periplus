@@ -11,13 +11,22 @@
   --color-soft-white: #fffaf3;
   --color-white: #fff;
   --color-ink: #2c2416;
-  --color-russet: #a94f2b;
+  --color-russet: #d97642;
   --color-mustard: #d4a574;
   --color-olive: #4a7c59;
   --color-walnut: #6b5d4f;
   --color-teak: #765f45;
   --color-bluegray: #4f6d79;
   --color-coral: #a84643;
+  --color-route-blue: #5fb7ff;
+  --color-route-blue-soft: #edf3f5;
+  --color-route-blue-pending: #9dd8ff;
+  --color-route-summary: #dce5d2;
+  --color-selected-soft: #fff4ea;
+  --color-marker-orange: #ff8a4c;
+  --color-marker-mint: #48c9a9;
+  --color-marker-yellow: #ffd166;
+  --color-marker-violet: #a78bfa;
 
   /* ink 标准 alpha 档：描边/底色用 5/10/15，更深的蒙层用 20/30/40/70 */
   --color-ink-5: rgb(44 36 22 / 5%);
@@ -30,6 +39,7 @@
 
   --shadow-periplus: 0 18px 42px var(--color-ink-15);
   --shadow-periplus-soft: 0 12px 24px var(--color-ink-15);
+  --shadow-periplus-sheet: 0 -16px 40px var(--color-ink-15);
 }
 
 body {
@@ -41,34 +51,39 @@ body {
 .periplus-map-marker {
   align-items: center;
   border-radius: 999px;
-  border: 2px solid var(--color-soft-white);
+  border: 3px solid var(--color-soft-white);
   box-shadow: 0 8px 18px var(--color-ink-20);
   color: var(--color-white);
   cursor: pointer;
   display: flex;
   font-size: 12px;
   font-weight: 900;
-  height: 28px;
+  height: 36px;
   justify-content: center;
   line-height: 1;
   transition: transform 0.2s ease;
-  width: 28px;
+  width: 36px;
 }
 
 .periplus-map-marker:hover {
-  transform: scale(1.4);
+  box-shadow:
+    0 0 0 5px rgb(95 183 255 / 35%),
+    0 10px 22px var(--color-ink-20);
+  transform: scale(1.08);
 }
 
 .periplus-map-marker--hovered {
-  transform: scale(1.18);
+  box-shadow:
+    0 0 0 5px rgb(95 183 255 / 35%),
+    0 10px 22px var(--color-ink-20);
+  transform: scale(1.08);
 }
 
 .periplus-map-marker--selected {
-  border-width: 3px;
-  box-shadow:
-    0 0 0 4px rgb(255 250 243 / 78%),
-    0 10px 22px var(--color-ink-30);
-  transform: scale(1.16);
+  border-color: var(--color-russet);
+  border-width: 5px;
+  box-shadow: 0 10px 22px var(--color-ink-30);
+  transform: scale(1.2);
 }
 
 .periplus-map-marker--bright,
@@ -79,8 +94,8 @@ body {
 .periplus-route-badge {
   align-items: center;
   background: rgb(255 250 243 / 96%);
-  border: 1px solid rgb(79 109 121 / 42%);
-  border-radius: 8px;
+  border: 1px solid var(--color-ink-10);
+  border-radius: 999px;
   box-shadow: 0 8px 20px var(--color-ink-15);
   color: var(--color-ink);
   cursor: pointer;
@@ -90,22 +105,31 @@ body {
   height: 34px;
   justify-content: center;
   line-height: 1;
-  min-width: 124px;
+  min-width: 126px;
   padding: 0 12px;
   white-space: nowrap;
 }
 
-.periplus-route-badge:hover,
-.periplus-route-badge--selected {
-  background: var(--color-ink);
-  border-color: var(--color-ink);
-  color: var(--color-soft-white);
+.periplus-route-badge:hover {
+  border-color: var(--color-russet);
+  transform: translateY(-1px);
 }
 
 .periplus-route-badge--selected {
+  background: var(--color-soft-white);
+  border-color: var(--color-russet);
+  color: var(--color-ink);
   box-shadow:
-    0 0 0 3px rgb(255 250 243 / 75%),
+    0 0 0 3px var(--color-selected-soft),
     0 10px 24px var(--color-ink-30);
+}
+
+.periplus-route-badge__dot {
+  background: var(--color-bluegray);
+  border-radius: 999px;
+  height: 16px;
+  margin-right: 8px;
+  width: 16px;
 }
 
 .periplus-route-badge--stale {

@@ -10,7 +10,13 @@ const presetPrompts = [
   "帮我优化当前路线",
 ]
 
-export default function PresetPromptBubbles() {
+export default function PresetPromptBubbles({
+  prompts = presetPrompts,
+  stacked = false,
+}: {
+  prompts?: string[]
+  stacked?: boolean
+}) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
   const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
@@ -50,15 +56,25 @@ export default function PresetPromptBubbles() {
       onWheel={scrollHorizontally}
       tabIndex={0}
       aria-label="推荐提示"
-      className="periplus-prompt-scroll scrollbar-hidden flex gap-2 overflow-x-auto px-7 pb-1"
+      className={
+        stacked
+          ? "flex flex-col items-start gap-2"
+          : "periplus-prompt-scroll scrollbar-hidden flex gap-2 overflow-x-auto px-7 pb-1"
+      }
     >
-      {presetPrompts.map((prompt) => (
+      {prompts.map((prompt, index) => (
         <button
           key={prompt}
           type="button"
           onClick={() => sendPrompt(prompt)}
           disabled={!sendAgentEvent || isDraftLocked}
-          className="shrink-0 rounded-full bg-russet/10 px-3.5 py-2 text-[13px] text-russet transition hover:bg-russet/16 disabled:cursor-not-allowed disabled:opacity-55"
+          className={`shrink-0 rounded-full px-4 py-2 text-left text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-55 ${
+            stacked && index === 0
+              ? "bg-russet text-soft-white hover:bg-ink"
+              : stacked
+                ? "bg-cream text-teak hover:bg-ink hover:text-soft-white"
+                : "bg-russet/10 text-russet hover:bg-russet/16"
+          }`}
         >
           {prompt}
         </button>

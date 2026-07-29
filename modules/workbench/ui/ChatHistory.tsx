@@ -37,14 +37,12 @@ export default function ChatHistory() {
         )
       )}
       {isDraftLocked && (
-        <div className="text-xs font-bold text-teak">
-          正在规划...
-        </div>
+        <div className="text-xs font-bold text-teak">正在规划...</div>
       )}
       {pendingSuggestions.map((suggestion) => (
         <div
           key={suggestion.id}
-          className="rounded-xl border border-ink-10 bg-white p-3 shadow-[0_8px_18px_var(--color-ink-5)]"
+          className="rounded-xl border border-ink-10 bg-white p-3 shadow-periplus-soft"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

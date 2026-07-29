@@ -45,29 +45,33 @@ export default function LocationInfoBubble() {
     <div
       ref={overlayRef}
       onClick={(event) => event.stopPropagation()}
-      className="absolute z-50 w-[200px] -translate-x-1/2 -translate-y-full"
-      style={{ pointerEvents: "auto" }}
+      className="pointer-events-auto absolute z-50 w-[200px] -translate-x-1/2 -translate-y-full"
     >
-      <div className="relative rounded-xl border border-ink-10 bg-soft-white p-3 text-ink shadow-periplus">
-        <h3 className="text-base leading-5 font-semibold">
+      <div className="relative rounded-xl border-2 border-russet bg-soft-white p-4 text-ink shadow-periplus">
+        <h3 className="text-base leading-5 font-black">
           {selectedLocationPoint.name}
         </h3>
-        <p className="mt-1 text-xs font-bold text-teak">
-          {selectedLocationPoint.lat.toFixed(4)},{" "}
-          {selectedLocationPoint.lng.toFixed(4)}
-        </p>
-        {selectedLocationPoint.notes && (
+        {selectedLocationPoint.durationMinutes !== undefined ? (
+          <p className="mt-2 text-[11px] font-bold text-teak">
+            建议停留 {formatDuration(selectedLocationPoint.durationMinutes)}
+          </p>
+        ) : null}
+        {selectedLocationPoint.notes ? (
           <p className="mt-2 text-[13px] leading-5 text-walnut">
             {selectedLocationPoint.notes}
           </p>
-        )}
-        {selectedLocationPoint.durationMinutes !== undefined && (
-          <p className="mt-3 border-t border-ink-10 pt-2 text-xs font-bold text-teak">
-            停留 {Math.round(selectedLocationPoint.durationMinutes / 60)} 小时
-          </p>
-        )}
+        ) : null}
+        <p className="mt-3 text-[10px] font-black text-russet">
+          当前行程卡已定位
+        </p>
         <div className="absolute -bottom-2 left-1/2 h-0 w-0 -translate-x-1/2 border-x-8 border-t-8 border-x-transparent border-t-soft-white" />
       </div>
     </div>
   )
+}
+
+function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = minutes / 60
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} 小时`
 }

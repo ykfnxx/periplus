@@ -31,7 +31,7 @@ describe("WorkbenchShell", () => {
     expect(
       screen.getByRole("tab", { name: "行程", selected: true })
     ).toBeInTheDocument()
-    expect(screen.getByText("路线总览")).toBeInTheDocument()
+    expect(screen.getByText("行程总览")).toBeInTheDocument()
     expect(
       screen.getByRole("button", { name: "查看城市 西安" })
     ).toBeInTheDocument()
@@ -79,9 +79,13 @@ describe("WorkbenchShell", () => {
     expect(
       screen.queryByRole("tablist", { name: "工作台面板" })
     ).not.toBeInTheDocument()
-    expect(screen.getByText("问问 AI")).toBeInTheDocument()
-    expect(screen.getByText("路线总览")).toBeInTheDocument()
-    expect(screen.getByText("开始你的旅程")).toBeInTheDocument()
+    expect(screen.getByText("AI 旅行助手")).toBeInTheDocument()
+    expect(screen.getByText("行程总览")).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "我已按当前范围整理好行程。选择城市或地点后，地图会同步显示对应路线。"
+      )
+    ).toBeInTheDocument()
   })
 
   it("uses a draggable three-position bottom sheet on mobile", () => {

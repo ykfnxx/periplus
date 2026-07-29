@@ -29,7 +29,7 @@ export const Overview: Story = {
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText("路线总览")).toBeInTheDocument()
+    await expect(canvas.getByText("行程总览")).toBeInTheDocument()
     await expect(canvas.getAllByText(/公里/).length).toBeGreaterThan(0)
     await userEvent.click(canvas.getByRole("button", { name: "查看城市 西安" }))
 
@@ -110,9 +110,7 @@ export const Planning: Story = {
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(
-      canvas.getByText("正在规划真实路线")
-    ).toBeInTheDocument()
+    await expect(canvas.getByText("正在规划真实路线")).toBeInTheDocument()
   },
 }
 
@@ -190,9 +188,7 @@ export const Empty: Story = {
   },
 }
 
-function routeWithXianEdgeState(
-  edgeState: Partial<PathEdge>
-): DraftRoute {
+function routeWithXianEdgeState(edgeState: Partial<PathEdge>): DraftRoute {
   return {
     ...silkRoadRouteWithPlans,
     subPlans: silkRoadRouteWithPlans.subPlans.map((subPlan) =>

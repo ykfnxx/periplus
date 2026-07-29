@@ -35,14 +35,14 @@ export const CompactTabs: Story = {
     await expect(
       canvas.getByRole("tab", { name: "行程", selected: true })
     ).toBeInTheDocument()
-    await expect(canvas.getByText("路线总览")).toBeInTheDocument()
+    await expect(canvas.getByText("行程总览")).toBeInTheDocument()
 
     await userEvent.click(canvas.getByRole("tab", { name: "问问 AI" }))
-    await expect(canvas.getByLabelText("AI 初始输入")).toHaveValue(
+    await expect(canvas.getByLabelText("AI 输入")).toHaveValue(
       "保留行程调整要求"
     )
 
     await userEvent.click(canvas.getByRole("tab", { name: "行程" }))
-    await expect(canvas.getByText("路线总览")).toBeInTheDocument()
+    await expect(canvas.getByText("行程总览")).toBeInTheDocument()
   },
 }
