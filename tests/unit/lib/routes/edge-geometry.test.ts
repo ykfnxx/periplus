@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  buildSmoothSchematicPath,
   edgeGeometryKey,
   getEdgePathPositions,
   isRoadTransportMode,
@@ -15,7 +16,10 @@ const shanghai = { lat: 31.2304, lng: 121.4737 }
 const bund = { lat: 31.2397, lng: 121.4903 }
 const xintiandi = { lat: 31.2192, lng: 121.4763 }
 
-function chordMidpoint(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+function chordMidpoint(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
+) {
   return { lng: (a.lng + b.lng) / 2, lat: (a.lat + b.lat) / 2 }
 }
 
@@ -87,6 +91,36 @@ describe("getEdgePathPositions", () => {
       [beijing.lng, beijing.lat],
       [beijing.lng, beijing.lat],
     ])
+  })
+})
+
+describe("buildSmoothSchematicPath", () => {
+  it("passes through each railway station anchor", () => {
+    const stations: LngLatTuple[] = [
+      [102.722722, 25.015486],
+      [102.063658, 25.120056],
+      [101.747617, 25.135714],
+      [101.544387, 25.082103],
+      [100.2687, 25.6065],
+    ]
+    const path = buildSmoothSchematicPath(stations)
+
+    expect(path.length).toBeGreaterThan(stations.length)
+    expect(path[0]).toEqual(stations[0])
+    expect(path[path.length - 1]).toEqual(stations[stations.length - 1])
+    for (const station of stations) {
+      expect(path).toContainEqual(station)
+    }
+  })
+
+  it("uses a gentle arc when only two railway stations are known", () => {
+    const path = buildSmoothSchematicPath([
+      [beijing.lng, beijing.lat],
+      [shanghai.lng, shanghai.lat],
+    ])
+    expect(path.length).toBeGreaterThan(2)
+    expect(path[0]).toEqual([beijing.lng, beijing.lat])
+    expect(path[path.length - 1]).toEqual([shanghai.lng, shanghai.lat])
   })
 })
 

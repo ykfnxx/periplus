@@ -125,6 +125,7 @@ function pointToSegmentDistance(
 }
 
 const ARC_SEGMENTS = 64
+const SCHEMATIC_SAMPLES_PER_LEG = 16
 // 未指定交通方式时，超过该距离的段视为长途，按弧线绘制
 const AUTO_ARC_MIN_KM = 200
 const AUTO_ARC_CURVATURE = 0.12
@@ -146,6 +147,82 @@ export function getEdgePathPositions(
     ]
   }
   return buildArcPositions(from, to, curvature)
+}
+
+/**
+ * 用站点锚点生成示意路线。三点及以上使用受限 Catmull-Rom 切线，
+ * 曲线会穿过每个站点；只有起终点时沿用火车的缓弧。
+ * 返回结果是视觉几何，调用方必须继续标记为 SCHEMATIC。
+ */
+export function buildSmoothSchematicPath(
+  anchors: LngLatTuple[]
+): LngLatTuple[] {
+  const points: LngLatTuple[] = []
+  for (const point of anchors) {
+    if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue
+    const previous = points[points.length - 1]
+    if (previous && previous[0] === point[0] && previous[1] === point[1]) {
+      continue
+    }
+    points.push(point)
+  }
+  if (points.length <= 1) return points
+  if (points.length === 2) {
+    return buildArcPositions(
+      { lng: points[0][0], lat: points[0][1] },
+      { lng: points[1][0], lat: points[1][1] },
+      ARC_CURVATURES.TRAIN ?? 0.08
+    )
+  }
+
+  const positions: LngLatTuple[] = []
+  for (let leg = 0; leg < points.length - 1; leg++) {
+    const previous = points[Math.max(0, leg - 1)]
+    const from = points[leg]
+    const to = points[leg + 1]
+    const next = points[Math.min(points.length - 1, leg + 2)]
+    const legLength = Math.hypot(to[0] - from[0], to[1] - from[1])
+    const fromTangent = limitVector(
+      [(to[0] - previous[0]) / 6, (to[1] - previous[1]) / 6],
+      legLength * 0.35
+    )
+    const toTangent = limitVector(
+      [(next[0] - from[0]) / 6, (next[1] - from[1]) / 6],
+      legLength * 0.35
+    )
+    const controlFrom: LngLatTuple = [
+      from[0] + fromTangent[0],
+      from[1] + fromTangent[1],
+    ]
+    const controlTo: LngLatTuple = [to[0] - toTangent[0], to[1] - toTangent[1]]
+
+    for (
+      let sample = leg === 0 ? 0 : 1;
+      sample <= SCHEMATIC_SAMPLES_PER_LEG;
+      sample++
+    ) {
+      const t = sample / SCHEMATIC_SAMPLES_PER_LEG
+      const mt = 1 - t
+      positions.push([
+        mt * mt * mt * from[0] +
+          3 * mt * mt * t * controlFrom[0] +
+          3 * mt * t * t * controlTo[0] +
+          t * t * t * to[0],
+        mt * mt * mt * from[1] +
+          3 * mt * mt * t * controlFrom[1] +
+          3 * mt * t * t * controlTo[1] +
+          t * t * t * to[1],
+      ])
+    }
+  }
+  return positions
+}
+
+function limitVector(vector: LngLatTuple, maxLength: number): LngLatTuple {
+  const length = Math.hypot(vector[0], vector[1])
+  if (!length || length <= maxLength) return vector
+  const scale = maxLength / length
+  return [vector[0] * scale, vector[1] * scale]
 }
 
 function resolveCurvature(

@@ -48,10 +48,41 @@ describe("route planning domain", () => {
     expect(buildRoutePlanRequest(edge, from, to)).toMatchObject({
       edgeId: "edge-1",
       mode: "TRANSIT",
+      transportMode: "BUS",
       preference: "RECOMMENDED",
       alternatives: 3,
       origin: { providerPlaceId: "poi-west-lake" },
     })
+  })
+
+  it("defaults legacy city edges without a mode to driving", () => {
+    expect(
+      buildRoutePlanRequest(
+        {
+          ...edge,
+          status: "INCOMPLETE",
+          transportMode: undefined,
+        },
+        from,
+        to
+      )
+    ).toMatchObject({
+      mode: "DRIVE",
+      transportMode: "CAR",
+    })
+  })
+
+  it("keeps flights out of road route planning", () => {
+    expect(
+      buildRoutePlanRequest(
+        {
+          ...edge,
+          transportMode: "FLIGHT",
+        },
+        from,
+        to
+      )
+    ).toBeNull()
   })
 
   it("fingerprints planning inputs instead of edge identity", () => {
@@ -61,6 +92,9 @@ describe("route planning domain", () => {
     )
     expect(
       routePlanFingerprint({ ...request, preference: "FASTEST" })
+    ).not.toBe(routePlanFingerprint(request))
+    expect(
+      routePlanFingerprint({ ...request, transportMode: "TRAIN" })
     ).not.toBe(routePlanFingerprint(request))
   })
 

@@ -30,6 +30,7 @@ export interface RoutePlanRequest {
   origin: RoutePlanEndpoint
   destination: RoutePlanEndpoint
   mode: RouteRequestMode
+  transportMode?: TransportMode
   departAt?: string
   preference: RoutePreference
   alternatives: number
@@ -47,6 +48,8 @@ export interface RoutePlanFailure {
   code: RouteProviderErrorCode
   message: string
 }
+
+const ROUTE_PLANNING_VERSION = 2
 
 export function requestModeForTransport(
   transportMode?: TransportMode
@@ -74,7 +77,14 @@ export function buildRoutePlanRequest(
   from: PathNode,
   to: PathNode
 ): RoutePlanRequest | null {
-  const mode = edge.requestMode ?? requestModeForTransport(edge.transportMode)
+  // 早期草稿允许用 INCOMPLETE 边连接市内节点；界面一直将这类边显示为驾车，
+  // 因此规划请求也使用同一缺省语义，避免只画直线却不请求真实道路。
+  const transportMode =
+    edge.transportMode ??
+    (edge.requestMode === undefined || edge.requestMode === "DRIVE"
+      ? "CAR"
+      : undefined)
+  const mode = edge.requestMode ?? requestModeForTransport(transportMode)
   if (!mode) return null
   return {
     edgeId: edge.id,
@@ -99,6 +109,7 @@ export function buildRoutePlanRequest(
           : undefined,
     },
     mode,
+    transportMode,
     departAt: edge.departAt,
     preference: edge.preference ?? "RECOMMENDED",
     alternatives: 3,
@@ -107,9 +118,11 @@ export function buildRoutePlanRequest(
 
 export function routePlanFingerprint(request: RoutePlanRequest) {
   const normalized = {
+    version: ROUTE_PLANNING_VERSION,
     origin: endpointFingerprint(request.origin),
     destination: endpointFingerprint(request.destination),
     mode: request.mode,
+    transportMode: request.transportMode ?? null,
     departAt: request.departAt ?? null,
     preference: request.preference,
     alternatives: request.alternatives,

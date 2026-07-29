@@ -101,7 +101,13 @@ describe("AMapRouteProvider", () => {
                   {
                     walking: {
                       distance: "500",
-                      steps: [{ polyline: "120.1,30.2;120.11,30.21" }],
+                      steps: [
+                        {
+                          polyline: {
+                            polyline: "120.1,30.2;120.11,30.21",
+                          },
+                        },
+                      ],
                     },
                     bus: {
                       buslines: [
@@ -109,7 +115,9 @@ describe("AMapRouteProvider", () => {
                           name: "地铁1号线",
                           distance: "8000",
                           duration: "1200",
-                          polyline: "120.11,30.21;120.2,30.3",
+                          polyline: {
+                            polyline: "120.11,30.21;120.2,30.3",
+                          },
                           departure_stop: { name: "龙翔桥" },
                           arrival_stop: { name: "杭州东站" },
                         },
@@ -162,6 +170,190 @@ describe("AMapRouteProvider", () => {
     expect(transitUrl).toContain("date=2026-07-12")
   })
 
+  it("uses railway alternatives to build a smooth route through known stations", async () => {
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        response({
+          status: "1",
+          regeocode: { addressComponent: { citycode: "0871" } },
+        })
+      )
+      .mockImplementationOnce(() =>
+        response({
+          status: "1",
+          regeocode: { addressComponent: { citycode: "0872" } },
+        })
+      )
+      .mockImplementationOnce(() =>
+        response({
+          status: "1",
+          route: {
+            transits: [
+              {
+                distance: "292742",
+                duration: "10860",
+                cost: "118",
+                segments: [
+                  {
+                    railway: {
+                      trip: "D8652",
+                      distance: "288178",
+                      time: "6900",
+                      departure_stop: {
+                        name: "昆明",
+                        location: "102.722722 25.015486",
+                      },
+                      arrival_stop: {
+                        name: "大理",
+                        location: "100.268700 25.606500",
+                      },
+                      via_stops: [],
+                    },
+                  },
+                ],
+              },
+              {
+                distance: "310000",
+                duration: "14400",
+                cost: "72",
+                segments: [
+                  {
+                    railway: {
+                      trip: "7466",
+                      departure_stop: {
+                        name: "昆明",
+                        location: "102.722722 25.015486",
+                      },
+                      via_stops: [
+                        {
+                          name: "禄丰南",
+                          location: "102.063658,25.120056",
+                        },
+                      ],
+                      arrival_stop: {
+                        name: "广通北",
+                        location: "101.747617 25.135714",
+                      },
+                    },
+                  },
+                  {
+                    railway: {
+                      trip: "D8661",
+                      departure_stop: {
+                        name: "广通北",
+                        location: "101.747617 25.135714",
+                      },
+                      via_stops: [
+                        {
+                          name: "楚雄",
+                          location: "101.544387,25.082103",
+                        },
+                      ],
+                      arrival_stop: {
+                        name: "大理",
+                        location: "100.268700 25.606500",
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        })
+      )
+    const provider = new AMapRouteProvider({
+      key: "test-key",
+      fetcher: fetcher as typeof fetch,
+      now: () => new Date("2026-07-11T08:00:00+08:00"),
+    })
+
+    const bundle = await provider.plan({
+      ...baseRequest,
+      mode: "TRANSIT",
+      transportMode: "TRAIN",
+      departAt: "2026-07-12T09:30:00+08:00",
+    })
+
+    const rail = bundle.plans[0].segments.find(
+      (segment) => segment.mode === "RAIL"
+    )
+    expect(bundle.plans[0]).toMatchObject({
+      label: "推荐火车",
+      distanceMeters: 292742,
+      durationSeconds: 10860,
+      fareAmount: 118,
+    })
+    expect(rail).toMatchObject({
+      lineName: "D8652",
+      durationSeconds: 6900,
+      geometryKind: "SCHEMATIC",
+    })
+    expect(rail?.positions.length).toBeGreaterThan(5)
+    expect(rail?.positions).toContainEqual([102.063658, 25.120056])
+    expect(rail?.positions).toContainEqual([101.747617, 25.135714])
+    expect(rail?.positions).toContainEqual([101.544387, 25.082103])
+
+    const transitUrl = String(fetcher.mock.calls[2][0])
+    expect(transitUrl).toContain("/v3/direction/transit/integrated")
+    expect(transitUrl).toContain("city=0871")
+    expect(transitUrl).toContain("cityd=0872")
+    expect(transitUrl).toContain("extensions=all")
+    expect(transitUrl).toContain("time=09%3A30")
+  })
+
+  it("does not accept a bus-only plan for a requested train edge", async () => {
+    const fetcher = vi.fn((_input: string | URL | Request) =>
+      response({
+        status: "1",
+        route: {
+          transits: [
+            {
+              distance: "187000",
+              duration: "27540",
+              segments: [
+                {
+                  bus: {
+                    buslines: [
+                      {
+                        name: "大理客运站-丽江客运站",
+                        polyline: "100.2,25.5;100.3,26.8",
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      })
+    )
+    const provider = new AMapRouteProvider({
+      key: "test-key",
+      fetcher: fetcher as typeof fetch,
+      now: () => new Date("2026-07-11T21:00:00+08:00"),
+    })
+
+    await expect(
+      provider.plan({
+        ...baseRequest,
+        origin: { ...baseRequest.origin, cityCode: "0872" },
+        destination: { ...baseRequest.destination, cityCode: "0888" },
+        mode: "TRANSIT",
+        transportMode: "TRAIN",
+      })
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "NO_ROUTE",
+        message: "未找到火车方案",
+      })
+    )
+
+    const transitUrl = String(fetcher.mock.calls[0][0])
+    expect(transitUrl).not.toContain("date=")
+    expect(transitUrl).not.toContain("time=")
+  })
+
   it("warns when future driving time cannot be honored", async () => {
     const provider = new AMapRouteProvider({
       key: "test-key",
@@ -207,5 +399,58 @@ describe("AMapRouteProvider", () => {
         message: expect.stringContaining("IP 白名单"),
       })
     )
+  })
+
+  it("reports account QPS errors as retryable rate limits", async () => {
+    const provider = new AMapRouteProvider({
+      key: "test-key",
+      fetcher: vi.fn(() =>
+        response({
+          status: "0",
+          info: "CUQPS_HAS_EXCEEDED_THE_LIMIT",
+          infocode: "10021",
+        })
+      ) as typeof fetch,
+    })
+
+    await expect(provider.plan(baseRequest)).rejects.toEqual(
+      expect.objectContaining({
+        code: "RATE_LIMIT",
+        message: "高德路线服务请求过快，请稍后重试",
+      })
+    )
+  })
+
+  it("spaces consecutive Web service calls", async () => {
+    const fetcher = vi.fn(() =>
+      response({
+        status: "1",
+        route: {
+          paths: [
+            {
+              distance: "1000",
+              cost: { duration: "600" },
+              steps: [{ polyline: "120.1,30.2;120.2,30.3" }],
+            },
+          ],
+        },
+      })
+    )
+    const sleep = vi.fn(async () => undefined)
+    const provider = new AMapRouteProvider({
+      key: "test-key",
+      fetcher: fetcher as typeof fetch,
+      requestIntervalMs: 250,
+      sleep,
+    })
+
+    await Promise.all([
+      provider.plan(baseRequest),
+      provider.plan({ ...baseRequest, edgeId: "edge-2" }),
+    ])
+
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledTimes(1)
+    expect(sleep).toHaveBeenCalledWith(250)
   })
 })

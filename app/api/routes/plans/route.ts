@@ -8,8 +8,10 @@ import type { RoutePlanEndpoint, RoutePlanRequest } from "@/lib/routes/planning"
 import {
   ROUTE_PREFERENCES,
   ROUTE_REQUEST_MODES,
+  TRANSPORT_MODES,
   type RoutePreference,
   type RouteRequestMode,
+  type TransportMode,
 } from "@/types/route"
 
 const MAX_EDGES_PER_REQUEST = 20
@@ -65,12 +67,18 @@ function parseRequests(body: unknown): RoutePlanRequest[] | null {
     const record = item as Record<string, unknown>
     const origin = endpoint(record.origin)
     const destination = endpoint(record.destination)
+    const transportMode =
+      typeof record.transportMode === "string" &&
+      TRANSPORT_MODES.includes(record.transportMode as TransportMode)
+        ? (record.transportMode as TransportMode)
+        : undefined
     if (
       typeof record.edgeId !== "string" ||
       !origin ||
       !destination ||
       typeof record.mode !== "string" ||
       !ROUTE_REQUEST_MODES.includes(record.mode as RouteRequestMode) ||
+      (record.transportMode !== undefined && !transportMode) ||
       typeof record.preference !== "string" ||
       !ROUTE_PREFERENCES.includes(record.preference as RoutePreference)
     ) {
@@ -81,6 +89,7 @@ function parseRequests(body: unknown): RoutePlanRequest[] | null {
       origin,
       destination,
       mode: record.mode as RouteRequestMode,
+      transportMode,
       preference: record.preference as RoutePreference,
       departAt:
         typeof record.departAt === "string" ? record.departAt : undefined,

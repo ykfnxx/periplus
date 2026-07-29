@@ -25,6 +25,8 @@ interface PlanningServiceOptions {
 }
 
 const MAX_ATTEMPTS = 3
+const RETRY_BASE_DELAY_MS = 150
+const RATE_LIMIT_RETRY_BASE_DELAY_MS = 1_000
 
 export class RoutePlanningService {
   private readonly provider: RoutePlanProvider
@@ -109,7 +111,11 @@ export class RoutePlanningService {
           )
           throw error
         }
-        await this.sleep(150 * 2 ** (attempt - 1))
+        const baseDelay =
+          error.code === "RATE_LIMIT"
+            ? RATE_LIMIT_RETRY_BASE_DELAY_MS
+            : RETRY_BASE_DELAY_MS
+        await this.sleep(baseDelay * 2 ** (attempt - 1))
       }
     }
     throw lastError

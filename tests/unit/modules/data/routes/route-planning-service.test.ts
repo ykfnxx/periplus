@@ -51,6 +51,27 @@ describe("RoutePlanningService", () => {
     expect(sleep).toHaveBeenCalledTimes(1)
   })
 
+  it("backs off for one second before retrying a QPS failure", async () => {
+    const provider = {
+      plan: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new RouteProviderError("RATE_LIMIT", "too many requests")
+        )
+        .mockResolvedValueOnce(bundle),
+    }
+    const sleep = vi.fn(async () => undefined)
+    const service = new RoutePlanningService({
+      provider,
+      sleep,
+      logUsage: vi.fn(),
+    })
+
+    await expect(service.plan(request)).resolves.toEqual(bundle)
+    expect(provider.plan).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledWith(1_000)
+  })
+
   it("stops a batch after an auth or quota failure", async () => {
     const provider = {
       plan: vi.fn(async () => {

@@ -1,5 +1,9 @@
 import { periplusServerConfig } from "@/config/periplus.server"
-import { parseDirectionPolylines } from "@/lib/routes/edge-geometry"
+import {
+  buildSmoothSchematicPath,
+  parseDirectionPolylines,
+  type LngLatTuple,
+} from "@/lib/routes/edge-geometry"
 import type {
   RoutePlan,
   RouteSegment,
@@ -18,6 +22,40 @@ import {
 
 type JsonRecord = Record<string, unknown>
 
+const DEFAULT_REQUEST_INTERVAL_MS = 250
+const AUTH_OR_QUOTA_INFO_CODES = new Set([
+  "10001",
+  "10002",
+  "10003",
+  "10005",
+  "10009",
+  "10010",
+  "10012",
+  "10013",
+  "10026",
+  "10041",
+  "10044",
+  "10045",
+  "40000",
+  "40002",
+  "40003",
+])
+const RATE_LIMIT_INFO_CODES = new Set([
+  "10004",
+  "10014",
+  "10015",
+  "10016",
+  "10019",
+  "10020",
+  "10021",
+  "10029",
+])
+
+interface RailStop {
+  name?: string
+  position: LngLatTuple
+}
+
 export class RouteProviderError extends Error {
   constructor(
     public readonly code: RouteProviderErrorCode,
@@ -32,6 +70,8 @@ interface AMapRouteProviderOptions {
   key?: string
   fetcher?: typeof fetch
   now?: () => Date
+  requestIntervalMs?: number
+  sleep?: (milliseconds: number) => Promise<void>
   timeoutMs?: number
 }
 
@@ -39,12 +79,24 @@ export class AMapRouteProvider {
   private readonly key: string
   private readonly fetcher: typeof fetch
   private readonly now: () => Date
+  private readonly requestIntervalMs: number
+  private readonly sleep: (milliseconds: number) => Promise<void>
   private readonly timeoutMs: number
+  private requestQueue: Promise<void> = Promise.resolve()
+  private hasStartedRequest = false
 
   constructor(options: AMapRouteProviderOptions = {}) {
     this.key = options.key ?? periplusServerConfig.amap.webServiceKey
     this.fetcher = options.fetcher ?? fetch
     this.now = options.now ?? (() => new Date())
+    // 高德按账号和接口限制 QPS；所有实际 Web 服务调用共用一个节流队列。
+    this.requestIntervalMs =
+      options.requestIntervalMs ??
+      (options.fetcher ? 0 : DEFAULT_REQUEST_INTERVAL_MS)
+    this.sleep =
+      options.sleep ??
+      ((milliseconds) =>
+        new Promise((resolve) => setTimeout(resolve, milliseconds)))
     this.timeoutMs = options.timeoutMs ?? 7000
   }
 
@@ -127,42 +179,75 @@ export class AMapRouteProvider {
       )
     }
 
+    const railwayRequest = request.transportMode === "TRAIN"
     const url = new URL(
-      "https://restapi.amap.com/v5/direction/transit/integrated"
+      railwayRequest
+        ? "https://restapi.amap.com/v3/direction/transit/integrated"
+        : "https://restapi.amap.com/v5/direction/transit/integrated"
     )
-    this.setCommonParams(url, request)
-    url.searchParams.set("city1", originCity)
-    url.searchParams.set("city2", destinationCity)
-    url.searchParams.set("strategy", transitStrategy(request))
-    url.searchParams.set(
-      "AlternativeRoute",
-      String(Math.max(1, Math.min(request.alternatives, 10)))
-    )
-    url.searchParams.set("show_fields", "cost,polyline")
-    const departAt = request.departAt ? new Date(request.departAt) : this.now()
-    if (!Number.isNaN(departAt.getTime())) {
+    this.setCommonParams(url, request, !railwayRequest)
+    if (railwayRequest) {
+      // v3 的 extensions=all 会返回铁路途经站；v5 当前只返回始发和到达站。
+      url.searchParams.set("city", originCity)
+      url.searchParams.set("cityd", destinationCity)
+      url.searchParams.set("strategy", legacyTransitStrategy(request))
+      url.searchParams.set("extensions", "all")
+    } else {
+      url.searchParams.set("city1", originCity)
+      url.searchParams.set("city2", destinationCity)
+      url.searchParams.set("strategy", transitStrategy(request))
+      url.searchParams.set(
+        "AlternativeRoute",
+        String(Math.max(1, Math.min(request.alternatives, 10)))
+      )
+      url.searchParams.set("show_fields", "cost,polyline")
+    }
+    const departAt = request.departAt ? new Date(request.departAt) : null
+    if (departAt && !Number.isNaN(departAt.getTime())) {
       url.searchParams.set("date", dateParam(departAt))
-      url.searchParams.set("time", timeParam(departAt))
+      url.searchParams.set(
+        "time",
+        railwayRequest ? legacyTimeParam(departAt) : timeParam(departAt)
+      )
     }
 
     const body = await this.fetchJson(url)
     const transits = arrayField(objectField(body, "route"), "transits")
-    const plans = transits
+    const matchingTransits = railwayRequest
+      ? transits.filter(hasRailwaySegment)
+      : transits
+    const railCorridor = preferredRailCorridor(matchingTransits)
+    const plans = matchingTransits
       .slice(0, request.alternatives)
       .map((transit, rank) =>
-        transitToPlan(transit, rank, request, fingerprint, this.now())
+        transitToPlan(
+          transit,
+          rank,
+          request,
+          fingerprint,
+          this.now(),
+          railCorridor
+        )
       )
       .filter((plan): plan is RoutePlan => Boolean(plan))
     if (!plans.length) {
-      throw new RouteProviderError("NO_ROUTE", "未找到公共交通方案")
+      throw new RouteProviderError(
+        "NO_ROUTE",
+        railwayRequest ? "未找到火车方案" : "未找到公共交通方案"
+      )
     }
     return { edgeId: request.edgeId, requestFingerprint: fingerprint, plans }
   }
 
-  private setCommonParams(url: URL, request: RoutePlanRequest) {
+  private setCommonParams(
+    url: URL,
+    request: RoutePlanRequest,
+    includeProviderPlaceIds = true
+  ) {
     url.searchParams.set("key", this.key)
     url.searchParams.set("origin", formatEndpoint(request.origin))
     url.searchParams.set("destination", formatEndpoint(request.destination))
+    if (!includeProviderPlaceIds) return
     if (request.origin.providerPlaceId) {
       url.searchParams.set(
         request.mode === "TRANSIT" ? "originpoi" : "origin_id",
@@ -190,7 +275,22 @@ export class AMapRouteProvider {
     return stringField(component, "citycode")
   }
 
-  private async fetchJson(url: URL): Promise<JsonRecord> {
+  private fetchJson(url: URL): Promise<JsonRecord> {
+    const pending = this.requestQueue.then(async () => {
+      if (this.hasStartedRequest && this.requestIntervalMs > 0) {
+        await this.sleep(this.requestIntervalMs)
+      }
+      this.hasStartedRequest = true
+      return this.fetchJsonImmediately(url)
+    })
+    this.requestQueue = pending.then(
+      () => undefined,
+      () => undefined
+    )
+    return pending
+  }
+
+  private async fetchJsonImmediately(url: URL): Promise<JsonRecord> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
     try {
@@ -205,11 +305,7 @@ export class AMapRouteProvider {
       if (stringField(body, "status") !== "1") {
         const infoCode = stringField(body, "infocode")
         const info = stringField(body, "info") ?? "高德路线规划失败"
-        if (
-          infoCode === "10004" ||
-          infoCode === "10005" ||
-          infoCode === "10044"
-        ) {
+        if (infoCode && AUTH_OR_QUOTA_INFO_CODES.has(infoCode)) {
           throw new RouteProviderError(
             "AUTH_OR_QUOTA",
             infoCode === "10005"
@@ -217,8 +313,11 @@ export class AMapRouteProvider {
               : info
           )
         }
-        if (infoCode === "10003" || infoCode === "10020") {
-          throw new RouteProviderError("RATE_LIMIT", info)
+        if (infoCode && RATE_LIMIT_INFO_CODES.has(infoCode)) {
+          throw new RouteProviderError(
+            "RATE_LIMIT",
+            "高德路线服务请求过快，请稍后重试"
+          )
         }
         throw new RouteProviderError("MALFORMED_RESPONSE", info)
       }
@@ -248,7 +347,7 @@ function roadPathToPlan(
 ): RoutePlan | null {
   const steps = arrayField(path, "steps")
   const positions = parseDirectionPolylines(
-    steps.map((step) => stringField(step, "polyline") ?? "")
+    steps.map((step) => polylineField(step) ?? "")
   )
   if (positions.length < 2) return null
   const trafficSections = steps.flatMap(parseTrafficSections)
@@ -296,10 +395,11 @@ function transitToPlan(
   rank: number,
   request: RoutePlanRequest,
   fingerprint: string,
-  now: Date
+  now: Date,
+  railCorridor: RailStop[]
 ): RoutePlan | null {
   const segments = arrayField(transit, "segments").flatMap((segment) =>
-    transitSegments(segment, fingerprint, rank)
+    transitSegments(segment, fingerprint, rank, railCorridor)
   )
   segments.forEach((segment, order) => {
     segment.order = order
@@ -310,15 +410,24 @@ function transitToPlan(
     id: `${fingerprint}-${rank}`,
     provider: "amap",
     rank,
-    label: rank === 0 ? "推荐换乘" : `换乘方案 ${rank + 1}`,
+    label:
+      rank === 0
+        ? request.transportMode === "TRAIN"
+          ? "推荐火车"
+          : "推荐换乘"
+        : `换乘方案 ${rank + 1}`,
     strategy: request.preference.toLowerCase(),
     distanceMeters:
       numberField(transit, "distance") ??
       sumOptional(segments, "distanceMeters"),
     durationSeconds:
-      numberField(cost, "duration") ?? sumOptional(segments, "durationSeconds"),
+      numberField(cost, "duration") ??
+      numberField(transit, "duration") ??
+      sumOptional(segments, "durationSeconds"),
     fareAmount:
-      numberField(cost, "transit_fee") ?? numberField(transit, "transit_fee"),
+      numberField(cost, "transit_fee") ??
+      numberField(transit, "transit_fee") ??
+      numberField(transit, "cost"),
     trafficBasis: "SCHEDULED",
     calculatedAt: now.toISOString(),
     validUntil: new Date(now.getTime() + 24 * 60 * 60_000).toISOString(),
@@ -330,13 +439,14 @@ function transitToPlan(
 function transitSegments(
   container: JsonRecord,
   fingerprint: string,
-  planRank: number
+  planRank: number,
+  railCorridor: RailStop[]
 ): RouteSegment[] {
   const result: RouteSegment[] = []
   const walking = objectField(container, "walking")
   const walkingSteps = arrayField(walking, "steps")
   const walkingPositions = parseDirectionPolylines(
-    walkingSteps.map((step) => stringField(step, "polyline") ?? "")
+    walkingSteps.map((step) => polylineField(step) ?? "")
   )
   if (walkingPositions.length >= 2) {
     result.push(
@@ -354,9 +464,7 @@ function transitSegments(
 
   const busLines = arrayField(objectField(container, "bus"), "buslines")
   for (const line of busLines) {
-    const positions = parseDirectionPolylines([
-      stringField(line, "polyline") ?? "",
-    ])
+    const positions = parseDirectionPolylines([polylineField(line) ?? ""])
     if (positions.length < 2) continue
     const name = stringField(line, "name")
     const mode: RouteSegmentMode = name?.includes("地铁") ? "SUBWAY" : "BUS"
@@ -378,31 +486,38 @@ function transitSegments(
 
   const railway = objectField(container, "railway")
   if (Object.keys(railway).length) {
-    const positions = parseDirectionPolylines([
-      stringField(railway, "polyline") ?? "",
+    const providerPositions = parseDirectionPolylines([
+      polylineField(railway) ?? "",
     ])
-    const endpoints = stationEndpointPositions(railway)
-    result.push({
-      ...segmentFromGeometry(
-        "RAIL",
-        positions.length >= 2 ? positions : endpoints,
-        railway,
-        fingerprint,
-        planRank,
-        result.length,
-        positions.length >= 2 ? "TRANSIT_LINE" : "SCHEMATIC"
-      ),
-      lineName:
-        stringField(railway, "trip") ?? stringField(railway, "name") ?? "铁路",
-      fromName: stopName(railway, "departure_stop"),
-      toName: stopName(railway, "arrival_stop"),
-    })
+    const railStops = stationRouteStops(railway)
+    const schematicStops = corridorStopsForSegment(railStops, railCorridor)
+    const positions =
+      providerPositions.length >= 2
+        ? providerPositions
+        : buildSmoothSchematicPath(schematicStops.map((stop) => stop.position))
+    if (positions.length >= 2) {
+      result.push({
+        ...segmentFromGeometry(
+          "RAIL",
+          positions,
+          railway,
+          fingerprint,
+          planRank,
+          result.length,
+          providerPositions.length >= 2 ? "TRANSIT_LINE" : "SCHEMATIC"
+        ),
+        lineName:
+          stringField(railway, "trip") ??
+          stringField(railway, "name") ??
+          "铁路",
+        fromName: stopName(railway, "departure_stop"),
+        toName: stopName(railway, "arrival_stop"),
+      })
+    }
   }
 
   const taxi = objectField(container, "taxi")
-  const taxiPositions = parseDirectionPolylines([
-    stringField(taxi, "polyline") ?? "",
-  ])
+  const taxiPositions = parseDirectionPolylines([polylineField(taxi) ?? ""])
   if (taxiPositions.length >= 2) {
     result.push({
       ...segmentFromGeometry(
@@ -438,7 +553,9 @@ function segmentFromGeometry(
     distanceMeters:
       numberField(source, "distance") ?? numberField(source, "step_distance"),
     durationSeconds:
-      numberField(source, "duration") ?? numberField(source, "drivetime"),
+      numberField(source, "duration") ??
+      numberField(source, "drivetime") ??
+      numberField(source, "time"),
     coordinateSystem: "GCJ02",
     geometryKind: positions.length >= 2 ? geometryKind : "NONE",
     positions,
@@ -482,6 +599,13 @@ function transitStrategy(request: RoutePlanRequest) {
   return "0"
 }
 
+function legacyTransitStrategy(request: RoutePlanRequest) {
+  if (request.preference === "LOW_COST") return "1"
+  if (request.preference === "FEWER_TRANSFERS") return "2"
+  if (request.preference === "LESS_WALKING") return "3"
+  return "0"
+}
+
 function formatEndpoint(endpoint: RoutePlanEndpoint) {
   return `${endpoint.lng.toFixed(6)},${endpoint.lat.toFixed(6)}`
 }
@@ -492,6 +616,10 @@ function dateParam(date: Date) {
 
 function timeParam(date: Date) {
   return `${date.getHours()}-${String(date.getMinutes()).padStart(2, "0")}`
+}
+
+function legacyTimeParam(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
 }
 
 function objectField(value: unknown, key: string): JsonRecord {
@@ -519,6 +647,13 @@ function stringField(value: unknown, key: string) {
   return typeof field === "string" && field ? field : undefined
 }
 
+function polylineField(value: unknown) {
+  return (
+    stringField(value, "polyline") ??
+    stringField(objectField(value, "polyline"), "polyline")
+  )
+}
+
 function numberField(value: unknown, key: string) {
   if (!value || typeof value !== "object") return undefined
   const field = (value as JsonRecord)[key]
@@ -541,11 +676,87 @@ function stopName(value: JsonRecord, key: string) {
   return stringField(objectField(value, key), "name")
 }
 
-function stationEndpointPositions(railway: JsonRecord): [number, number][] {
-  const fields = ["departure_stop", "arrival_stop"]
-  return fields
-    .map((field) => stringField(objectField(railway, field), "location"))
-    .flatMap((location) =>
-      location ? parseDirectionPolylines([location]) : []
+function preferredRailCorridor(transits: JsonRecord[]): RailStop[] {
+  return transits.reduce<RailStop[]>((preferred, transit) => {
+    const candidate = arrayField(transit, "segments")
+      .flatMap((segment) => stationRouteStops(objectField(segment, "railway")))
+      .filter(
+        (stop, index, stops) =>
+          index === 0 || !sameRailStop(stop, stops[index - 1])
+      )
+    return candidate.length > preferred.length ? candidate : preferred
+  }, [])
+}
+
+function hasRailwaySegment(transit: JsonRecord) {
+  return arrayField(transit, "segments").some((segment) => {
+    const railway = objectField(segment, "railway")
+    return (
+      stationRouteStops(railway).length >= 2 &&
+      Boolean(stringField(railway, "trip") ?? stringField(railway, "name"))
     )
+  })
+}
+
+function stationRouteStops(railway: JsonRecord): RailStop[] {
+  const departure = stationStop(objectField(railway, "departure_stop"))
+  const arrival = stationStop(objectField(railway, "arrival_stop"))
+  const viaStops = [
+    ...arrayField(railway, "via_stops"),
+    ...arrayField(railway, "via_stop"),
+  ]
+    .map(stationStop)
+    .filter((stop): stop is RailStop => Boolean(stop))
+  return [departure, ...viaStops, arrival]
+    .filter((stop): stop is RailStop => Boolean(stop))
+    .filter(
+      (stop, index, stops) =>
+        index === 0 || !sameRailStop(stop, stops[index - 1])
+    )
+}
+
+function stationStop(value: JsonRecord): RailStop | null {
+  const location = stringField(value, "location")
+  if (!location) return null
+  // v3 的始发/到达站可能用空格分隔，途经站则常用逗号分隔。
+  const [lngRaw, latRaw] = location.trim().split(/[,\s]+/)
+  const lng = Number(lngRaw)
+  const lat = Number(latRaw)
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null
+  return {
+    name: stringField(value, "name"),
+    position: [lng, lat],
+  }
+}
+
+function corridorStopsForSegment(
+  segmentStops: RailStop[],
+  corridor: RailStop[]
+): RailStop[] {
+  if (segmentStops.length !== 2 || corridor.length <= 2) return segmentStops
+  const start = corridor.findIndex((stop) =>
+    sameRailStop(stop, segmentStops[0])
+  )
+  const end = corridor.findLastIndex((stop) =>
+    sameRailStop(stop, segmentStops[1])
+  )
+  if (start >= 0 && end > start) return corridor.slice(start, end + 1)
+  if (end >= 0 && start > end) {
+    return corridor.slice(end, start + 1).reverse()
+  }
+  return segmentStops
+}
+
+function sameRailStop(left: RailStop, right: RailStop) {
+  const coordinateDistance = Math.hypot(
+    left.position[0] - right.position[0],
+    left.position[1] - right.position[1]
+  )
+  if (coordinateDistance <= 0.002) return true
+  if (!left.name || !right.name) return false
+  return normalizeStationName(left.name) === normalizeStationName(right.name)
+}
+
+function normalizeStationName(name: string) {
+  return name.trim().replace(/站$/, "")
 }

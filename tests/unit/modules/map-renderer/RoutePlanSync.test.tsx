@@ -4,11 +4,19 @@ import RoutePlanSync from "@/modules/workspace/ui/RoutePlanSync"
 import {
   buildRoutePlanRequest,
   routePlanFingerprint,
+  type RoutePlanBundle,
+  type RoutePlanFailure,
+  type RoutePlanRequest,
 } from "@/lib/routes/planning"
 import type { DraftRoute } from "@/types/route"
 
 const { resolveRoutePlans, storeState } = vi.hoisted(() => ({
-  resolveRoutePlans: vi.fn(async () => ({ bundles: [], failures: [] })),
+  resolveRoutePlans: vi.fn<
+    (requests: RoutePlanRequest[]) => Promise<{
+      bundles: RoutePlanBundle[]
+      failures: RoutePlanFailure[]
+    }>
+  >(async () => ({ bundles: [], failures: [] })),
   storeState: {
     draftRoute: null as DraftRoute | null,
     markRoutePlansPlanning: vi.fn(),
@@ -70,6 +78,8 @@ describe("RoutePlanSync", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    resolveRoutePlans.mockReset()
+    resolveRoutePlans.mockResolvedValue({ bundles: [], failures: [] })
     storeState.draftRoute = routeWithoutSessionPlans()
   })
 
@@ -144,5 +154,53 @@ describe("RoutePlanSync", () => {
     expect(resolveRoutePlans).toHaveBeenCalledWith([
       expect.objectContaining({ edgeId: "edge-1", mode: "DRIVE" }),
     ])
+  })
+
+  it("retries a transient provider failure after a client backoff", async () => {
+    resolveRoutePlans.mockResolvedValueOnce({
+      bundles: [],
+      failures: [
+        {
+          edgeId: "edge-1",
+          code: "RATE_LIMIT",
+          message: "高德路线服务请求过快，请稍后重试",
+        },
+      ],
+    })
+    render(<RoutePlanSync />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800)
+    })
+    expect(resolveRoutePlans).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800)
+    })
+
+    expect(resolveRoutePlans).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not automatically retry a permanent no-route result", async () => {
+    resolveRoutePlans.mockResolvedValueOnce({
+      bundles: [],
+      failures: [
+        {
+          edgeId: "edge-1",
+          code: "NO_ROUTE",
+          message: "未找到可用路线",
+        },
+      ],
+    })
+    render(<RoutePlanSync />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+
+    expect(resolveRoutePlans).toHaveBeenCalledTimes(1)
   })
 })
