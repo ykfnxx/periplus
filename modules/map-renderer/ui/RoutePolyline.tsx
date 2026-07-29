@@ -7,11 +7,11 @@ import { selectedRoutePlan } from "@/lib/routes/planning"
 import {
   getRouteSegmentStyle,
   getTransportEdgeStyle,
+  periplusColors,
+  routeMarkerColors,
   trafficSectionColors,
 } from "@/lib/ui/map-theme"
-import { useWorkspaceViewportInsets } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { toAMapAvoid } from "@/modules/workspace/viewport"
 import type { MapIntent } from "@/modules/workspace/contracts"
 import type { PathEdge, RouteLngLat, RoutePlan } from "@/types/route"
 
@@ -31,7 +31,6 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
     (state) => state.activeRouteNodeId
   )
   const selectedEdgeId = useWorkspaceStore((state) => state.selectedEdgeId)
-  const viewportInsets = useWorkspaceViewportInsets()
 
   useEffect(() => {
     if (!map || !draftRoute) return
@@ -39,7 +38,6 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
     const nodeById = new Map(view.nodes.map((node) => [node.id, node]))
     const polylines: AMap.Polyline[] = []
     const transferMarkers: AMap.Marker[] = []
-    let ensureCityZoomTimer: ReturnType<typeof setTimeout> | null = null
 
     const bindSelection = (polyline: AMap.Polyline, edge: PathEdge) => {
       polyline.on("click", (event) => {
@@ -49,22 +47,33 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
       })
     }
 
-    for (const edge of view.edges) {
+    for (const [edgeIndex, edge] of view.edges.entries()) {
       const from = nodeById.get(edge.fromNodeId)
       const to = nodeById.get(edge.toNodeId)
       if (!from || !to) continue
       const selected = selectedRoutePlan(edge)
       const isSelected = selectedEdgeId === edge.id
+      const isDimmed = selectedEdgeId !== null && !isSelected
+      const routeColor =
+        view.level === "overview"
+          ? routeMarkerColors[edgeIndex % routeMarkerColors.length]
+          : periplusColors.routeBlue
 
-      if (selected) {
-        for (const candidate of edge.plans ?? []) {
-          if (candidate.id === selected.id) continue
-          drawCandidate(candidate, polylines)
+      if (
+        selected?.segments.some((segment) => segment.positions.length >= 2)
+      ) {
+        if (isSelected) {
+          for (const candidate of edge.plans ?? []) {
+            if (candidate.id === selected.id) continue
+            drawCandidate(candidate, polylines)
+          }
         }
         drawSelectedPlan(
           selected,
           edge,
           isSelected,
+          isDimmed,
+          routeColor,
           polylines,
           transferMarkers,
           bindSelection
@@ -78,7 +87,8 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
         path: lngLatPath(positions),
         strokeColor: style.color,
         strokeWeight: isSelected ? 7 : 5,
-        strokeOpacity: edge.planningStatus === "FAILED" ? 0.35 : 0.55,
+        strokeOpacity:
+          edge.planningStatus === "FAILED" || isDimmed ? 0.25 : 0.55,
         strokeStyle: "dashed",
         strokeDasharray: style.dasharray ?? [8, 8],
         lineJoin: "round",
@@ -91,33 +101,8 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
 
     const overlays = [...polylines, ...transferMarkers]
     if (overlays.length) map.add(overlays)
-    if (polylines.length) {
-      map.setFitView(
-        polylines,
-        false,
-        toAMapAvoid(viewportInsets),
-        view.level === "city" ? 15 : 12
-      )
-      if (view.level === "city") {
-        ensureCityZoomTimer = setTimeout(() => {
-          if (
-            useWorkspaceStore.getState().viewLevel === "city" &&
-            map.getZoom() < 12
-          ) {
-            map.setZoom(12)
-          }
-        }, 250)
-      }
-    } else if (view.nodes.length === 1) {
-      const node = view.nodes[0]
-      map.setZoomAndCenter(
-        view.level === "city" ? 13 : 8,
-        new AMap.LngLat(node.lng, node.lat)
-      )
-    }
 
     return () => {
-      if (ensureCityZoomTimer) clearTimeout(ensureCityZoomTimer)
       if (overlays.length) map.remove(overlays)
     }
   }, [
@@ -127,7 +112,6 @@ export default function RoutePolyline({ onIntent }: RoutePolylineProps) {
     activeRouteNodeId,
     selectedEdgeId,
     onIntent,
-    viewportInsets,
   ])
 
   return null
@@ -157,6 +141,8 @@ function drawSelectedPlan(
   plan: RoutePlan,
   edge: PathEdge,
   isSelected: boolean,
+  isDimmed: boolean,
+  routeColor: string,
   polylines: AMap.Polyline[],
   transferMarkers: AMap.Marker[],
   bindSelection: (polyline: AMap.Polyline, edge: PathEdge) => void
@@ -169,7 +155,8 @@ function drawSelectedPlan(
       path,
       strokeColor: "#fffaf3",
       strokeWeight: isSelected ? 14 : 12,
-      strokeOpacity: edge.planningStatus === "STALE" ? 0.58 : 0.96,
+      strokeOpacity:
+        edge.planningStatus === "STALE" ? 0.58 : isDimmed ? 0.42 : 0.96,
       strokeStyle: schematic ? "dashed" : "solid",
       strokeDasharray: schematic ? [12, 8] : undefined,
       lineJoin: "round",
@@ -179,9 +166,10 @@ function drawSelectedPlan(
     const style = getRouteSegmentStyle(segment.mode)
     const main = new AMap.Polyline({
       path,
-      strokeColor: style.color,
+      strokeColor: routeColor,
       strokeWeight: isSelected ? 9 : 7,
-      strokeOpacity: edge.planningStatus === "STALE" ? 0.48 : 0.96,
+      strokeOpacity:
+        edge.planningStatus === "STALE" ? 0.48 : isDimmed ? 0.3 : 0.96,
       strokeStyle:
         schematic || style.strokeStyle === "dashed" ? "dashed" : "solid",
       strokeDasharray: schematic ? [10, 8] : style.dasharray,
@@ -195,7 +183,7 @@ function drawSelectedPlan(
     polylines.push(casing, main)
 
     for (const traffic of segment.trafficSections ?? []) {
-      if (traffic.positions.length < 2) continue
+      if (traffic.positions.length < 2 || isDimmed) continue
       const trafficLine = new AMap.Polyline({
         path: lngLatPath(traffic.positions),
         strokeColor: trafficSectionColors[traffic.status],

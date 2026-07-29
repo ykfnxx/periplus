@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest"
+import { silkRoadRoute } from "@/lib/mock-routes"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 describe("workspace store UI state", () => {
@@ -8,6 +9,11 @@ describe("workspace store UI state", () => {
       mapReady: false,
       mapError: null,
       mapFocusRequest: null,
+      draftRoute: null,
+      viewLevel: "overview",
+      activeRouteNodeId: null,
+      hoveredRouteNodeId: null,
+      selectedEdgeId: null,
       composerInput: "",
       chatMessages: [],
       activeMapPanel: "none",
@@ -60,6 +66,32 @@ describe("workspace store UI state", () => {
 
     useWorkspaceStore.getState().clearMapFocusRequest(1)
     expect(useWorkspaceStore.getState().mapFocusRequest).toBeNull()
+  })
+
+  it("fits the active route once per topology change", () => {
+    useWorkspaceStore.getState().setDraftRoute(silkRoadRoute)
+    const firstRequest = useWorkspaceStore.getState().mapFocusRequest
+
+    expect(firstRequest?.target).toEqual({
+      type: "active-route",
+      maxZoom: 12,
+    })
+
+    useWorkspaceStore.getState().setDraftRoute({
+      ...silkRoadRoute,
+      name: "只更新名称",
+    })
+    expect(useWorkspaceStore.getState().mapFocusRequest).toEqual(firstRequest)
+
+    useWorkspaceStore.getState().setDraftRoute({
+      ...silkRoadRoute,
+      nodes: silkRoadRoute.nodes.map((node, index) =>
+        index === 0 ? { ...node, lng: node.lng + 0.01 } : node
+      ),
+    })
+    expect(useWorkspaceStore.getState().mapFocusRequest?.requestId).toBe(
+      (firstRequest?.requestId ?? 0) + 1
+    )
   })
 
   it("switches map panels", () => {

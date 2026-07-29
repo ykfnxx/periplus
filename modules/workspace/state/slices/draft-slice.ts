@@ -10,6 +10,7 @@ import type {
   DraftSlice,
   WorkspaceSlice,
 } from "@/modules/workspace/state/types"
+import type { DraftRoute } from "@/types/route"
 
 export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set) => ({
   draftRoute: null,
@@ -19,24 +20,33 @@ export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set) => ({
       const activeRouteNodeStillExists = Boolean(
         mergedRoute?.nodes.some((node) => node.id === state.activeRouteNodeId)
       )
+      const topologyChanged =
+        routeTopologyKey(state.draftRoute) !== routeTopologyKey(mergedRoute)
       return {
         draftRoute: mergedRoute,
+        ...(mergedRoute && topologyChanged
+          ? {
+              mapFocusRequest: {
+                requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
+                target: {
+                  type: "active-route" as const,
+                  maxZoom: activeRouteNodeStillExists ? 15 : 12,
+                },
+              },
+            }
+          : {}),
         ...(mergedRoute && activeRouteNodeStillExists
           ? {}
           : {
               viewLevel: "overview" as const,
               activeRouteNodeId: null,
+              hoveredRouteNodeId: null,
               selectedEdgeId: null,
               selectedLocationPoint: null,
               selectedLocationAnchor: null,
             }),
       }
     }),
-  edgeGeometries: {},
-  mergeEdgeGeometries: (entries) =>
-    set((state) => ({
-      edgeGeometries: { ...state.edgeGeometries, ...entries },
-    })),
   markRoutePlansPlanning: (edgeIds) =>
     set((state) => ({
       draftRoute: mapRouteEdges(state.draftRoute, (edge) =>
@@ -107,3 +117,18 @@ export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set) => ({
   draftSaveState: "idle",
   setDraftSaveState: (draftSaveState) => set({ draftSaveState }),
 })
+
+function routeTopologyKey(route: DraftRoute | null) {
+  if (!route) return ""
+  const topLevel = route.nodes
+    .map((node) => `${node.id}:${node.lng}:${node.lat}:${node.order}`)
+    .join("|")
+  const subPlans = route.subPlans
+    .map((subPlan) =>
+      subPlan.nodes
+        .map((node) => `${node.id}:${node.lng}:${node.lat}:${node.order}`)
+        .join("|")
+    )
+    .join("::")
+  return `${route.id}:${topLevel}:${subPlans}`
+}

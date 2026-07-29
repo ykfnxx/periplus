@@ -38,9 +38,9 @@ export default function InitialChatState() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6">
-      <div className="mb-8 text-center">
-        <h1 className="text-3xl font-semibold text-ink">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-5">
+      <div className="mb-5 text-center">
+        <h1 className="text-xl font-semibold text-ink">
           开始你的旅程
         </h1>
         <p className="mt-2 text-sm text-teak">

@@ -26,6 +26,7 @@ describe("WorkspaceController map intents", () => {
       viewLevel: "overview",
       activeRouteNodeId: null,
       activeMapPanel: "none",
+      hoveredRouteNodeId: null,
       selectedEdgeId: null,
       selectedLocationPoint: null,
       selectedLocationAnchor: null,
@@ -52,12 +53,44 @@ describe("WorkspaceController map intents", () => {
     expect(useWorkspaceStore.getState()).toMatchObject({
       viewLevel: "city",
       activeRouteNodeId: "node-1",
+      mapFocusRequest: {
+        target: { type: "active-route", maxZoom: 15 },
+      },
+    })
+  })
+
+  it("keeps map hover transient and separate from selection", () => {
+    dispatchMapIntent({
+      type: "map.waypoint-hovered",
+      waypointId: "node-1",
+    })
+    expect(useWorkspaceStore.getState()).toMatchObject({
+      hoveredRouteNodeId: "node-1",
+      selectedLocationPoint: null,
+    })
+
+    dispatchMapIntent({
+      type: "map.waypoint-hover-cleared",
+      waypointId: "node-1",
+    })
+    expect(useWorkspaceStore.getState()).toMatchObject({
+      hoveredRouteNodeId: null,
+      selectedLocationPoint: null,
     })
   })
 
   it("turns map edge clicks into a toggleable selection", () => {
+    useWorkspaceStore.setState({
+      selectedLocationPoint: draftRoute.nodes[0],
+    })
     dispatchMapIntent({ type: "map.edge-selected", edgeId: "edge-1" })
-    expect(useWorkspaceStore.getState().selectedEdgeId).toBe("edge-1")
+    expect(useWorkspaceStore.getState()).toMatchObject({
+      selectedEdgeId: "edge-1",
+      selectedLocationPoint: null,
+      mapFocusRequest: {
+        target: { type: "edge", edgeId: "edge-1", maxZoom: 14 },
+      },
+    })
 
     dispatchMapIntent({ type: "map.edge-selected", edgeId: "edge-1" })
     expect(useWorkspaceStore.getState().selectedEdgeId).toBeNull()

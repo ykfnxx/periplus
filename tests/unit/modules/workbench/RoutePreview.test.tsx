@@ -1,206 +1,196 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen } from "@testing-library/react"
+import { silkRoadRoute } from "@/lib/mock-routes"
 import RoutePreview from "@/modules/workbench/ui/RoutePreview"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import type { DraftRoute, RoutePlan } from "@/types/route"
 
-const setSelectedEdgeId = vi.fn()
-const setSelectedLocationPoint = vi.fn()
-const selectRoutePlan = vi.fn()
-const requestMapFocus = vi.fn()
+const routePlans: RoutePlan[] = [
+  {
+    id: "plan-1",
+    provider: "amap",
+    rank: 0,
+    label: "推荐方案",
+    strategy: "recommended",
+    durationSeconds: 1_440,
+    distanceMeters: 8_800,
+    trafficBasis: "TYPICAL",
+    calculatedAt: "2026-07-29T00:00:00.000Z",
+    requestFingerprint: "plan-1",
+    segments: [],
+  },
+  {
+    id: "plan-2",
+    provider: "amap",
+    rank: 1,
+    label: "少走高速",
+    strategy: "avoid-highway",
+    durationSeconds: 1_680,
+    distanceMeters: 9_400,
+    trafficBasis: "TYPICAL",
+    calculatedAt: "2026-07-29T00:00:00.000Z",
+    requestFingerprint: "plan-2",
+    segments: [],
+  },
+]
 
-vi.mock("@/modules/workspace/state/workspace-store", () => ({
-  useWorkspaceStore: vi.fn(),
-}))
-
-function mockStore(route: unknown | null) {
-  ;(
-    useWorkspaceStore as unknown as ReturnType<typeof vi.fn>
-  ).mockImplementation((selector: (s: unknown) => unknown) =>
-    selector({
-      draftRoute: route,
-      viewLevel: "overview",
-      activeRouteNodeId: null,
-      photoShares: [],
-      edgeGeometries: {},
-      setSelectedEdgeId,
-      setSelectedLocationPoint,
-      selectRoutePlan,
-      requestMapFocus,
-    })
-  )
-}
-
-const mockRoute = {
-  id: "route-1",
-  ownerId: "user-1",
-  name: "丝绸之路",
-  nodes: [
-    {
-      id: "node-xian",
-      name: "西安",
-      lat: 34.34,
-      lng: 108.93,
-      order: 0,
-      category: "CITY",
-      durationMinutes: 72 * 60,
-      notes: "起点，兵马俑",
-    },
-    {
-      id: "node-lanzhou",
-      name: "兰州",
-      lat: 36.06,
-      lng: 103.83,
-      order: 1,
-      category: "CITY",
-      durationMinutes: 48 * 60,
-      notes: "黄河风情线",
-    },
-    {
-      id: "node-zhangye",
-      name: "张掖",
-      lat: 38.92,
-      lng: 100.44,
-      order: 2,
-      category: "CITY",
-      durationMinutes: 48 * 60,
-    },
-  ],
-  edges: [
-    {
-      id: "edge-1",
-      fromNodeId: "node-xian",
-      toNodeId: "node-lanzhou",
-      status: "PLANNED",
-      transportMode: "CAR",
-      durationMinutes: 480,
-      distanceKm: 640,
-    },
-    {
-      id: "edge-2",
-      fromNodeId: "node-lanzhou",
-      toNodeId: "node-zhangye",
-      status: "INCOMPLETE",
-      transportMode: "FLIGHT",
-      durationMinutes: 90,
-      distanceKm: 500,
-    },
-  ],
-  subPlans: [],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+function routeWithPlans(): DraftRoute {
+  return {
+    ...silkRoadRoute,
+    subPlans: silkRoadRoute.subPlans.map((subPlan) =>
+      subPlan.id === "subplan-xian"
+        ? {
+            ...subPlan,
+            edges: subPlan.edges.map((edge, index) =>
+              index === 0
+                ? {
+                    ...edge,
+                    planningStatus: "READY" as const,
+                    selectedPlanId: "plan-1",
+                    plans: routePlans,
+                  }
+                : edge
+            ),
+          }
+        : subPlan
+    ),
+  }
 }
 
 describe("RoutePreview", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
+    Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it("renders empty state when no route is selected", () => {
-    mockStore(null)
+  it("renders a distinct empty state", () => {
     render(<RoutePreview />)
     expect(screen.getByText("暂无路线预览")).toBeInTheDocument()
   })
 
-  it("renders route title and level label", () => {
-    mockStore(mockRoute)
+  it("distinguishes an empty route from the absence of a route", () => {
+    useWorkspaceStore.getState().setDraftRoute({
+      ...silkRoadRoute,
+      nodes: [],
+      edges: [],
+      subPlans: [],
+    })
     render(<RoutePreview />)
-    expect(screen.getByText("丝绸之路")).toBeInTheDocument()
-    expect(screen.getByText("顶层路线")).toBeInTheDocument()
+
+    expect(
+      screen.getByText("路线尚无地点，可以在 AI 面板中添加第一站。")
+    ).toBeInTheDocument()
+    expect(screen.queryByText("暂无路线预览")).not.toBeInTheDocument()
   })
 
-  it("renders all nodes in timeline", () => {
-    mockStore(mockRoute)
+  it("renders route scope tabs and city summary rows in overview", () => {
+    useWorkspaceStore.getState().setDraftRoute(silkRoadRoute)
     render(<RoutePreview />)
-    expect(screen.getByText("西安")).toBeInTheDocument()
-    expect(screen.getByText("兰州")).toBeInTheDocument()
-    expect(screen.getByText("张掖")).toBeInTheDocument()
+
+    expect(screen.getByRole("heading", { name: "丝绸之路" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("tab", { name: "总览", selected: true })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "查看城市 西安" })
+    ).toHaveTextContent("西安城墙 → 大雁塔 → 回民街")
+    expect(screen.getByText("7 个城市")).toBeInTheDocument()
   })
 
-  it("renders node durations and notes", () => {
-    mockStore(mockRoute)
+  it("switches scope atomically and requests one active-route camera fit", () => {
+    useWorkspaceStore.getState().setDraftRoute(silkRoadRoute)
+    useWorkspaceStore.setState({ mapFocusRequest: null })
     render(<RoutePreview />)
-    expect(screen.getByText("3 天")).toBeInTheDocument()
-    expect(screen.getByText("起点，兵马俑")).toBeInTheDocument()
-    expect(screen.getByText("黄河风情线")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("tab", { name: "西安" }))
+
+    expect(useWorkspaceStore.getState()).toMatchObject({
+      viewLevel: "city",
+      activeRouteNodeId: "node-xian",
+      selectedEdgeId: null,
+      selectedLocationPoint: null,
+      mapFocusRequest: {
+        target: { type: "active-route", maxZoom: 15 },
+      },
+    })
   })
 
-  it("renders edge transport modes and details", () => {
-    mockStore(mockRoute)
-    render(<RoutePreview />)
-    expect(screen.getByText("驾车")).toBeInTheDocument()
-    expect(screen.getByText("飞机")).toBeInTheDocument()
-    expect(screen.getByText("640 公里 · 8 小时")).toBeInTheDocument()
-  })
-
-  it("selects a node on click", () => {
-    mockStore(mockRoute)
-    render(<RoutePreview />)
-    fireEvent.click(screen.getByText("西安"))
-    expect(setSelectedEdgeId).toHaveBeenCalledWith(null)
-    expect(setSelectedLocationPoint).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "node-xian" })
+  it("returns the itinerary scroll container to the top after scope changes", () => {
+    useWorkspaceStore.getState().setDraftRoute(silkRoadRoute)
+    const { container } = render(
+      <div className="periplus-chat-scroll">
+        <RoutePreview />
+      </div>
     )
-    expect(requestMapFocus).toHaveBeenCalledWith({
+    const scrollContainer = container.firstElementChild as HTMLElement
+    scrollContainer.scrollTop = 240
+
+    fireEvent.click(screen.getByRole("tab", { name: "西安" }))
+
+    expect(scrollContainer.scrollTop).toBe(0)
+  })
+
+  it("renders the city timeline and selects a node with map focus", () => {
+    useWorkspaceStore.getState().setDraftRoute(silkRoadRoute)
+    useWorkspaceStore.getState().enterCityView("node-xian")
+    useWorkspaceStore.setState({ mapFocusRequest: null })
+    render(<RoutePreview />)
+
+    expect(
+      screen.getByRole("tab", { name: "西安", selected: true })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "选择节点 西安城墙" })
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "路线段 出租车" })).toHaveTextContent(
+      "24 分钟 · 8.8 公里"
+    )
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "选择节点 西安城墙" })
+    )
+
+    expect(useWorkspaceStore.getState().selectedLocationPoint?.id).toBe(
+      "subnode-xian-city-wall"
+    )
+    expect(useWorkspaceStore.getState().mapFocusRequest?.target).toEqual({
       type: "node",
-      nodeId: "node-xian",
-      zoom: 8,
+      nodeId: "subnode-xian-city-wall",
+      zoom: 15,
     })
   })
 
-  it("selects an edge on click", () => {
-    mockStore(mockRoute)
+  it("shows alternatives only after selecting their route edge", () => {
+    useWorkspaceStore.getState().setDraftRoute(routeWithPlans())
+    useWorkspaceStore.getState().enterCityView("node-xian")
     render(<RoutePreview />)
-    // Click on the edge transport label
-    fireEvent.click(screen.getByText("驾车"))
-    expect(setSelectedLocationPoint).toHaveBeenCalledWith(null)
-    expect(setSelectedEdgeId).toHaveBeenCalledWith("edge-1")
-    expect(requestMapFocus).toHaveBeenCalledWith({
-      type: "edge",
-      edgeId: "edge-1",
-      maxZoom: 14,
-    })
+
+    expect(
+      screen.queryByRole("button", { name: "选择少走高速" })
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "路线段 出租车" }))
+    fireEvent.click(screen.getByRole("button", { name: "选择少走高速" }))
+
+    const selectedEdge =
+      useWorkspaceStore.getState().draftRoute?.subPlans[0].edges[0]
+    expect(selectedEdge?.selectedPlanId).toBe("plan-2")
+    expect(selectedEdge?.durationMinutes).toBe(28)
   })
 
-  it("selects an alternative route plan", () => {
-    const routeWithPlans = {
-      ...mockRoute,
-      edges: [
-        {
-          ...mockRoute.edges[0],
-          selectedPlanId: "plan-1",
-          plans: [
-            {
-              id: "plan-1",
-              edgeId: "edge-1",
-              provider: "amap",
-              label: "推荐方案",
-              requestMode: "DRIVE",
-              durationSeconds: 1800,
-              distanceMeters: 20000,
-              trafficBasis: "REALTIME",
-              segments: [],
-            },
-            {
-              id: "plan-2",
-              edgeId: "edge-1",
-              provider: "amap",
-              label: "备选方案 2",
-              requestMode: "DRIVE",
-              durationSeconds: 2100,
-              distanceMeters: 22000,
-              trafficBasis: "REALTIME",
-              segments: [],
-            },
-          ],
-        },
-        mockRoute.edges[1],
-      ],
-    }
-    mockStore(routeWithPlans)
-
+  it("keeps hover separate from the persistent node selection", () => {
+    useWorkspaceStore.getState().setDraftRoute(silkRoadRoute)
+    useWorkspaceStore.getState().enterCityView("node-xian")
     render(<RoutePreview />)
-    fireEvent.click(screen.getByRole("button", { name: "选择备选方案 2" }))
 
-    expect(selectRoutePlan).toHaveBeenCalledWith("edge-1", "plan-2")
+    const node = screen.getByRole("button", { name: "选择节点 西安城墙" })
+    fireEvent.mouseEnter(node)
+    expect(useWorkspaceStore.getState().hoveredRouteNodeId).toBe(
+      "subnode-xian-city-wall"
+    )
+    expect(useWorkspaceStore.getState().selectedLocationPoint).toBeNull()
+
+    fireEvent.mouseLeave(node)
+    expect(useWorkspaceStore.getState().hoveredRouteNodeId).toBeNull()
   })
 })

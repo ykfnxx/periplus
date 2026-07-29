@@ -201,5 +201,22 @@ describe("RoutePolyline", () => {
         expect.objectContaining({ options: markerOptions[0] }),
       ])
     )
+    expect(storeState.map?.setFitView).not.toHaveBeenCalled()
+    expect(storeState.map?.setZoomAndCenter).not.toHaveBeenCalled()
+  })
+
+  it("keeps alternative geometry hidden until the edge is selected", async () => {
+    storeState.selectedEdgeId = null
+    render(<RoutePolyline />)
+
+    await waitFor(() => expect(polylineOptions).toHaveLength(5))
+    expect(polylineOptions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          strokeColor: "#8fa1a8",
+          zIndex: 55,
+        }),
+      ])
+    )
   })
 })

@@ -11,13 +11,13 @@
   --color-soft-white: #fffaf3;
   --color-white: #fff;
   --color-ink: #2c2416;
-  --color-russet: #d97642;
+  --color-russet: #a94f2b;
   --color-mustard: #d4a574;
   --color-olive: #4a7c59;
   --color-walnut: #6b5d4f;
-  --color-teak: #8b7355;
-  --color-bluegray: #7d9ba8;
-  --color-coral: #e57a77;
+  --color-teak: #765f45;
+  --color-bluegray: #4f6d79;
+  --color-coral: #a84643;
 
   /* ink 标准 alpha 档：描边/底色用 5/10/15，更深的蒙层用 20/30/40/70 */
   --color-ink-5: rgb(44 36 22 / 5%);
@@ -59,9 +59,57 @@ body {
   transform: scale(1.4);
 }
 
+.periplus-map-marker--hovered {
+  transform: scale(1.18);
+}
+
+.periplus-map-marker--selected {
+  border-width: 3px;
+  box-shadow:
+    0 0 0 4px rgb(255 250 243 / 78%),
+    0 10px 22px var(--color-ink-30);
+  transform: scale(1.16);
+}
+
 .periplus-map-marker--bright,
 .periplus-map-marker--mustard {
   color: var(--color-ink);
+}
+
+.periplus-route-badge {
+  align-items: center;
+  background: rgb(255 250 243 / 96%);
+  border: 1px solid rgb(79 109 121 / 42%);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px var(--color-ink-15);
+  color: var(--color-ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  height: 34px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 124px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.periplus-route-badge:hover,
+.periplus-route-badge--selected {
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  color: var(--color-soft-white);
+}
+
+.periplus-route-badge--selected {
+  box-shadow:
+    0 0 0 3px rgb(255 250 243 / 75%),
+    0 10px 24px var(--color-ink-30);
+}
+
+.periplus-route-badge--stale {
+  opacity: 0.64;
 }
 
 .periplus-photo-marker {

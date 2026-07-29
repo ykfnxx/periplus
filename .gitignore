@@ -10,6 +10,7 @@
 
 # testing
 /coverage
+/storybook-static
 
 # next.js
 /.next/
@@ -36,6 +37,7 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 docs/superpowers/
+docs/design/
 .superpowers/
 .worktrees/
 uploads/

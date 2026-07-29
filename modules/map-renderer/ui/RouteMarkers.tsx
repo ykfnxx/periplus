@@ -22,6 +22,10 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
   const viewLevel = useWorkspaceStore((s) => s.viewLevel)
   const activeRouteNodeId = useWorkspaceStore((s) => s.activeRouteNodeId)
   const photoShares = useWorkspaceStore((s) => s.photoShares)
+  const hoveredRouteNodeId = useWorkspaceStore((s) => s.hoveredRouteNodeId)
+  const selectedLocationPoint = useWorkspaceStore(
+    (s) => s.selectedLocationPoint
+  )
 
   useEffect(() => {
     if (!map) return
@@ -71,10 +75,24 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       if (clusteredIds.has(point.id)) return
 
       const content = document.createElement("div")
-      content.className = "periplus-map-marker periplus-map-marker--bright"
-      content.style.background =
-        routeMarkerColors[index % routeMarkerColors.length]
-      content.style.color = "var(--color-ink)"
+      content.className = [
+        "periplus-map-marker",
+        "periplus-map-marker--bright",
+        hoveredRouteNodeId === point.id
+          ? "periplus-map-marker--hovered"
+          : "",
+        selectedLocationPoint?.id === point.id
+          ? "periplus-map-marker--selected"
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+      content.setAttribute("role", "button")
+      content.setAttribute("aria-label", `选择地点 ${point.name}`)
+      const colorIndex = index % routeMarkerColors.length
+      content.style.background = routeMarkerColors[colorIndex]
+      content.style.color =
+        colorIndex === 2 ? "var(--color-ink)" : "var(--color-white)"
       content.textContent = `${index + 1}`
 
       const marker = new AMap.Marker({
@@ -136,6 +154,8 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
     activeRouteNodeId,
     viewportRevision,
     photoShares,
+    hoveredRouteNodeId,
+    selectedLocationPoint,
     onIntent,
   ])
 

@@ -14,6 +14,7 @@ export function dispatchMapIntent(intent: MapIntent) {
 
   if (intent.type === "map.background-clicked") {
     state.setActiveMapPanel("none")
+    state.setHoveredRouteNodeId(null)
     state.setSelectedEdgeId(null)
     state.setSelectedLocationPoint(null)
     state.setSelectedPhotoShare(null)
@@ -73,14 +74,21 @@ export function dispatchMapIntent(intent: MapIntent) {
     if (!waypoint) return
 
     if (intent.type === "map.waypoint-hover-cleared") {
-      if (state.selectedLocationPoint?.id === waypoint.id) {
-        state.setSelectedLocationPoint(null)
+      if (state.hoveredRouteNodeId === waypoint.id) {
+        state.setHoveredRouteNodeId(null)
       }
       return
     }
 
+    if (intent.type === "map.waypoint-hovered") {
+      state.setHoveredRouteNodeId(waypoint.id)
+      return
+    }
+
     if (intent.type === "map.waypoint-selected" && view.level === "overview") {
+      state.setWorkbenchTab("preview")
       state.enterCityView(waypoint.id)
+      state.requestMapFocus({ type: "active-route", maxZoom: 15 })
       return
     }
 
@@ -92,10 +100,14 @@ export function dispatchMapIntent(intent: MapIntent) {
       return
     }
 
-    state.setSelectedLocationPoint(
-      waypoint,
-      intent.type === "map.waypoint-selected" ? intent.anchor : undefined
-    )
+    state.setWorkbenchTab("preview")
+    state.setSelectedEdgeId(null)
+    state.setSelectedLocationPoint(waypoint, intent.anchor)
+    state.requestMapFocus({
+      type: "node",
+      nodeId: waypoint.id,
+      zoom: 15,
+    })
     return
   }
 
@@ -110,9 +122,18 @@ export function dispatchMapIntent(intent: MapIntent) {
   }
 
   if (intent.type === "map.edge-selected") {
-    state.setSelectedEdgeId(
+    state.setWorkbenchTab("preview")
+    state.setSelectedLocationPoint(null)
+    const nextEdgeId =
       state.selectedEdgeId === intent.edgeId ? null : intent.edgeId
-    )
+    state.setSelectedEdgeId(nextEdgeId)
+    if (nextEdgeId) {
+      state.requestMapFocus({
+        type: "edge",
+        edgeId: nextEdgeId,
+        maxZoom: 14,
+      })
+    }
   }
 }
 

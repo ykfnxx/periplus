@@ -1,16 +1,13 @@
 "use client"
 
 import { useWorkspaceStore } from "./workspace-store"
-import { workspaceViewportInsets } from "../viewport"
+import { FULL_MAP_VIEWPORT_INSETS } from "../viewport"
 
 export function useWorkspaceViewportInsets() {
-  const workbenchVisible = useWorkspaceStore(
-    (state) =>
-      !(
-        state.isSelectingLocation &&
-        state.locationSelectionMode === "upload-photo"
-      )
+  return useWorkspaceStore((state) =>
+    state.isSelectingLocation &&
+    state.locationSelectionMode === "upload-photo"
+      ? FULL_MAP_VIEWPORT_INSETS
+      : state.mapViewportInsets
   )
-
-  return workspaceViewportInsets(workbenchVisible)
 }

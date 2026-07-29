@@ -6,24 +6,24 @@ export const periplusColors = {
   softWhite: "#fffaf3",
   white: "#fff",
   ink: "#2c2416",
-  russet: "#d97642",
+  russet: "#a94f2b",
   mustard: "#d4a574",
   olive: "#4a7c59",
   walnut: "#6b5d4f",
-  teak: "#8b7355",
-  bluegray: "#7d9ba8",
-  coral: "#e57a77",
+  teak: "#765f45",
+  bluegray: "#4f6d79",
+  coral: "#a84643",
   routeBlue: "#5fb7ff",
   routeBluePending: "#9dd8ff",
 } as const
 
 export const routeMarkerColors = [
-  "#ff8a4c",
-  "#ffd166",
-  "#6ee7b7",
-  "#60d7ff",
-  "#ff7aa8",
-  "#a78bfa",
+  periplusColors.russet,
+  periplusColors.olive,
+  periplusColors.mustard,
+  periplusColors.bluegray,
+  periplusColors.coral,
+  "#7c6f64",
 ] as const
 
 export interface TransportEdgeStyle {
@@ -43,7 +43,7 @@ export const transportEdgeStyles: Partial<
 > = {
   FLIGHT: { color: "#a78bfa", strokeStyle: "dashed", dasharray: [10, 8] },
   TRAIN: { color: "#48c9a9", strokeStyle: "solid" },
-  SUBWAY: { color: "#e57a77", strokeStyle: "solid" },
+  SUBWAY: { color: periplusColors.coral, strokeStyle: "solid" },
   BUS: { color: "#f0b45c", strokeStyle: "solid" },
   WALK: { color: "#7fb069", strokeStyle: "dashed", dasharray: [4, 8] },
 }
@@ -71,7 +71,7 @@ export function getRouteSegmentStyle(mode: RouteSegmentMode) {
 }
 
 export const trafficSectionColors = {
-  UNKNOWN: "#7d9ba8",
+  UNKNOWN: periplusColors.bluegray,
   FREE_FLOW: "#36a269",
   SLOW: "#e8b04f",
   CONGESTED: "#e26952",

@@ -12,6 +12,7 @@ import LocationInfoBubble from "./LocationInfoBubble"
 import MapRouteLevelControls from "./MapRouteLevelControls"
 import MapViewportController from "./MapViewportController"
 import OverlapCluster from "./OverlapCluster"
+import EdgeBadgeLayer from "./EdgeBadgeLayer"
 
 interface MapSurfaceProps {
   onIntent?: (intent: MapIntent) => void
@@ -70,8 +71,12 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
 
     return () => {
       mounted = false
-      mapInstance?.destroy()
       setMap(null)
+      if (mapInstance) {
+        // 子覆盖层仍需使用地图实例移除 Marker 和 Polyline，延后销毁避免清理顺序竞争。
+        const staleMapInstance = mapInstance
+        window.setTimeout(() => staleMapInstance.destroy(), 0)
+      }
     }
   }, [onIntent, setMap, setMapError])
 
@@ -90,6 +95,7 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
         </div>
       )}
       <RoutePolyline key="polyline" onIntent={onIntent} />
+      <EdgeBadgeLayer key="edge-badges" onIntent={onIntent} />
       <RouteMarkers key="markers" onIntent={onIntent} />
       <LocationInfoBubble key="location-info" />
       <PhotoMarkers key="photo-markers" onIntent={onIntent} />

@@ -1,10 +1,8 @@
 import type {
   CreateRouteInput,
   RouteDto,
-  TransportMode,
   UpdateRouteInput,
 } from "@/types/route"
-import type { LngLatTuple } from "@/lib/routes/edge-geometry"
 import type {
   RoutePlanBundle,
   RoutePlanFailure,
@@ -67,32 +65,6 @@ export async function updateRoute(
     body: JSON.stringify(input),
   })
   return parseRouteResponse<RouteDto>(response)
-}
-
-export interface EdgeGeometryRequestPayload {
-  from: { lat: number; lng: number }
-  to: { lat: number; lng: number }
-  transportMode?: TransportMode
-}
-
-export interface EdgeGeometryResultPayload {
-  key: string
-  source: string
-  positions: LngLatTuple[]
-}
-
-export async function resolveRouteGeometries(
-  edges: EdgeGeometryRequestPayload[]
-): Promise<EdgeGeometryResultPayload[]> {
-  const response = await fetch("/api/routes/geometry", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ edges }),
-  })
-  const body = await parseRouteResponse<{
-    results: EdgeGeometryResultPayload[]
-  }>(response)
-  return body.results ?? []
 }
 
 export async function resolveRoutePlans(

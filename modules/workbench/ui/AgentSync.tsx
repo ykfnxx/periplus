@@ -56,12 +56,23 @@ export default function AgentSync() {
         applySnapshot(draft)
         setChatMessages(asConversationMessages(messages))
 
-        socket = connectAgentSocket(sessionId)
-        setAgentSender((type, payload) => {
-          if (socket) sendAgentEvent(socket, type, payload)
+        const activeSocket = connectAgentSocket(sessionId)
+        socket = activeSocket
+        activeSocket.addEventListener("open", () => {
+          if (disposed) return
+          // 只有 OPEN 后才发布发送器，依赖它的深链接加载事件不会在连接期丢失。
+          setAgentSender((type, payload) => {
+            sendAgentEvent(activeSocket, type, payload)
+          })
+        })
+        activeSocket.addEventListener("close", () => {
+          if (!disposed) setAgentSender(null)
+        })
+        activeSocket.addEventListener("error", () => {
+          if (!disposed) setAgentSender(null)
         })
 
-        socket.addEventListener("message", (event) => {
+        activeSocket.addEventListener("message", (event) => {
           const message = JSON.parse(event.data) as AgentEvent
 
           if (

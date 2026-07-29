@@ -1,5 +1,4 @@
 import type { StateCreator } from "zustand"
-import type { LngLatTuple } from "@/lib/routes/edge-geometry"
 import type { RoutePlanBundle, RoutePlanFailure } from "@/lib/routes/planning"
 import type { RouteViewLevel } from "@/lib/routes/active-path"
 import type { DraftRoute, PathNode } from "@/types/route"
@@ -7,6 +6,7 @@ import type { PhotoShare } from "@/types/photo"
 import type {
   MapFocusRequest,
   MapFocusTarget,
+  ViewportInsets,
 } from "@/modules/workspace/contracts"
 
 export type MapType = "standard" | "satellite" | "terrain"
@@ -16,6 +16,7 @@ export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
 export type ChatMessageRole = "user" | "assistant"
 export type AgentMode = "auto" | "suggest"
 export type WorkbenchTab = "preview" | "chat"
+export type MobileSheetSnap = "collapsed" | "half" | "expanded"
 export type AgentSender = (type: string, payload?: unknown) => void
 export type AnchorType = "route" | "photo"
 
@@ -92,8 +93,6 @@ export interface MapRuntimeSlice {
 export interface DraftSlice {
   draftRoute: DraftRoute | null
   setDraftRoute: (route: DraftRoute | null) => void
-  edgeGeometries: Record<string, LngLatTuple[]>
-  mergeEdgeGeometries: (entries: Record<string, LngLatTuple[]>) => void
   markRoutePlansPlanning: (edgeIds: string[]) => void
   applyRoutePlanBundles: (bundles: RoutePlanBundle[]) => void
   markRoutePlanFailures: (failures: RoutePlanFailure[]) => void
@@ -123,6 +122,10 @@ export interface WorkspaceUiSlice {
   activeRouteNodeId: string | null
   enterCityView: (routeNodeId: string) => void
   returnToOverview: () => void
+  hoveredRouteNodeId: string | null
+  setHoveredRouteNodeId: (nodeId: string | null) => void
+  mapViewportInsets: ViewportInsets
+  setMapViewportInsets: (insets: ViewportInsets) => void
   selectedEdgeId: string | null
   setSelectedEdgeId: (edgeId: string | null) => void
   selectedLocationPoint: PathNode | null
@@ -132,6 +135,8 @@ export interface WorkspaceUiSlice {
   setActiveMapPanel: (panel: ActiveMapPanel) => void
   workbenchTab: WorkbenchTab
   setWorkbenchTab: (workbenchTab: WorkbenchTab) => void
+  mobileSheetSnap: MobileSheetSnap
+  setMobileSheetSnap: (snap: MobileSheetSnap) => void
   composerInput: string
   setComposerInput: (input: string) => void
 }

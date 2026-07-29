@@ -101,6 +101,10 @@ export const silkRoadRoute: Route = {
     fromNodeId,
     toNodeId,
     status: "INCOMPLETE",
+    transportMode: "CAR",
+    requestMode: "DRIVE",
+    preference: "RECOMMENDED",
+    planningStatus: "EMPTY",
   })),
   subPlans: [
     {
@@ -149,6 +153,8 @@ export const silkRoadRoute: Route = {
           toNodeId: "subnode-xian-dayan-pagoda",
           status: "PLANNED",
           transportMode: "TAXI",
+          requestMode: "DRIVE",
+          planningStatus: "EMPTY",
           durationMinutes: 24,
           distanceKm: 8.8,
         },
@@ -159,6 +165,8 @@ export const silkRoadRoute: Route = {
           toNodeId: "subnode-xian-muslim-quarter",
           status: "PLANNED",
           transportMode: "SUBWAY",
+          requestMode: "TRANSIT",
+          planningStatus: "EMPTY",
           durationMinutes: 32,
           distanceKm: 7.2,
         },

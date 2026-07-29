@@ -48,6 +48,8 @@ export default function PresetPromptBubbles() {
     <div
       ref={scrollRef}
       onWheel={scrollHorizontally}
+      tabIndex={0}
+      aria-label="推荐提示"
       className="periplus-prompt-scroll scrollbar-hidden flex gap-2 overflow-x-auto px-7 pb-1"
     >
       {presetPrompts.map((prompt) => (
