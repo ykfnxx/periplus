@@ -11,6 +11,8 @@
 # testing
 /coverage
 /storybook-static
+/test-results
+/playwright-report
 
 # next.js
 /.next/
@@ -42,3 +44,5 @@ docs/design/
 .worktrees/
 uploads/
 public/uploads/
+/prisma/dev.db
+/prisma/dev.db-journal

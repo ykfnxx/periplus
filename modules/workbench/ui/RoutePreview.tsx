@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react"
 import { ChevronLeft } from "lucide-react"
-import { getActivePathView } from "@/lib/routes/active-path"
-import { totalDurationDays } from "@/lib/routes/itinerary-summary"
+import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import { totalDurationDays } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import RouteOverview from "./RouteOverview"
 import RouteScopeTabs from "./RouteScopeTabs"
@@ -15,20 +15,24 @@ export default function RoutePreview({
   onCollapse?: () => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
-  const activeRouteNodeId = useWorkspaceStore(
-    (state) => state.activeRouteNodeId
+  const activeSectionEventId = useWorkspaceStore(
+    (state) => state.activeSectionEventId
   )
   const draftSaveState = useWorkspaceStore((state) => state.draftSaveState)
-  const view = getActivePathView(draftRoute, viewLevel, activeRouteNodeId)
+  const view = getJourneyScopeProjection(
+    draftJourney,
+    viewLevel,
+    activeSectionEventId
+  )
 
   useEffect(() => {
     const scrollContainer = rootRef.current?.closest(".periplus-chat-scroll")
     if (scrollContainer) scrollContainer.scrollTop = 0
-  }, [activeRouteNodeId, viewLevel])
+  }, [activeSectionEventId, viewLevel])
 
-  if (!draftRoute) {
+  if (!draftJourney) {
     return (
       <div className="flex h-full min-h-72 items-center justify-center px-6 text-center text-sm leading-6 text-teak">
         暂无路线预览
@@ -36,13 +40,10 @@ export default function RoutePreview({
     )
   }
 
-  const durationDays =
-    view.level === "overview"
-      ? totalDurationDays(draftRoute.nodes)
-      : totalDurationDays(view.routeNode ? [view.routeNode] : view.nodes)
+  const durationDays = totalDurationDays(view.events)
   const title =
     view.level === "overview"
-      ? `${draftRoute.name}${durationDays ? ` · ${durationDays} 天` : ""}`
+      ? `${draftJourney.title}${durationDays ? ` · ${durationDays} 天` : ""}`
       : `${view.title}${durationDays ? ` · ${durationDays} 天` : ""}`
 
   return (
@@ -55,7 +56,7 @@ export default function RoutePreview({
             </p>
             <h1
               aria-label={
-                view.level === "overview" ? draftRoute.name : view.title
+                view.level === "overview" ? draftJourney.title : view.title
               }
               className="mt-1 truncate text-[22px] leading-7 font-black text-ink"
             >
@@ -80,22 +81,18 @@ export default function RoutePreview({
         <RouteScopeTabs />
       </header>
 
-      {draftRoute.nodes.length === 0 ? (
+      {view.events.length === 0 && view.level === "overview" ? (
         <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
           路线尚无地点，可以在 AI 面板中添加第一站。
         </div>
       ) : view.level === "overview" ? (
         <RouteOverview />
-      ) : view.isEmptyCity ? (
+      ) : view.isEmptySection ? (
         <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
           这个城市还没有安排地点，可以在 AI 面板中继续规划。
         </div>
       ) : (
-        <RouteTimeline
-          nodes={view.nodes}
-          edges={view.edges}
-          routeNode={view.routeNode}
-        />
+        <RouteTimeline events={view.events} />
       )}
     </div>
   )

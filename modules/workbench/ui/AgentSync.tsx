@@ -16,7 +16,12 @@ function asDraftSnapshot(payload: unknown) {
 }
 
 function asDelta(payload: unknown) {
-  return payload as { text?: string; message?: string; stream?: string }
+  return payload as {
+    text?: string
+    message?: string
+    stream?: string
+    commandId?: string
+  }
 }
 
 function asConversationMessages(
@@ -26,7 +31,9 @@ function asConversationMessages(
 }
 
 export default function AgentSync() {
-  const setDraftRoute = useWorkspaceStore((state) => state.setDraftRoute)
+  const applyDraftSnapshot = useWorkspaceStore(
+    (state) => state.applyDraftSnapshot
+  )
   const setDraftLocked = useWorkspaceStore((state) => state.setDraftLocked)
   const setAgentSender = useWorkspaceStore((state) => state.setAgentSender)
   const setChatMessages = useWorkspaceStore((state) => state.setChatMessages)
@@ -39,13 +46,16 @@ export default function AgentSync() {
   const setDraftSaveState = useWorkspaceStore(
     (state) => state.setDraftSaveState
   )
+  const setFailedTransitPlanCommandId = useWorkspaceStore(
+    (state) => state.setFailedTransitPlanCommandId
+  )
 
   useEffect(() => {
     let socket: WebSocket | null = null
     let disposed = false
 
     const applySnapshot = (snapshot: DraftSnapshot) => {
-      setDraftRoute(snapshot.document)
+      applyDraftSnapshot(snapshot.document, snapshot.revision)
       setDraftLocked(snapshot.isLocked)
       setPendingSuggestions(snapshot.pendingSuggestions ?? [])
     }
@@ -113,9 +123,14 @@ export default function AgentSync() {
           }
 
           if (message.type === "agent.run.failed" || message.type === "error") {
-            appendAssistantMessage(
-              `\n${asDelta(message.payload).message ?? "Agent 运行失败"}\n`
-            )
+            const error = asDelta(message.payload)
+            if (
+              message.type === "error" &&
+              error.commandId?.startsWith("browser-plan:")
+            ) {
+              setFailedTransitPlanCommandId(error.commandId)
+            }
+            appendAssistantMessage(`\n${error.message ?? "Agent 运行失败"}\n`)
             setDraftSaveState("error")
           }
         })
@@ -133,9 +148,10 @@ export default function AgentSync() {
     appendAssistantMessage,
     setAgentSender,
     setChatMessages,
-    setDraftRoute,
+    applyDraftSnapshot,
     setDraftLocked,
     setDraftSaveState,
+    setFailedTransitPlanCommandId,
     setPendingSuggestions,
   ])
 

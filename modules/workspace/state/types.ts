@@ -1,7 +1,6 @@
 import type { StateCreator } from "zustand"
-import type { RoutePlanBundle, RoutePlanFailure } from "@/lib/routes/planning"
-import type { RouteViewLevel } from "@/lib/routes/active-path"
-import type { DraftRoute, PathNode } from "@/types/route"
+import type { JourneyViewLevel } from "@/lib/journeys/projections"
+import type { DraftJourney, LocationJourneyEvent } from "@/types/journey"
 import type { PhotoShare } from "@/types/photo"
 import type {
   MapFocusRequest,
@@ -18,7 +17,7 @@ export type AgentMode = "auto" | "suggest"
 export type WorkbenchTab = "preview" | "chat"
 export type MobileSheetSnap = "collapsed" | "half" | "expanded"
 export type AgentSender = (type: string, payload?: unknown) => void
-export type AnchorType = "route" | "photo"
+export type AnchorType = "event" | "photo"
 
 export interface ScatteredAnchor {
   id: string
@@ -91,12 +90,12 @@ export interface MapRuntimeSlice {
 }
 
 export interface DraftSlice {
-  draftRoute: DraftRoute | null
-  setDraftRoute: (route: DraftRoute | null) => void
-  markRoutePlansPlanning: (edgeIds: string[]) => void
-  applyRoutePlanBundles: (bundles: RoutePlanBundle[]) => void
-  markRoutePlanFailures: (failures: RoutePlanFailure[]) => void
-  selectRoutePlan: (edgeId: string, planId: string) => void
+  draftJourney: DraftJourney | null
+  draftRevision: number
+  applyDraftSnapshot: (journey: DraftJourney | null, revision: number) => void
+  failedTransitPlanCommandId: string | null
+  setFailedTransitPlanCommandId: (commandId: string | null) => void
+  selectTransitPlan: (eventId: string, planId: string) => void
   isDraftLocked: boolean
   setDraftLocked: (isDraftLocked: boolean) => void
   draftSaveState: DraftSaveState
@@ -118,19 +117,22 @@ export interface AgentSlice {
 }
 
 export interface WorkspaceUiSlice {
-  viewLevel: RouteViewLevel
-  activeRouteNodeId: string | null
-  enterCityView: (routeNodeId: string) => void
+  viewLevel: JourneyViewLevel
+  activeSectionEventId: string | null
+  enterSectionView: (sectionEventId: string) => void
   returnToOverview: () => void
-  hoveredRouteNodeId: string | null
-  setHoveredRouteNodeId: (nodeId: string | null) => void
+  hoveredEventId: string | null
+  setHoveredEventId: (eventId: string | null) => void
   mapViewportInsets: ViewportInsets
   setMapViewportInsets: (insets: ViewportInsets) => void
-  selectedEdgeId: string | null
-  setSelectedEdgeId: (edgeId: string | null) => void
-  selectedLocationPoint: PathNode | null
+  selectedTransitEventId: string | null
+  setSelectedTransitEventId: (eventId: string | null) => void
+  selectedLocationEvent: LocationJourneyEvent | null
   selectedLocationAnchor: MapAnchor | null
-  setSelectedLocationPoint: (point: PathNode | null, anchor?: MapAnchor) => void
+  setSelectedLocationEvent: (
+    event: LocationJourneyEvent | null,
+    anchor?: MapAnchor
+  ) => void
   activeMapPanel: ActiveMapPanel
   setActiveMapPanel: (panel: ActiveMapPanel) => void
   workbenchTab: WorkbenchTab

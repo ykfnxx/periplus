@@ -1,134 +1,99 @@
-import {
-  applyRoutePlanBundle,
-  buildRoutePlanRequest,
-  mergeWorkspaceRoutePlans,
-  routePlanFingerprint,
-  selectedRoutePlan,
-} from "@/lib/routes/planning"
-import { mapRouteEdges } from "@/modules/workspace/state/helpers"
 import type {
   DraftSlice,
   WorkspaceSlice,
+  WorkspaceState,
 } from "@/modules/workspace/state/types"
-import type { DraftRoute } from "@/types/route"
+import type { DraftJourney } from "@/types/journey"
 
-export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set) => ({
-  draftRoute: null,
-  setDraftRoute: (draftRoute) =>
-    set((state) => {
-      const mergedRoute = mergeWorkspaceRoutePlans(state.draftRoute, draftRoute)
-      const activeRouteNodeStillExists = Boolean(
-        mergedRoute?.nodes.some((node) => node.id === state.activeRouteNodeId)
-      )
-      const topologyChanged =
-        routeTopologyKey(state.draftRoute) !== routeTopologyKey(mergedRoute)
-      return {
-        draftRoute: mergedRoute,
-        ...(mergedRoute && topologyChanged
-          ? {
-              mapFocusRequest: {
-                requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
-                target: {
-                  type: "active-route" as const,
-                  maxZoom: activeRouteNodeStillExists ? 15 : 12,
-                },
-              },
-            }
-          : {}),
-        ...(mergedRoute && activeRouteNodeStillExists
-          ? {}
-          : {
-              viewLevel: "overview" as const,
-              activeRouteNodeId: null,
-              hoveredRouteNodeId: null,
-              selectedEdgeId: null,
-              selectedLocationPoint: null,
-              selectedLocationAnchor: null,
-            }),
-      }
-    }),
-  markRoutePlansPlanning: (edgeIds) =>
-    set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge) =>
-        edgeIds.includes(edge.id)
-          ? {
-              ...edge,
-              planningStatus: edge.plans?.length ? "STALE" : "PLANNING",
-            }
-          : edge
-      ),
-    })),
-  applyRoutePlanBundles: (bundles) =>
-    set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge, nodes) => {
-        const bundle = bundles.find((item) => item.edgeId === edge.id)
-        if (!bundle) return edge
-        const from = nodes.find((node) => node.id === edge.fromNodeId)
-        const to = nodes.find((node) => node.id === edge.toNodeId)
-        const request =
-          from && to ? buildRoutePlanRequest(edge, from, to) : null
-        if (
-          !request ||
-          routePlanFingerprint(request) !== bundle.requestFingerprint
-        ) {
-          return edge
-        }
-        return applyRoutePlanBundle(edge, bundle)
-      }),
-    })),
-  markRoutePlanFailures: (failures) =>
-    set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge) => {
-        const failure = failures.find((item) => item.edgeId === edge.id)
-        return failure
-          ? {
-              ...edge,
-              planningStatus: edge.plans?.length ? "STALE" : "FAILED",
-              planningWarning: failure.message,
-            }
-          : edge
-      }),
-    })),
-  selectRoutePlan: (edgeId, planId) =>
-    set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge) => {
-        if (
-          edge.id !== edgeId ||
-          !edge.plans?.some((plan) => plan.id === planId)
-        ) {
-          return edge
-        }
-        const next = { ...edge, selectedPlanId: planId }
-        const selected = selectedRoutePlan(next)
-        return {
-          ...next,
-          durationMinutes: selected
-            ? Math.max(1, Math.round(selected.durationSeconds / 60))
-            : edge.durationMinutes,
-          distanceKm: selected
-            ? Math.round((selected.distanceMeters / 1000) * 10) / 10
-            : edge.distanceKm,
-          costEstimate: selected?.fareAmount ?? edge.costEstimate,
-        }
-      }),
-    })),
+export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set, get) => ({
+  draftJourney: null,
+  draftRevision: 0,
+  applyDraftSnapshot: (draftJourney, draftRevision) =>
+    set((state) => draftJourneyPatch(state, draftJourney, draftRevision)),
+  failedTransitPlanCommandId: null,
+  setFailedTransitPlanCommandId: (failedTransitPlanCommandId) =>
+    set({ failedTransitPlanCommandId }),
+  selectTransitPlan: (eventId, planId) => {
+    const state = get()
+    const event = state.draftJourney?.events.find(
+      (candidate) => candidate.id === eventId
+    )
+    if (
+      !event ||
+      event.type !== "TRANSIT" ||
+      !event.detail.plans?.some((plan) => plan.id === planId) ||
+      event.detail.selectedPlanId === planId ||
+      state.isDraftLocked
+    ) {
+      return
+    }
+    state.sendAgentEvent?.("draft.command", {
+      tool: "journey.select_transit_plan",
+      input: {
+        eventId,
+        planId,
+        expectedRevision: state.draftRevision,
+        idempotencyKey: `browser-select:${state.draftJourney?.id}:${eventId}:${planId}:${state.draftRevision}`,
+      },
+    })
+  },
   isDraftLocked: false,
   setDraftLocked: (isDraftLocked) => set({ isDraftLocked }),
   draftSaveState: "idle",
   setDraftSaveState: (draftSaveState) => set({ draftSaveState }),
 })
 
-function routeTopologyKey(route: DraftRoute | null) {
-  if (!route) return ""
-  const topLevel = route.nodes
-    .map((node) => `${node.id}:${node.lng}:${node.lat}:${node.order}`)
-    .join("|")
-  const subPlans = route.subPlans
-    .map((subPlan) =>
-      subPlan.nodes
-        .map((node) => `${node.id}:${node.lng}:${node.lat}:${node.order}`)
-        .join("|")
+function draftJourneyPatch(
+  state: WorkspaceState,
+  draftJourney: DraftJourney | null,
+  draftRevision: number
+) {
+  const activeSectionStillExists = Boolean(
+    draftJourney?.events.some(
+      (event) =>
+        event.id === state.activeSectionEventId && event.type === "SECTION"
     )
-    .join("::")
-  return `${route.id}:${topLevel}:${subPlans}`
+  )
+  const topologyChanged =
+    journeyTopologyKey(state.draftJourney) !== journeyTopologyKey(draftJourney)
+  return {
+    draftJourney,
+    draftRevision,
+    ...(draftJourney && topologyChanged
+      ? {
+          mapFocusRequest: {
+            requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
+            target: {
+              type: "active-journey" as const,
+              maxZoom: activeSectionStillExists ? 15 : 12,
+            },
+          },
+        }
+      : {}),
+    ...(draftJourney && activeSectionStillExists
+      ? {}
+      : {
+          viewLevel: "overview" as const,
+          activeSectionEventId: null,
+          hoveredEventId: null,
+          selectedTransitEventId: null,
+          selectedLocationEvent: null,
+          selectedLocationAnchor: null,
+        }),
+  }
+}
+
+function journeyTopologyKey(journey: DraftJourney | null) {
+  if (!journey) return ""
+  const events = journey.events
+    .map(
+      (event) => `${event.id}:${event.parentEventId ?? "root"}:${event.type}`
+    )
+    .join("|")
+  const links = journey.links
+    .map(
+      (link) => `${link.id}:${link.fromEventId}:${link.toEventId}:${link.kind}`
+    )
+    .join("|")
+  return `${journey.id}:${events}:${links}`
 }

@@ -104,7 +104,7 @@ export interface PlaceSearchResult {
   sources: PlaceResultSource[]
   confidence: number
   quality: PlaceQuality
-  canAddToRoute: boolean
+  canAddToJourney: boolean
   needsUserConfirmation: boolean
   reason: string
 }
@@ -123,31 +123,28 @@ export interface PlaceSearchResponse {
 export interface PlaceResolveInput {
   text: string
   city?: string
-  routeContext?: {
+  journeyContext?: {
     currentCity?: string
-    nearbyNodeIds?: string[]
+    nearbyEventIds?: string[]
   }
   requireExact?: boolean
 }
 
-export interface PlaceResolveForRouteInput extends PlaceResolveInput {
-  nodeId: string
-  routeNodeId?: string
+export interface PlaceResolveForJourneyEventInput extends PlaceResolveInput {
+  eventId: string
 }
 
-export type PlaceResolveForRouteResult =
+export type PlaceResolveForJourneyEventResult =
   | {
       status: "ready"
       place: PlaceSearchResult
       linkToolCall: {
-        tool: "route.link_place_to_node"
+        tool: "journey.link_place"
         input: {
-          nodeId: string
-          routeNodeId?: string
+          eventId: string
           place: {
             placeId?: string
             name: string
-            category: string
             address?: string
             providerPlaceId?: string
             coordinate: PlaceCoordinate

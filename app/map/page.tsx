@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation"
 
 interface MapPageProps {
-  searchParams: Promise<{ route?: string }>
+  searchParams: Promise<{ journey?: string }>
 }
 
 export default async function MapPage({ searchParams }: MapPageProps) {
-  const { route } = await searchParams
+  const { journey } = await searchParams
   redirect(
-    route ? `/workspace?route=${encodeURIComponent(route)}` : "/workspace"
+    journey ? `/workspace?journey=${encodeURIComponent(journey)}` : "/workspace"
   )
 }

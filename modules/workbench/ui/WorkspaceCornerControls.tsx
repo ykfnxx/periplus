@@ -29,7 +29,7 @@ const controls: Array<{
 export default function WorkspaceCornerControls() {
   const [menuOpen, setMenuOpen] = useState(false)
   const map = useWorkspaceStore((state) => state.map)
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const activeMapPanel = useWorkspaceStore((state) => state.activeMapPanel)
   const setActiveMapPanel = useWorkspaceStore(
     (state) => state.setActiveMapPanel
@@ -67,8 +67,10 @@ export default function WorkspaceCornerControls() {
         </MapControlButton>
         <MapControlButton
           label="定位当前行程"
-          disabled={!draftRoute}
-          onClick={() => requestMapFocus({ type: "active-route", maxZoom: 15 })}
+          disabled={!draftJourney}
+          onClick={() =>
+            requestMapFocus({ type: "active-journey", maxZoom: 15 })
+          }
         >
           <LocateFixed className="h-5 w-5" aria-hidden="true" />
         </MapControlButton>

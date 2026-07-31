@@ -6,8 +6,8 @@ import type {
   PlaceEnrichInput,
   PlaceEnrichResult,
   PlaceResolveInput,
-  PlaceResolveForRouteInput,
-  PlaceResolveForRouteResult,
+  PlaceResolveForJourneyEventInput,
+  PlaceResolveForJourneyEventResult,
   PlaceResolveResult,
   PlaceSearchInput,
   PlaceSearchResponse,
@@ -79,7 +79,7 @@ export class PlaceIntelligenceService {
   async resolvePlace(input: PlaceResolveInput): Promise<PlaceResolveResult> {
     const response = await this.searchPlaces({
       query: input.text,
-      city: input.city ?? input.routeContext?.currentCity,
+      city: input.city ?? input.journeyContext?.currentCity,
       limit: 5,
       includeLiveProvider: true,
       coordinatePreference: "auto",
@@ -91,7 +91,7 @@ export class PlaceIntelligenceService {
         status: "not_found",
         fallbackQuery: {
           query: input.text,
-          city: input.city ?? input.routeContext?.currentCity,
+          city: input.city ?? input.journeyContext?.currentCity,
         },
         reason: "本地地点库和实时 provider 都没有返回可用地点",
         warnings: response.warnings,
@@ -116,9 +116,9 @@ export class PlaceIntelligenceService {
     }
   }
 
-  async resolvePlaceForRoute(
-    input: PlaceResolveForRouteInput
-  ): Promise<PlaceResolveForRouteResult> {
+  async resolvePlaceForJourneyEvent(
+    input: PlaceResolveForJourneyEventInput
+  ): Promise<PlaceResolveForJourneyEventResult> {
     const resolved = await this.resolvePlace(input)
     if (resolved.status !== "resolved") return resolved
 
@@ -135,14 +135,12 @@ export class PlaceIntelligenceService {
       status: "ready",
       place: resolved.place,
       linkToolCall: {
-        tool: "route.link_place_to_node",
+        tool: "journey.link_place",
         input: {
-          nodeId: input.nodeId,
-          routeNodeId: input.routeNodeId,
+          eventId: input.eventId,
           place: {
             placeId: resolved.place.placeId,
             name: resolved.place.name,
-            category: resolved.place.category,
             address: resolved.place.address,
             providerPlaceId: externalSource?.providerId,
             coordinate: resolved.place.bestCoordinate,

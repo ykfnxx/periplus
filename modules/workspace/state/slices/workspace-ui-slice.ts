@@ -17,14 +17,14 @@ export const createWorkspaceUiSlice: WorkspaceSlice<WorkspaceUiSlice> = (
   set
 ) => ({
   viewLevel: "overview",
-  activeRouteNodeId: null,
-  enterCityView: (activeRouteNodeId) =>
+  activeSectionEventId: null,
+  enterSectionView: (activeSectionEventId) =>
     set({
-      viewLevel: "city",
-      activeRouteNodeId,
-      hoveredRouteNodeId: null,
-      selectedEdgeId: null,
-      selectedLocationPoint: null,
+      viewLevel: "section",
+      activeSectionEventId,
+      hoveredEventId: null,
+      selectedTransitEventId: null,
+      selectedLocationEvent: null,
       selectedLocationAnchor: null,
       selectedPhotoShare: null,
       selectedPhotoAnchor: null,
@@ -33,15 +33,15 @@ export const createWorkspaceUiSlice: WorkspaceSlice<WorkspaceUiSlice> = (
   returnToOverview: () =>
     set({
       viewLevel: "overview",
-      activeRouteNodeId: null,
-      hoveredRouteNodeId: null,
-      selectedEdgeId: null,
-      selectedLocationPoint: null,
+      activeSectionEventId: null,
+      hoveredEventId: null,
+      selectedTransitEventId: null,
+      selectedLocationEvent: null,
       selectedLocationAnchor: null,
       anchorCluster: emptyAnchorCluster(),
     }),
-  hoveredRouteNodeId: null,
-  setHoveredRouteNodeId: (hoveredRouteNodeId) => set({ hoveredRouteNodeId }),
+  hoveredEventId: null,
+  setHoveredEventId: (hoveredEventId) => set({ hoveredEventId }),
   mapViewportInsets: WORKBENCH_VIEWPORT_INSETS,
   setMapViewportInsets: (mapViewportInsets) =>
     set((state) => {
@@ -53,15 +53,16 @@ export const createWorkspaceUiSlice: WorkspaceSlice<WorkspaceUiSlice> = (
         ? {}
         : { mapViewportInsets }
     }),
-  selectedEdgeId: null,
-  setSelectedEdgeId: (selectedEdgeId) => set({ selectedEdgeId }),
-  selectedLocationPoint: null,
+  selectedTransitEventId: null,
+  setSelectedTransitEventId: (selectedTransitEventId) =>
+    set({ selectedTransitEventId }),
+  selectedLocationEvent: null,
   selectedLocationAnchor: null,
-  setSelectedLocationPoint: (selectedLocationPoint, anchor) =>
+  setSelectedLocationEvent: (selectedLocationEvent, anchor) =>
     set({
-      selectedLocationPoint,
+      selectedLocationEvent,
       selectedLocationAnchor: anchor ?? null,
-      ...(selectedLocationPoint
+      ...(selectedLocationEvent
         ? { selectedPhotoShare: null, selectedPhotoAnchor: null }
         : {}),
     }),

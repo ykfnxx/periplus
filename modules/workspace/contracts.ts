@@ -6,9 +6,9 @@ export interface ViewportInsets {
 }
 
 export type MapFocusTarget =
-  | { type: "node"; nodeId: string; zoom: number }
-  | { type: "edge"; edgeId: string; maxZoom: number }
-  | { type: "active-route"; maxZoom: number }
+  | { type: "event"; eventId: string; zoom: number }
+  | { type: "transit"; eventId: string; maxZoom: number }
+  | { type: "active-journey"; maxZoom: number }
 
 export interface MapFocusRequest {
   requestId: number
@@ -24,11 +24,11 @@ export type MapIntent =
   | { type: "map.background-clicked" }
   | { type: "map.location-picked"; coordinate: MapCoordinate }
   | {
-      type: "map.waypoint-selected"
-      waypointId: string
+      type: "map.event-selected"
+      eventId: string
       anchor?: MapCoordinate
     }
-  | { type: "map.waypoint-hovered"; waypointId: string }
-  | { type: "map.waypoint-hover-cleared"; waypointId: string }
+  | { type: "map.event-hovered"; eventId: string }
+  | { type: "map.event-hover-cleared"; eventId: string }
   | { type: "map.photo-selected"; photoId: string }
-  | { type: "map.edge-selected"; edgeId: string }
+  | { type: "map.transit-selected"; eventId: string }

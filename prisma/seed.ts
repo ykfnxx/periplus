@@ -4,6 +4,8 @@ import { loadProjectEnv } from "@/config/env.server"
 loadProjectEnv()
 
 const { prisma } = await import("@/modules/data/db/prisma")
+const { createJourney } =
+  await import("@/modules/data/journeys/journey-repository")
 
 const password = "periplus123"
 
@@ -49,50 +51,102 @@ async function upsertCredentialAccount(userId: string, passwordHash: string) {
   })
 }
 
-async function upsertSampleRoute(ownerId: string, name: string) {
-  const existing = await prisma.route.findFirst({
-    where: { ownerId, name },
-  })
-  if (existing) return
+async function replaceSampleJourney(ownerId: string, title: string) {
+  const journeyId = `${ownerId}-sample-journey`
+  await prisma.journey.deleteMany({ where: { id: journeyId } })
 
-  await prisma.route.create({
-    data: {
-      ownerId,
-      name,
-      description: "开发环境样例路线",
-      nodes: {
-        create: [
-          {
-            id: `${ownerId}-${name}-start`,
-            name: "起点",
+  const sectionId = `${journeyId}-hangzhou`
+  const startId = `${journeyId}-west-lake`
+  const transitId = `${journeyId}-transit`
+  const endId = `${journeyId}-lingyin`
+  await createJourney(
+    { userId: ownerId, role: "user" },
+    {
+      id: journeyId,
+      title,
+      description: "开发环境 JourneyEvent 样例行程",
+      status: "DRAFT",
+      events: [
+        {
+          id: sectionId,
+          type: "SECTION",
+          origin: "ORIGINAL",
+          title: "杭州一日",
+          detail: {
+            kind: "DAY",
             lat: 30.246,
             lng: 120.146,
-            order: 0,
-            category: "PLACE",
-            durationMinutes: 60,
+            coordinateSystem: "GCJ02",
           },
-          {
-            id: `${ownerId}-${name}-end`,
-            name: "终点",
-            lat: 30.24,
-            lng: 120.171,
-            order: 1,
-            category: "PLACE",
-            durationMinutes: 120,
+        },
+        {
+          id: startId,
+          parentEventId: sectionId,
+          type: "VISIT",
+          executionStatus: "PLANNED",
+          origin: "ORIGINAL",
+          title: "西湖",
+          plannedStartAt: "2026-08-02T01:00:00.000Z",
+          plannedEndAt: "2026-08-02T03:00:00.000Z",
+          detail: {
+            plannedLat: 30.246,
+            plannedLng: 120.146,
+            coordinateSystem: "GCJ02",
+            plannedDurationMinutes: 120,
           },
-        ],
-      },
-      edges: {
-        create: [
-          {
-            fromNodeId: `${ownerId}-${name}-start`,
-            toNodeId: `${ownerId}-${name}-end`,
-            status: "INCOMPLETE",
+        },
+        {
+          id: transitId,
+          parentEventId: sectionId,
+          type: "TRANSIT",
+          executionStatus: "PLANNED",
+          origin: "ORIGINAL",
+          title: "前往灵隐寺",
+          plannedStartAt: "2026-08-02T03:00:00.000Z",
+          plannedEndAt: "2026-08-02T03:30:00.000Z",
+          detail: {
+            plannedFromEventId: startId,
+            plannedToEventId: endId,
+            transportMode: "TAXI",
+            requestMode: "DRIVE",
+            preference: "RECOMMENDED",
+            plannedDurationMinutes: 30,
+            planningStatus: "EMPTY",
           },
-        ],
-      },
-    },
-  })
+        },
+        {
+          id: endId,
+          parentEventId: sectionId,
+          type: "VISIT",
+          executionStatus: "PLANNED",
+          origin: "ORIGINAL",
+          title: "灵隐寺",
+          plannedStartAt: "2026-08-02T03:30:00.000Z",
+          plannedEndAt: "2026-08-02T05:30:00.000Z",
+          detail: {
+            plannedLat: 30.24,
+            plannedLng: 120.102,
+            coordinateSystem: "GCJ02",
+            plannedDurationMinutes: 120,
+          },
+        },
+      ],
+      links: [
+        {
+          id: `${journeyId}-link-1`,
+          fromEventId: startId,
+          toEventId: transitId,
+          kind: "MAIN",
+        },
+        {
+          id: `${journeyId}-link-2`,
+          fromEventId: transitId,
+          toEventId: endId,
+          kind: "MAIN",
+        },
+      ],
+    }
+  )
 }
 
 async function main() {
@@ -121,8 +175,8 @@ async function main() {
     await upsertCredentialAccount(user.id, passwordHash)
   }
 
-  await upsertSampleRoute("dev-user-1", "User One 样例路线")
-  await upsertSampleRoute("dev-user-2", "User Two 样例路线")
+  await replaceSampleJourney("dev-user-1", "User One 样例行程")
+  await replaceSampleJourney("dev-user-2", "User Two 样例行程")
 
   console.log("Seeded Periplus dev accounts:")
   for (const user of devUsers) {

@@ -8,7 +8,7 @@ import AgentModeToggle from "./AgentModeToggle"
 import PresetPromptBubbles from "./PresetPromptBubbles"
 
 export default function InitialChatState() {
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const composerInput = useWorkspaceStore((state) => state.composerInput)
   const setComposerInput = useWorkspaceStore((state) => state.setComposerInput)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
@@ -39,7 +39,7 @@ export default function InitialChatState() {
     }
   }
 
-  if (draftRoute) {
+  if (draftJourney) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="periplus-chat-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-6">

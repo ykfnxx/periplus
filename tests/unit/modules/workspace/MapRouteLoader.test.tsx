@@ -13,13 +13,13 @@ describe("MapRouteLoader", () => {
     vi.clearAllMocks()
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
     vi.mocked(useSearchParams).mockReturnValue(
-      new URLSearchParams("route=preset-silk-road") as ReturnType<
+      new URLSearchParams("journey=preset-silk-road") as ReturnType<
         typeof useSearchParams
       >
     )
   })
 
-  it("waits for the ready sender and loads a route only once", async () => {
+  it("waits for the ready sender and loads a journey only once", async () => {
     const firstSender = vi.fn()
     const replacementSender = vi.fn()
     render(<MapRouteLoader />)
@@ -32,7 +32,7 @@ describe("MapRouteLoader", () => {
     expect(firstSender).toHaveBeenCalledWith(
       "draft.replace",
       expect.objectContaining({
-        route: expect.objectContaining({ id: "preset-silk-road" }),
+        journey: expect.objectContaining({ id: "preset-silk-road" }),
       })
     )
 

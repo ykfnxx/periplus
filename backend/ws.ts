@@ -6,6 +6,7 @@ import {
   DraftSessionService,
 } from "@/modules/workspace/server/draft-session-service"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
+import { isJourneyToolName } from "@/modules/workspace/server/contracts"
 import { getSessionId } from "./session"
 import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
 
@@ -20,11 +21,14 @@ function send(socket: WebSocket, event: AgentEvent) {
   }
 }
 
-function errorEvent(error: unknown): AgentEvent {
+function errorEvent(error: unknown, commandId?: string): AgentEvent {
   if (error instanceof DraftInputError || error instanceof Error) {
-    return { type: "error", payload: { message: error.message } }
+    return { type: "error", payload: { message: error.message, commandId } }
   }
-  return { type: "error", payload: { message: "Unexpected WebSocket error" } }
+  return {
+    type: "error",
+    payload: { message: "Unexpected WebSocket error", commandId },
+  }
 }
 
 export function createAgentWebSocketServer(
@@ -81,9 +85,12 @@ export function createAgentWebSocketServer(
     })
 
     socket.on("message", async (rawMessage) => {
+      let commandId: string | undefined
       try {
         const message = JSON.parse(rawMessage.toString("utf8")) as WireMessage
         const payload = message.payload ?? {}
+        commandId =
+          typeof payload.commandId === "string" ? payload.commandId : undefined
 
         if (message.type === "draft.get") {
           send(socket, {
@@ -92,11 +99,11 @@ export function createAgentWebSocketServer(
           })
           return
         }
-        if (message.type === "draft.load_saved_route") {
-          const snapshot = await commands.loadSavedRoute(
+        if (message.type === "draft.load_saved_journey") {
+          const snapshot = await commands.loadSavedJourney(
             context,
             sessionId,
-            String(payload.routeId)
+            String(payload.journeyId)
           )
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return
@@ -104,7 +111,7 @@ export function createAgentWebSocketServer(
         if (message.type === "draft.replace") {
           const snapshot = commands.replaceDraft(
             sessionId,
-            payload.route as never
+            payload.journey as never
           )
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return
@@ -118,6 +125,22 @@ export function createAgentWebSocketServer(
           const snapshot = await commands.saveDraft(context, sessionId)
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           broadcast(sessionId, { type: "draft.saved", payload: snapshot })
+          return
+        }
+        if (message.type === "draft.command") {
+          if (!isJourneyToolName(payload.tool)) {
+            throw new DraftInputError("Unknown journey command")
+          }
+          const input =
+            payload.input && typeof payload.input === "object"
+              ? (payload.input as Record<string, unknown>)
+              : {}
+          const snapshot = await commands.executeDraftTool(
+            sessionId,
+            payload.tool,
+            input
+          )
+          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return
         }
         if (message.type === "agent.run.start") {
@@ -159,7 +182,7 @@ export function createAgentWebSocketServer(
           })
         }
       } catch (error) {
-        send(socket, errorEvent(error))
+        send(socket, errorEvent(error, commandId))
       }
     })
 

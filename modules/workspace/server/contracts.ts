@@ -1,52 +1,48 @@
 import type { AuthContext } from "@/modules/auth/server/context"
 import type {
-  DraftRoute,
-  PathEdgeCreateInput,
-  PathEdgePatchInput,
-  PathNodeCreateInput,
-  PathNodePatchInput,
-  Route,
-  RouteInput,
-} from "@/types/route"
+  DraftJourney,
+  Journey,
+  JourneyEventCreateInput,
+  JourneyEventPatchInput,
+  JourneyEventPosition,
+  JourneyInput,
+} from "@/types/journey"
 
-export interface RouteAddStartNodeInput {
-  route?: {
-    name?: string
-    description?: string
-  }
-  node: PathNodeCreateInput
+export interface JourneyCommandEnvelope {
+  expectedRevision: number
+  idempotencyKey: string
 }
 
-export interface AppendNodeInput {
-  node: PathNodeCreateInput
-  edge: PathEdgeCreateInput
+export interface JourneyAddEventInput extends JourneyCommandEnvelope {
+  event: JourneyEventCreateInput
+  position: JourneyEventPosition
 }
 
-export interface InsertNodeInput {
-  beforeNodeId: string
-  node: PathNodeCreateInput
-  beforeEdge?: PathEdgeCreateInput
-  afterEdge: PathEdgeCreateInput
+export interface JourneyMoveEventInput extends JourneyCommandEnvelope {
+  eventId: string
+  position: JourneyEventPosition
 }
 
-export interface RemoveNodeRangeInput {
-  startNodeId: string
-  endNodeId: string
-  bridgeEdge?: PathEdgeCreateInput
+export interface JourneyRemoveEventInput extends JourneyCommandEnvelope {
+  eventId: string
+  cascade?: boolean
 }
 
-export interface UpdateNodeInput {
-  nodeId: string
-  patch: PathNodePatchInput
+export interface JourneyUpdateEventInput extends JourneyCommandEnvelope {
+  eventId: string
+  patch: JourneyEventPatchInput
 }
 
-export interface LinkPlaceToNodeInput {
-  nodeId: string
-  routeNodeId?: string
+export interface JourneyReplaceEventInput extends JourneyCommandEnvelope {
+  eventId: string
+  replacement: JourneyEventCreateInput
+}
+
+export interface JourneyLinkPlaceInput extends JourneyCommandEnvelope {
+  eventId: string
   place: {
     placeId?: string
     name: string
-    category?: string
     address?: string
     providerPlaceId?: string
     coordinate: {
@@ -58,76 +54,43 @@ export interface LinkPlaceToNodeInput {
   }
 }
 
-export interface UpdateEdgeInput {
-  edgeId?: string
-  fromNodeId?: string
-  toNodeId?: string
-  patch: PathEdgePatchInput
+export interface PlanTransitInput extends JourneyCommandEnvelope {
+  eventId: string
 }
 
-export interface PlanEdgeInput {
-  edgeId: string
-  routeNodeId?: string
-}
-
-export interface SelectRoutePlanInput extends PlanEdgeInput {
+export interface SelectTransitPlanInput extends PlanTransitInput {
   planId: string
 }
 
-export interface SubPlanCreateInput {
-  routeNodeId: string
-  subPlan?: {
-    id?: string
-    nodes?: Array<PathNodeCreateInput & { id?: string; order?: number }>
-    edges?: Array<PathEdgeCreateInput & { id?: string }>
-  }
+export interface UndoJourneyInput extends JourneyCommandEnvelope {
+  steps?: number
 }
 
-export interface SubPlanNodeInput extends AppendNodeInput {
-  routeNodeId: string
-}
-
-export interface SubPlanInsertNodeInput extends InsertNodeInput {
-  routeNodeId: string
-}
-
-export interface SubPlanRemoveNodeRangeInput extends RemoveNodeRangeInput {
-  routeNodeId: string
-}
-
-export interface SubPlanUpdateNodeInput extends UpdateNodeInput {
-  routeNodeId: string
-}
-
-export interface SubPlanUpdateEdgeInput extends UpdateEdgeInput {
-  routeNodeId: string
-}
-
-export const DRAFT_TOOL_NAMES = [
-  "get_current_draft",
-  "replace_draft",
-  "route.add_start_node",
-  "route.append_node",
-  "route.insert_node",
-  "route.remove_node_range",
-  "route.update_node",
-  "route.update_edge",
-  "route.link_place_to_node",
-  "route.plan_edge",
-  "route.select_plan",
-  "subplan.create",
-  "subplan.add_start_node",
-  "subplan.append_node",
-  "subplan.insert_node",
-  "subplan.remove_node_range",
-  "subplan.update_node",
-  "subplan.update_edge",
+export const JOURNEY_TOOL_NAMES = [
+  "get_current_journey",
+  "replace_journey",
+  "journey.add_event",
+  "journey.move_event",
+  "journey.remove_event",
+  "journey.update_event",
+  "journey.replace_event",
+  "journey.link_place",
+  "journey.plan_transit",
+  "journey.select_transit_plan",
+  "journey.undo",
 ] as const
 
-export type DraftToolName = (typeof DRAFT_TOOL_NAMES)[number]
+export type JourneyToolName = (typeof JOURNEY_TOOL_NAMES)[number]
+
+export function isJourneyToolName(value: unknown): value is JourneyToolName {
+  return (
+    typeof value === "string" &&
+    JOURNEY_TOOL_NAMES.includes(value as JourneyToolName)
+  )
+}
 
 export interface ToolCallSuggestionCall {
-  tool: DraftToolName
+  tool: JourneyToolName
   input: Record<string, unknown>
 }
 
@@ -157,6 +120,17 @@ export interface ToolCallSuggestionCreateInput {
   toolCalls: ToolCallSuggestionCall[]
 }
 
+export interface DraftRevision {
+  id: string
+  revision: number
+  operation: JourneyToolName | "draft.replace"
+  eventId?: string
+  idempotencyKey?: string
+  before: DraftJourney | null
+  after: DraftJourney | null
+  createdAt: string
+}
+
 export type AgentConversationRole = "user" | "assistant"
 
 export interface AgentConversationMessage {
@@ -171,22 +145,23 @@ export interface AgentConversationMessage {
 export interface SessionDraft {
   sessionId: string
   userContext: AuthContext | null
-  document: DraftRoute | null
-  sourceRouteId: string | null
-  baseVersion: number | null
+  document: DraftJourney | null
+  sourceJourneyId: string | null
+  baseRevision: number | null
   dirty: boolean
   lockedByRunId: string | null
   conversationMessages: AgentConversationMessage[]
   pendingSuggestions: ToolCallSuggestion[]
+  revisions: DraftRevision[]
   revision: number
   updatedAt: string
 }
 
 export interface DraftSnapshot {
   sessionId: string
-  document: DraftRoute | null
-  sourceRouteId: string | null
-  baseVersion: number | null
+  document: DraftJourney | null
+  sourceJourneyId: string | null
+  baseRevision: number | null
   dirty: boolean
   isLocked: boolean
   lockedByRunId: string | null
@@ -195,21 +170,15 @@ export interface DraftSnapshot {
   updatedAt: string
 }
 
-export type DraftToolInput =
+export type JourneyToolInput =
   | Record<string, never>
-  | { route: RouteInput | Route | null }
-  | RouteAddStartNodeInput
-  | AppendNodeInput
-  | InsertNodeInput
-  | RemoveNodeRangeInput
-  | UpdateNodeInput
-  | LinkPlaceToNodeInput
-  | UpdateEdgeInput
-  | PlanEdgeInput
-  | SelectRoutePlanInput
-  | SubPlanCreateInput
-  | SubPlanNodeInput
-  | SubPlanInsertNodeInput
-  | SubPlanRemoveNodeRangeInput
-  | SubPlanUpdateNodeInput
-  | SubPlanUpdateEdgeInput
+  | ({ journey: JourneyInput | Journey | null } & JourneyCommandEnvelope)
+  | JourneyAddEventInput
+  | JourneyMoveEventInput
+  | JourneyRemoveEventInput
+  | JourneyUpdateEventInput
+  | JourneyReplaceEventInput
+  | JourneyLinkPlaceInput
+  | PlanTransitInput
+  | SelectTransitPlanInput
+  | UndoJourneyInput

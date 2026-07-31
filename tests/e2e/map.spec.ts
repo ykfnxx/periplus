@@ -1,52 +1,77 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 
-test.describe("Map Page", () => {
-  test("loads map-first home page with AI workbench", async ({ page }) => {
-    await page.goto("/workspace")
-    await expect(page.getByRole("tab", { name: "规划" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "地点" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "照片" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "收藏" })).toBeVisible()
-    await expect(page.getByRole("textbox", { name: "AI 输入" })).toBeVisible()
-    const settingsButton = page.getByRole("button", { name: "地图设置" })
-    const mapError = page.getByText("地图加载失败，请检查高德 Key 或网络连接")
-    await expect(settingsButton.or(mapError)).toBeVisible()
-    await expect(page.getByRole("button", { name: "地图样式" })).toHaveCount(0)
-    await expect(page.getByRole("button", { name: "定位到默认视图" })).toHaveCount(
-      0
+async function signIn(page: Page) {
+  await page.goto("/")
+  await page.getByRole("button", { name: "登录", exact: true }).click()
+  await page.getByLabel("邮箱", { exact: true }).fill("user1@periplus.local")
+  await page.getByLabel("密码", { exact: true }).fill("periplus123")
+  await page.getByRole("button", { name: "登录", exact: true }).click()
+  await page.waitForURL("**/workspace")
+}
+
+async function loadSilkRoadJourney(page: Page) {
+  await signIn(page)
+  await page.goto("/workspace?journey=preset-silk-road")
+  await expect(page.getByRole("heading", { name: "丝绸之路" })).toBeVisible()
+}
+
+test.describe("Journey workspace", () => {
+  test("renders the JourneyEvent overview after authentication", async ({
+    page,
+  }) => {
+    await loadSilkRoadJourney(page)
+
+    await expect(page.getByRole("tablist", { name: "行程范围" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "总览" })).toHaveAttribute(
+      "aria-selected",
+      "true"
     )
+    await expect(
+      page.getByRole("button", { name: "查看城市 西安" })
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "选择交通事件 交通" })
+    ).toHaveCount(6)
   })
 
-  test("keeps the workbench on the left side on desktop", async ({ page }) => {
+  test("keeps the workspace on the left side on desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await page.goto("/workspace")
-    const tablist = page.getByRole("tablist", { name: "AI 工作台工具" })
-    await expect(tablist).toBeVisible()
-    const box = await tablist.boundingBox()
+    await loadSilkRoadJourney(page)
+
+    const workspace = page.getByRole("region", { name: "旅行规划工作台" })
+    await expect(workspace).toBeVisible()
+    const box = await workspace.boundingBox()
     expect(box).not.toBeNull()
     expect(box!.x).toBeLessThan(80)
-    expect(box!.y).toBeGreaterThan(600)
+    expect(box!.width).toBeLessThan(900)
   })
 
-  test("tool switching keeps composer text", async ({ page }) => {
-    await page.goto("/workspace")
-    const composer = page.getByRole("textbox", { name: "AI 输入" })
-    await composer.fill("帮我把敦煌多留半天")
-    await page.getByRole("tab", { name: "地点" }).click()
-    await expect(page.getByText("地点工作区")).toBeVisible()
-    await expect(composer).toHaveValue("帮我把敦煌多留半天")
+  test("switches from SECTION overview to its child event scope", async ({
+    page,
+  }) => {
+    await loadSilkRoadJourney(page)
+    await page.getByRole("tab", { name: "西安", exact: true }).click()
+
+    await expect(
+      page.getByRole("tab", { name: "西安", exact: true })
+    ).toHaveAttribute("aria-selected", "true")
+    await expect(
+      page.getByRole("button", { name: "选择事件 西安城墙" })
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "交通事件 出租车" })
+    ).toBeVisible()
   })
 
-  test("/map preserves route query on redirect", async ({ page }) => {
-    await page.goto("/map?route=preset-silk-road")
-    await page.waitForURL(/\/workspace\?route=preset-silk-road/)
-    await expect(page.getByText("丝绸之路")).toBeVisible()
+  test("/map preserves the journey query on redirect", async ({ page }) => {
+    await signIn(page)
+    await page.goto("/map?journey=preset-silk-road")
+    await page.waitForURL(/\/workspace\?journey=preset-silk-road/)
+    await expect(page.getByRole("heading", { name: "丝绸之路" })).toBeVisible()
   })
 
-  test("debug page draws route from JSON", async ({ page }) => {
+  test("debug page draws journey events from JSON", async ({ page }) => {
     await page.goto("/debug")
-
-    // Clear default and enter custom coordinates
     await page.fill(
       "textarea",
       `[
@@ -56,8 +81,6 @@ test.describe("Map Page", () => {
     )
 
     await page.click("text=绘制轨迹")
-
-    // Map should update (we can't easily inspect canvas, but no error means success)
     await expect(page.locator("text=JSON 解析错误")).not.toBeVisible()
   })
 

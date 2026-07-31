@@ -3,25 +3,25 @@
 import { useEffect, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { silkRoadRoute } from "@/lib/mock-routes"
+import { silkRoadJourney } from "@/lib/mock-journeys"
 
 export default function MapRouteLoader() {
-  const loadedRouteIdRef = useRef<string | null>(null)
+  const loadedJourneyIdRef = useRef<string | null>(null)
   const searchParams = useSearchParams()
-  const routeId = searchParams.get("route")
+  const journeyId = searchParams.get("journey")
   const sendAgentEvent = useWorkspaceStore((s) => s.sendAgentEvent)
 
   useEffect(() => {
-    if (!sendAgentEvent || !routeId) return
-    if (loadedRouteIdRef.current === routeId) return
+    if (!sendAgentEvent || !journeyId) return
+    if (loadedJourneyIdRef.current === journeyId) return
 
-    if (routeId === "preset-silk-road") {
-      sendAgentEvent("draft.replace", { route: silkRoadRoute })
+    if (journeyId === "preset-silk-road") {
+      sendAgentEvent("draft.replace", { journey: silkRoadJourney })
     } else {
-      sendAgentEvent("draft.load_saved_route", { routeId })
+      sendAgentEvent("draft.load_saved_journey", { journeyId })
     }
-    loadedRouteIdRef.current = routeId
-  }, [routeId, sendAgentEvent])
+    loadedJourneyIdRef.current = journeyId
+  }, [journeyId, sendAgentEvent])
 
   return null
 }

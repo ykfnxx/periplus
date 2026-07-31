@@ -1,22 +1,22 @@
 "use client"
 
 import { useCallback } from "react"
-import { getActivePathView } from "@/lib/routes/active-path"
+import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import { photoDtoToShare, uploadPhoto } from "@/modules/data/photos/client"
 import type { MapIntent } from "@/modules/workspace/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import AgentSync from "@/modules/workbench/ui/AgentSync"
 import PhotoSync from "./PhotoSync"
-import RoutePlanSync from "./RoutePlanSync"
+import TransitPlanSync from "./TransitPlanSync"
 
 export function dispatchMapIntent(intent: MapIntent) {
   const state = useWorkspaceStore.getState()
 
   if (intent.type === "map.background-clicked") {
     state.setActiveMapPanel("none")
-    state.setHoveredRouteNodeId(null)
-    state.setSelectedEdgeId(null)
-    state.setSelectedLocationPoint(null)
+    state.setHoveredEventId(null)
+    state.setSelectedTransitEventId(null)
+    state.setSelectedLocationEvent(null)
     state.setSelectedPhotoShare(null)
     state.collapseCluster()
     return
@@ -25,11 +25,7 @@ export function dispatchMapIntent(intent: MapIntent) {
   if (intent.type === "map.location-picked") {
     const { lat, lng } = intent.coordinate
     if (state.locationSelectionMode === "photo" && state.pendingPhotoUpload) {
-      void uploadPhoto({
-        file: state.pendingPhotoUpload.file,
-        lat,
-        lng,
-      })
+      void uploadPhoto({ file: state.pendingPhotoUpload.file, lat, lng })
         .then((photo) => {
           useWorkspaceStore.getState().addPhotoShare(photoDtoToShare(photo))
         })
@@ -39,13 +35,11 @@ export function dispatchMapIntent(intent: MapIntent) {
         })
       return
     }
-
     if (state.locationSelectionMode === "point") {
       state.setPointSelectionDraft({ lat, lng })
       state.clearLocationSelection()
       return
     }
-
     if (
       state.locationSelectionMode === "upload-photo" &&
       state.uploadLocationSelectionPhotoId
@@ -61,53 +55,42 @@ export function dispatchMapIntent(intent: MapIntent) {
   }
 
   if (
-    intent.type === "map.waypoint-selected" ||
-    intent.type === "map.waypoint-hovered" ||
-    intent.type === "map.waypoint-hover-cleared"
+    intent.type === "map.event-selected" ||
+    intent.type === "map.event-hovered" ||
+    intent.type === "map.event-hover-cleared"
   ) {
-    const view = getActivePathView(
-      state.draftRoute,
+    const view = getJourneyScopeProjection(
+      state.draftJourney,
       state.viewLevel,
-      state.activeRouteNodeId
+      state.activeSectionEventId
     )
-    const waypoint = view.nodes.find((node) => node.id === intent.waypointId)
-    if (!waypoint) return
+    const event = view.locations.find(
+      (candidate) => candidate.id === intent.eventId
+    )
+    if (!event) return
 
-    if (intent.type === "map.waypoint-hover-cleared") {
-      if (state.hoveredRouteNodeId === waypoint.id) {
-        state.setHoveredRouteNodeId(null)
-      }
+    if (intent.type === "map.event-hover-cleared") {
+      if (state.hoveredEventId === event.id) state.setHoveredEventId(null)
       return
     }
-
-    if (intent.type === "map.waypoint-hovered") {
-      state.setHoveredRouteNodeId(waypoint.id)
+    if (intent.type === "map.event-hovered") {
+      state.setHoveredEventId(event.id)
       return
     }
-
-    if (intent.type === "map.waypoint-selected" && view.level === "overview") {
+    if (view.level === "overview" && event.type === "SECTION") {
       state.setWorkbenchTab("preview")
-      state.enterCityView(waypoint.id)
-      state.requestMapFocus({ type: "active-route", maxZoom: 15 })
+      state.enterSectionView(event.id)
+      state.requestMapFocus({ type: "active-journey", maxZoom: 15 })
       return
     }
-
-    if (
-      intent.type === "map.waypoint-selected" &&
-      state.selectedLocationPoint?.id === waypoint.id
-    ) {
-      state.setSelectedLocationPoint(null)
+    if (state.selectedLocationEvent?.id === event.id) {
+      state.setSelectedLocationEvent(null)
       return
     }
-
     state.setWorkbenchTab("preview")
-    state.setSelectedEdgeId(null)
-    state.setSelectedLocationPoint(waypoint, intent.anchor)
-    state.requestMapFocus({
-      type: "node",
-      nodeId: waypoint.id,
-      zoom: 15,
-    })
+    state.setSelectedTransitEventId(null)
+    state.setSelectedLocationEvent(event, intent.anchor)
+    state.requestMapFocus({ type: "event", eventId: event.id, zoom: 15 })
     return
   }
 
@@ -116,21 +99,21 @@ export function dispatchMapIntent(intent: MapIntent) {
       (candidate) => candidate.id === intent.photoId
     )
     if (!photo) return
-    state.setSelectedLocationPoint(null)
+    state.setSelectedLocationEvent(null)
     state.setLightboxPhotoShare(photo)
     return
   }
 
-  if (intent.type === "map.edge-selected") {
+  if (intent.type === "map.transit-selected") {
     state.setWorkbenchTab("preview")
-    state.setSelectedLocationPoint(null)
-    const nextEdgeId =
-      state.selectedEdgeId === intent.edgeId ? null : intent.edgeId
-    state.setSelectedEdgeId(nextEdgeId)
-    if (nextEdgeId) {
+    state.setSelectedLocationEvent(null)
+    const nextEventId =
+      state.selectedTransitEventId === intent.eventId ? null : intent.eventId
+    state.setSelectedTransitEventId(nextEventId)
+    if (nextEventId) {
       state.requestMapFocus({
-        type: "edge",
-        edgeId: nextEdgeId,
+        type: "transit",
+        eventId: nextEventId,
         maxZoom: 14,
       })
     }
@@ -142,7 +125,6 @@ export function useWorkspaceController() {
     (intent: MapIntent) => dispatchMapIntent(intent),
     []
   )
-
   return { handleMapIntent }
 }
 
@@ -151,7 +133,7 @@ export default function WorkspaceController() {
     <>
       <AgentSync />
       <PhotoSync />
-      <RoutePlanSync />
+      <TransitPlanSync />
     </>
   )
 }

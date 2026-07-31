@@ -27,19 +27,19 @@ export const placeSearchInputSchema = z.object({
 export const placeResolveInputSchema = z.object({
   text: z.string().min(1),
   city: z.string().optional(),
-  routeContext: z
+  journeyContext: z
     .object({
       currentCity: z.string().optional(),
-      nearbyNodeIds: z.array(z.string()).optional(),
+      nearbyEventIds: z.array(z.string()).optional(),
     })
     .optional(),
   requireExact: z.boolean().default(false),
 })
 
-export const placeResolveForRouteInputSchema = placeResolveInputSchema.extend({
-  nodeId: z.string().min(1),
-  routeNodeId: z.string().min(1).optional(),
-})
+export const placeResolveForJourneyEventInputSchema =
+  placeResolveInputSchema.extend({
+    eventId: z.string().min(1),
+  })
 
 export const placeEnrichInputSchema = z.object({
   placeId: z.string().min(1).optional(),

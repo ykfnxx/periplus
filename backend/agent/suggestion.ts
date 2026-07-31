@@ -1,6 +1,6 @@
 import {
-  DRAFT_TOOL_NAMES,
-  type DraftToolName,
+  JOURNEY_TOOL_NAMES,
+  type JourneyToolName,
   type ToolCallSuggestionCall,
   type ToolCallSuggestionCreateInput,
 } from "@/modules/workspace/server/contracts"
@@ -25,15 +25,15 @@ function normalizeToolCall(value: unknown): ToolCallSuggestionCall {
   if (!record) throw new Error("Invalid tool call")
 
   const tool = String(record.tool ?? record.name ?? "")
-  if (!DRAFT_TOOL_NAMES.includes(tool as DraftToolName)) {
+  if (!JOURNEY_TOOL_NAMES.includes(tool as JourneyToolName)) {
     throw new Error(`Unsupported suggestion tool: ${tool}`)
   }
-  if (tool === "get_current_draft") {
-    throw new Error("Suggestion cannot use get_current_draft")
+  if (tool === "get_current_journey") {
+    throw new Error("Suggestion cannot use get_current_journey")
   }
 
   const input = asRecord(record.input ?? record.arguments ?? {}) ?? {}
-  return { tool: tool as DraftToolName, input }
+  return { tool: tool as JourneyToolName, input }
 }
 
 export function parseSuggestion(text: string): ToolCallSuggestionCreateInput {

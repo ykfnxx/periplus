@@ -91,7 +91,7 @@ export const createPhotoSlice: WorkspaceSlice<PhotoSlice> = (set) => ({
       selectedPhotoShare,
       selectedPhotoAnchor: anchor ?? null,
       ...(selectedPhotoShare
-        ? { selectedLocationPoint: null, selectedLocationAnchor: null }
+        ? { selectedLocationEvent: null, selectedLocationAnchor: null }
         : {}),
     }),
   lightboxPhotoShare: null,

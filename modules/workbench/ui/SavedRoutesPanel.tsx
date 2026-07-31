@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { listRoutes } from "@/modules/data/routes/client"
+import { listJourneys } from "@/modules/data/journeys/client"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import type { Route } from "@/types/route"
+import type { Journey } from "@/types/journey"
 import RouteListItem from "@/modules/workbench/ui/RouteListItem"
 
 export default function SavedRoutesPanel() {
@@ -12,17 +12,16 @@ export default function SavedRoutesPanel() {
   const setActiveMapPanel = useWorkspaceStore(
     (state) => state.setActiveMapPanel
   )
-  const [routes, setRoutes] = useState<Route[]>([])
+  const [journeys, setJourneys] = useState<Journey[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
 
   useEffect(() => {
     let mounted = true
-
-    listRoutes()
-      .then((savedRoutes) => {
+    listJourneys()
+      .then((savedJourneys) => {
         if (!mounted) return
-        setRoutes(savedRoutes)
+        setJourneys(savedJourneys)
         setIsLoading(false)
       })
       .catch(() => {
@@ -30,48 +29,36 @@ export default function SavedRoutesPanel() {
         setHasError(true)
         setIsLoading(false)
       })
-
     return () => {
       mounted = false
     }
   }, [])
 
-  const selectRoute = (route: Route) => {
+  const selectJourney = (journey: Journey) => {
     if (isDraftLocked || !sendAgentEvent) return
-    sendAgentEvent("draft.load_saved_route", { routeId: route.id })
+    sendAgentEvent("draft.load_saved_journey", { journeyId: journey.id })
     setActiveMapPanel("none")
   }
 
-  if (isLoading) {
-    return (
-      <div className="text-sm text-walnut">正在加载...</div>
-    )
-  }
-
+  if (isLoading) return <div className="text-sm text-walnut">正在加载...</div>
   if (hasError) {
-    return (
-      <div className="text-sm text-walnut">
-        保存路线加载失败
-      </div>
-    )
+    return <div className="text-sm text-walnut">保存行程加载失败</div>
   }
 
   return (
     <div className="space-y-3">
-      <h2 className="text-sm font-bold text-ink">
-        收藏路线
-      </h2>
+      <h2 className="text-sm font-bold text-ink">收藏行程</h2>
       <div className="space-y-2">
-        {routes.length ? (
-          routes.map((route) => (
+        {journeys.length ? (
+          journeys.map((journey) => (
             <RouteListItem
-              key={route.id}
-              route={route}
-              onSelect={selectRoute}
+              key={journey.id}
+              journey={journey}
+              onSelect={selectJourney}
             />
           ))
         ) : (
-          <p className="text-sm text-walnut">暂无收藏路线</p>
+          <p className="text-sm text-walnut">暂无收藏行程</p>
         )}
       </div>
     </div>

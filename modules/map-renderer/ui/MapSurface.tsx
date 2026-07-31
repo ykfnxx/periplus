@@ -11,8 +11,6 @@ import LocationSelector from "./LocationSelector"
 import LocationInfoBubble from "./LocationInfoBubble"
 import MapRouteLevelControls from "./MapRouteLevelControls"
 import MapViewportController from "./MapViewportController"
-import OverlapCluster from "./OverlapCluster"
-import EdgeBadgeLayer from "./EdgeBadgeLayer"
 
 interface MapSurfaceProps {
   onIntent?: (intent: MapIntent) => void
@@ -95,12 +93,10 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
         </div>
       )}
       <RoutePolyline key="polyline" onIntent={onIntent} />
-      <EdgeBadgeLayer key="edge-badges" onIntent={onIntent} />
       <RouteMarkers key="markers" onIntent={onIntent} />
       <LocationInfoBubble key="location-info" />
       <PhotoMarkers key="photo-markers" onIntent={onIntent} />
       <LocationSelector key="location-selector" />
-      <OverlapCluster key="overlap-cluster" onIntent={onIntent} />
       <MapViewportController key="map-viewport-controller" />
       {!mapError && !isPickingUploadPhotoLocation && (
         <MapRouteLevelControls key="map-route-level-controls" />

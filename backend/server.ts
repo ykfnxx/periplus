@@ -10,7 +10,7 @@ const [
   { KimiCodeRuntime },
   { DraftSessionService },
   { WorkspaceCommandService },
-  { routePlanningService },
+  { transitPlanningService },
   { handleInternalRequest },
   { createAgentWebSocketServer },
 ] = await Promise.all([
@@ -18,14 +18,14 @@ const [
   import("./agent/runtimes/kimi-code-runtime"),
   import("@/modules/workspace/server/draft-session-service"),
   import("@/modules/workspace/server/workspace-command-service"),
-  import("@/modules/data/routes/route-planning-service"),
+  import("@/modules/data/transit/transit-planning-service"),
   import("./internal-api"),
   import("./ws"),
 ])
 
 const port = periplusServerConfig.agentBackend.port
 const backendUrl = periplusServerConfig.agentBackend.url
-const drafts = new DraftSessionService(routePlanningService)
+const drafts = new DraftSessionService(transitPlanningService)
 const commands = new WorkspaceCommandService(drafts)
 let broadcast: AgentEventEmitter = () => undefined
 

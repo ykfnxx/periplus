@@ -1,5 +1,5 @@
 import {
-  DRAFT_TOOL_NAMES,
+  JOURNEY_TOOL_NAMES,
   type AgentConversationMessage,
 } from "@/modules/workspace/server/contracts"
 import type { AgentMode } from "../types"
@@ -10,8 +10,10 @@ function formatConversationMessage(message: AgentConversationMessage) {
 
 function basePrompt(messages: AgentConversationMessage[]) {
   return [
-    "你是 Periplus 的路线规划 Agent。",
-    "所有路线修改都应该作用于当前草稿；保存由用户在前端触发。",
+    "你是 Periplus 的旅程规划 Agent。",
+    "所有修改都必须通过 typed JourneyEvent 工具作用于当前草稿；保存由用户在前端触发。",
+    "SECTION 只用于层级分组，VISIT/STAY/MEAL/ACTIVITY/TRANSIT 才是可执行事件；TRANSIT 必须是显式事件。",
+    "修改前读取当前 revision；每个修改工具都传 expectedRevision 和唯一 idempotencyKey，成功后使用返回的新 revision。",
     "下面是当前会话从开始到现在的完整上下文，请基于历史继续对话，只执行最后一条用户需求。",
     "",
     "完整对话：",
@@ -38,10 +40,12 @@ export function buildPrompt(
           summary: "给用户看的简短变更摘要",
           toolCalls: [
             {
-              tool: "route.update_node",
+              tool: "journey.update_event",
               input: {
-                nodeId: "node-id",
-                patch: { notes: "新的备注" },
+                expectedRevision: 3,
+                idempotencyKey: "suggestion-update-event-1",
+                eventId: "event-id",
+                patch: { description: "新的备注" },
               },
             },
           ],
@@ -50,8 +54,8 @@ export function buildPrompt(
         2
       ),
       "",
-      `允许的 tool 值：${DRAFT_TOOL_NAMES.filter(
-        (name) => name !== "get_current_draft"
+      `允许的 tool 值：${JOURNEY_TOOL_NAMES.filter(
+        (name) => name !== "get_current_journey"
       ).join(", ")}`,
       "",
       "当前草稿快照：",

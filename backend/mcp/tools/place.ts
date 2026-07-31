@@ -7,7 +7,7 @@ import {
   eventSearchInputSchema,
   placeEnrichInputSchema,
   placeResolveInputSchema,
-  placeResolveForRouteInputSchema,
+  placeResolveForJourneyEventInputSchema,
   placeSearchInputSchema,
 } from "../schemas/place"
 
@@ -80,12 +80,12 @@ export function registerPlaceTools(server: McpServer): void {
   )
   registerPlaceTool(
     server,
-    "periplus.place.resolve_for_route",
-    "Resolve place for route",
-    "Resolve a place and return a ready-to-call route.link_place_to_node payload.",
-    placeResolveForRouteInputSchema,
-    placeHandler(placeResolveForRouteInputSchema, (input) =>
-      service.resolvePlaceForRoute(input)
+    "periplus.place.resolve_for_journey_event",
+    "Resolve place for journey event",
+    "Resolve a place and return a ready-to-call journey.link_place payload.",
+    placeResolveForJourneyEventInputSchema,
+    placeHandler(placeResolveForJourneyEventInputSchema, (input) =>
+      service.resolvePlaceForJourneyEvent(input)
     )
   )
   registerPlaceTool(
