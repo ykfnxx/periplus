@@ -191,7 +191,8 @@ function positionScope(journey: DraftJourney, position: JourneyEventPosition) {
 function insertIntoMainChain(
   journey: DraftJourney,
   event: JourneyEvent,
-  position: JourneyEventPosition
+  position: JourneyEventPosition,
+  mainSequence?: JourneyEvent[]
 ) {
   if (journey.events.some((candidate) => candidate.id === event.id)) {
     throw new DraftInputError(`Event ${event.id} already exists`)
@@ -209,7 +210,8 @@ function insertIntoMainChain(
     return
   }
 
-  const sequence = projectMainSequence(journey, event.parentEventId)
+  const sequence =
+    mainSequence ?? projectMainSequence(journey, event.parentEventId)
 
   let previous: JourneyEvent | undefined
   let next: JourneyEvent | undefined
@@ -248,15 +250,86 @@ function insertIntoMainChain(
   if (next) journey.links.push(mainLink(event.id, next.id))
 }
 
-function detachFromMainChain(journey: DraftJourney, eventId: string) {
+function detachFromMainChain(
+  journey: DraftJourney,
+  eventId: string,
+  preserveAlternativeLinks = false
+) {
   const incoming = findMainIncomingLink(journey.links, eventId)
   const outgoing = findMainOutgoingLink(journey.links, eventId)
   journey.links = journey.links.filter(
-    (link) => link.fromEventId !== eventId && link.toEventId !== eventId
+    (link) =>
+      (link.fromEventId !== eventId && link.toEventId !== eventId) ||
+      (preserveAlternativeLinks && link.kind === "ALTERNATIVE")
   )
   if (incoming && outgoing) {
     journey.links.push(mainLink(incoming.fromEventId, outgoing.toEventId))
   }
+}
+
+function reorientAlternativeBranchAfterMainMove(
+  journey: DraftJourney,
+  movedEventId: string,
+  previousMainSequence: readonly JourneyEvent[]
+) {
+  const nextMainSequence = projectMainSequence(
+    journey,
+    previousMainSequence[0]?.parentEventId
+  )
+  const mainEventIds = new Set(previousMainSequence.map((event) => event.id))
+  const alternativeLinks = journey.links.filter(
+    (link) => link.kind === "ALTERNATIVE"
+  )
+  const linksByEvent = new Map<string, JourneyEventLink[]>()
+  for (const link of alternativeLinks) {
+    for (const eventId of [link.fromEventId, link.toEventId]) {
+      const links = linksByEvent.get(eventId) ?? []
+      links.push(link)
+      linksByEvent.set(eventId, links)
+    }
+  }
+  if (!linksByEvent.has(movedEventId)) return
+
+  const componentEventIds = new Set<string>()
+  const componentLinkIds = new Set<string>()
+  const pending = [movedEventId]
+  while (pending.length) {
+    const eventId = pending.pop()
+    if (!eventId || componentEventIds.has(eventId)) continue
+    componentEventIds.add(eventId)
+    for (const link of linksByEvent.get(eventId) ?? []) {
+      componentLinkIds.add(link.id)
+      pending.push(
+        link.fromEventId === eventId ? link.toEventId : link.fromEventId
+      )
+    }
+  }
+
+  const anchors = [...componentEventIds].filter((eventId) =>
+    mainEventIds.has(eventId)
+  )
+  if (anchors.length !== 2) return
+  const previousOrder = new Map(
+    previousMainSequence.map((event, index) => [event.id, index])
+  )
+  const nextOrder = new Map(
+    nextMainSequence.map((event, index) => [event.id, index])
+  )
+  const [left, right] = anchors
+  const wasForward =
+    (previousOrder.get(left) ?? 0) < (previousOrder.get(right) ?? 0)
+  const isForward = (nextOrder.get(left) ?? 0) < (nextOrder.get(right) ?? 0)
+  if (wasForward === isForward) return
+
+  journey.links = journey.links.map((link) =>
+    componentLinkIds.has(link.id)
+      ? {
+          ...link,
+          fromEventId: link.toEventId,
+          toEventId: link.fromEventId,
+        }
+      : link
+  )
 }
 
 export class DraftSessionService {
@@ -500,12 +573,46 @@ export class DraftSessionService {
     if (event.replacedByEventId) {
       throw new DraftInputError("Replaced events cannot be moved")
     }
-    detachFromMainChain(journey, event.id)
+    const sourceParentEventId = event.parentEventId
+    const targetParentEventId = positionScope(journey, input.position)
+    const previousMainSequence = projectMainSequence(
+      journey,
+      sourceParentEventId
+    )
+    const eventWasOnMain = previousMainSequence.some(
+      (candidate) => candidate.id === event.id
+    )
+    const hasAlternativeLinks = journey.links.some(
+      (link) =>
+        link.kind === "ALTERNATIVE" &&
+        (link.fromEventId === event.id || link.toEventId === event.id)
+    )
+    if (hasAlternativeLinks && targetParentEventId !== sourceParentEventId) {
+      throw new DraftInputError(
+        "Events with ALTERNATIVE links cannot move across scopes"
+      )
+    }
+    const preserveAlternativeLinks =
+      eventWasOnMain &&
+      hasAlternativeLinks &&
+      input.position.placement !== "branch"
+    const targetMainSequence =
+      targetParentEventId === sourceParentEventId
+        ? previousMainSequence.filter((candidate) => candidate.id !== event.id)
+        : projectMainSequence(journey, targetParentEventId)
+    detachFromMainChain(journey, event.id, preserveAlternativeLinks)
     journey.events = journey.events.filter(
       (candidate) => candidate.id !== event.id
     )
-    event.parentEventId = positionScope(journey, input.position)
-    insertIntoMainChain(journey, event, input.position)
+    event.parentEventId = targetParentEventId
+    insertIntoMainChain(journey, event, input.position, targetMainSequence)
+    if (preserveAlternativeLinks) {
+      reorientAlternativeBranchAfterMainMove(
+        journey,
+        event.id,
+        previousMainSequence
+      )
+    }
     return this.commitJourney(session, journey, "journey.move_event", event.id)
   }
 
@@ -715,7 +822,24 @@ export class DraftSessionService {
     if (!event) throw new DraftInputError("Transit event not found")
     const request = buildTransitPlanRequest(event, journey.events)
     if (!request) throw new DraftInputError("Transit endpoints are incomplete")
-    const bundle = await this.transitPlanning.plan(request)
+    let bundle: TransitPlanBundle
+    try {
+      bundle = await this.transitPlanning.plan(request)
+    } catch (error) {
+      if (session.revision !== startRevision) {
+        throw new DraftInputError("Draft changed while planning transit")
+      }
+      event.detail.planningFingerprint = transitPlanFingerprint(request)
+      event.detail.planningStatus = "FAILED"
+      event.detail.planningWarning =
+        error instanceof Error ? error.message : "Transit planning failed"
+      return this.commitJourney(
+        session,
+        journey,
+        "journey.plan_transit",
+        event.id
+      )
+    }
     if (session.revision !== startRevision) {
       throw new DraftInputError("Draft changed while planning transit")
     }

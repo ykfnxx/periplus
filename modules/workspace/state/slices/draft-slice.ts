@@ -10,6 +10,9 @@ export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set, get) => ({
   draftRevision: 0,
   applyDraftSnapshot: (draftJourney, draftRevision) =>
     set((state) => draftJourneyPatch(state, draftJourney, draftRevision)),
+  failedTransitPlanCommandId: null,
+  setFailedTransitPlanCommandId: (failedTransitPlanCommandId) =>
+    set({ failedTransitPlanCommandId }),
   selectTransitPlan: (eventId, planId) => {
     const state = get()
     const event = state.draftJourney?.events.find(

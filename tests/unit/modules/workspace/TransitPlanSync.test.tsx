@@ -82,6 +82,7 @@ describe("browser transit commands", () => {
       alternatives: 3,
     })
     expect(sender).toHaveBeenCalledWith("draft.command", {
+      commandId: `browser-plan:journey:transit:${fingerprint}:7`,
       tool: "journey.plan_transit",
       input: {
         eventId: "transit",
@@ -89,6 +90,39 @@ describe("browser transit commands", () => {
         idempotencyKey: `browser-plan:journey:transit:${fingerprint}:7`,
       },
     })
+  })
+
+  it("retries correlated command failures with bounded backoff", () => {
+    const sender = vi.fn()
+    act(() => {
+      useWorkspaceStore.getState().applyDraftSnapshot(draftJourney(), 7)
+      useWorkspaceStore.getState().setAgentSender(sender)
+    })
+    render(<TransitPlanSync />)
+
+    act(() => vi.advanceTimersByTime(750))
+    expect(sender).toHaveBeenCalledTimes(1)
+    const commandId = sender.mock.calls[0]![1].commandId as string
+
+    act(() =>
+      useWorkspaceStore.getState().setFailedTransitPlanCommandId(commandId)
+    )
+    act(() => vi.advanceTimersByTime(1_499))
+    expect(sender).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(1))
+    expect(sender).toHaveBeenCalledTimes(2)
+
+    act(() =>
+      useWorkspaceStore.getState().setFailedTransitPlanCommandId(commandId)
+    )
+    act(() => vi.advanceTimersByTime(3_000))
+    expect(sender).toHaveBeenCalledTimes(3)
+
+    act(() =>
+      useWorkspaceStore.getState().setFailedTransitPlanCommandId(commandId)
+    )
+    act(() => vi.advanceTimersByTime(10_000))
+    expect(sender).toHaveBeenCalledTimes(3)
   })
 
   it("selects a plan through the same authoritative draft command", () => {

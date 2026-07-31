@@ -21,11 +21,14 @@ function send(socket: WebSocket, event: AgentEvent) {
   }
 }
 
-function errorEvent(error: unknown): AgentEvent {
+function errorEvent(error: unknown, commandId?: string): AgentEvent {
   if (error instanceof DraftInputError || error instanceof Error) {
-    return { type: "error", payload: { message: error.message } }
+    return { type: "error", payload: { message: error.message, commandId } }
   }
-  return { type: "error", payload: { message: "Unexpected WebSocket error" } }
+  return {
+    type: "error",
+    payload: { message: "Unexpected WebSocket error", commandId },
+  }
 }
 
 export function createAgentWebSocketServer(
@@ -82,9 +85,12 @@ export function createAgentWebSocketServer(
     })
 
     socket.on("message", async (rawMessage) => {
+      let commandId: string | undefined
       try {
         const message = JSON.parse(rawMessage.toString("utf8")) as WireMessage
         const payload = message.payload ?? {}
+        commandId =
+          typeof payload.commandId === "string" ? payload.commandId : undefined
 
         if (message.type === "draft.get") {
           send(socket, {
@@ -176,7 +182,7 @@ export function createAgentWebSocketServer(
           })
         }
       } catch (error) {
-        send(socket, errorEvent(error))
+        send(socket, errorEvent(error, commandId))
       }
     })
 

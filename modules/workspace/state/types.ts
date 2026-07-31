@@ -93,6 +93,8 @@ export interface DraftSlice {
   draftJourney: DraftJourney | null
   draftRevision: number
   applyDraftSnapshot: (journey: DraftJourney | null, revision: number) => void
+  failedTransitPlanCommandId: string | null
+  setFailedTransitPlanCommandId: (commandId: string | null) => void
   selectTransitPlan: (eventId: string, planId: string) => void
   isDraftLocked: boolean
   setDraftLocked: (isDraftLocked: boolean) => void

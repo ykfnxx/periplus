@@ -101,4 +101,47 @@ describe("AgentSync", () => {
     act(() => socket.dispatchEvent(new Event("close")))
     expect(useWorkspaceStore.getState().sendAgentEvent).toBeNull()
   })
+
+  it("correlates a browser planning command error back to the retry state", async () => {
+    const socket = new FakeWebSocket()
+    vi.mocked(bootstrapAgentSession).mockResolvedValue({
+      sessionId: "session-1",
+      draft: {
+        sessionId: "session-1",
+        document: null,
+        sourceJourneyId: null,
+        baseRevision: null,
+        dirty: false,
+        isLocked: false,
+        lockedByRunId: null,
+        revision: 0,
+        pendingSuggestions: [],
+        updatedAt: "2026-07-29T00:00:00.000Z",
+      },
+      messages: [],
+    })
+    vi.mocked(connectAgentSocket).mockReturnValue(
+      socket as unknown as WebSocket
+    )
+    render(<AgentSync />)
+    await waitFor(() => {
+      expect(connectAgentSocket).toHaveBeenCalledOnce()
+    })
+
+    const commandId = "browser-plan:journey:transit:fingerprint:7"
+    act(() =>
+      socket.dispatchEvent(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "error",
+            payload: { message: "revision conflict", commandId },
+          }),
+        })
+      )
+    )
+
+    expect(useWorkspaceStore.getState().failedTransitPlanCommandId).toBe(
+      commandId
+    )
+  })
 })

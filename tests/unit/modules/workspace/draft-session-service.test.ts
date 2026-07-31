@@ -216,6 +216,99 @@ describe("DraftSessionService JourneyEvent commands", () => {
     ).toBe(false)
   })
 
+  it("moves a MAIN branch anchor without disconnecting or cycling its branch", () => {
+    const service = new DraftSessionService()
+    const input = journey()
+    input.events.push({
+      id: "rain-note",
+      type: "NOTE",
+      origin: "USER_INSERTED",
+      title: "雨天备选",
+      detail: { body: "室内活动" },
+    })
+    input.links.push(
+      {
+        id: "rain-start",
+        fromEventId: "section-a",
+        toEventId: "rain-note",
+        kind: "ALTERNATIVE",
+      },
+      {
+        id: "rain-end",
+        fromEventId: "rain-note",
+        toEventId: "section-b",
+        kind: "ALTERNATIVE",
+      }
+    )
+    service.replaceDraft("session", input)
+
+    const moved = service.journeyMoveEvent("session", {
+      expectedRevision: 1,
+      idempotencyKey: "move-main-branch-anchor",
+      eventId: "section-a",
+      position: { placement: "end" },
+    })
+
+    expect(moved.document?.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromEventId: "section-b",
+          toEventId: "section-a",
+          kind: "MAIN",
+        }),
+        expect.objectContaining({
+          id: "rain-end",
+          fromEventId: "section-b",
+          toEventId: "rain-note",
+          kind: "ALTERNATIVE",
+        }),
+        expect.objectContaining({
+          id: "rain-start",
+          fromEventId: "rain-note",
+          toEventId: "section-a",
+          kind: "ALTERNATIVE",
+        }),
+      ])
+    )
+
+    service.replaceDraft("after-session", input)
+    const movedAfter = service.journeyMoveEvent("after-session", {
+      expectedRevision: 1,
+      idempotencyKey: "move-main-branch-anchor-after",
+      eventId: "section-a",
+      position: { placement: "after", eventId: "section-b" },
+    })
+    expect(movedAfter.document?.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromEventId: "section-b",
+          toEventId: "section-a",
+          kind: "MAIN",
+        }),
+        expect.objectContaining({
+          fromEventId: "section-b",
+          toEventId: "rain-note",
+          kind: "ALTERNATIVE",
+        }),
+        expect.objectContaining({
+          fromEventId: "rain-note",
+          toEventId: "section-a",
+          kind: "ALTERNATIVE",
+        }),
+      ])
+    )
+
+    service.replaceDraft("cross-scope-session", input)
+    expect(() =>
+      service.journeyMoveEvent("cross-scope-session", {
+        expectedRevision: 1,
+        idempotencyKey: "move-main-branch-anchor-cross-scope",
+        eventId: "section-a",
+        position: { placement: "after", eventId: "visit-b" },
+      })
+    ).toThrowError("Events with ALTERNATIVE links cannot move across scopes")
+  })
+
   it("deduplicates commands by idempotency key before revision checks", async () => {
     const service = new DraftSessionService()
     service.replaceDraft("session", journey())
@@ -423,6 +516,72 @@ describe("DraftSessionService JourneyEvent commands", () => {
         }),
       })
     )
+  })
+
+  it("records a provider failure as an authoritative FAILED transit snapshot", async () => {
+    const input = journey()
+    input.events.push(
+      {
+        id: "transit-a",
+        parentEventId: "section-a",
+        type: "TRANSIT",
+        executionStatus: "PLANNED",
+        origin: "ORIGINAL",
+        title: "前往 C",
+        detail: {
+          transportMode: "CAR",
+          requestMode: "DRIVE",
+          plannedFromEventId: "visit-a",
+          plannedToEventId: "visit-c",
+        },
+      },
+      {
+        id: "visit-c",
+        parentEventId: "section-a",
+        type: "VISIT",
+        executionStatus: "PLANNED",
+        origin: "ORIGINAL",
+        title: "C",
+        detail: { plannedLat: 32, plannedLng: 122 },
+      }
+    )
+    input.links.push(
+      {
+        id: "inside-a-1",
+        fromEventId: "visit-a",
+        toEventId: "transit-a",
+        kind: "MAIN",
+      },
+      {
+        id: "inside-a-2",
+        fromEventId: "transit-a",
+        toEventId: "visit-c",
+        kind: "MAIN",
+      }
+    )
+    const service = new DraftSessionService({
+      plan: vi.fn(async () => {
+        throw new Error("provider unavailable")
+      }),
+    })
+    service.replaceDraft("session", input)
+
+    const failed = await service.callTool("session", "journey.plan_transit", {
+      expectedRevision: 1,
+      idempotencyKey: "plan-provider-failure",
+      eventId: "transit-a",
+    })
+    const transit = failed.document?.events.find(
+      (event) => event.id === "transit-a"
+    )
+    expect(failed.revision).toBe(2)
+    expect(transit?.type).toBe("TRANSIT")
+    if (transit?.type !== "TRANSIT") return
+    expect(transit.detail).toMatchObject({
+      planningStatus: "FAILED",
+      planningWarning: "provider unavailable",
+    })
+    expect(transit.detail.planningFingerprint).toBeTypeOf("string")
   })
 
   it("protects both sides of replacement lineage until the change is undone", () => {
