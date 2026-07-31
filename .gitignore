@@ -44,3 +44,5 @@ docs/design/
 .worktrees/
 uploads/
 public/uploads/
+/prisma/dev.db
+/prisma/dev.db-journal

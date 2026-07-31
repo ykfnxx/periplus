@@ -1,146 +1,84 @@
-import {
-  applyTransitPlanBundle,
-  buildTransitPlanRequest,
-  mergeWorkspaceTransitPlans,
-  selectedTransitPlan,
-  transitPlanFingerprint,
-} from "@/lib/journeys/planning"
-import { mapTransitEvents } from "@/modules/workspace/state/helpers"
 import type {
   DraftSlice,
   WorkspaceSlice,
+  WorkspaceState,
 } from "@/modules/workspace/state/types"
 import type { DraftJourney } from "@/types/journey"
 
-export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set) => ({
+export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set, get) => ({
   draftJourney: null,
-  setDraftJourney: (draftJourney) =>
-    set((state) => {
-      const mergedJourney = mergeWorkspaceTransitPlans(
-        state.draftJourney,
-        draftJourney
-      )
-      const activeSectionStillExists = Boolean(
-        mergedJourney?.events.some(
-          (event) =>
-            event.id === state.activeSectionEventId && event.type === "SECTION"
-        )
-      )
-      const topologyChanged =
-        journeyTopologyKey(state.draftJourney) !==
-        journeyTopologyKey(mergedJourney)
-      return {
-        draftJourney: mergedJourney,
-        ...(mergedJourney && topologyChanged
-          ? {
-              mapFocusRequest: {
-                requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
-                target: {
-                  type: "active-journey" as const,
-                  maxZoom: activeSectionStillExists ? 15 : 12,
-                },
-              },
-            }
-          : {}),
-        ...(mergedJourney && activeSectionStillExists
-          ? {}
-          : {
-              viewLevel: "overview" as const,
-              activeSectionEventId: null,
-              hoveredEventId: null,
-              selectedTransitEventId: null,
-              selectedLocationEvent: null,
-              selectedLocationAnchor: null,
-            }),
-      }
-    }),
-  markTransitPlansPlanning: (eventIds) =>
-    set((state) => ({
-      draftJourney: mapTransitEvents(state.draftJourney, (event) =>
-        eventIds.includes(event.id)
-          ? {
-              ...event,
-              detail: {
-                ...event.detail,
-                planningStatus: event.detail.plans?.length
-                  ? "STALE"
-                  : "PLANNING",
-              },
-            }
-          : event
-      ),
-    })),
-  applyTransitPlanBundles: (bundles) =>
-    set((state) => ({
-      draftJourney: mapTransitEvents(state.draftJourney, (event) => {
-        const bundle = bundles.find((item) => item.transitEventId === event.id)
-        if (!bundle || !state.draftJourney) return event
-        const request = buildTransitPlanRequest(
-          event,
-          state.draftJourney.events
-        )
-        if (
-          !request ||
-          transitPlanFingerprint(request) !== bundle.requestFingerprint
-        ) {
-          return event
-        }
-        return applyTransitPlanBundle(event, bundle)
-      }),
-    })),
-  markTransitPlanFailures: (failures) =>
-    set((state) => ({
-      draftJourney: mapTransitEvents(state.draftJourney, (event) => {
-        const failure = failures.find(
-          (item) => item.transitEventId === event.id
-        )
-        return failure
-          ? {
-              ...event,
-              detail: {
-                ...event.detail,
-                planningStatus: event.detail.plans?.length ? "STALE" : "FAILED",
-                planningWarning: failure.message,
-              },
-            }
-          : event
-      }),
-    })),
-  selectTransitPlan: (eventId, planId) =>
-    set((state) => ({
-      draftJourney: mapTransitEvents(state.draftJourney, (event) => {
-        if (
-          event.id !== eventId ||
-          !event.detail.plans?.some((plan) => plan.id === planId)
-        ) {
-          return event
-        }
-        const next = {
-          ...event,
-          detail: { ...event.detail, selectedPlanId: planId },
-        }
-        const selected = selectedTransitPlan(next)
-        return {
-          ...next,
-          detail: {
-            ...next.detail,
-            plannedDurationMinutes: selected
-              ? Math.max(1, Math.round(selected.durationSeconds / 60))
-              : event.detail.plannedDurationMinutes,
-            plannedDistanceKm: selected
-              ? Math.round((selected.distanceMeters / 1000) * 10) / 10
-              : event.detail.plannedDistanceKm,
-            plannedCostEstimate:
-              selected?.fareAmount ?? event.detail.plannedCostEstimate,
-          },
-        }
-      }),
-    })),
+  draftRevision: 0,
+  applyDraftSnapshot: (draftJourney, draftRevision) =>
+    set((state) => draftJourneyPatch(state, draftJourney, draftRevision)),
+  selectTransitPlan: (eventId, planId) => {
+    const state = get()
+    const event = state.draftJourney?.events.find(
+      (candidate) => candidate.id === eventId
+    )
+    if (
+      !event ||
+      event.type !== "TRANSIT" ||
+      !event.detail.plans?.some((plan) => plan.id === planId) ||
+      event.detail.selectedPlanId === planId ||
+      state.isDraftLocked
+    ) {
+      return
+    }
+    state.sendAgentEvent?.("draft.command", {
+      tool: "journey.select_transit_plan",
+      input: {
+        eventId,
+        planId,
+        expectedRevision: state.draftRevision,
+        idempotencyKey: `browser-select:${state.draftJourney?.id}:${eventId}:${planId}:${state.draftRevision}`,
+      },
+    })
+  },
   isDraftLocked: false,
   setDraftLocked: (isDraftLocked) => set({ isDraftLocked }),
   draftSaveState: "idle",
   setDraftSaveState: (draftSaveState) => set({ draftSaveState }),
 })
+
+function draftJourneyPatch(
+  state: WorkspaceState,
+  draftJourney: DraftJourney | null,
+  draftRevision: number
+) {
+  const activeSectionStillExists = Boolean(
+    draftJourney?.events.some(
+      (event) =>
+        event.id === state.activeSectionEventId && event.type === "SECTION"
+    )
+  )
+  const topologyChanged =
+    journeyTopologyKey(state.draftJourney) !== journeyTopologyKey(draftJourney)
+  return {
+    draftJourney,
+    draftRevision,
+    ...(draftJourney && topologyChanged
+      ? {
+          mapFocusRequest: {
+            requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
+            target: {
+              type: "active-journey" as const,
+              maxZoom: activeSectionStillExists ? 15 : 12,
+            },
+          },
+        }
+      : {}),
+    ...(draftJourney && activeSectionStillExists
+      ? {}
+      : {
+          viewLevel: "overview" as const,
+          activeSectionEventId: null,
+          hoveredEventId: null,
+          selectedTransitEventId: null,
+          selectedLocationEvent: null,
+          selectedLocationAnchor: null,
+        }),
+  }
+}
 
 function journeyTopologyKey(journey: DraftJourney | null) {
   if (!journey) return ""

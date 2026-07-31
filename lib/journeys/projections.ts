@@ -1,4 +1,4 @@
-import { projectMainSequence } from "./graph"
+import { projectTopologicalSequence } from "./graph"
 import { isLocationEvent } from "./locations"
 import type {
   JourneyDocument,
@@ -51,7 +51,7 @@ export function getJourneyScopeProjection(
     level === "section" && activeSectionEventId
       ? findSection(journey, activeSectionEventId)
       : null
-  const events = projectMainSequence(journey, section?.id)
+  const events = projectTopologicalSequence(journey, section?.id)
   return {
     level: section ? "section" : "overview",
     title: section?.title ?? journey.title,

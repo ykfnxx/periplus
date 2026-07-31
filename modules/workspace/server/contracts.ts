@@ -82,6 +82,13 @@ export const JOURNEY_TOOL_NAMES = [
 
 export type JourneyToolName = (typeof JOURNEY_TOOL_NAMES)[number]
 
+export function isJourneyToolName(value: unknown): value is JourneyToolName {
+  return (
+    typeof value === "string" &&
+    JOURNEY_TOOL_NAMES.includes(value as JourneyToolName)
+  )
+}
+
 export interface ToolCallSuggestionCall {
   tool: JourneyToolName
   input: Record<string, unknown>

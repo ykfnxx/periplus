@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { projectMainSequence, validateJourneyGraph } from "@/lib/journeys/graph"
-import { executableEvents } from "@/lib/journeys/projections"
+import {
+  projectMainSequence,
+  projectTopologicalSequence,
+  validateJourneyGraph,
+} from "@/lib/journeys/graph"
+import {
+  executableEvents,
+  getJourneyScopeProjection,
+} from "@/lib/journeys/projections"
 import { locationCount } from "@/lib/journeys/summary"
 import type { JourneyInput } from "@/types/journey"
 
@@ -61,6 +68,64 @@ describe("JourneyEvent graph", () => {
       "section-b",
     ])
     expect(validateJourneyGraph(input)).toEqual({ ok: true })
+  })
+
+  it("projects ALTERNATIVE-only branch events in the all-link DAG", () => {
+    const input = journey()
+    input.events.push({
+      id: "branch-note",
+      type: "NOTE",
+      origin: "USER_INSERTED",
+      title: "雨天备选",
+      detail: { body: "室内活动" },
+    })
+    input.links.push(
+      {
+        id: "branch-start",
+        fromEventId: "section-a",
+        toEventId: "branch-note",
+        kind: "ALTERNATIVE",
+        branchKey: "rain",
+      },
+      {
+        id: "branch-end",
+        fromEventId: "branch-note",
+        toEventId: "section-b",
+        kind: "ALTERNATIVE",
+        branchKey: "rain",
+      }
+    )
+
+    expect(validateJourneyGraph(input)).toEqual({ ok: true })
+    expect(projectMainSequence(input).map((event) => event.id)).toEqual([
+      "section-a",
+      "section-b",
+    ])
+    expect(projectTopologicalSequence(input).map((event) => event.id)).toEqual([
+      "section-a",
+      "branch-note",
+      "section-b",
+    ])
+    expect(
+      getJourneyScopeProjection(input, "overview", null).events.map(
+        (event) => event.id
+      )
+    ).toEqual(["section-a", "branch-note", "section-b"])
+  })
+
+  it("rejects cycles formed across MAIN and ALTERNATIVE links", () => {
+    const input = journey()
+    input.links.push({
+      id: "cycle",
+      fromEventId: "section-b",
+      toEventId: "section-a",
+      kind: "ALTERNATIVE",
+    })
+
+    expect(validateJourneyGraph(input)).toEqual({
+      ok: false,
+      error: "links in scope __root__ must form an acyclic graph",
+    })
   })
 
   it("does not count SECTION as a visit or executable event", () => {

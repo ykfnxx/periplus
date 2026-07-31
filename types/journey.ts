@@ -344,3 +344,9 @@ export type JourneyEventPosition =
   | { placement: "end"; parentEventId?: string }
   | { placement: "before"; eventId: string }
   | { placement: "after"; eventId: string }
+  | {
+      placement: "branch"
+      fromEventId: string
+      toEventId?: string
+      branchKey?: string
+    }

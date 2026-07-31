@@ -26,7 +26,9 @@ function asConversationMessages(
 }
 
 export default function AgentSync() {
-  const setDraftJourney = useWorkspaceStore((state) => state.setDraftJourney)
+  const applyDraftSnapshot = useWorkspaceStore(
+    (state) => state.applyDraftSnapshot
+  )
   const setDraftLocked = useWorkspaceStore((state) => state.setDraftLocked)
   const setAgentSender = useWorkspaceStore((state) => state.setAgentSender)
   const setChatMessages = useWorkspaceStore((state) => state.setChatMessages)
@@ -45,7 +47,7 @@ export default function AgentSync() {
     let disposed = false
 
     const applySnapshot = (snapshot: DraftSnapshot) => {
-      setDraftJourney(snapshot.document)
+      applyDraftSnapshot(snapshot.document, snapshot.revision)
       setDraftLocked(snapshot.isLocked)
       setPendingSuggestions(snapshot.pendingSuggestions ?? [])
     }
@@ -133,7 +135,7 @@ export default function AgentSync() {
     appendAssistantMessage,
     setAgentSender,
     setChatMessages,
-    setDraftJourney,
+    applyDraftSnapshot,
     setDraftLocked,
     setDraftSaveState,
     setPendingSuggestions,

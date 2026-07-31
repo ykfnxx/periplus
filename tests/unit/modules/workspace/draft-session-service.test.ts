@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import { transitPlanFingerprint } from "@/lib/journeys/planning"
 import {
   DraftInputError,
   DraftSessionService,
@@ -153,6 +154,68 @@ describe("DraftSessionService JourneyEvent commands", () => {
     )
   })
 
+  it("adds an ALTERNATIVE branch and can promote it into the MAIN chain", () => {
+    const service = new DraftSessionService()
+    service.replaceDraft("session", journey())
+    const branched = service.journeyAddEvent("session", {
+      expectedRevision: 1,
+      idempotencyKey: "add-rain-branch",
+      event: {
+        id: "rain-note",
+        type: "NOTE",
+        origin: "USER_INSERTED",
+        title: "雨天备选",
+        detail: { body: "室内活动" },
+      },
+      position: {
+        placement: "branch",
+        fromEventId: "section-a",
+        toEventId: "section-b",
+        branchKey: "rain",
+      },
+    })
+    expect(branched.document?.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromEventId: "section-a",
+          toEventId: "rain-note",
+          kind: "ALTERNATIVE",
+          branchKey: "rain",
+        }),
+        expect.objectContaining({
+          fromEventId: "rain-note",
+          toEventId: "section-b",
+          kind: "ALTERNATIVE",
+          branchKey: "rain",
+        }),
+      ])
+    )
+
+    const promoted = service.journeyMoveEvent("session", {
+      expectedRevision: 2,
+      idempotencyKey: "promote-rain-branch",
+      eventId: "rain-note",
+      position: { placement: "after", eventId: "section-a" },
+    })
+    expect(promoted.document?.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromEventId: "section-a",
+          toEventId: "rain-note",
+          kind: "MAIN",
+        }),
+        expect.objectContaining({
+          fromEventId: "rain-note",
+          toEventId: "section-b",
+          kind: "MAIN",
+        }),
+      ])
+    )
+    expect(
+      promoted.document?.links.some((link) => link.kind === "ALTERNATIVE")
+    ).toBe(false)
+  })
+
   it("deduplicates commands by idempotency key before revision checks", async () => {
     const service = new DraftSessionService()
     service.replaceDraft("session", journey())
@@ -242,6 +305,180 @@ describe("DraftSessionService JourneyEvent commands", () => {
       snapshot.document?.events.find((event) => event.id === "visit-a")
         ?.parentEventId
     ).toBe("section-a2")
+  })
+
+  it("rewires transit endpoints so planning uses the active replacement", async () => {
+    const input = journey()
+    input.events.push(
+      {
+        id: "transit-a",
+        parentEventId: "section-a",
+        type: "TRANSIT",
+        executionStatus: "PLANNED",
+        origin: "ORIGINAL",
+        title: "前往 C",
+        detail: {
+          transportMode: "CAR",
+          requestMode: "DRIVE",
+          plannedFromEventId: "visit-a",
+          actualFromEventId: "visit-a",
+          plannedToEventId: "visit-c",
+          actualToEventId: "visit-c",
+        },
+      },
+      {
+        id: "visit-c",
+        parentEventId: "section-a",
+        type: "VISIT",
+        executionStatus: "PLANNED",
+        origin: "ORIGINAL",
+        title: "C",
+        detail: { plannedLat: 32, plannedLng: 122 },
+      }
+    )
+    input.links.push(
+      {
+        id: "inside-a-1",
+        fromEventId: "visit-a",
+        toEventId: "transit-a",
+        kind: "MAIN",
+      },
+      {
+        id: "inside-a-2",
+        fromEventId: "transit-a",
+        toEventId: "visit-c",
+        kind: "MAIN",
+      }
+    )
+    const planning = {
+      plan: vi.fn(async (request) => {
+        const fingerprint = transitPlanFingerprint(request)
+        return {
+          transitEventId: request.transitEventId,
+          requestFingerprint: fingerprint,
+          plans: [
+            {
+              id: "transit-a-plan-0",
+              provider: "mock" as const,
+              rank: 0,
+              label: "推荐",
+              strategy: "recommended",
+              distanceMeters: 2_000,
+              durationSeconds: 900,
+              trafficBasis: "TYPICAL" as const,
+              calculatedAt: "2026-08-01T00:00:00.000Z",
+              requestFingerprint: fingerprint,
+              segments: [],
+            },
+          ],
+        }
+      }),
+    }
+    const service = new DraftSessionService(planning)
+    service.replaceDraft("session", input)
+
+    const replaced = service.journeyReplaceEvent("session", {
+      expectedRevision: 1,
+      idempotencyKey: "replace-visit-a-for-transit",
+      eventId: "visit-a",
+      replacement: {
+        id: "visit-a2",
+        type: "VISIT",
+        executionStatus: "PLANNED",
+        origin: "USER_INSERTED",
+        title: "A2",
+        detail: { plannedLat: 30.5, plannedLng: 120.5 },
+      },
+    })
+    const transit = replaced.document?.events.find(
+      (event) => event.id === "transit-a"
+    )
+    expect(transit?.type).toBe("TRANSIT")
+    if (transit?.type !== "TRANSIT") return
+    expect(transit.detail).toMatchObject({
+      plannedFromEventId: "visit-a2",
+      actualFromEventId: "visit-a2",
+    })
+    expect(replaced.document?.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "inside-a-1",
+          fromEventId: "visit-a2",
+          toEventId: "transit-a",
+        }),
+      ])
+    )
+
+    await service.journeyPlanTransit("session", {
+      expectedRevision: 2,
+      idempotencyKey: "plan-after-replacement",
+      eventId: "transit-a",
+    })
+    expect(planning.plan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: expect.objectContaining({
+          name: "A2",
+          lat: 30.5,
+          lng: 120.5,
+        }),
+      })
+    )
+  })
+
+  it("protects both sides of replacement lineage until the change is undone", () => {
+    const service = new DraftSessionService()
+    service.replaceDraft("session", journey())
+    service.journeyReplaceEvent("session", {
+      expectedRevision: 1,
+      idempotencyKey: "replace-before-remove",
+      eventId: "visit-a",
+      replacement: {
+        id: "visit-a2",
+        type: "VISIT",
+        executionStatus: "PLANNED",
+        origin: "USER_INSERTED",
+        title: "A2",
+        detail: { plannedLat: 30.5, plannedLng: 120.5 },
+      },
+    })
+
+    expect(() =>
+      service.journeyRemoveEvent("session", {
+        expectedRevision: 2,
+        idempotencyKey: "remove-old-lineage",
+        eventId: "visit-a",
+      })
+    ).toThrowError(
+      "Replacement lineage cannot be removed; undo replacement instead"
+    )
+    expect(() =>
+      service.journeyRemoveEvent("session", {
+        expectedRevision: 2,
+        idempotencyKey: "remove-active-lineage",
+        eventId: "visit-a2",
+      })
+    ).toThrowError(
+      "Replacement lineage cannot be removed; undo replacement instead"
+    )
+
+    const undone = service.journeyUndo("session", {
+      expectedRevision: 2,
+      idempotencyKey: "undo-replacement",
+    })
+    expect(
+      undone.document?.events.some((event) => event.id === "visit-a2")
+    ).toBe(false)
+    expect(
+      undone.document?.events.find((event) => event.id === "visit-a")
+        ?.replacedByEventId
+    ).toBeUndefined()
+    expect(() =>
+      service.journeyRemoveEvent("session", {
+        expectedRevision: 3,
+        idempotencyKey: "remove-after-undo",
+        eventId: "visit-a",
+      })
+    ).not.toThrow()
   })
 
   it("records undo as a new revision instead of deleting history", () => {

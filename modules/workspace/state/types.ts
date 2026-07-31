@@ -1,8 +1,4 @@
 import type { StateCreator } from "zustand"
-import type {
-  TransitPlanBundle,
-  TransitPlanFailure,
-} from "@/lib/journeys/planning"
 import type { JourneyViewLevel } from "@/lib/journeys/projections"
 import type { DraftJourney, LocationJourneyEvent } from "@/types/journey"
 import type { PhotoShare } from "@/types/photo"
@@ -95,10 +91,8 @@ export interface MapRuntimeSlice {
 
 export interface DraftSlice {
   draftJourney: DraftJourney | null
-  setDraftJourney: (journey: DraftJourney | null) => void
-  markTransitPlansPlanning: (eventIds: string[]) => void
-  applyTransitPlanBundles: (bundles: TransitPlanBundle[]) => void
-  markTransitPlanFailures: (failures: TransitPlanFailure[]) => void
+  draftRevision: number
+  applyDraftSnapshot: (journey: DraftJourney | null, revision: number) => void
   selectTransitPlan: (eventId: string, planId: string) => void
   isDraftLocked: boolean
   setDraftLocked: (isDraftLocked: boolean) => void

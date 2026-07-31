@@ -6,6 +6,7 @@ import {
   DraftSessionService,
 } from "@/modules/workspace/server/draft-session-service"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
+import { isJourneyToolName } from "@/modules/workspace/server/contracts"
 import { getSessionId } from "./session"
 import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
 
@@ -118,6 +119,22 @@ export function createAgentWebSocketServer(
           const snapshot = await commands.saveDraft(context, sessionId)
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           broadcast(sessionId, { type: "draft.saved", payload: snapshot })
+          return
+        }
+        if (message.type === "draft.command") {
+          if (!isJourneyToolName(payload.tool)) {
+            throw new DraftInputError("Unknown journey command")
+          }
+          const input =
+            payload.input && typeof payload.input === "object"
+              ? (payload.input as Record<string, unknown>)
+              : {}
+          const snapshot = await commands.executeDraftTool(
+            sessionId,
+            payload.tool,
+            input
+          )
+          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return
         }
         if (message.type === "agent.run.start") {

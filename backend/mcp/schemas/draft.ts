@@ -114,6 +114,12 @@ const positionSchema = z.discriminatedUnion("placement", [
   z.object({ placement: z.literal("end"), parentEventId: optionalId }),
   z.object({ placement: z.literal("before"), eventId: z.string().min(1) }),
   z.object({ placement: z.literal("after"), eventId: z.string().min(1) }),
+  z.object({
+    placement: z.literal("branch"),
+    fromEventId: z.string().min(1),
+    toEventId: optionalId,
+    branchKey: optionalId,
+  }),
 ])
 
 export const getCurrentJourneyInputSchema = z.object({})

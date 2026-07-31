@@ -13,7 +13,10 @@ const EXAMPLE_JSON = `[
 export default function DebugPanel() {
   const [jsonInput, setJsonInput] = useState(EXAMPLE_JSON)
   const [error, setError] = useState("")
-  const setDraftJourney = useWorkspaceStore((state) => state.setDraftJourney)
+  const applyDraftSnapshot = useWorkspaceStore(
+    (state) => state.applyDraftSnapshot
+  )
+  const draftRevision = useWorkspaceStore((state) => state.draftRevision)
 
   const handleDraw = () => {
     setError("")
@@ -75,7 +78,7 @@ export default function DebugPanel() {
           kind: "MAIN",
         })),
       }
-      setDraftJourney(journey)
+      applyDraftSnapshot(journey, draftRevision + 1)
     } catch (caught) {
       setError(
         `JSON 解析错误: ${caught instanceof Error ? caught.message : "未知错误"}`
@@ -108,7 +111,7 @@ export default function DebugPanel() {
         <button
           type="button"
           onClick={() => {
-            setDraftJourney(null)
+            applyDraftSnapshot(null, draftRevision + 1)
             setError("")
           }}
           className="flex-1 rounded-lg bg-cream px-4 py-2 text-ink hover:bg-ink-10"

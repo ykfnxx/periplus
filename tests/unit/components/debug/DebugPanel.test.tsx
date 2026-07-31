@@ -8,14 +8,17 @@ vi.mock("@/modules/workspace/state/workspace-store", () => ({
 }))
 
 describe("DebugPanel", () => {
-  const mockSetDraftJourney = vi.fn()
+  const mockApplyDraftSnapshot = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
     ;(
       useWorkspaceStore as unknown as ReturnType<typeof vi.fn>
     ).mockImplementation((selector: (s: unknown) => unknown) => {
-      const state = { setDraftJourney: mockSetDraftJourney }
+      const state = {
+        applyDraftSnapshot: mockApplyDraftSnapshot,
+        draftRevision: 0,
+      }
       return selector(state)
     })
   })
@@ -36,8 +39,9 @@ describe("DebugPanel", () => {
     render(<DebugPanel />)
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockSetDraftJourney).toHaveBeenCalledOnce()
-    const journey = mockSetDraftJourney.mock.calls[0][0]
+    expect(mockApplyDraftSnapshot).toHaveBeenCalledOnce()
+    const journey = mockApplyDraftSnapshot.mock.calls[0][0]
+    expect(mockApplyDraftSnapshot.mock.calls[0][1]).toBe(1)
     expect(journey.title).toBe("调试路线")
     expect(journey.description).toBe("通过坐标调试工具创建")
     expect(journey.events).toHaveLength(3)
@@ -53,7 +57,7 @@ describe("DebugPanel", () => {
     fireEvent.change(textarea, { target: { value: "not json" } })
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockSetDraftJourney).not.toHaveBeenCalled()
+    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
     expect(screen.getByText(/JSON 解析错误/)).toBeInTheDocument()
   })
 
@@ -63,7 +67,7 @@ describe("DebugPanel", () => {
     fireEvent.change(textarea, { target: { value: '{"name": "test"}' } })
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockSetDraftJourney).not.toHaveBeenCalled()
+    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
     expect(screen.getByText("输入必须是非空 JSON 数组")).toBeInTheDocument()
   })
 
@@ -73,7 +77,7 @@ describe("DebugPanel", () => {
     fireEvent.change(textarea, { target: { value: "[]" } })
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockSetDraftJourney).not.toHaveBeenCalled()
+    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
     expect(screen.getByText("输入必须是非空 JSON 数组")).toBeInTheDocument()
   })
 
@@ -85,7 +89,7 @@ describe("DebugPanel", () => {
     })
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockSetDraftJourney).not.toHaveBeenCalled()
+    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
     expect(screen.getByText(/缺少 name 字段/)).toBeInTheDocument()
   })
 
@@ -97,7 +101,7 @@ describe("DebugPanel", () => {
     })
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockSetDraftJourney).not.toHaveBeenCalled()
+    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
     expect(screen.getByText(/纬度无效/)).toBeInTheDocument()
   })
 
@@ -109,7 +113,7 @@ describe("DebugPanel", () => {
     })
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockSetDraftJourney).not.toHaveBeenCalled()
+    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
     expect(screen.getByText(/经度无效/)).toBeInTheDocument()
   })
 
@@ -117,7 +121,7 @@ describe("DebugPanel", () => {
     render(<DebugPanel />)
     fireEvent.click(screen.getByText("清空"))
 
-    expect(mockSetDraftJourney).toHaveBeenCalledWith(null)
+    expect(mockApplyDraftSnapshot).toHaveBeenCalledWith(null, 1)
   })
 
   it("clears error when clear button clicked", () => {

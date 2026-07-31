@@ -56,11 +56,11 @@ export class TransitPlanningService {
       )
     }
 
-    const pending = this.enqueue(() => this.planWithRetry(request)).finally(
-      () => {
+    const pending = this.enqueue(() => this.planWithRetry(request))
+      .then((bundle) => rekeyBundle(bundle, request.transitEventId))
+      .finally(() => {
         this.inFlight.delete(dedupeKey)
-      }
-    )
+      })
     this.inFlight.set(dedupeKey, pending)
     return pending
   }
@@ -135,7 +135,6 @@ function rekeyBundle(
   bundle: TransitPlanBundle,
   transitEventId: string
 ): TransitPlanBundle {
-  if (bundle.transitEventId === transitEventId) return bundle
   return {
     ...bundle,
     transitEventId,

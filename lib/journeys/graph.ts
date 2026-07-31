@@ -41,6 +41,20 @@ export function mainLinksInScope(
   )
 }
 
+export function linksInScope(
+  journey: Pick<JourneyDocument, "events" | "links">,
+  parentEventId?: string
+) {
+  const eventIds = new Set(
+    eventsInScope(journey, parentEventId)
+      .filter((event) => !event.replacedByEventId)
+      .map((event) => event.id)
+  )
+  return journey.links.filter(
+    (link) => eventIds.has(link.fromEventId) && eventIds.has(link.toEventId)
+  )
+}
+
 export function projectMainSequence(
   journey: Pick<JourneyDocument, "events" | "links">,
   parentEventId?: string
@@ -51,12 +65,17 @@ export function projectMainSequence(
   if (events.length <= 1) return events
 
   const links = mainLinksInScope(journey, parentEventId)
+  if (!links.length) return []
+  const mainEventIds = new Set(
+    links.flatMap((link) => [link.fromEventId, link.toEventId])
+  )
+  const mainEvents = events.filter((event) => mainEventIds.has(event.id))
   const incoming = new Set(links.map((link) => link.toEventId))
   const outgoing = new Map(links.map((link) => [link.fromEventId, link]))
-  const roots = events.filter((event) => !incoming.has(event.id))
+  const roots = mainEvents.filter((event) => !incoming.has(event.id))
   if (roots.length !== 1) return []
 
-  const byId = new Map(events.map((event) => [event.id, event]))
+  const byId = new Map(mainEvents.map((event) => [event.id, event]))
   const ordered: JourneyEvent[] = []
   const seen = new Set<string>()
   let current: JourneyEvent | undefined = roots[0]
@@ -66,6 +85,51 @@ export function projectMainSequence(
     seen.add(current.id)
     const nextId: string | undefined = outgoing.get(current.id)?.toEventId
     current = nextId ? byId.get(nextId) : undefined
+  }
+
+  return ordered.length === mainEvents.length ? ordered : []
+}
+
+export function projectTopologicalSequence(
+  journey: Pick<JourneyDocument, "events" | "links">,
+  parentEventId?: string
+): JourneyEvent[] {
+  const events = eventsInScope(journey, parentEventId).filter(
+    (event) => !event.replacedByEventId
+  )
+  if (events.length <= 1) return events
+
+  const order = new Map(events.map((event, index) => [event.id, index]))
+  const byId = new Map(events.map((event) => [event.id, event]))
+  const incomingCount = new Map(events.map((event) => [event.id, 0]))
+  const outgoing = new Map<string, string[]>()
+  for (const link of linksInScope(journey, parentEventId)) {
+    incomingCount.set(
+      link.toEventId,
+      (incomingCount.get(link.toEventId) ?? 0) + 1
+    )
+    const targets = outgoing.get(link.fromEventId) ?? []
+    targets.push(link.toEventId)
+    outgoing.set(link.fromEventId, targets)
+  }
+
+  const ready = events
+    .filter((event) => incomingCount.get(event.id) === 0)
+    .map((event) => event.id)
+  const ordered: JourneyEvent[] = []
+  while (ready.length) {
+    ready.sort(
+      (left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0)
+    )
+    const eventId = ready.shift()!
+    const event = byId.get(eventId)
+    if (!event) continue
+    ordered.push(event)
+    for (const targetId of outgoing.get(eventId) ?? []) {
+      const remaining = (incomingCount.get(targetId) ?? 0) - 1
+      incomingCount.set(targetId, remaining)
+      if (remaining === 0) ready.push(targetId)
+    }
   }
 
   return ordered.length === events.length ? ordered : []
@@ -226,6 +290,12 @@ export function validateJourneyGraph(
             error: `transit event ${event.id} endpoints must share its parentEventId`,
           }
         }
+        if (!event.replacedByEventId && endpoint.replacedByEventId) {
+          return {
+            ok: false,
+            error: `active transit event ${event.id} cannot reference a replaced endpoint`,
+          }
+        }
       }
     }
 
@@ -310,13 +380,41 @@ export function validateJourneyGraph(
     const scopedEvents = eventsInScope(journey, parentEventId).filter(
       (event) => !event.replacedByEventId
     )
-    if (scopedEvents.length > 1) {
-      const sequence = projectMainSequence(journey, parentEventId)
-      if (sequence.length !== scopedEvents.length) {
-        return {
-          ok: false,
-          error: `MAIN links in scope ${scope} must form one acyclic chain`,
-        }
+    if (scopedEvents.length <= 1) continue
+
+    const scopedLinks = linksInScope(journey, parentEventId)
+    const topologicalSequence = projectTopologicalSequence(
+      journey,
+      parentEventId
+    )
+    if (topologicalSequence.length !== scopedEvents.length) {
+      return {
+        ok: false,
+        error: `links in scope ${scope} must form an acyclic graph`,
+      }
+    }
+    const incomingIds = new Set(scopedLinks.map((link) => link.toEventId))
+    const roots = scopedEvents.filter((event) => !incomingIds.has(event.id))
+    if (roots.length !== 1) {
+      return {
+        ok: false,
+        error: `links in scope ${scope} must form one connected graph`,
+      }
+    }
+
+    const mainLinks = mainLinksInScope(journey, parentEventId)
+    const mainEventIds = new Set(
+      mainLinks.flatMap((link) => [link.fromEventId, link.toEventId])
+    )
+    const mainSequence = projectMainSequence(journey, parentEventId)
+    if (
+      !mainLinks.length ||
+      mainSequence.length !== mainEventIds.size ||
+      mainSequence[0]?.id !== roots[0]?.id
+    ) {
+      return {
+        ok: false,
+        error: `MAIN links in scope ${scope} must form one acyclic root chain`,
       }
     }
   }

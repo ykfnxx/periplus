@@ -141,6 +141,20 @@ function mainLink(fromEventId: string, toEventId: string): JourneyEventLink {
   }
 }
 
+function alternativeLink(
+  fromEventId: string,
+  toEventId: string,
+  branchKey?: string
+): JourneyEventLink {
+  return {
+    id: draftId("link"),
+    fromEventId,
+    toEventId,
+    kind: "ALTERNATIVE",
+    branchKey,
+  }
+}
+
 function positionScope(journey: DraftJourney, position: JourneyEventPosition) {
   if (position.placement === "start" || position.placement === "end") {
     if (
@@ -150,6 +164,24 @@ function positionScope(journey: DraftJourney, position: JourneyEventPosition) {
       throw new DraftInputError("Parent event not found")
     }
     return position.parentEventId
+  }
+  if (position.placement === "branch") {
+    const from = journey.events.find(
+      (event) => event.id === position.fromEventId
+    )
+    if (!from || from.replacedByEventId) {
+      throw new DraftInputError("Branch start event not found")
+    }
+    const to = position.toEventId
+      ? journey.events.find((event) => event.id === position.toEventId)
+      : undefined
+    if (position.toEventId && (!to || to.replacedByEventId)) {
+      throw new DraftInputError("Branch end event not found")
+    }
+    if (to && to.parentEventId !== from.parentEventId) {
+      throw new DraftInputError("Branch endpoints must share parentEventId")
+    }
+    return from.parentEventId
   }
   const target = journey.events.find((event) => event.id === position.eventId)
   if (!target) throw new DraftInputError("Position event not found")
@@ -161,10 +193,23 @@ function insertIntoMainChain(
   event: JourneyEvent,
   position: JourneyEventPosition
 ) {
-  const sequence = projectMainSequence(journey, event.parentEventId)
   if (journey.events.some((candidate) => candidate.id === event.id)) {
     throw new DraftInputError(`Event ${event.id} already exists`)
   }
+  if (position.placement === "branch") {
+    journey.events.push(event)
+    journey.links.push(
+      alternativeLink(position.fromEventId, event.id, position.branchKey)
+    )
+    if (position.toEventId) {
+      journey.links.push(
+        alternativeLink(event.id, position.toEventId, position.branchKey)
+      )
+    }
+    return
+  }
+
+  const sequence = projectMainSequence(journey, event.parentEventId)
 
   let previous: JourneyEvent | undefined
   let next: JourneyEvent | undefined
@@ -478,23 +523,32 @@ export class DraftSessionService {
       )
     }
 
-    detachFromMainChain(journey, event.id)
     const removedIds = new Set([
       event.id,
       ...descendants.map((item) => item.id),
     ])
+    const removesReplacementLineage = journey.events.some(
+      (candidate) =>
+        (removedIds.has(candidate.id) &&
+          Boolean(candidate.replacedByEventId)) ||
+        Boolean(
+          candidate.replacedByEventId &&
+          removedIds.has(candidate.replacedByEventId)
+        )
+    )
+    if (removesReplacementLineage) {
+      throw new DraftInputError(
+        "Replacement lineage cannot be removed; undo replacement instead"
+      )
+    }
+
+    detachFromMainChain(journey, event.id)
     journey.events = journey.events.filter((item) => !removedIds.has(item.id))
     journey.links = journey.links.filter(
       (link) =>
         !removedIds.has(link.fromEventId) && !removedIds.has(link.toEventId)
     )
     for (const remaining of journey.events) {
-      if (
-        remaining.replacedByEventId &&
-        removedIds.has(remaining.replacedByEventId)
-      ) {
-        remaining.replacedByEventId = undefined
-      }
       if (remaining.type === "TRANSIT") {
         if (
           remaining.detail.plannedFromEventId &&
@@ -578,26 +632,38 @@ export class DraftSessionService {
       )
     }
 
-    const incoming = findMainIncomingLink(journey.links, old.id)
-    const outgoing = findMainOutgoingLink(journey.links, old.id)
-    journey.links = journey.links.filter(
-      (link) => link.fromEventId !== old.id && link.toEventId !== old.id
-    )
     const replacement = createEvent(
       journey.id,
       input.replacement,
       old.parentEventId
     )
+    journey.links = journey.links.map((link) => ({
+      ...link,
+      fromEventId:
+        link.fromEventId === old.id ? replacement.id : link.fromEventId,
+      toEventId: link.toEventId === old.id ? replacement.id : link.toEventId,
+    }))
     old.replacedByEventId = replacement.id
     for (const child of children) child.parentEventId = replacement.id
+    for (const event of journey.events) {
+      if (event.type !== "TRANSIT" || event.replacedByEventId) continue
+      if (event.detail.plannedFromEventId === old.id) {
+        event.detail.plannedFromEventId = replacement.id
+      }
+      if (event.detail.plannedToEventId === old.id) {
+        event.detail.plannedToEventId = replacement.id
+      }
+      if (event.detail.actualFromEventId === old.id) {
+        event.detail.actualFromEventId = replacement.id
+      }
+      if (event.detail.actualToEventId === old.id) {
+        event.detail.actualToEventId = replacement.id
+      }
+    }
     if (old.type !== "SECTION" && old.type !== "NOTE") {
       old.executionStatus = "CANCELLED"
     }
     journey.events.push(replacement)
-    if (incoming)
-      journey.links.push(mainLink(incoming.fromEventId, replacement.id))
-    if (outgoing)
-      journey.links.push(mainLink(replacement.id, outgoing.toEventId))
     return this.commitJourney(session, journey, "journey.replace_event", old.id)
   }
 
@@ -797,8 +863,10 @@ export class DraftSessionService {
         sessionId,
         input as unknown as SelectTransitPlanInput
       )
-    } else {
+    } else if (tool === "journey.undo") {
       result = this.journeyUndo(sessionId, input as unknown as UndoJourneyInput)
+    } else {
+      throw new DraftInputError("Unknown journey command")
     }
 
     if (idempotencyKey) {
