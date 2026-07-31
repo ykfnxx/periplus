@@ -8,7 +8,7 @@ import {
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { ensureSessionId } from "./session"
 import type { AuthContext } from "@/modules/auth/server/context"
-import type { DraftToolName } from "@/modules/workspace/server/contracts"
+import type { JourneyToolName } from "@/modules/workspace/server/contracts"
 import type { AgentEventEmitter } from "./types"
 
 type JsonBody = Record<string, unknown>
@@ -116,7 +116,7 @@ export async function handleInternalRequest(
       const sessionId = String(body.sessionId)
       const result = await commands.executeDraftTool(
         sessionId,
-        body.tool as DraftToolName,
+        body.tool as JourneyToolName,
         (body.input as Record<string, unknown> | undefined) ?? {}
       )
 

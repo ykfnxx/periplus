@@ -1,43 +1,46 @@
 "use client"
 
-import { getActivePathView } from "@/lib/routes/active-path"
+import { formatTransitDistance } from "@/lib/journeys/display"
+import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import {
-  totalDistanceMeters,
+  locationCount,
   totalDurationDays,
-} from "@/lib/routes/itinerary-summary"
-import { formatRouteDistance } from "@/lib/routes/route-display"
+  totalTransitDistanceMeters,
+} from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 export default function AIContextCard() {
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
-  const activeRouteNodeId = useWorkspaceStore(
-    (state) => state.activeRouteNodeId
+  const activeSectionEventId = useWorkspaceStore(
+    (state) => state.activeSectionEventId
   )
-  const selectedLocationPoint = useWorkspaceStore(
-    (state) => state.selectedLocationPoint
+  const selectedLocationEvent = useWorkspaceStore(
+    (state) => state.selectedLocationEvent
   )
-  const view = getActivePathView(draftRoute, viewLevel, activeRouteNodeId)
+  const view = getJourneyScopeProjection(
+    draftJourney,
+    viewLevel,
+    activeSectionEventId
+  )
 
-  if (!draftRoute) return null
+  if (!draftJourney) return null
 
-  const days = totalDurationDays(
-    view.level === "overview" ? draftRoute.nodes : view.nodes
-  )
-  const details =
+  const contextEvents =
     view.level === "overview"
-      ? [
-          `${draftRoute.nodes.length} 个城市`,
-          days ? `${days} 天` : null,
-          totalDistanceMeters(draftRoute.edges)
-            ? formatRouteDistance(totalDistanceMeters(draftRoute.edges))
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : selectedLocationPoint
-        ? `当前选中：${selectedLocationPoint.name}`
-        : `${view.nodes.length} 个地点 · 当前城市范围`
+      ? draftJourney.events.filter((event) => !event.replacedByEventId)
+      : view.events
+  const days = totalDurationDays(contextEvents)
+  const distance = totalTransitDistanceMeters(contextEvents)
+  const details = selectedLocationEvent
+    ? `当前选中：${selectedLocationEvent.title}`
+    : [
+        `${locationCount(contextEvents)} 个地点`,
+        days ? `${days} 天` : null,
+        distance ? formatTransitDistance(distance) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
 
   return (
     <div className="mx-5 rounded-[10px] bg-cream px-3.5 py-3">
@@ -49,12 +52,12 @@ export default function AIContextCard() {
         />
         <p className="min-w-0 truncate text-[13px] font-black text-ink">
           {view.level === "overview"
-            ? `${draftRoute.name} · 全程总览`
-            : `${view.title} · 城市详情`}
+            ? `${draftJourney.title} · 全程总览`
+            : `${view.title} · 分段详情`}
         </p>
       </div>
       <p className="mt-1 pl-[26px] text-[10px] font-bold text-teak">
-        {details}
+        {details || "尚无可执行事件"}
       </p>
     </div>
   )

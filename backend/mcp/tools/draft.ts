@@ -4,26 +4,20 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ZodError, type ZodObject, type ZodRawShape } from "zod"
 import { loadProjectEnv } from "@/config/env.server"
 import { periplusServerConfig } from "@/config/periplus.server"
-import type { DraftToolName } from "@/modules/workspace/server/contracts"
+import type { JourneyToolName } from "@/modules/workspace/server/contracts"
 import { mcpErrorResult, mcpJsonResult } from "../errors"
 import {
-  appendNodeInputSchema,
-  getCurrentDraftInputSchema,
-  insertNodeInputSchema,
-  linkPlaceToNodeInputSchema,
-  removeNodeRangeInputSchema,
-  replaceDraftInputSchema,
-  planEdgeInputSchema,
-  routeAddStartNodeInputSchema,
-  subPlanCreateInputSchema,
-  subPlanInsertNodeInputSchema,
-  subPlanNodeInputSchema,
-  subPlanRemoveNodeRangeInputSchema,
-  subPlanUpdateEdgeInputSchema,
-  subPlanUpdateNodeInputSchema,
-  updateEdgeInputSchema,
-  updateNodeInputSchema,
-  selectRoutePlanInputSchema,
+  addJourneyEventInputSchema,
+  getCurrentJourneyInputSchema,
+  linkPlaceInputSchema,
+  moveJourneyEventInputSchema,
+  planTransitInputSchema,
+  removeJourneyEventInputSchema,
+  replaceJourneyEventInputSchema,
+  replaceJourneyInputSchema,
+  selectTransitPlanInputSchema,
+  undoJourneyInputSchema,
+  updateJourneyEventInputSchema,
 } from "../schemas/draft"
 
 type ToolInput = Record<string, unknown>
@@ -74,14 +68,14 @@ function toolErrorResult(error: unknown): CallToolResult {
 }
 
 async function callDraftBackend(
-  tool: DraftToolName,
+  tool: JourneyToolName,
   input: unknown
 ): Promise<CallToolResult> {
-  if (!sessionId)
+  if (!sessionId) {
     return asCallToolResult(
       mcpErrorResult("invalid_session", "Draft MCP session id is required")
     )
-
+  }
   const response = await fetch(`${backendUrl}/internal/draft-tool`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -91,7 +85,6 @@ async function callDraftBackend(
     result?: unknown
     error?: { code: string; message: string }
   }
-
   if (!response.ok || body.error) {
     return asCallToolResult(
       mcpErrorResult(
@@ -100,12 +93,11 @@ async function callDraftBackend(
       )
     )
   }
-
   return asCallToolResult(mcpJsonResult(body.result))
 }
 
 function draftHandler<TSchema extends ZodObject<ZodRawShape>>(
-  tool: DraftToolName,
+  tool: JourneyToolName,
   schema: TSchema
 ) {
   return async (input: ToolInput) => {
@@ -118,64 +110,32 @@ function draftHandler<TSchema extends ZodObject<ZodRawShape>>(
 }
 
 export const draftToolHandlers = {
-  getCurrentDraft: draftHandler(
-    "get_current_draft",
-    getCurrentDraftInputSchema
+  getCurrentJourney: draftHandler(
+    "get_current_journey",
+    getCurrentJourneyInputSchema
   ),
-  replaceDraft: draftHandler("replace_draft", replaceDraftInputSchema),
-  routeAddStartNode: draftHandler(
-    "route.add_start_node",
-    routeAddStartNodeInputSchema
+  replaceJourney: draftHandler("replace_journey", replaceJourneyInputSchema),
+  addEvent: draftHandler("journey.add_event", addJourneyEventInputSchema),
+  moveEvent: draftHandler("journey.move_event", moveJourneyEventInputSchema),
+  removeEvent: draftHandler(
+    "journey.remove_event",
+    removeJourneyEventInputSchema
   ),
-  routeAppendNode: draftHandler("route.append_node", appendNodeInputSchema),
-  routeInsertNode: draftHandler("route.insert_node", insertNodeInputSchema),
-  routeRemoveNodeRange: draftHandler(
-    "route.remove_node_range",
-    removeNodeRangeInputSchema
+  updateEvent: draftHandler(
+    "journey.update_event",
+    updateJourneyEventInputSchema
   ),
-  routeUpdateNode: draftHandler("route.update_node", updateNodeInputSchema),
-  routeUpdateEdge: draftHandler("route.update_edge", updateEdgeInputSchema),
-  routeLinkPlaceToNode: draftHandler(
-    "route.link_place_to_node",
-    linkPlaceToNodeInputSchema
+  replaceEvent: draftHandler(
+    "journey.replace_event",
+    replaceJourneyEventInputSchema
   ),
-  routePlanEdge: draftHandler("route.plan_edge", planEdgeInputSchema),
-  routeSelectPlan: draftHandler(
-    "route.select_plan",
-    selectRoutePlanInputSchema
+  linkPlace: draftHandler("journey.link_place", linkPlaceInputSchema),
+  planTransit: draftHandler("journey.plan_transit", planTransitInputSchema),
+  selectTransitPlan: draftHandler(
+    "journey.select_transit_plan",
+    selectTransitPlanInputSchema
   ),
-  subPlanCreate: draftHandler("subplan.create", subPlanCreateInputSchema),
-  subPlanAddStartNode: draftHandler(
-    "subplan.add_start_node",
-    subPlanNodeInputSchema
-  ),
-  subPlanAppendNode: draftHandler(
-    "subplan.append_node",
-    subPlanNodeInputSchema
-  ),
-  subPlanInsertNode: draftHandler(
-    "subplan.insert_node",
-    subPlanInsertNodeInputSchema
-  ),
-  subPlanRemoveNodeRange: draftHandler(
-    "subplan.remove_node_range",
-    subPlanRemoveNodeRangeInputSchema
-  ),
-  subPlanUpdateNode: draftHandler(
-    "subplan.update_node",
-    subPlanUpdateNodeInputSchema
-  ),
-  subPlanUpdateEdge: draftHandler(
-    "subplan.update_edge",
-    subPlanUpdateEdgeInputSchema
-  ),
-}
-
-function callTool(
-  handler: (input: ToolInput) => Promise<CallToolResult>,
-  input: unknown
-) {
-  return handler(input as ToolInput)
+  undo: draftHandler("journey.undo", undoJourneyInputSchema),
 }
 
 function registerDraftTool(
@@ -188,158 +148,98 @@ function registerDraftTool(
 ) {
   server.registerTool(
     name,
-    {
-      title,
-      description,
-      inputSchema: schema.shape,
-    },
-    (input) => callTool(handler, input)
+    { title, description, inputSchema: schema.shape },
+    (input) => handler(input as ToolInput)
   )
 }
 
 export function registerDraftTools(server: McpServer): void {
   registerDraftTool(
     server,
-    "periplus.get_current_draft",
-    "Get current draft",
-    "Read the current Periplus draft route for this session.",
-    getCurrentDraftInputSchema,
-    draftToolHandlers.getCurrentDraft
+    "periplus.get_current_journey",
+    "Get current journey",
+    "Read the current typed JourneyEvent graph for this session.",
+    getCurrentJourneyInputSchema,
+    draftToolHandlers.getCurrentJourney
   )
   registerDraftTool(
     server,
-    "periplus.replace_draft",
-    "Replace draft",
-    "Replace the full current draft route without saving it.",
-    replaceDraftInputSchema,
-    draftToolHandlers.replaceDraft
+    "periplus.replace_journey",
+    "Replace journey",
+    "Replace the current draft journey without saving it.",
+    replaceJourneyInputSchema,
+    draftToolHandlers.replaceJourney
   )
   registerDraftTool(
     server,
-    "periplus.route.add_start_node",
-    "Add route start node",
-    "Create the first node for an empty route path graph.",
-    routeAddStartNodeInputSchema,
-    draftToolHandlers.routeAddStartNode
+    "periplus.journey.add_event",
+    "Add journey event",
+    "Add a typed event at a position in one journey scope.",
+    addJourneyEventInputSchema,
+    draftToolHandlers.addEvent
   )
   registerDraftTool(
     server,
-    "periplus.route.append_node",
-    "Append route node",
-    "Append a node to the route path with an incoming edge.",
-    appendNodeInputSchema,
-    draftToolHandlers.routeAppendNode
+    "periplus.journey.move_event",
+    "Move journey event",
+    "Move an event within or across scopes and atomically reconnect topology.",
+    moveJourneyEventInputSchema,
+    draftToolHandlers.moveEvent
   )
   registerDraftTool(
     server,
-    "periplus.route.insert_node",
-    "Insert route node",
-    "Insert a node before an existing route node with explicit new edges.",
-    insertNodeInputSchema,
-    draftToolHandlers.routeInsertNode
+    "periplus.journey.remove_event",
+    "Remove journey event",
+    "Remove one event; non-empty sections require explicit cascade.",
+    removeJourneyEventInputSchema,
+    draftToolHandlers.removeEvent
   )
   registerDraftTool(
     server,
-    "periplus.route.remove_node_range",
-    "Remove route node range",
-    "Remove a continuous range of route nodes, with bridge edge when needed.",
-    removeNodeRangeInputSchema,
-    draftToolHandlers.routeRemoveNodeRange
+    "periplus.journey.update_event",
+    "Update journey event",
+    "Patch common or type-specific fields without changing event type.",
+    updateJourneyEventInputSchema,
+    draftToolHandlers.updateEvent
   )
   registerDraftTool(
     server,
-    "periplus.route.update_node",
-    "Update route node",
-    "Patch route node fields.",
-    updateNodeInputSchema,
-    draftToolHandlers.routeUpdateNode
+    "periplus.journey.replace_event",
+    "Replace journey event",
+    "Preserve the old event and put a typed replacement in its topology slot.",
+    replaceJourneyEventInputSchema,
+    draftToolHandlers.replaceEvent
   )
   registerDraftTool(
     server,
-    "periplus.route.update_edge",
-    "Update route edge",
-    "Patch route edge fields.",
-    updateEdgeInputSchema,
-    draftToolHandlers.routeUpdateEdge
+    "periplus.journey.link_place",
+    "Link place",
+    "Attach a resolved place and coordinates to a location-bearing event.",
+    linkPlaceInputSchema,
+    draftToolHandlers.linkPlace
   )
   registerDraftTool(
     server,
-    "periplus.route.link_place_to_node",
-    "Link place to route node",
-    "Link a resolved place result to an existing route or subplan node.",
-    linkPlaceToNodeInputSchema,
-    draftToolHandlers.routeLinkPlaceToNode
+    "periplus.journey.plan_transit",
+    "Plan transit",
+    "Resolve and attach real route alternatives to a TRANSIT event.",
+    planTransitInputSchema,
+    draftToolHandlers.planTransit
   )
   registerDraftTool(
     server,
-    "periplus.route.plan_edge",
-    "Plan real route edge",
-    "Resolve an edge through the configured map provider and attach real route alternatives, segments, distance, and duration to the current draft.",
-    planEdgeInputSchema,
-    draftToolHandlers.routePlanEdge
+    "periplus.journey.select_transit_plan",
+    "Select transit plan",
+    "Select one resolved route alternative for a TRANSIT event.",
+    selectTransitPlanInputSchema,
+    draftToolHandlers.selectTransitPlan
   )
   registerDraftTool(
     server,
-    "periplus.route.select_plan",
-    "Select route alternative",
-    "Select one of the resolved route alternatives for an edge.",
-    selectRoutePlanInputSchema,
-    draftToolHandlers.routeSelectPlan
-  )
-  registerDraftTool(
-    server,
-    "periplus.subplan.create",
-    "Create subplan",
-    "Create an empty or populated subplan for a route node.",
-    subPlanCreateInputSchema,
-    draftToolHandlers.subPlanCreate
-  )
-  registerDraftTool(
-    server,
-    "periplus.subplan.add_start_node",
-    "Add subplan start node",
-    "Create the first node for an empty subplan path graph.",
-    subPlanNodeInputSchema,
-    draftToolHandlers.subPlanAddStartNode
-  )
-  registerDraftTool(
-    server,
-    "periplus.subplan.append_node",
-    "Append subplan node",
-    "Append a node to a subplan path with an incoming edge.",
-    subPlanNodeInputSchema,
-    draftToolHandlers.subPlanAppendNode
-  )
-  registerDraftTool(
-    server,
-    "periplus.subplan.insert_node",
-    "Insert subplan node",
-    "Insert a node before an existing subplan node with explicit new edges.",
-    subPlanInsertNodeInputSchema,
-    draftToolHandlers.subPlanInsertNode
-  )
-  registerDraftTool(
-    server,
-    "periplus.subplan.remove_node_range",
-    "Remove subplan node range",
-    "Remove a continuous range of subplan nodes, with bridge edge when needed.",
-    subPlanRemoveNodeRangeInputSchema,
-    draftToolHandlers.subPlanRemoveNodeRange
-  )
-  registerDraftTool(
-    server,
-    "periplus.subplan.update_node",
-    "Update subplan node",
-    "Patch subplan node fields.",
-    subPlanUpdateNodeInputSchema,
-    draftToolHandlers.subPlanUpdateNode
-  )
-  registerDraftTool(
-    server,
-    "periplus.subplan.update_edge",
-    "Update subplan edge",
-    "Patch subplan edge fields.",
-    subPlanUpdateEdgeInputSchema,
-    draftToolHandlers.subPlanUpdateEdge
+    "periplus.journey.undo",
+    "Undo journey change",
+    "Undo one or more typed draft commands using the revision log.",
+    undoJourneyInputSchema,
+    draftToolHandlers.undo
   )
 }

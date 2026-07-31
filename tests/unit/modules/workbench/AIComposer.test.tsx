@@ -13,7 +13,7 @@ vi.mock("@/modules/workbench/ui/AgentModeToggle", () => ({
 
 function mockStore(overrides: Record<string, unknown> = {}) {
   const base = {
-    draftRoute: { id: "route-1" },
+    draftJourney: { id: "journey-1" },
     composerInput: "",
     agentMode: "auto",
     setWorkbenchTab: vi.fn(),
@@ -88,8 +88,8 @@ describe("AIComposer", () => {
     expect(sendAgentEvent).toHaveBeenCalledWith("draft.save")
   })
 
-  it("disables save button when no current route", () => {
-    mockStore({ draftRoute: null })
+  it("disables save button when no current journey", () => {
+    mockStore({ draftJourney: null })
     render(<AIComposer />)
 
     expect(screen.getByLabelText("保存")).toBeDisabled()

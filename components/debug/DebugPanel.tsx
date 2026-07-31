@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import type { DraftJourney } from "@/types/journey"
 
 const EXAMPLE_JSON = `[
   {"name": "北京", "lat": 39.9042, "lng": 116.4074},
@@ -12,76 +13,74 @@ const EXAMPLE_JSON = `[
 export default function DebugPanel() {
   const [jsonInput, setJsonInput] = useState(EXAMPLE_JSON)
   const [error, setError] = useState("")
-  const setDraftRoute = useWorkspaceStore((s) => s.setDraftRoute)
+  const setDraftJourney = useWorkspaceStore((state) => state.setDraftJourney)
 
   const handleDraw = () => {
     setError("")
-
     try {
-      const parsed = JSON.parse(jsonInput)
-
-      if (!Array.isArray(parsed)) {
-        setError("输入必须是 JSON 数组")
+      const parsed: unknown = JSON.parse(jsonInput)
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        setError("输入必须是非空 JSON 数组")
         return
       }
-
-      if (parsed.length === 0) {
-        setError("数组不能为空")
-        return
-      }
-
+      const points: Array<{ name: string; lat: number; lng: number }> = []
       for (const item of parsed) {
-        if (typeof item.name !== "string") {
+        if (!item || typeof item !== "object") {
+          setError("每一项必须是坐标对象")
+          return
+        }
+        const point = item as Record<string, unknown>
+        if (typeof point.name !== "string") {
           setError(`缺少 name 字段: ${JSON.stringify(item)}`)
           return
         }
-        if (typeof item.lat !== "number" || item.lat < -90 || item.lat > 90) {
-          setError(`纬度无效: ${item.lat}`)
+        if (
+          typeof point.lat !== "number" ||
+          point.lat < -90 ||
+          point.lat > 90
+        ) {
+          setError(`纬度无效: ${String(point.lat)}`)
           return
         }
-        if (typeof item.lng !== "number" || item.lng < -180 || item.lng > 180) {
-          setError(`经度无效: ${item.lng}`)
+        if (
+          typeof point.lng !== "number" ||
+          point.lng < -180 ||
+          point.lng > 180
+        ) {
+          setError(`经度无效: ${String(point.lng)}`)
           return
         }
+        points.push({ name: point.name, lat: point.lat, lng: point.lng })
       }
 
-      const route = {
-        id: `debug-${Date.now()}`,
-        ownerId: "debug",
-        name: "调试路线",
+      const journeyId = `debug-${Date.now()}`
+      const eventIds = points.map((_, index) => `${journeyId}-event-${index}`)
+      const journey: DraftJourney = {
+        id: journeyId,
+        title: "调试路线",
         description: "通过坐标调试工具创建",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        nodes: parsed.map(
-          (p: { name: string; lat: number; lng: number }, i: number) => ({
-            id: `debug-node-${i}`,
-            routeId: "debug",
-            name: p.name,
-            lat: p.lat,
-            lng: p.lng,
-            order: i,
-            category: "PLACE" as const,
-          })
-        ),
-        edges: parsed.slice(1).map((_: unknown, i: number) => ({
-          id: `debug-edge-${i}`,
-          routeId: "debug",
-          fromNodeId: `debug-node-${i}`,
-          toNodeId: `debug-node-${i + 1}`,
-          status: "INCOMPLETE" as const,
+        status: "DRAFT",
+        events: points.map((point, index) => ({
+          id: eventIds[index],
+          type: "VISIT",
+          origin: "USER_INSERTED",
+          executionStatus: "PLANNED",
+          title: point.name,
+          detail: { plannedLat: point.lat, plannedLng: point.lng },
         })),
-        subPlans: [],
+        links: eventIds.slice(1).map((toEventId, index) => ({
+          id: `${journeyId}-link-${index}`,
+          fromEventId: eventIds[index],
+          toEventId,
+          kind: "MAIN",
+        })),
       }
-
-      setDraftRoute(route)
-    } catch (e) {
-      setError(`JSON 解析错误: ${e instanceof Error ? e.message : "未知错误"}`)
+      setDraftJourney(journey)
+    } catch (caught) {
+      setError(
+        `JSON 解析错误: ${caught instanceof Error ? caught.message : "未知错误"}`
+      )
     }
-  }
-
-  const handleClear = () => {
-    setDraftRoute(null)
-    setError("")
   }
 
   return (
@@ -92,7 +91,7 @@ export default function DebugPanel() {
         </label>
         <textarea
           value={jsonInput}
-          onChange={(e) => setJsonInput(e.target.value)}
+          onChange={(event) => setJsonInput(event.target.value)}
           className="h-48 w-full resize-none rounded-lg border border-ink-15 bg-soft-white px-3 py-2 font-mono text-sm text-ink"
           placeholder='[{"name":"A","lat":x,"lng":y}, ...]'
         />
@@ -100,13 +99,18 @@ export default function DebugPanel() {
       </div>
       <div className="flex gap-3">
         <button
+          type="button"
           onClick={handleDraw}
           className="flex-1 rounded-lg bg-russet px-4 py-2 text-soft-white hover:bg-ink"
         >
           绘制轨迹
         </button>
         <button
-          onClick={handleClear}
+          type="button"
+          onClick={() => {
+            setDraftJourney(null)
+            setError("")
+          }}
           className="flex-1 rounded-lg bg-cream px-4 py-2 text-ink hover:bg-ink-10"
         >
           清空

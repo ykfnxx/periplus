@@ -1,59 +1,48 @@
 import { randomUUID } from "node:crypto"
 import type { AuthContext } from "@/modules/auth/server/context"
 import {
-  planAppendNode,
-  planInsertNodeBefore,
-  planRemoveNodeRange,
-  sortPathNodes,
-  sortPathEdgesByOrder,
-} from "@/lib/routes/path-graph"
-import { validateDraftRouteInput } from "@/lib/routes/validation"
+  descendantsOf,
+  findMainIncomingLink,
+  findMainOutgoingLink,
+  projectMainSequence,
+} from "@/lib/journeys/graph"
+import { isLocationEvent } from "@/lib/journeys/locations"
 import {
-  applyRoutePlanBundle,
-  buildRoutePlanRequest,
-  mergeWorkspaceRoutePlans,
-  routePlanFingerprint,
-  selectedRoutePlan,
-  type RoutePlanBundle,
-  type RoutePlanRequest,
-} from "@/lib/routes/planning"
+  applyTransitPlanBundle,
+  buildTransitPlanRequest,
+  mergeWorkspaceTransitPlans,
+  selectedTransitPlan,
+  transitPlanFingerprint,
+  type TransitPlanBundle,
+  type TransitPlanRequest,
+} from "@/lib/journeys/planning"
+import { validateJourneyInput } from "@/lib/journeys/validation"
 import type {
-  DraftRoute,
-  PathEdgeCreateInput,
-  PathEdgePatchInput,
-  PathNodeCreateInput,
-  PathNodePatchInput,
-  NodeCategory,
-  Route,
-  RouteEdge,
-  RouteInput,
-  RouteNode,
-  SubPlan,
-  SubPlanEdge,
-  SubPlanNode,
-} from "@/types/route"
+  DraftJourney,
+  Journey,
+  JourneyEvent,
+  JourneyEventCreateInput,
+  JourneyEventLink,
+  JourneyEventPosition,
+  JourneyInput,
+  TransitEvent,
+} from "@/types/journey"
 import type {
   AgentConversationMessage,
-  AppendNodeInput,
   DraftSnapshot,
-  DraftToolName,
-  InsertNodeInput,
-  LinkPlaceToNodeInput,
-  PlanEdgeInput,
-  RemoveNodeRangeInput,
-  SelectRoutePlanInput,
-  RouteAddStartNodeInput,
+  JourneyAddEventInput,
+  JourneyLinkPlaceInput,
+  JourneyMoveEventInput,
+  JourneyRemoveEventInput,
+  JourneyReplaceEventInput,
+  JourneyToolName,
+  JourneyUpdateEventInput,
+  PlanTransitInput,
+  SelectTransitPlanInput,
   SessionDraft,
-  SubPlanCreateInput,
-  SubPlanInsertNodeInput,
-  SubPlanNodeInput,
-  SubPlanRemoveNodeRangeInput,
-  SubPlanUpdateEdgeInput,
-  SubPlanUpdateNodeInput,
   ToolCallSuggestionCall,
   ToolCallSuggestionCreateInput,
-  UpdateEdgeInput,
-  UpdateNodeInput,
+  UndoJourneyInput,
 } from "./contracts"
 
 export class DraftInputError extends Error {
@@ -63,8 +52,8 @@ export class DraftInputError extends Error {
   }
 }
 
-interface RoutePlanningPort {
-  plan(request: RoutePlanRequest): Promise<RoutePlanBundle>
+interface TransitPlanningPort {
+  plan(request: TransitPlanRequest): Promise<TransitPlanBundle>
 }
 
 function nowIso() {
@@ -79,10 +68,6 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function cloneDocument(document: DraftRoute): DraftRoute {
-  return clone(document)
-}
-
 function pendingSuggestionSummaries(session: SessionDraft) {
   return session.pendingSuggestions.map((suggestion) => ({
     id: suggestion.id,
@@ -95,314 +80,137 @@ function pendingSuggestionSummaries(session: SessionDraft) {
   }))
 }
 
-function cloneSuggestionToolCalls(toolCalls: ToolCallSuggestionCall[]) {
-  return clone(toolCalls)
-}
-
-function isPersistedRoute(input: RouteInput | Route): input is Route {
+function isPersistedJourney(input: JourneyInput | Journey): input is Journey {
   return (
-    typeof (input as Route).createdAt === "string" &&
-    typeof (input as Route).updatedAt === "string"
+    typeof (input as Journey).createdAt === "string" &&
+    typeof (input as Journey).updatedAt === "string" &&
+    typeof (input as Journey).revision === "number"
   )
 }
 
-function validatedDraftRoute(input: unknown): RouteInput {
-  const result = validateDraftRouteInput(input)
+function validatedJourney(input: unknown): JourneyInput {
+  const result = validateJourneyInput(input)
   if (!result.ok) throw new DraftInputError(result.error)
   return result.data
 }
 
-function toRouteInput(route: DraftRoute): RouteInput {
+function toJourneyInput(journey: DraftJourney): JourneyInput {
   return {
-    id: route.id,
-    name: route.name,
-    description: route.description,
-    nodes: sortPathNodes(route.nodes),
-    edges: sortPathEdgesByOrder(route.nodes, route.edges),
-    subPlans: route.subPlans.map((subPlan) => ({
-      ...subPlan,
-      nodes: sortPathNodes(subPlan.nodes),
-      edges: sortPathEdgesByOrder(subPlan.nodes, subPlan.edges),
-    })),
+    id: journey.id,
+    title: journey.title,
+    description: journey.description,
+    status: journey.status,
+    events: clone(journey.events),
+    links: clone(journey.links),
   }
 }
 
-function toDraftRoute(input: RouteInput | Route): DraftRoute {
-  const data = validatedDraftRoute(input)
-  const persistedRoute = isPersistedRoute(input) ? input : null
-  const routeId = data.id ?? persistedRoute?.id ?? draftId("route")
-
+function toDraftJourney(input: JourneyInput | Journey): DraftJourney {
+  const data = validatedJourney(input)
+  const persisted = isPersistedJourney(input) ? input : null
+  const journeyId = data.id ?? persisted?.id ?? draftId("journey")
   return {
-    id: routeId,
-    name: data.name,
+    id: journeyId,
+    title: data.title,
     description: data.description,
-    nodes: sortPathNodes(data.nodes).map((node) => ({
-      ...node,
-      routeId,
-    })),
-    edges: sortPathEdgesByOrder(data.nodes, data.edges).map((edge) => ({
-      ...edge,
-      routeId,
-    })),
-    subPlans: (data.subPlans ?? []).map((subPlan) => {
-      const subPlanId = subPlan.id
-      return {
-        ...subPlan,
-        id: subPlanId,
-        nodes: sortPathNodes(subPlan.nodes).map((node) => ({
-          ...node,
-          subPlanId,
-        })),
-        edges: sortPathEdgesByOrder(subPlan.nodes, subPlan.edges).map(
-          (edge) => ({
-            ...edge,
-            subPlanId,
-          })
-        ),
-      }
-    }),
+    status: data.status,
+    events: data.events.map((event) => ({ ...clone(event), journeyId })),
+    links: data.links.map((link) => ({ ...clone(link), journeyId })),
   }
 }
 
-function makeRouteNode(
-  routeId: string,
-  input: PathNodeCreateInput,
-  order: number
-): RouteNode {
+function createEvent(
+  journeyId: string,
+  input: JourneyEventCreateInput,
+  parentEventId?: string
+): JourneyEvent {
   return {
-    id: input.id ?? draftId("node"),
-    routeId,
-    name: input.name,
-    lat: input.lat,
-    lng: input.lng,
-    placeId: input.placeId,
-    coordinateSystem: input.coordinateSystem,
-    coordinateProvider: input.coordinateProvider,
-    providerPlaceId: input.providerPlaceId,
-    order,
-    category: input.category,
-    durationMinutes: input.durationMinutes,
-    notes: input.notes,
-  }
+    ...clone(input),
+    id: input.id ?? draftId("event"),
+    journeyId,
+    parentEventId,
+  } as JourneyEvent
 }
 
-function makeSubPlanNode(
-  subPlanId: string,
-  input: PathNodeCreateInput,
-  order: number
-): SubPlanNode {
+function mainLink(fromEventId: string, toEventId: string): JourneyEventLink {
   return {
-    id: input.id ?? draftId("subplan-node"),
-    subPlanId,
-    name: input.name,
-    lat: input.lat,
-    lng: input.lng,
-    placeId: input.placeId,
-    coordinateSystem: input.coordinateSystem,
-    coordinateProvider: input.coordinateProvider,
-    providerPlaceId: input.providerPlaceId,
-    order,
-    category: input.category,
-    durationMinutes: input.durationMinutes,
-    notes: input.notes,
+    id: draftId("link"),
+    fromEventId,
+    toEventId,
+    kind: "MAIN",
   }
 }
 
-function makeRouteEdge(
-  routeId: string,
-  fromNodeId: string,
-  toNodeId: string,
-  input: PathEdgeCreateInput
-): RouteEdge {
-  return {
-    id: input.id ?? draftId("edge"),
-    routeId,
-    fromNodeId,
-    toNodeId,
-    status: input.status,
-    transportMode: input.transportMode,
-    durationMinutes: input.durationMinutes,
-    distanceKm: input.distanceKm,
-    costEstimate: input.costEstimate,
-    notes: input.notes,
-    requestMode: input.requestMode,
-    departAt: input.departAt,
-    preference: input.preference,
-    planningStatus: "EMPTY",
+function positionScope(journey: DraftJourney, position: JourneyEventPosition) {
+  if (position.placement === "start" || position.placement === "end") {
+    if (
+      position.parentEventId &&
+      !journey.events.some((event) => event.id === position.parentEventId)
+    ) {
+      throw new DraftInputError("Parent event not found")
+    }
+    return position.parentEventId
   }
+  const target = journey.events.find((event) => event.id === position.eventId)
+  if (!target) throw new DraftInputError("Position event not found")
+  return target.parentEventId
 }
 
-function makeSubPlanEdge(
-  subPlanId: string,
-  fromNodeId: string,
-  toNodeId: string,
-  input: PathEdgeCreateInput
-): SubPlanEdge {
-  return {
-    id: input.id ?? draftId("subplan-edge"),
-    subPlanId,
-    fromNodeId,
-    toNodeId,
-    status: input.status,
-    transportMode: input.transportMode,
-    durationMinutes: input.durationMinutes,
-    distanceKm: input.distanceKm,
-    costEstimate: input.costEstimate,
-    notes: input.notes,
-    requestMode: input.requestMode,
-    departAt: input.departAt,
-    preference: input.preference,
-    planningStatus: "EMPTY",
+function insertIntoMainChain(
+  journey: DraftJourney,
+  event: JourneyEvent,
+  position: JourneyEventPosition
+) {
+  const sequence = projectMainSequence(journey, event.parentEventId)
+  if (journey.events.some((candidate) => candidate.id === event.id)) {
+    throw new DraftInputError(`Event ${event.id} already exists`)
   }
-}
 
-function applyNodePatch<TNode extends RouteNode | SubPlanNode>(
-  node: TNode,
-  patch: PathNodePatchInput
-): TNode {
-  return {
-    ...node,
-    ...patch,
-    placeId:
-      patch.placeId === null ? undefined : (patch.placeId ?? node.placeId),
-    coordinateSystem:
-      patch.coordinateSystem === null
-        ? undefined
-        : (patch.coordinateSystem ?? node.coordinateSystem),
-    coordinateProvider:
-      patch.coordinateProvider === null
-        ? undefined
-        : (patch.coordinateProvider ?? node.coordinateProvider),
-    providerPlaceId:
-      patch.providerPlaceId === null
-        ? undefined
-        : (patch.providerPlaceId ?? node.providerPlaceId),
-    durationMinutes:
-      patch.durationMinutes === null
-        ? undefined
-        : (patch.durationMinutes ?? node.durationMinutes),
-    notes: patch.notes === null ? undefined : (patch.notes ?? node.notes),
-  }
-}
-
-function applyEdgePatch<TEdge extends RouteEdge | SubPlanEdge>(
-  edge: TEdge,
-  patch: PathEdgePatchInput
-): TEdge {
-  const requestChanged =
-    patch.transportMode !== undefined ||
-    patch.requestMode !== undefined ||
-    patch.departAt !== undefined ||
-    patch.preference !== undefined
-  const next = {
-    ...edge,
-    ...patch,
-    transportMode:
-      patch.transportMode === null
-        ? undefined
-        : (patch.transportMode ?? edge.transportMode),
-    durationMinutes:
-      patch.durationMinutes === null
-        ? undefined
-        : (patch.durationMinutes ?? edge.durationMinutes),
-    distanceKm:
-      patch.distanceKm === null
-        ? undefined
-        : (patch.distanceKm ?? edge.distanceKm),
-    costEstimate:
-      patch.costEstimate === null
-        ? undefined
-        : (patch.costEstimate ?? edge.costEstimate),
-    notes: patch.notes === null ? undefined : (patch.notes ?? edge.notes),
-    requestMode:
-      patch.requestMode === null
-        ? undefined
-        : (patch.requestMode ?? edge.requestMode),
-    departAt:
-      patch.departAt === null ? undefined : (patch.departAt ?? edge.departAt),
-    preference:
-      patch.preference === null
-        ? undefined
-        : (patch.preference ?? edge.preference),
-    selectedPlanId:
-      patch.selectedPlanId === null
-        ? undefined
-        : (patch.selectedPlanId ?? edge.selectedPlanId),
-  }
-  return requestChanged ? staleEdgePlan(next) : next
-}
-
-function staleEdgePlan<TEdge extends RouteEdge | SubPlanEdge>(
-  edge: TEdge
-): TEdge {
-  return {
-    ...edge,
-    planningStatus: edge.plans?.length ? "STALE" : "EMPTY",
-    planningWarning: undefined,
-  }
-}
-
-function findRouteEdge(route: DraftRoute, input: UpdateEdgeInput) {
-  return route.edges.find((edge) => {
-    if (input.edgeId) return edge.id === input.edgeId
-    return (
-      edge.fromNodeId === input.fromNodeId && edge.toNodeId === input.toNodeId
+  let previous: JourneyEvent | undefined
+  let next: JourneyEvent | undefined
+  if (position.placement === "start") {
+    next = sequence[0]
+  } else if (position.placement === "end") {
+    previous = sequence.at(-1)
+  } else {
+    const targetIndex = sequence.findIndex(
+      (candidate) => candidate.id === position.eventId
     )
-  })
-}
+    if (targetIndex === -1) {
+      throw new DraftInputError("Position event is not on the MAIN path")
+    }
+    if (position.placement === "before") {
+      previous = sequence[targetIndex - 1]
+      next = sequence[targetIndex]
+    } else {
+      previous = sequence[targetIndex]
+      next = sequence[targetIndex + 1]
+    }
+  }
 
-function findSubPlanEdge(subPlan: SubPlan, input: SubPlanUpdateEdgeInput) {
-  return subPlan.edges.find((edge) => {
-    if (input.edgeId) return edge.id === input.edgeId
-    return (
-      edge.fromNodeId === input.fromNodeId && edge.toNodeId === input.toNodeId
+  if (previous && next) {
+    journey.links = journey.links.filter(
+      (link) =>
+        !(
+          link.kind === "MAIN" &&
+          link.fromEventId === previous.id &&
+          link.toEventId === next.id
+        )
     )
-  })
-}
-
-function normalizeRouteNodeOrders(nodes: RouteNode[]) {
-  return sortPathNodes(nodes).map((node, order) => ({ ...node, order }))
-}
-
-function normalizeSubPlanNodeOrders(nodes: SubPlanNode[]) {
-  return sortPathNodes(nodes).map((node, order) => ({ ...node, order }))
-}
-
-function mapPlaceCategoryToNodeCategory(
-  category: string | undefined
-): NodeCategory | undefined {
-  if (!category) return undefined
-  if (category === "RESTAURANT") return "RESTAURANT"
-  if (category === "HOTEL") return "HOTEL"
-  if (category === "TRANSIT") return "TRANSIT"
-  if (
-    category === "SIGHT" ||
-    category === "PARK" ||
-    category === "MUSEUM" ||
-    category === "CULTURE"
-  ) {
-    return "SIGHT"
   }
-  if (
-    category === "PERFORMANCE" ||
-    category === "SPORTS" ||
-    category === "ENTERTAINMENT"
-  ) {
-    return "ACTIVITY"
-  }
-  return "PLACE"
+  journey.events.push(event)
+  if (previous) journey.links.push(mainLink(previous.id, event.id))
+  if (next) journey.links.push(mainLink(event.id, next.id))
 }
 
-function placeLinkPatch(input: LinkPlaceToNodeInput): PathNodePatchInput {
-  return {
-    name: input.place.name,
-    lat: input.place.coordinate.lat,
-    lng: input.place.coordinate.lng,
-    placeId: input.place.placeId,
-    coordinateSystem: input.place.coordinate.coordinateSystem,
-    coordinateProvider: input.place.coordinate.provider,
-    providerPlaceId: input.place.providerPlaceId,
-    category: mapPlaceCategoryToNodeCategory(input.place.category),
+function detachFromMainChain(journey: DraftJourney, eventId: string) {
+  const incoming = findMainIncomingLink(journey.links, eventId)
+  const outgoing = findMainOutgoingLink(journey.links, eventId)
+  journey.links = journey.links.filter(
+    (link) => link.fromEventId !== eventId && link.toEventId !== eventId
+  )
+  if (incoming && outgoing) {
+    journey.links.push(mainLink(incoming.fromEventId, outgoing.toEventId))
   }
 }
 
@@ -410,16 +218,16 @@ export class DraftSessionService {
   private readonly sessions = new Map<string, SessionDraft>()
 
   constructor(
-    private readonly routePlanning: RoutePlanningPort | null = null
+    private readonly transitPlanning: TransitPlanningPort | null = null
   ) {}
 
   getSnapshot(sessionId: string): DraftSnapshot {
     const session = this.ensureSession(sessionId)
     return {
       sessionId,
-      document: session.document ? cloneDocument(session.document) : null,
-      sourceRouteId: session.sourceRouteId,
-      baseVersion: session.baseVersion,
+      document: session.document ? clone(session.document) : null,
+      sourceJourneyId: session.sourceJourneyId,
+      baseRevision: session.baseRevision,
       dirty: session.dirty,
       isLocked: Boolean(session.lockedByRunId),
       lockedByRunId: session.lockedByRunId,
@@ -442,7 +250,9 @@ export class DraftSessionService {
 
   getConversationMessages(sessionId: string) {
     return this.ensureSession(sessionId).conversationMessages.map(
-      (message) => ({ ...message })
+      (message) => ({
+        ...message,
+      })
     )
   }
 
@@ -462,14 +272,12 @@ export class DraftSessionService {
     const session = this.ensureSession(sessionId)
     const lastMessage = session.conversationMessages.at(-1)
     const timestamp = nowIso()
-
     if (lastMessage?.role === "assistant" && lastMessage.runId === runId) {
       lastMessage.content += content
       lastMessage.updatedAt = timestamp
       session.updatedAt = timestamp
       return { ...lastMessage }
     }
-
     return this.addConversationMessage(sessionId, {
       role: "assistant",
       content,
@@ -497,58 +305,61 @@ export class DraftSessionService {
     return this.getSnapshot(sessionId)
   }
 
-  loadPersistedRoute(sessionId: string, route: Route) {
+  loadPersistedJourney(sessionId: string, journey: Journey) {
     const session = this.ensureSession(sessionId)
-    session.document = toDraftRoute(route)
-    session.sourceRouteId = route.id
-    session.baseVersion = route.version
+    session.document = toDraftJourney(journey)
+    session.sourceJourneyId = journey.id
+    session.baseRevision = journey.revision
+    session.revisions = []
     this.touchSession(session, false)
     session.dirty = false
     return this.getSnapshot(sessionId)
   }
 
-  replaceDraft(sessionId: string, route: RouteInput | Route | null) {
+  replaceDraft(sessionId: string, journey: JourneyInput | Journey | null) {
     const session = this.ensureSession(sessionId)
-    session.document = route ? toDraftRoute(route) : null
-    const sourceRouteId =
-      route &&
-      isPersistedRoute(route) &&
-      !route.id.startsWith("draft-") &&
-      !route.id.startsWith("preset-") &&
-      !route.id.startsWith("temp-")
-        ? route.id
+    const before = session.document ? clone(session.document) : null
+    session.document = journey ? toDraftJourney(journey) : null
+    const sourceJourneyId =
+      journey &&
+      isPersistedJourney(journey) &&
+      !journey.id.startsWith("draft-") &&
+      !journey.id.startsWith("preset-")
+        ? journey.id
         : null
-    session.sourceRouteId = sourceRouteId
-    session.baseVersion =
-      sourceRouteId && route && isPersistedRoute(route) ? route.version : null
-    this.touchSession(session, !sourceRouteId)
-    session.dirty = Boolean(route) && !sourceRouteId
+    session.sourceJourneyId = sourceJourneyId
+    session.baseRevision =
+      sourceJourneyId && journey && isPersistedJourney(journey)
+        ? journey.revision
+        : null
+    this.recordRevision(session, "draft.replace", undefined, before)
+    session.dirty = Boolean(journey) && !sourceJourneyId
     return this.getSnapshot(sessionId)
   }
 
   getDraftForSave(sessionId: string) {
-    const session = this.ensureRouteSession(sessionId)
+    const session = this.ensureJourneySession(sessionId)
     return {
-      document: cloneDocument(session.document),
-      routeInput: toRouteInput(session.document),
-      sourceRouteId: session.sourceRouteId,
-      baseVersion: session.baseVersion,
+      document: clone(session.document),
+      journeyInput: toJourneyInput(session.document),
+      sourceJourneyId: session.sourceJourneyId,
+      baseRevision: session.baseRevision,
     }
   }
 
   markDraftSaved(
     sessionId: string,
-    persistedRoute: Route,
-    preserveRoutePlans = false
+    persistedJourney: Journey,
+    preserveTransitPlans = false
   ) {
     const session = this.ensureSession(sessionId)
-    const persistedDocument = toDraftRoute(persistedRoute)
+    const persistedDocument = toDraftJourney(persistedJourney)
     session.document =
-      preserveRoutePlans && session.document
-        ? mergeWorkspaceRoutePlans(session.document, persistedDocument)
+      preserveTransitPlans && session.document
+        ? mergeWorkspaceTransitPlans(session.document, persistedDocument)
         : persistedDocument
-    session.sourceRouteId = persistedRoute.id
-    session.baseVersion = persistedRoute.version
+    session.sourceJourneyId = persistedJourney.id
+    session.baseRevision = persistedJourney.revision
     this.touchSession(session, false)
     session.dirty = false
     return this.getSnapshot(sessionId)
@@ -561,14 +372,13 @@ export class DraftSessionService {
         "Suggestion must contain at least one tool call"
       )
     }
-
     const timestamp = nowIso()
     session.pendingSuggestions = [
       {
         id: `suggestion-${randomUUID()}`,
-        title: input.title.trim() || "路线修改建议",
-        summary: input.summary.trim() || "Agent 生成了一组待确认的路线修改",
-        toolCalls: cloneSuggestionToolCalls(input.toolCalls),
+        title: input.title.trim() || "行程修改建议",
+        summary: input.summary.trim() || "Agent 生成了一组待确认的行程修改",
+        toolCalls: clone<ToolCallSuggestionCall[]>(input.toolCalls),
         draftRevision: session.revision,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -600,591 +410,440 @@ export class DraftSessionService {
 
     const previewSessionId = `suggestion-preview-${randomUUID()}`
     this.sessions.set(previewSessionId, {
+      ...clone(session),
       sessionId: previewSessionId,
-      userContext: session.userContext,
-      document: session.document ? cloneDocument(session.document) : null,
-      sourceRouteId: session.sourceRouteId,
-      baseVersion: session.baseVersion,
-      dirty: session.dirty,
-      lockedByRunId: null,
-      conversationMessages: clone(session.conversationMessages),
       pendingSuggestions: [],
-      revision: session.revision,
-      updatedAt: session.updatedAt,
+      lockedByRunId: null,
     })
-
     try {
       for (const toolCall of suggestion.toolCalls) {
         await this.callTool(previewSessionId, toolCall.tool, toolCall.input)
       }
-      const previewSession = this.ensureSession(previewSessionId)
-      session.document = previewSession.document
-        ? cloneDocument(previewSession.document)
-        : null
-      session.sourceRouteId = previewSession.sourceRouteId
-      session.baseVersion = previewSession.baseVersion
+      const preview = this.ensureSession(previewSessionId)
+      session.document = preview.document ? clone(preview.document) : null
+      session.revisions = clone(preview.revisions)
+      session.revision = preview.revision
+      session.dirty = preview.dirty
       session.pendingSuggestions = session.pendingSuggestions.filter(
-        (candidate) => candidate.id !== suggestionId
+        (candidate) =>
+          candidate.id !== suggestionId &&
+          candidate.draftRevision === session.revision
       )
-      this.touchSession(session)
+      session.updatedAt = nowIso()
       return this.getSnapshot(sessionId)
     } finally {
       this.sessions.delete(previewSessionId)
     }
   }
 
-  routeAddStartNode(sessionId: string, input: RouteAddStartNodeInput) {
-    const session = this.ensureSession(sessionId)
-    if (session.document && session.document.nodes.length > 0) {
-      throw new DraftInputError("Draft route already has a start node")
-    }
-
-    const routeId = session.document?.id ?? draftId("route")
-    const route: DraftRoute = {
-      id: routeId,
-      name: input.route?.name?.trim() || session.document?.name || "未命名路线",
-      description: input.route?.description ?? session.document?.description,
-      nodes: [makeRouteNode(routeId, input.node, 0)],
-      edges: [],
-      subPlans: [],
-    }
-
-    return this.commitRoute(sessionId, route)
+  journeyAddEvent(sessionId: string, input: JourneyAddEventInput) {
+    const session = this.ensureJourneySession(sessionId)
+    const journey = clone(session.document)
+    const parentEventId = positionScope(journey, input.position)
+    const event = createEvent(journey.id, input.event, parentEventId)
+    insertIntoMainChain(journey, event, input.position)
+    return this.commitJourney(session, journey, "journey.add_event", event.id)
   }
 
-  routeAppendNode(sessionId: string, input: AppendNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const plan = planAppendNode(route.nodes)
-    if (!plan.previousNode) {
-      throw new DraftInputError("Use route.add_start_node for an empty route")
+  journeyMoveEvent(sessionId: string, input: JourneyMoveEventInput) {
+    const session = this.ensureJourneySession(sessionId)
+    const journey = clone(session.document)
+    const event = journey.events.find(
+      (candidate) => candidate.id === input.eventId
+    )
+    if (!event) throw new DraftInputError("Event not found")
+    if (event.replacedByEventId) {
+      throw new DraftInputError("Replaced events cannot be moved")
     }
-
-    const node = makeRouteNode(route.id, input.node, plan.order)
-    route.nodes = [...route.nodes, node]
-    route.edges = [
-      ...route.edges,
-      makeRouteEdge(route.id, plan.previousNode.id, node.id, input.edge),
-    ]
-    return this.commitRoute(sessionId, route)
+    detachFromMainChain(journey, event.id)
+    journey.events = journey.events.filter(
+      (candidate) => candidate.id !== event.id
+    )
+    event.parentEventId = positionScope(journey, input.position)
+    insertIntoMainChain(journey, event, input.position)
+    return this.commitJourney(session, journey, "journey.move_event", event.id)
   }
 
-  routeInsertNode(sessionId: string, input: InsertNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const planResult = planInsertNodeBefore(
-      route.nodes,
-      input.beforeNodeId,
-      "route path graph"
+  journeyRemoveEvent(sessionId: string, input: JourneyRemoveEventInput) {
+    const session = this.ensureJourneySession(sessionId)
+    const journey = clone(session.document)
+    const event = journey.events.find(
+      (candidate) => candidate.id === input.eventId
     )
-    if (!planResult.ok) throw new DraftInputError(planResult.error)
-
-    const plan = planResult.plan
-    if (plan.previousNode && !input.beforeEdge) {
-      throw new DraftInputError("beforeEdge is required for middle insertion")
-    }
-
-    const node = makeRouteNode(route.id, input.node, plan.order)
-    const oldEdgeIds = new Set(
-      route.edges
-        .filter(
-          (edge) =>
-            edge.fromNodeId === plan.previousNode?.id &&
-            edge.toNodeId === plan.nextNode?.id
-        )
-        .map((edge) => edge.id)
-    )
-
-    route.nodes = route.nodes.map((existingNode) => {
-      const update = plan.orderUpdates.find(
-        (orderUpdate) => orderUpdate.nodeId === existingNode.id
-      )
-      return update ? { ...existingNode, order: update.order } : existingNode
-    })
-    route.nodes.push(node)
-    route.edges = route.edges.filter((edge) => !oldEdgeIds.has(edge.id))
-    if (plan.previousNode && input.beforeEdge) {
-      route.edges.push(
-        makeRouteEdge(route.id, plan.previousNode.id, node.id, input.beforeEdge)
-      )
-    }
-    if (!plan.nextNode) {
-      throw new DraftInputError("Insert target node is missing")
-    }
-    route.edges.push(
-      makeRouteEdge(route.id, node.id, plan.nextNode.id, input.afterEdge)
-    )
-
-    return this.commitRoute(sessionId, route)
-  }
-
-  routeRemoveNodeRange(sessionId: string, input: RemoveNodeRangeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const planResult = planRemoveNodeRange(
-      { nodes: route.nodes, edges: route.edges },
-      input.startNodeId,
-      input.endNodeId,
-      "route path graph"
-    )
-    if (!planResult.ok) throw new DraftInputError(planResult.error)
-
-    const plan = planResult.plan
-    if (plan.requiresBridgeEdge && !input.bridgeEdge) {
-      throw new DraftInputError("bridgeEdge is required for middle deletion")
-    }
-
-    const removedNodeIds = new Set(plan.nodesToRemove.map((node) => node.id))
-    const removedEdgeIds = new Set(plan.edgesToRemove.map((edge) => edge.id))
-    route.nodes = normalizeRouteNodeOrders(
-      route.nodes.filter((node) => !removedNodeIds.has(node.id))
-    )
-    route.edges = route.edges.filter((edge) => !removedEdgeIds.has(edge.id))
-    route.subPlans = route.subPlans.filter(
-      (subPlan) => !removedNodeIds.has(subPlan.routeNodeId)
-    )
-
-    if (
-      plan.requiresBridgeEdge &&
-      plan.bridgeFromNode &&
-      plan.bridgeToNode &&
-      input.bridgeEdge
-    ) {
-      route.edges.push(
-        makeRouteEdge(
-          route.id,
-          plan.bridgeFromNode.id,
-          plan.bridgeToNode.id,
-          input.bridgeEdge
-        )
-      )
-    }
-
-    return this.commitRoute(sessionId, route)
-  }
-
-  routeUpdateNode(sessionId: string, input: UpdateNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    if (!route.nodes.some((node) => node.id === input.nodeId)) {
-      throw new DraftInputError("Route node not found")
-    }
-    route.nodes = route.nodes.map((node) =>
-      node.id === input.nodeId ? applyNodePatch(node, input.patch) : node
-    )
-    route.edges = route.edges.map((edge) =>
-      edge.fromNodeId === input.nodeId || edge.toNodeId === input.nodeId
-        ? staleEdgePlan(edge)
-        : edge
-    )
-    return this.commitRoute(sessionId, route)
-  }
-
-  routeLinkPlaceToNode(sessionId: string, input: LinkPlaceToNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const patch = placeLinkPatch(input)
-
-    if (input.routeNodeId) {
-      const subPlan = this.mutableSubPlan(route, input.routeNodeId)
-      if (!subPlan.nodes.some((node) => node.id === input.nodeId)) {
-        throw new DraftInputError("SubPlan node not found")
-      }
-      subPlan.nodes = subPlan.nodes.map((node) =>
-        node.id === input.nodeId ? applyNodePatch(node, patch) : node
-      )
-      subPlan.edges = subPlan.edges.map((edge) =>
-        edge.fromNodeId === input.nodeId || edge.toNodeId === input.nodeId
-          ? staleEdgePlan(edge)
-          : edge
-      )
-      return this.commitRoute(sessionId, route)
-    }
-
-    if (!route.nodes.some((node) => node.id === input.nodeId)) {
-      throw new DraftInputError("Route node not found")
-    }
-    route.nodes = route.nodes.map((node) =>
-      node.id === input.nodeId ? applyNodePatch(node, patch) : node
-    )
-    route.edges = route.edges.map((edge) =>
-      edge.fromNodeId === input.nodeId || edge.toNodeId === input.nodeId
-        ? staleEdgePlan(edge)
-        : edge
-    )
-    return this.commitRoute(sessionId, route)
-  }
-
-  routeUpdateEdge(sessionId: string, input: UpdateEdgeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const edge = findRouteEdge(route, input)
-    if (!edge) throw new DraftInputError("Route edge not found")
-    route.edges = route.edges.map((candidate) =>
-      candidate.id === edge.id
-        ? applyEdgePatch(candidate, input.patch)
-        : candidate
-    )
-    return this.commitRoute(sessionId, route)
-  }
-
-  async routePlanEdge(sessionId: string, input: PlanEdgeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const path = input.routeNodeId
-      ? this.mutableSubPlan(route, input.routeNodeId)
-      : route
-    const edge = path.edges.find((candidate) => candidate.id === input.edgeId)
-    if (!edge) throw new DraftInputError("Route edge not found")
-    const nodeById = new Map(path.nodes.map((node) => [node.id, node]))
-    const from = nodeById.get(edge.fromNodeId)
-    const to = nodeById.get(edge.toNodeId)
-    if (!from || !to)
-      throw new DraftInputError("Route edge endpoints not found")
-    const request = buildRoutePlanRequest(edge, from, to)
-    if (!request) {
-      throw new DraftInputError("Route edge transport mode is not plannable")
-    }
-    if (!this.routePlanning) {
-      throw new DraftInputError("Route planning service is unavailable")
-    }
-    const expectedFingerprint = routePlanFingerprint(request)
-    const bundle = await this.routePlanning.plan(request)
-    const current = this.ensureRouteSession(sessionId)
-    const currentPath = input.routeNodeId
-      ? this.mutableSubPlan(current.document, input.routeNodeId)
-      : current.document
-    const currentEdge = currentPath.edges.find(
-      (candidate) => candidate.id === input.edgeId
-    )
-    const currentNodeById = new Map(
-      currentPath.nodes.map((node) => [node.id, node])
-    )
-    const currentFrom = currentEdge
-      ? currentNodeById.get(currentEdge.fromNodeId)
-      : undefined
-    const currentTo = currentEdge
-      ? currentNodeById.get(currentEdge.toNodeId)
-      : undefined
-    const currentRequest =
-      currentEdge && currentFrom && currentTo
-        ? buildRoutePlanRequest(currentEdge, currentFrom, currentTo)
-        : null
-    if (
-      !currentEdge ||
-      !currentRequest ||
-      routePlanFingerprint(currentRequest) !== expectedFingerprint
-    ) {
-      return this.getSnapshot(sessionId)
-    }
-    currentPath.edges = currentPath.edges.map((candidate) =>
-      candidate.id === currentEdge.id
-        ? applyRoutePlanBundle(candidate, bundle)
-        : candidate
-    )
-    return this.commitRoute(sessionId, current.document)
-  }
-
-  routeSelectPlan(sessionId: string, input: SelectRoutePlanInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const path = input.routeNodeId
-      ? this.mutableSubPlan(route, input.routeNodeId)
-      : route
-    const edge = path.edges.find((candidate) => candidate.id === input.edgeId)
-    if (!edge?.plans?.some((plan) => plan.id === input.planId)) {
-      throw new DraftInputError("Route plan not found")
-    }
-    path.edges = path.edges.map((candidate) => {
-      if (candidate.id !== edge.id) return candidate
-      const next = { ...candidate, selectedPlanId: input.planId }
-      const selected = selectedRoutePlan(next)
-      return {
-        ...next,
-        durationMinutes: selected
-          ? Math.max(1, Math.round(selected.durationSeconds / 60))
-          : candidate.durationMinutes,
-        distanceKm: selected
-          ? Math.round((selected.distanceMeters / 1000) * 10) / 10
-          : candidate.distanceKm,
-        costEstimate: selected?.fareAmount ?? candidate.costEstimate,
-      }
-    })
-    return this.commitRoute(sessionId, route)
-  }
-
-  subPlanCreate(sessionId: string, input: SubPlanCreateInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    if (!route.nodes.some((node) => node.id === input.routeNodeId)) {
-      throw new DraftInputError("Route node not found")
-    }
-    if (
-      route.subPlans.some(
-        (subPlan) => subPlan.routeNodeId === input.routeNodeId
-      )
-    ) {
-      throw new DraftInputError("SubPlan already exists for route node")
-    }
-
-    const subPlanId = input.subPlan?.id ?? draftId("subplan")
-    const subPlan: SubPlan = {
-      id: subPlanId,
-      routeNodeId: input.routeNodeId,
-      nodes: (input.subPlan?.nodes ?? []).map((node, order) =>
-        makeSubPlanNode(subPlanId, node, node.order ?? order)
-      ),
-      edges: (input.subPlan?.edges ?? []).map((edge) => {
-        if (!edge.fromNodeId || !edge.toNodeId) {
-          throw new DraftInputError(
-            "SubPlan replacement edges require endpoints"
-          )
-        }
-        return makeSubPlanEdge(subPlanId, edge.fromNodeId, edge.toNodeId, edge)
-      }),
-    }
-    route.subPlans = [...route.subPlans, subPlan]
-    return this.commitRoute(sessionId, route)
-  }
-
-  subPlanAddStartNode(sessionId: string, input: SubPlanNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
-    if (subPlan.nodes.length > 0) {
-      throw new DraftInputError("SubPlan already has a start node")
-    }
-    subPlan.nodes = [makeSubPlanNode(subPlan.id, input.node, 0)]
-    return this.commitRoute(sessionId, route)
-  }
-
-  subPlanAppendNode(sessionId: string, input: SubPlanNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
-    const plan = planAppendNode(subPlan.nodes)
-    if (!plan.previousNode) {
+    if (!event) throw new DraftInputError("Event not found")
+    const descendants = descendantsOf(journey, event.id)
+    if (descendants.length && !input.cascade) {
       throw new DraftInputError(
-        "Use subplan.add_start_node for an empty subplan"
+        "Event has children; set cascade to remove them"
       )
     }
-    const node = makeSubPlanNode(subPlan.id, input.node, plan.order)
-    subPlan.nodes = [...subPlan.nodes, node]
-    subPlan.edges = [
-      ...subPlan.edges,
-      makeSubPlanEdge(subPlan.id, plan.previousNode.id, node.id, input.edge),
-    ]
-    return this.commitRoute(sessionId, route)
+
+    detachFromMainChain(journey, event.id)
+    const removedIds = new Set([
+      event.id,
+      ...descendants.map((item) => item.id),
+    ])
+    journey.events = journey.events.filter((item) => !removedIds.has(item.id))
+    journey.links = journey.links.filter(
+      (link) =>
+        !removedIds.has(link.fromEventId) && !removedIds.has(link.toEventId)
+    )
+    for (const remaining of journey.events) {
+      if (
+        remaining.replacedByEventId &&
+        removedIds.has(remaining.replacedByEventId)
+      ) {
+        remaining.replacedByEventId = undefined
+      }
+      if (remaining.type === "TRANSIT") {
+        if (
+          remaining.detail.plannedFromEventId &&
+          removedIds.has(remaining.detail.plannedFromEventId)
+        ) {
+          remaining.detail.plannedFromEventId = undefined
+        }
+        if (
+          remaining.detail.plannedToEventId &&
+          removedIds.has(remaining.detail.plannedToEventId)
+        ) {
+          remaining.detail.plannedToEventId = undefined
+        }
+        if (
+          remaining.detail.actualFromEventId &&
+          removedIds.has(remaining.detail.actualFromEventId)
+        ) {
+          remaining.detail.actualFromEventId = undefined
+        }
+        if (
+          remaining.detail.actualToEventId &&
+          removedIds.has(remaining.detail.actualToEventId)
+        ) {
+          remaining.detail.actualToEventId = undefined
+        }
+      }
+    }
+    return this.commitJourney(
+      session,
+      journey,
+      "journey.remove_event",
+      event.id
+    )
   }
 
-  subPlanInsertNode(sessionId: string, input: SubPlanInsertNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
-    const planResult = planInsertNodeBefore(
-      subPlan.nodes,
-      input.beforeNodeId,
-      "subplan path graph"
+  journeyUpdateEvent(sessionId: string, input: JourneyUpdateEventInput) {
+    const session = this.ensureJourneySession(sessionId)
+    const journey = clone(session.document)
+    const index = journey.events.findIndex(
+      (event) => event.id === input.eventId
     )
-    if (!planResult.ok) throw new DraftInputError(planResult.error)
-    const plan = planResult.plan
-    if (plan.previousNode && !input.beforeEdge) {
-      throw new DraftInputError("beforeEdge is required for middle insertion")
+    if (index === -1) throw new DraftInputError("Event not found")
+    const current = journey.events[index]
+    if (!current) throw new DraftInputError("Event not found")
+    const next = {
+      ...current,
+      ...input.patch,
+      description:
+        input.patch.description === null
+          ? undefined
+          : (input.patch.description ?? current.description),
+      detail: input.patch.detail
+        ? { ...current.detail, ...input.patch.detail }
+        : current.detail,
+    } as JourneyEvent
+    if (current.type === "SECTION" || current.type === "NOTE") {
+      delete (next as { executionStatus?: unknown }).executionStatus
     }
-    if (!plan.nextNode) {
-      throw new DraftInputError("Insert target node is missing")
-    }
-
-    const node = makeSubPlanNode(subPlan.id, input.node, plan.order)
-    const oldEdgeIds = new Set(
-      subPlan.edges
-        .filter(
-          (edge) =>
-            edge.fromNodeId === plan.previousNode?.id &&
-            edge.toNodeId === plan.nextNode?.id
-        )
-        .map((edge) => edge.id)
+    journey.events[index] = next
+    return this.commitJourney(
+      session,
+      journey,
+      "journey.update_event",
+      current.id
     )
-    subPlan.nodes = subPlan.nodes.map((existingNode) => {
-      const update = plan.orderUpdates.find(
-        (orderUpdate) => orderUpdate.nodeId === existingNode.id
-      )
-      return update ? { ...existingNode, order: update.order } : existingNode
-    })
-    subPlan.nodes.push(node)
-    subPlan.edges = subPlan.edges.filter((edge) => !oldEdgeIds.has(edge.id))
-    if (plan.previousNode && input.beforeEdge) {
-      subPlan.edges.push(
-        makeSubPlanEdge(
-          subPlan.id,
-          plan.previousNode.id,
-          node.id,
-          input.beforeEdge
-        )
-      )
-    }
-    subPlan.edges.push(
-      makeSubPlanEdge(subPlan.id, node.id, plan.nextNode.id, input.afterEdge)
-    )
-    return this.commitRoute(sessionId, route)
   }
 
-  subPlanRemoveNodeRange(
-    sessionId: string,
-    input: SubPlanRemoveNodeRangeInput
-  ) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
-    const planResult = planRemoveNodeRange(
-      { nodes: subPlan.nodes, edges: subPlan.edges },
-      input.startNodeId,
-      input.endNodeId,
-      "subplan path graph"
+  journeyReplaceEvent(sessionId: string, input: JourneyReplaceEventInput) {
+    const session = this.ensureJourneySession(sessionId)
+    const journey = clone(session.document)
+    const old = journey.events.find((event) => event.id === input.eventId)
+    if (!old) throw new DraftInputError("Event not found")
+    if (old.replacedByEventId)
+      throw new DraftInputError("Event is already replaced")
+    const children = journey.events.filter(
+      (event) => event.parentEventId === old.id
     )
-    if (!planResult.ok) throw new DraftInputError(planResult.error)
-    const plan = planResult.plan
-    if (plan.requiresBridgeEdge && !input.bridgeEdge) {
-      throw new DraftInputError("bridgeEdge is required for middle deletion")
+    if (children.length && input.replacement.type !== "SECTION") {
+      throw new DraftInputError(
+        "A non-empty SECTION can only be replaced by another SECTION"
+      )
     }
 
-    const removedNodeIds = new Set(plan.nodesToRemove.map((node) => node.id))
-    const removedEdgeIds = new Set(plan.edgesToRemove.map((edge) => edge.id))
-    subPlan.nodes = normalizeSubPlanNodeOrders(
-      subPlan.nodes.filter((node) => !removedNodeIds.has(node.id))
+    const incoming = findMainIncomingLink(journey.links, old.id)
+    const outgoing = findMainOutgoingLink(journey.links, old.id)
+    journey.links = journey.links.filter(
+      (link) => link.fromEventId !== old.id && link.toEventId !== old.id
     )
-    subPlan.edges = subPlan.edges.filter((edge) => !removedEdgeIds.has(edge.id))
+    const replacement = createEvent(
+      journey.id,
+      input.replacement,
+      old.parentEventId
+    )
+    old.replacedByEventId = replacement.id
+    for (const child of children) child.parentEventId = replacement.id
+    if (old.type !== "SECTION" && old.type !== "NOTE") {
+      old.executionStatus = "CANCELLED"
+    }
+    journey.events.push(replacement)
+    if (incoming)
+      journey.links.push(mainLink(incoming.fromEventId, replacement.id))
+    if (outgoing)
+      journey.links.push(mainLink(replacement.id, outgoing.toEventId))
+    return this.commitJourney(session, journey, "journey.replace_event", old.id)
+  }
+
+  journeyLinkPlace(sessionId: string, input: JourneyLinkPlaceInput) {
+    const session = this.ensureJourneySession(sessionId)
+    const journey = clone(session.document)
+    const event = journey.events.find(
+      (candidate) => candidate.id === input.eventId
+    )
+    if (!event || !isLocationEvent(event)) {
+      throw new DraftInputError("Location event not found")
+    }
+    event.title = input.place.name
+    if (event.type === "SECTION") {
+      event.detail = {
+        ...event.detail,
+        placeId: input.place.placeId,
+        lat: input.place.coordinate.lat,
+        lng: input.place.coordinate.lng,
+        coordinateSystem: input.place.coordinate.coordinateSystem,
+        coordinateProvider: input.place.coordinate.provider,
+        providerPlaceId: input.place.providerPlaceId,
+      }
+    } else {
+      event.detail = {
+        ...event.detail,
+        plannedPlaceId: input.place.placeId,
+        plannedLat: input.place.coordinate.lat,
+        plannedLng: input.place.coordinate.lng,
+        coordinateSystem: input.place.coordinate.coordinateSystem,
+        coordinateProvider: input.place.coordinate.provider,
+        providerPlaceId: input.place.providerPlaceId,
+      }
+    }
+    return this.commitJourney(session, journey, "journey.link_place", event.id)
+  }
+
+  async journeyPlanTransit(sessionId: string, input: PlanTransitInput) {
+    if (!this.transitPlanning) {
+      throw new DraftInputError("Transit planning is not configured")
+    }
+    const session = this.ensureJourneySession(sessionId)
+    const startRevision = session.revision
+    const journey = clone(session.document)
+    const event = journey.events.find(
+      (candidate): candidate is TransitEvent =>
+        candidate.id === input.eventId && candidate.type === "TRANSIT"
+    )
+    if (!event) throw new DraftInputError("Transit event not found")
+    const request = buildTransitPlanRequest(event, journey.events)
+    if (!request) throw new DraftInputError("Transit endpoints are incomplete")
+    const bundle = await this.transitPlanning.plan(request)
+    if (session.revision !== startRevision) {
+      throw new DraftInputError("Draft changed while planning transit")
+    }
+    const currentRequest = buildTransitPlanRequest(event, journey.events)
     if (
-      plan.requiresBridgeEdge &&
-      plan.bridgeFromNode &&
-      plan.bridgeToNode &&
-      input.bridgeEdge
+      !currentRequest ||
+      transitPlanFingerprint(currentRequest) !== bundle.requestFingerprint
     ) {
-      subPlan.edges.push(
-        makeSubPlanEdge(
-          subPlan.id,
-          plan.bridgeFromNode.id,
-          plan.bridgeToNode.id,
-          input.bridgeEdge
-        )
+      throw new DraftInputError("Transit changed while planning")
+    }
+    const index = journey.events.findIndex(
+      (candidate) => candidate.id === event.id
+    )
+    journey.events[index] = applyTransitPlanBundle(event, bundle)
+    return this.commitJourney(
+      session,
+      journey,
+      "journey.plan_transit",
+      event.id
+    )
+  }
+
+  journeySelectTransitPlan(sessionId: string, input: SelectTransitPlanInput) {
+    const session = this.ensureJourneySession(sessionId)
+    const journey = clone(session.document)
+    const event = journey.events.find(
+      (candidate): candidate is TransitEvent =>
+        candidate.id === input.eventId && candidate.type === "TRANSIT"
+    )
+    if (!event) throw new DraftInputError("Transit event not found")
+    if (!event.detail.plans?.some((plan) => plan.id === input.planId)) {
+      throw new DraftInputError("Transit plan not found")
+    }
+    event.detail.selectedPlanId = input.planId
+    const selected = selectedTransitPlan(event)
+    if (selected) {
+      event.detail.plannedDurationMinutes = Math.max(
+        1,
+        Math.round(selected.durationSeconds / 60)
       )
+      event.detail.plannedDistanceKm =
+        Math.round((selected.distanceMeters / 1000) * 10) / 10
+      event.detail.plannedCostEstimate = selected.fareAmount
     }
-    return this.commitRoute(sessionId, route)
+    return this.commitJourney(
+      session,
+      journey,
+      "journey.select_transit_plan",
+      event.id
+    )
   }
 
-  subPlanUpdateNode(sessionId: string, input: SubPlanUpdateNodeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
-    if (!subPlan.nodes.some((node) => node.id === input.nodeId)) {
-      throw new DraftInputError("SubPlan node not found")
+  journeyUndo(sessionId: string, input: UndoJourneyInput) {
+    const session = this.ensureSession(sessionId)
+    const steps = Math.max(1, Math.floor(input.steps ?? 1))
+    if (session.revisions.length < steps) {
+      throw new DraftInputError("No matching revision to undo")
     }
-    subPlan.nodes = subPlan.nodes.map((node) =>
-      node.id === input.nodeId ? applyNodePatch(node, input.patch) : node
-    )
-    subPlan.edges = subPlan.edges.map((edge) =>
-      edge.fromNodeId === input.nodeId || edge.toNodeId === input.nodeId
-        ? staleEdgePlan(edge)
-        : edge
-    )
-    return this.commitRoute(sessionId, route)
-  }
-
-  subPlanUpdateEdge(sessionId: string, input: SubPlanUpdateEdgeInput) {
-    const session = this.ensureRouteSession(sessionId)
-    const route = cloneDocument(session.document)
-    const subPlan = this.mutableSubPlan(route, input.routeNodeId)
-    const edge = findSubPlanEdge(subPlan, input)
-    if (!edge) throw new DraftInputError("SubPlan edge not found")
-    subPlan.edges = subPlan.edges.map((candidate) =>
-      candidate.id === edge.id
-        ? applyEdgePatch(candidate, input.patch)
-        : candidate
-    )
-    return this.commitRoute(sessionId, route)
+    const target = session.revisions[session.revisions.length - steps]
+    if (!target) throw new DraftInputError("No matching revision to undo")
+    const before = session.document ? clone(session.document) : null
+    session.document = target.before ? clone(target.before) : null
+    if (session.document) validatedJourney(toJourneyInput(session.document))
+    this.recordRevision(session, "journey.undo", target.eventId, before)
+    return this.getSnapshot(sessionId)
   }
 
   async callTool(
     sessionId: string,
-    tool: DraftToolName,
+    tool: JourneyToolName,
     input: Record<string, unknown>
   ) {
-    if (tool === "get_current_draft") return this.getSnapshot(sessionId)
-    if (tool === "replace_draft") {
-      return this.replaceDraft(
-        sessionId,
-        input.route as RouteInput | Route | null
+    if (tool === "get_current_journey") return this.getSnapshot(sessionId)
+    const session = this.ensureSession(sessionId)
+    const idempotencyKey =
+      typeof input.idempotencyKey === "string"
+        ? input.idempotencyKey.trim()
+        : undefined
+    if (!idempotencyKey) {
+      throw new DraftInputError("idempotencyKey is required")
+    }
+    if (
+      session.revisions.some(
+        (revision) => revision.idempotencyKey === idempotencyKey
+      )
+    ) {
+      return this.getSnapshot(sessionId)
+    }
+    if (
+      typeof input.expectedRevision !== "number" ||
+      !Number.isInteger(input.expectedRevision) ||
+      input.expectedRevision < 0
+    ) {
+      throw new DraftInputError("expectedRevision is required")
+    }
+    if (input.expectedRevision !== session.revision) {
+      throw new DraftInputError(
+        `Draft revision conflict: expected ${input.expectedRevision}, current ${session.revision}`
       )
     }
-    if (tool === "route.add_start_node") {
-      return this.routeAddStartNode(sessionId, input as never)
+
+    let result: DraftSnapshot
+    if (tool === "replace_journey") {
+      result = this.replaceDraft(
+        sessionId,
+        input.journey as JourneyInput | Journey | null
+      )
+    } else if (tool === "journey.add_event") {
+      result = this.journeyAddEvent(
+        sessionId,
+        input as unknown as JourneyAddEventInput
+      )
+    } else if (tool === "journey.move_event") {
+      result = this.journeyMoveEvent(
+        sessionId,
+        input as unknown as JourneyMoveEventInput
+      )
+    } else if (tool === "journey.remove_event") {
+      result = this.journeyRemoveEvent(
+        sessionId,
+        input as unknown as JourneyRemoveEventInput
+      )
+    } else if (tool === "journey.update_event") {
+      result = this.journeyUpdateEvent(
+        sessionId,
+        input as unknown as JourneyUpdateEventInput
+      )
+    } else if (tool === "journey.replace_event") {
+      result = this.journeyReplaceEvent(
+        sessionId,
+        input as unknown as JourneyReplaceEventInput
+      )
+    } else if (tool === "journey.link_place") {
+      result = this.journeyLinkPlace(
+        sessionId,
+        input as unknown as JourneyLinkPlaceInput
+      )
+    } else if (tool === "journey.plan_transit") {
+      result = await this.journeyPlanTransit(
+        sessionId,
+        input as unknown as PlanTransitInput
+      )
+    } else if (tool === "journey.select_transit_plan") {
+      result = this.journeySelectTransitPlan(
+        sessionId,
+        input as unknown as SelectTransitPlanInput
+      )
+    } else {
+      result = this.journeyUndo(sessionId, input as unknown as UndoJourneyInput)
     }
-    if (tool === "route.append_node") {
-      return this.routeAppendNode(sessionId, input as never)
+
+    if (idempotencyKey) {
+      const revision = session.revisions.at(-1)
+      if (revision) revision.idempotencyKey = idempotencyKey
     }
-    if (tool === "route.insert_node") {
-      return this.routeInsertNode(sessionId, input as never)
-    }
-    if (tool === "route.remove_node_range") {
-      return this.routeRemoveNodeRange(sessionId, input as never)
-    }
-    if (tool === "route.update_node") {
-      return this.routeUpdateNode(sessionId, input as never)
-    }
-    if (tool === "route.update_edge") {
-      return this.routeUpdateEdge(sessionId, input as never)
-    }
-    if (tool === "route.link_place_to_node") {
-      return this.routeLinkPlaceToNode(sessionId, input as never)
-    }
-    if (tool === "route.plan_edge") {
-      return this.routePlanEdge(sessionId, input as never)
-    }
-    if (tool === "route.select_plan") {
-      return this.routeSelectPlan(sessionId, input as never)
-    }
-    if (tool === "subplan.create") {
-      return this.subPlanCreate(sessionId, input as never)
-    }
-    if (tool === "subplan.add_start_node") {
-      return this.subPlanAddStartNode(sessionId, input as never)
-    }
-    if (tool === "subplan.append_node") {
-      return this.subPlanAppendNode(sessionId, input as never)
-    }
-    if (tool === "subplan.insert_node") {
-      return this.subPlanInsertNode(sessionId, input as never)
-    }
-    if (tool === "subplan.remove_node_range") {
-      return this.subPlanRemoveNodeRange(sessionId, input as never)
-    }
-    if (tool === "subplan.update_node") {
-      return this.subPlanUpdateNode(sessionId, input as never)
-    }
-    return this.subPlanUpdateEdge(sessionId, input as never)
+    return result
   }
 
-  private mutableSubPlan(route: DraftRoute, routeNodeId: string) {
-    const subPlan = route.subPlans.find(
-      (candidate) => candidate.routeNodeId === routeNodeId
-    )
-    if (!subPlan) throw new DraftInputError("SubPlan not found")
-    return subPlan
+  private commitJourney(
+    session: SessionDraft & { document: DraftJourney },
+    journey: DraftJourney,
+    operation: JourneyToolName,
+    eventId?: string
+  ) {
+    const before = clone(session.document)
+    validatedJourney(toJourneyInput(journey))
+    session.document = journey
+    this.recordRevision(session, operation, eventId, before)
+    return this.getSnapshot(session.sessionId)
   }
 
-  private commitRoute(sessionId: string, route: DraftRoute) {
-    const session = this.ensureSession(sessionId)
-    const nextRoute = { ...route }
-    validatedDraftRoute(toRouteInput(nextRoute))
-    session.document = nextRoute
+  private recordRevision(
+    session: SessionDraft,
+    operation: JourneyToolName | "draft.replace",
+    eventId: string | undefined,
+    before: DraftJourney | null
+  ) {
     this.touchSession(session)
-    return this.getSnapshot(sessionId)
+    session.revisions.push({
+      id: `revision-${randomUUID()}`,
+      revision: session.revision,
+      operation,
+      eventId,
+      before,
+      after: session.document ? clone(session.document) : null,
+      createdAt: nowIso(),
+    })
+    if (session.revisions.length > 100) session.revisions.shift()
   }
 
-  private ensureRouteSession(sessionId: string) {
+  private ensureJourneySession(sessionId: string) {
     const session = this.ensureSession(sessionId)
-    if (!session.document) throw new DraftInputError("Draft route is empty")
-    return session as SessionDraft & { document: DraftRoute }
+    if (!session.document) throw new DraftInputError("Draft journey is empty")
+    return session as SessionDraft & { document: DraftJourney }
   }
 
   private touchSession(session: SessionDraft, dirty = true) {
@@ -1199,17 +858,17 @@ export class DraftSessionService {
   private ensureSession(sessionId: string) {
     const existing = this.sessions.get(sessionId)
     if (existing) return existing
-
     const session: SessionDraft = {
       sessionId,
       userContext: null,
       document: null,
-      sourceRouteId: null,
-      baseVersion: null,
+      sourceJourneyId: null,
+      baseRevision: null,
       dirty: false,
       lockedByRunId: null,
       conversationMessages: [],
       pendingSuggestions: [],
+      revisions: [],
       revision: 0,
       updatedAt: nowIso(),
     }
@@ -1231,7 +890,6 @@ export class DraftSessionService {
       createdAt: timestamp,
       updatedAt: timestamp,
     }
-
     session.conversationMessages.push(message)
     session.updatedAt = timestamp
     return { ...message }

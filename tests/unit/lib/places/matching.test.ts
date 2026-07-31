@@ -29,7 +29,7 @@ function result(confidence: number): PlaceSearchResult {
     sources: [{ provider: "amap", providerId: "B000A8UIN8" }],
     confidence,
     quality: confidence >= 0.9 ? "verified" : "probable",
-    canAddToRoute: true,
+    canAddToJourney: true,
     needsUserConfirmation: false,
     reason: "test",
   }

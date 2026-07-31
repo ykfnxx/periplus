@@ -92,11 +92,11 @@ export function createAgentWebSocketServer(
           })
           return
         }
-        if (message.type === "draft.load_saved_route") {
-          const snapshot = await commands.loadSavedRoute(
+        if (message.type === "draft.load_saved_journey") {
+          const snapshot = await commands.loadSavedJourney(
             context,
             sessionId,
-            String(payload.routeId)
+            String(payload.journeyId)
           )
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return
@@ -104,7 +104,7 @@ export function createAgentWebSocketServer(
         if (message.type === "draft.replace") {
           const snapshot = commands.replaceDraft(
             sessionId,
-            payload.route as never
+            payload.journey as never
           )
           broadcast(sessionId, { type: "draft.updated", payload: snapshot })
           return

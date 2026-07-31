@@ -1,32 +1,35 @@
 "use client"
 
 import { useRef } from "react"
-import { sortPathNodes } from "@/lib/routes/path-graph"
+import { projectMainSequence } from "@/lib/journeys/graph"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 export default function RouteScopeTabs() {
   const railRef = useRef<HTMLDivElement>(null)
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
-  const activeRouteNodeId = useWorkspaceStore(
-    (state) => state.activeRouteNodeId
+  const activeSectionEventId = useWorkspaceStore(
+    (state) => state.activeSectionEventId
   )
-  const enterCityView = useWorkspaceStore((state) => state.enterCityView)
+  const enterSectionView = useWorkspaceStore((state) => state.enterSectionView)
   const returnToOverview = useWorkspaceStore((state) => state.returnToOverview)
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
-  if (!draftRoute) return null
+  if (!draftJourney) return null
+  const sections = projectMainSequence(draftJourney).filter(
+    (event) => event.type === "SECTION"
+  )
 
   const selectOverview = () => {
     if (viewLevel === "overview") return
     returnToOverview()
-    requestMapFocus({ type: "active-route", maxZoom: 12 })
+    requestMapFocus({ type: "active-journey", maxZoom: 12 })
   }
 
-  const selectCity = (nodeId: string) => {
-    if (viewLevel === "city" && activeRouteNodeId === nodeId) return
-    enterCityView(nodeId)
-    requestMapFocus({ type: "active-route", maxZoom: 15 })
+  const selectSection = (eventId: string) => {
+    if (viewLevel === "section" && activeSectionEventId === eventId) return
+    enterSectionView(eventId)
+    requestMapFocus({ type: "active-journey", maxZoom: 15 })
   }
 
   return (
@@ -41,12 +44,14 @@ export default function RouteScopeTabs() {
         selected={viewLevel === "overview"}
         onSelect={selectOverview}
       />
-      {sortPathNodes(draftRoute.nodes).map((node) => (
+      {sections.map((section) => (
         <ScopeTab
-          key={node.id}
-          label={node.name}
-          selected={viewLevel === "city" && activeRouteNodeId === node.id}
-          onSelect={() => selectCity(node.id)}
+          key={section.id}
+          label={section.title}
+          selected={
+            viewLevel === "section" && activeSectionEventId === section.id
+          }
+          onSelect={() => selectSection(section.id)}
         />
       ))}
     </div>

@@ -1,4 +1,4 @@
-import type { RouteSegmentMode, TransportMode } from "@/types/route"
+import type { TransitSegmentMode, TransportMode } from "@/types/journey"
 
 // 与 app/globals.css @theme 中的 --color-* token 一一对应，改色需双改
 export const periplusColors = {
@@ -58,8 +58,8 @@ export function getTransportEdgeStyle(
   )
 }
 
-export function getRouteSegmentStyle(mode: RouteSegmentMode) {
-  const transportMode: Partial<Record<RouteSegmentMode, TransportMode>> = {
+export function getRouteSegmentStyle(mode: TransitSegmentMode) {
+  const transportMode: Partial<Record<TransitSegmentMode, TransportMode>> = {
     WALK: "WALK",
     DRIVE: "CAR",
     BUS: "BUS",

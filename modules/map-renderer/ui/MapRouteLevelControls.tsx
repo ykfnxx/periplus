@@ -1,51 +1,52 @@
 "use client"
 
 import { ArrowLeft } from "lucide-react"
-import { getActivePathView } from "@/lib/routes/active-path"
+import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import {
+  locationCount,
   totalDurationDays,
   totalDurationMinutes,
-} from "@/lib/routes/itinerary-summary"
+} from "@/lib/journeys/summary"
 import { useWorkspaceViewportInsets } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 export default function MapRouteLevelControls() {
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
-  const activeRouteNodeId = useWorkspaceStore(
-    (state) => state.activeRouteNodeId
+  const activeSectionEventId = useWorkspaceStore(
+    (state) => state.activeSectionEventId
   )
   const returnToOverview = useWorkspaceStore((state) => state.returnToOverview)
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
   const viewportInsets = useWorkspaceViewportInsets()
-  const view = getActivePathView(draftRoute, viewLevel, activeRouteNodeId)
+  const view = getJourneyScopeProjection(
+    draftJourney,
+    viewLevel,
+    activeSectionEventId
+  )
 
-  if (!draftRoute) return null
+  if (!draftJourney) return null
 
   const showOverview = () => {
     returnToOverview()
-    requestMapFocus({ type: "active-route", maxZoom: 12 })
+    requestMapFocus({ type: "active-journey", maxZoom: 12 })
   }
-
+  const days = totalDurationDays(view.events)
+  const minutes = totalDurationMinutes(view.events)
   const mobileTitle =
-    view.level === "overview" ? draftRoute.name : `${view.title} · 城市行程`
-  const mobileSummary =
-    view.level === "overview"
-      ? `${draftRoute.nodes.length} 个城市${
-          totalDurationDays(draftRoute.nodes)
-            ? ` · ${totalDurationDays(draftRoute.nodes)} 天`
-            : ""
-        }`
-      : `${view.nodes.length} 个地点${
-          totalDurationMinutes(view.nodes)
-            ? ` · ${formatHours(totalDurationMinutes(view.nodes))}`
-            : ""
-        }`
+    view.level === "overview" ? draftJourney.title : `${view.title} · 分段行程`
+  const mobileSummary = [
+    `${locationCount(view.events)} 个地点`,
+    view.level === "overview" && days ? `${days} 天` : null,
+    view.level === "section" && minutes ? formatHours(minutes) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
     <>
       <div className="pointer-events-auto absolute top-5 left-4 z-20 flex min-w-[190px] items-center rounded-full border border-ink-10 bg-soft-white/95 px-4 py-2 shadow-periplus-soft backdrop-blur-sm md:hidden">
-        {view.level === "city" ? (
+        {view.level === "section" ? (
           <button
             type="button"
             onClick={showOverview}
@@ -64,7 +65,7 @@ export default function MapRouteLevelControls() {
           </span>
         </span>
       </div>
-      {view.level === "city" ? (
+      {view.level === "section" ? (
         <div
           className="pointer-events-none absolute top-5 z-20 hidden md:block"
           style={{

@@ -1,63 +1,59 @@
 import type { AuthContext } from "@/modules/auth/server/context"
-import type { Route, RouteInput } from "@/types/route"
-import type { DraftToolName } from "./contracts"
+import type { Journey, JourneyInput } from "@/types/journey"
+import type { JourneyToolName } from "./contracts"
 import { periplusServerConfig } from "@/config/periplus.server"
 import {
-  createRoute,
-  getRoute,
-  updateRoute,
-} from "@/modules/data/routes/route-repository"
-import { persistRoutePlans } from "@/modules/data/routes/route-plan-repository"
+  createJourney,
+  getJourney,
+  updateJourney,
+} from "@/modules/data/journeys/journey-repository"
 import { DraftInputError, DraftSessionService } from "./draft-session-service"
 
-interface RouteRepositoryPort {
-  get(context: AuthContext, routeId: string): Promise<Route | null>
-  create(context: AuthContext, input: RouteInput): Promise<Route>
+interface JourneyRepositoryPort {
+  get(context: AuthContext, journeyId: string): Promise<Journey | null>
+  create(context: AuthContext, input: JourneyInput): Promise<Journey>
   update(
     context: AuthContext,
-    routeId: string,
-    input: RouteInput,
-    expectedVersion?: number | null
-  ): Promise<Route | null>
+    journeyId: string,
+    input: JourneyInput,
+    expectedRevision?: number | null
+  ): Promise<Journey | null>
 }
 
 interface WorkspaceCommandDependencies {
-  routes?: RouteRepositoryPort
-  persistPlans?: (route: Route) => Promise<void>
-  persistRoutePlanning?: boolean
+  journeys?: JourneyRepositoryPort
+  persistTransitPlanning?: boolean
 }
 
-const defaultRouteRepository: RouteRepositoryPort = {
-  get: getRoute,
-  create: createRoute,
-  update: updateRoute,
+const defaultJourneyRepository: JourneyRepositoryPort = {
+  get: getJourney,
+  create: createJourney,
+  update: updateJourney,
 }
 
 export class WorkspaceCommandService {
-  private readonly routes: RouteRepositoryPort
-  private readonly persistPlans: (route: Route) => Promise<void>
-  private readonly persistRoutePlanning: boolean
+  private readonly journeys: JourneyRepositoryPort
+  private readonly persistTransitPlanning: boolean
 
   constructor(
     private readonly drafts: DraftSessionService,
     dependencies: WorkspaceCommandDependencies = {}
   ) {
-    this.routes = dependencies.routes ?? defaultRouteRepository
-    this.persistPlans = dependencies.persistPlans ?? persistRoutePlans
-    this.persistRoutePlanning =
-      dependencies.persistRoutePlanning ??
-      periplusServerConfig.routePlanning.retention === "PERSISTED"
+    this.journeys = dependencies.journeys ?? defaultJourneyRepository
+    this.persistTransitPlanning =
+      dependencies.persistTransitPlanning ??
+      periplusServerConfig.transitPlanning.retention === "PERSISTED"
   }
 
-  loadSavedRoute(context: AuthContext, sessionId: string, routeId: string) {
-    return this.routes.get(context, routeId).then((route) => {
-      if (!route) throw new DraftInputError("Route not found")
-      return this.drafts.loadPersistedRoute(sessionId, route)
+  loadSavedJourney(context: AuthContext, sessionId: string, journeyId: string) {
+    return this.journeys.get(context, journeyId).then((journey) => {
+      if (!journey) throw new DraftInputError("Journey not found")
+      return this.drafts.loadPersistedJourney(sessionId, journey)
     })
   }
 
-  replaceDraft(sessionId: string, route: RouteInput | Route | null) {
-    return this.drafts.replaceDraft(sessionId, route)
+  replaceDraft(sessionId: string, journey: JourneyInput | Journey | null) {
+    return this.drafts.replaceDraft(sessionId, journey)
   }
 
   resetDraft(sessionId: string) {
@@ -66,37 +62,29 @@ export class WorkspaceCommandService {
 
   async saveDraft(context: AuthContext, sessionId: string) {
     const draft = this.drafts.getDraftForSave(sessionId)
-    const savedRoute = draft.sourceRouteId
-      ? await this.routes.update(
+    const journeyInput = this.persistTransitPlanning
+      ? draft.journeyInput
+      : withoutTransitPlans(draft.journeyInput)
+    const savedJourney = draft.sourceJourneyId
+      ? await this.journeys.update(
           context,
-          draft.sourceRouteId,
-          draft.routeInput,
-          draft.baseVersion
+          draft.sourceJourneyId,
+          journeyInput,
+          draft.baseRevision
         )
-      : await this.routes.create(context, draft.routeInput)
+      : await this.journeys.create(context, journeyInput)
 
-    if (!savedRoute) throw new DraftInputError("Route not found")
-
-    if (!this.persistRoutePlanning) {
-      return this.drafts.markDraftSaved(sessionId, savedRoute, true)
-    }
-
-    await this.persistPlans({
-      ...savedRoute,
-      name: draft.document.name,
-      description: draft.document.description,
-      nodes: draft.document.nodes,
-      edges: draft.document.edges,
-      subPlans: draft.document.subPlans,
-    })
-    const persisted = await this.routes.get(context, savedRoute.id)
-    if (!persisted) throw new DraftInputError("Route not found")
-    return this.drafts.markDraftSaved(sessionId, persisted)
+    if (!savedJourney) throw new DraftInputError("Journey not found")
+    return this.drafts.markDraftSaved(
+      sessionId,
+      savedJourney,
+      !this.persistTransitPlanning
+    )
   }
 
   executeDraftTool(
     sessionId: string,
-    tool: DraftToolName,
+    tool: JourneyToolName,
     input: Record<string, unknown>
   ) {
     return this.drafts.callTool(sessionId, tool, input)
@@ -108,5 +96,26 @@ export class WorkspaceCommandService {
 
   rejectSuggestion(sessionId: string, suggestionId: string) {
     return this.drafts.rejectSuggestion(sessionId, suggestionId)
+  }
+}
+
+function withoutTransitPlans(input: JourneyInput): JourneyInput {
+  return {
+    ...input,
+    events: input.events.map((event) =>
+      event.type === "TRANSIT"
+        ? {
+            ...event,
+            detail: {
+              ...event.detail,
+              plans: undefined,
+              selectedPlanId: undefined,
+              planningFingerprint: undefined,
+              planningWarning: undefined,
+              planningStatus: "EMPTY" as const,
+            },
+          }
+        : event
+    ),
   }
 }

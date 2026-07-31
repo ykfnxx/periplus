@@ -11,7 +11,7 @@ import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import AgentModeToggle from "./AgentModeToggle"
 
 export default function AIComposer() {
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const composerInput = useWorkspaceStore((state) => state.composerInput)
   const agentMode = useWorkspaceStore((state) => state.agentMode)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
@@ -79,7 +79,7 @@ export default function AIComposer() {
   }
 
   const saveRoute = () => {
-    if (!draftRoute || !sendAgentEvent || isDraftLocked) return
+    if (!draftJourney || !sendAgentEvent || isDraftLocked) return
     setDraftSaveState("saving")
     sendAgentEvent("draft.save")
   }
@@ -116,7 +116,9 @@ export default function AIComposer() {
                 aria-label="保存"
                 title="保存"
                 disabled={
-                  !draftRoute || !sendAgentEvent || draftSaveState === "saving"
+                  !draftJourney ||
+                  !sendAgentEvent ||
+                  draftSaveState === "saving"
                 }
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-ink-15 bg-cream text-walnut transition hover:border-russet hover:text-russet disabled:cursor-default disabled:opacity-45"
               >

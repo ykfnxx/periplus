@@ -31,8 +31,8 @@ describe("AgentSync", () => {
       draft: {
         sessionId: "session-1",
         document: null,
-        sourceRouteId: null,
-        baseVersion: null,
+        sourceJourneyId: null,
+        baseRevision: null,
         dirty: false,
         isLocked: false,
         lockedByRunId: null,
@@ -42,7 +42,9 @@ describe("AgentSync", () => {
       },
       messages: [],
     })
-    vi.mocked(connectAgentSocket).mockReturnValue(socket as unknown as WebSocket)
+    vi.mocked(connectAgentSocket).mockReturnValue(
+      socket as unknown as WebSocket
+    )
 
     const { unmount } = render(<AgentSync />)
     await waitFor(() => {
@@ -52,9 +54,7 @@ describe("AgentSync", () => {
 
     act(() => socket.dispatchEvent(new Event("open")))
     await waitFor(() => {
-      expect(useWorkspaceStore.getState().sendAgentEvent).toBeTypeOf(
-        "function"
-      )
+      expect(useWorkspaceStore.getState().sendAgentEvent).toBeTypeOf("function")
     })
 
     useWorkspaceStore.getState().sendAgentEvent?.("draft.replace", {
@@ -76,8 +76,8 @@ describe("AgentSync", () => {
       draft: {
         sessionId: "session-1",
         document: null,
-        sourceRouteId: null,
-        baseVersion: null,
+        sourceJourneyId: null,
+        baseRevision: null,
         dirty: false,
         isLocked: false,
         lockedByRunId: null,
@@ -87,7 +87,9 @@ describe("AgentSync", () => {
       },
       messages: [],
     })
-    vi.mocked(connectAgentSocket).mockReturnValue(socket as unknown as WebSocket)
+    vi.mocked(connectAgentSocket).mockReturnValue(
+      socket as unknown as WebSocket
+    )
 
     render(<AgentSync />)
     await waitFor(() => {

@@ -171,7 +171,7 @@ function actionability(
       ? bestCoordinate?.coordinateSystem === "WGS84"
       : bestCoordinate?.coordinateSystem === "GCJ02"
 
-  const canAddToRoute =
+  const canAddToJourney =
     Boolean(bestCoordinate) &&
     coordinateMatches &&
     (quality === "verified" || quality === "probable")
@@ -181,7 +181,7 @@ function actionability(
     (candidate.fromLiveProvider &&
       !candidate.sources.some((source) => source.provider === "periplus"))
 
-  return { bestCoordinate, canAddToRoute, needsUserConfirmation }
+  return { bestCoordinate, canAddToJourney, needsUserConfirmation }
 }
 
 export function rankPlaceCandidates(
@@ -191,7 +191,7 @@ export function rankPlaceCandidates(
   function toSearchResult(candidate: PlaceCandidate): PlaceSearchResult | null {
     const confidence = confidenceFor(query, candidate)
     const quality = qualityFor(confidence)
-    const { bestCoordinate, canAddToRoute, needsUserConfirmation } =
+    const { bestCoordinate, canAddToJourney, needsUserConfirmation } =
       actionability(quality, candidate, query)
 
     if (!bestCoordinate) return null
@@ -212,7 +212,7 @@ export function rankPlaceCandidates(
       sources: candidate.sources,
       confidence: Number(confidence.toFixed(3)),
       quality,
-      canAddToRoute,
+      canAddToJourney,
       needsUserConfirmation,
       reason:
         quality === "verified"

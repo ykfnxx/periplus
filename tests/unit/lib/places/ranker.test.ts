@@ -58,7 +58,7 @@ describe("rankPlaceCandidates", () => {
       coordinateSystem: "GCJ02",
     })
     expect(result.quality).toBe("verified")
-    expect(result.canAddToRoute).toBe(true)
+    expect(result.canAddToJourney).toBe(true)
     expect(result.needsUserConfirmation).toBe(false)
   })
 
@@ -115,6 +115,6 @@ describe("rankPlaceCandidates", () => {
       expect.arrayContaining(["mct", "amap"])
     )
     expect(result.bestCoordinate.coordinateSystem).toBe("GCJ02")
-    expect(result.canAddToRoute).toBe(true)
+    expect(result.canAddToJourney).toBe(true)
   })
 })

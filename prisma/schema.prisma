@@ -7,9 +7,47 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum EdgeStatus {
+enum JourneyStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+}
+
+enum JourneyEventType {
+  SECTION
+  VISIT
+  TRANSIT
+  STAY
+  MEAL
+  ACTIVITY
+  NOTE
+}
+
+enum JourneyEventExecutionStatus {
   PLANNED
-  INCOMPLETE
+  STARTED
+  CONFIRMED
+  SKIPPED
+  CANCELLED
+}
+
+enum JourneyEventOrigin {
+  ORIGINAL
+  USER_INSERTED
+  AGENT_INSERTED
+  FORKED
+  SOURCE_DERIVED
+}
+
+enum JourneyEventLinkKind {
+  MAIN
+  ALTERNATIVE
+}
+
+enum JourneySectionKind {
+  CITY
+  DAY
+  THEME
 }
 
 enum TransportMode {
@@ -23,28 +61,18 @@ enum TransportMode {
   RENTAL
 }
 
-enum RouteRequestMode {
+enum TransitRequestMode {
   DRIVE
   WALK
   TRANSIT
 }
 
-enum RoutePreference {
+enum TransitPreference {
   RECOMMENDED
   FASTEST
   LOW_COST
   FEWER_TRANSFERS
   LESS_WALKING
-}
-
-enum NodeCategory {
-  CITY
-  PLACE
-  SIGHT
-  RESTAURANT
-  HOTEL
-  ACTIVITY
-  TRANSIT
 }
 
 enum PlaceCategory {
@@ -68,135 +96,231 @@ enum PlaceSourceQuality {
   NEEDS_REVIEW
 }
 
-model Route {
-  id          String      @id @default(uuid())
+model Journey {
+  id          String                 @id @default(uuid())
   ownerId     String
-  owner       User        @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  version     Int         @default(1)
-  visibility  String      @default("private")
-  name        String
+  owner       User                   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  revision    Int                    @default(1)
+  status      JourneyStatus          @default(DRAFT)
+  visibility  String                 @default("private")
+  title       String
   description String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  nodes       RouteNode[]
-  edges       RouteEdge[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  events      JourneyEvent[]
+  links       JourneyEventLink[]
+  revisions   JourneyEventRevision[]
 
   @@index([ownerId])
 }
 
-model RouteNode {
-  id                 String       @id @default(uuid())
-  routeId            String
-  route              Route        @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  name               String
-  lat                Float
-  lng                Float
+model JourneyEvent {
+  id                         String                       @id @default(uuid())
+  journeyId                  String
+  journey                    Journey                      @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  parentEventId              String?
+  parentEvent                JourneyEvent?                @relation("JourneyEventChildren", fields: [parentEventId], references: [id], onDelete: Cascade)
+  childEvents                JourneyEvent[]               @relation("JourneyEventChildren")
+  replacedByEventId          String?
+  replacedByEvent            JourneyEvent?                @relation("JourneyEventReplacement", fields: [replacedByEventId], references: [id], onDelete: SetNull)
+  replaces                   JourneyEvent[]               @relation("JourneyEventReplacement")
+  type                       JourneyEventType
+  executionStatus            JourneyEventExecutionStatus?
+  origin                     JourneyEventOrigin           @default(ORIGINAL)
+  title                      String
+  description                String?
+  plannedStartAt             DateTime?
+  plannedEndAt               DateTime?
+  actualStartAt              DateTime?
+  actualEndAt                DateTime?
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+  sectionDetail              SectionEventDetail?
+  visitDetail                VisitEventDetail?
+  transitDetail              TransitEventDetail?          @relation("TransitEventOwner")
+  stayDetail                 StayEventDetail?
+  mealDetail                 MealEventDetail?
+  activityDetail             ActivityEventDetail?
+  noteDetail                 NoteEventDetail?
+  outgoingLinks              JourneyEventLink[]           @relation("JourneyEventLinkFrom")
+  incomingLinks              JourneyEventLink[]           @relation("JourneyEventLinkTo")
+  plannedTransitOrigins      TransitEventDetail[]         @relation("TransitPlannedFrom")
+  plannedTransitDestinations TransitEventDetail[]         @relation("TransitPlannedTo")
+  actualTransitOrigins       TransitEventDetail[]         @relation("TransitActualFrom")
+  actualTransitDestinations  TransitEventDetail[]         @relation("TransitActualTo")
+  revisions                  JourneyEventRevision[]
+  attachments                JourneyEventAttachment[]
+
+  @@index([journeyId])
+  @@index([parentEventId])
+  @@index([type])
+  @@index([executionStatus])
+}
+
+model JourneyEventLink {
+  id          String               @id @default(uuid())
+  journeyId   String
+  journey     Journey              @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  fromEventId String
+  fromEvent   JourneyEvent         @relation("JourneyEventLinkFrom", fields: [fromEventId], references: [id], onDelete: Cascade)
+  toEventId   String
+  toEvent     JourneyEvent         @relation("JourneyEventLinkTo", fields: [toEventId], references: [id], onDelete: Cascade)
+  kind        JourneyEventLinkKind @default(MAIN)
+  branchKey   String?
+  rank        String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([journeyId, fromEventId, toEventId, kind])
+  @@index([journeyId, kind])
+  @@index([fromEventId])
+  @@index([toEventId])
+}
+
+model SectionEventDetail {
+  eventId            String             @id
+  event              JourneyEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  kind               JourneySectionKind
   placeId            String?
-  place              Place?       @relation("RouteNodePlace", fields: [placeId], references: [id], onDelete: SetNull)
+  place              Place?             @relation("SectionEventPlace", fields: [placeId], references: [id], onDelete: SetNull)
+  lat                Float?
+  lng                Float?
   coordinateSystem   String?
   coordinateProvider String?
   providerPlaceId    String?
-  order              Int
-  category           NodeCategory
-  durationMinutes    Int?
-  notes              String?
-  subPlan            SubPlan?
-  outgoingEdges      RouteEdge[]  @relation("RouteEdgeFrom")
-  incomingEdges      RouteEdge[]  @relation("RouteEdgeTo")
 
-  @@unique([routeId, order])
-  @@index([routeId])
   @@index([placeId])
 }
 
-model RouteEdge {
-  id              String            @id @default(uuid())
-  routeId         String
-  route           Route             @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  fromNodeId      String            @unique
-  fromNode        RouteNode         @relation("RouteEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
-  toNodeId        String            @unique
-  toNode          RouteNode         @relation("RouteEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
-  status          EdgeStatus
-  transportMode   TransportMode?
-  durationMinutes Int?
-  distanceKm      Float?
-  costEstimate    Float?
-  notes           String?
-  requestMode     RouteRequestMode?
-  departAt        DateTime?
-  preference      RoutePreference?
-  selectedPlanId  String?
-  planningStatus  String?
-  planningWarning String?
-  plans           RoutePlan[]       @relation("RouteEdgePlans")
+model VisitEventDetail {
+  eventId                String       @id
+  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlaceId         String?
+  plannedPlace           Place?       @relation("VisitPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlaceId          String?
+  actualPlace            Place?       @relation("VisitActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       String?
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
 
-  @@index([routeId])
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
 }
 
-model SubPlan {
-  id          String        @id @default(uuid())
-  routeNodeId String        @unique
-  routeNode   RouteNode     @relation(fields: [routeNodeId], references: [id], onDelete: Cascade)
-  nodes       SubPlanNode[]
-  edges       SubPlanEdge[]
+model StayEventDetail {
+  eventId                String       @id
+  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlaceId         String?
+  plannedPlace           Place?       @relation("StayPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlaceId          String?
+  actualPlace            Place?       @relation("StayActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       String?
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  checkInNote            String?
+
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
 }
 
-model SubPlanNode {
-  id                 String        @id @default(uuid())
-  subPlanId          String
-  subPlan            SubPlan       @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
-  name               String
-  lat                Float
-  lng                Float
-  placeId            String?
-  place              Place?        @relation("SubPlanNodePlace", fields: [placeId], references: [id], onDelete: SetNull)
-  coordinateSystem   String?
-  coordinateProvider String?
-  providerPlaceId    String?
-  order              Int
-  category           NodeCategory
-  durationMinutes    Int?
-  notes              String?
-  outgoingEdges      SubPlanEdge[] @relation("SubPlanEdgeFrom")
-  incomingEdges      SubPlanEdge[] @relation("SubPlanEdgeTo")
+model MealEventDetail {
+  eventId                String       @id
+  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlaceId         String?
+  plannedPlace           Place?       @relation("MealPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlaceId          String?
+  actualPlace            Place?       @relation("MealActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       String?
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  cuisine                String?
 
-  @@unique([subPlanId, order])
-  @@index([subPlanId])
-  @@index([placeId])
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
 }
 
-model SubPlanEdge {
-  id              String            @id @default(uuid())
-  subPlanId       String
-  subPlan         SubPlan           @relation(fields: [subPlanId], references: [id], onDelete: Cascade)
-  fromNodeId      String            @unique
-  fromNode        SubPlanNode       @relation("SubPlanEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
-  toNodeId        String            @unique
-  toNode          SubPlanNode       @relation("SubPlanEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
-  status          EdgeStatus
-  transportMode   TransportMode?
-  durationMinutes Int?
-  distanceKm      Float?
-  costEstimate    Float?
-  notes           String?
-  requestMode     RouteRequestMode?
-  departAt        DateTime?
-  preference      RoutePreference?
-  selectedPlanId  String?
-  planningStatus  String?
-  planningWarning String?
-  plans           RoutePlan[]       @relation("SubPlanEdgePlans")
+model ActivityEventDetail {
+  eventId                String       @id
+  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlaceId         String?
+  plannedPlace           Place?       @relation("ActivityPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlaceId          String?
+  actualPlace            Place?       @relation("ActivityActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       String?
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  bookingReference       String?
 
-  @@index([subPlanId])
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
 }
 
-model RoutePlan {
-  id                 String         @id
-  routeEdgeId        String?
-  routeEdge          RouteEdge?     @relation("RouteEdgePlans", fields: [routeEdgeId], references: [id], onDelete: Cascade)
-  subPlanEdgeId      String?
-  subPlanEdge        SubPlanEdge?   @relation("SubPlanEdgePlans", fields: [subPlanEdgeId], references: [id], onDelete: Cascade)
+model TransitEventDetail {
+  eventId                String              @id
+  event                  JourneyEvent        @relation("TransitEventOwner", fields: [eventId], references: [id], onDelete: Cascade)
+  plannedFromEventId     String?
+  plannedFromEvent       JourneyEvent?       @relation("TransitPlannedFrom", fields: [plannedFromEventId], references: [id], onDelete: SetNull)
+  plannedToEventId       String?
+  plannedToEvent         JourneyEvent?       @relation("TransitPlannedTo", fields: [plannedToEventId], references: [id], onDelete: SetNull)
+  actualFromEventId      String?
+  actualFromEvent        JourneyEvent?       @relation("TransitActualFrom", fields: [actualFromEventId], references: [id], onDelete: SetNull)
+  actualToEventId        String?
+  actualToEvent          JourneyEvent?       @relation("TransitActualTo", fields: [actualToEventId], references: [id], onDelete: SetNull)
+  transportMode          TransportMode
+  requestMode            TransitRequestMode?
+  preference             TransitPreference?
+  plannedDepartAt        DateTime?
+  actualDepartAt         DateTime?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  plannedDistanceKm      Float?
+  actualDistanceKm       Float?
+  plannedCostEstimate    Float?
+  actualCost             Float?
+  selectedPlanId         String?
+  planningStatus         String?
+  planningWarning        String?
+  notes                  String?
+  plans                  TransitPlan[]
+
+  @@index([plannedFromEventId])
+  @@index([plannedToEventId])
+}
+
+model NoteEventDetail {
+  eventId String       @id
+  event   JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  body    String
+}
+
+model TransitPlan {
+  id                 String             @id
+  transitEventId     String
+  transitEvent       TransitEventDetail @relation(fields: [transitEventId], references: [eventId], onDelete: Cascade)
   provider           String
   rank               Int
   label              String
@@ -208,19 +332,18 @@ model RoutePlan {
   calculatedAt       DateTime
   validUntil         DateTime?
   requestFingerprint String
-  segments           RouteSegment[]
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  segments           TransitSegment[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  @@index([routeEdgeId])
-  @@index([subPlanEdgeId])
+  @@index([transitEventId])
   @@index([requestFingerprint])
 }
 
-model RouteSegment {
-  id                  String    @id
-  routePlanId         String
-  routePlan           RoutePlan @relation(fields: [routePlanId], references: [id], onDelete: Cascade)
+model TransitSegment {
+  id                  String      @id
+  transitPlanId       String
+  transitPlan         TransitPlan @relation(fields: [transitPlanId], references: [id], onDelete: Cascade)
   order               Int
   mode                String
   fromName            String?
@@ -236,8 +359,39 @@ model RouteSegment {
   positionsJson       String
   trafficSectionsJson String?
 
-  @@unique([routePlanId, order])
-  @@index([routePlanId])
+  @@unique([transitPlanId, order])
+  @@index([transitPlanId])
+}
+
+model JourneyEventRevision {
+  id               String        @id @default(uuid())
+  journeyId        String
+  journey          Journey       @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  eventId          String?
+  event            JourneyEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  journeyRevision  Int
+  operation        String
+  patchJson        String
+  inversePatchJson String?
+  actorId          String
+  idempotencyKey   String?
+  createdAt        DateTime      @default(now())
+
+  @@unique([journeyId, idempotencyKey])
+  @@index([journeyId, journeyRevision])
+  @@index([eventId])
+}
+
+model JourneyEventAttachment {
+  id        String       @id @default(uuid())
+  eventId   String
+  event     JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type      String
+  url       String
+  metadata  String?
+  createdAt DateTime     @default(now())
+
+  @@index([eventId])
 }
 
 model User {
@@ -254,7 +408,7 @@ model User {
   updatedAt     DateTime       @updatedAt
   sessions      Session[]
   accounts      Account[]
-  routes        Route[]
+  journeys      Journey[]
   photos        Photo[]
   agentSessions AgentSession[]
 
@@ -340,29 +494,36 @@ model AgentSession {
 }
 
 model Place {
-  id              String               @id @default(uuid())
-  name            String
-  normalizedName  String
-  category        PlaceCategory
-  latWgs84        Float?
-  lngWgs84        Float?
-  latGcj02        Float?
-  lngGcj02        Float?
-  countryCode     String?
-  province        String?
-  city            String?
-  district        String?
-  address         String?
-  description     String?
-  popularityScore Float?
-  sourceQuality   PlaceSourceQuality   @default(CANDIDATE)
-  aliases         PlaceAlias[]
-  sources         PlaceSource[]
-  providerMatches PlaceProviderMatch[]
-  routeNodes      RouteNode[]          @relation("RouteNodePlace")
-  subPlanNodes    SubPlanNode[]        @relation("SubPlanNodePlace")
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id                    String                @id @default(uuid())
+  name                  String
+  normalizedName        String
+  category              PlaceCategory
+  latWgs84              Float?
+  lngWgs84              Float?
+  latGcj02              Float?
+  lngGcj02              Float?
+  countryCode           String?
+  province              String?
+  city                  String?
+  district              String?
+  address               String?
+  description           String?
+  popularityScore       Float?
+  sourceQuality         PlaceSourceQuality    @default(CANDIDATE)
+  aliases               PlaceAlias[]
+  sources               PlaceSource[]
+  providerMatches       PlaceProviderMatch[]
+  sectionEvents         SectionEventDetail[]  @relation("SectionEventPlace")
+  plannedVisitEvents    VisitEventDetail[]    @relation("VisitPlannedPlace")
+  actualVisitEvents     VisitEventDetail[]    @relation("VisitActualPlace")
+  plannedStayEvents     StayEventDetail[]     @relation("StayPlannedPlace")
+  actualStayEvents      StayEventDetail[]     @relation("StayActualPlace")
+  plannedMealEvents     MealEventDetail[]     @relation("MealPlannedPlace")
+  actualMealEvents      MealEventDetail[]     @relation("MealActualPlace")
+  plannedActivityEvents ActivityEventDetail[] @relation("ActivityPlannedPlace")
+  actualActivityEvents  ActivityEventDetail[] @relation("ActivityActualPlace")
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
   @@index([normalizedName])
   @@index([city])
@@ -465,12 +626,4 @@ model ProviderUsageLog {
 
   @@index([provider, purpose])
   @@index([createdAt])
-}
-
-model EdgeGeometryCache {
-  key       String   @id
-  source    String
-  positions String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }

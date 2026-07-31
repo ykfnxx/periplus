@@ -73,22 +73,22 @@ function serviceFor(confidenceSource = catalogCandidate()) {
 }
 
 describe("PlaceIntelligenceService", () => {
-  it("aggregates catalog and live results into a route-ready place", async () => {
+  it("aggregates catalog and live results into a journey-ready place", async () => {
     const { service } = serviceFor()
 
-    const result = await service.resolvePlaceForRoute({
+    const result = await service.resolvePlaceForJourneyEvent({
       text: "故宫博物院",
       city: "北京",
-      nodeId: "node-1",
+      eventId: "event-1",
     })
 
     expect(result).toMatchObject({
       status: "ready",
-      place: { placeId: "palace", canAddToRoute: true },
+      place: { placeId: "palace", canAddToJourney: true },
       linkToolCall: {
-        tool: "route.link_place_to_node",
+        tool: "journey.link_place",
         input: {
-          nodeId: "node-1",
+          eventId: "event-1",
           place: {
             placeId: "palace",
             providerPlaceId: "B000A8UIN8",

@@ -39,7 +39,7 @@ export default function WorkbenchShell() {
     () => new Set()
   )
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
   const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
   const workbenchTab = useWorkspaceStore((state) => state.workbenchTab)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
@@ -159,7 +159,7 @@ export default function WorkbenchShell() {
       >
         <MobileSheetHandle
           snap={mobileSheetSnap}
-          routeName={draftRoute?.name ?? "行程工作台"}
+          routeName={draftJourney?.title ?? "行程工作台"}
           onSnapChange={setMobileSheetSnap}
         />
         {mobileSheetSnap === "collapsed" ? null : (
@@ -219,7 +219,7 @@ function AIWorkbenchPanel({
   onCollapse?: () => void
   framed?: boolean
 }) {
-  const draftRoute = useWorkspaceStore((state) => state.draftRoute)
+  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
 
   return (
     <div
@@ -230,7 +230,7 @@ function AIWorkbenchPanel({
       }`}
     >
       <PanelHeader label="AI 旅行助手" onCollapse={onCollapse} />
-      {draftRoute ? (
+      {draftJourney ? (
         <div className="shrink-0">
           <p className="px-5 pb-2 text-[11px] font-black text-teak">
             当前上下文

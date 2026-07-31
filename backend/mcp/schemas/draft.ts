@@ -1,153 +1,179 @@
 import { z } from "zod"
+import {
+  JOURNEY_EVENT_EXECUTION_STATUSES,
+  JOURNEY_EVENT_ORIGINS,
+  JOURNEY_SECTION_KINDS,
+  TRANSIT_PREFERENCES,
+  TRANSIT_REQUEST_MODES,
+  TRANSPORT_MODES,
+} from "@/types/journey"
 
-const nodeCategorySchema = z.enum([
-  "CITY",
-  "PLACE",
-  "SIGHT",
-  "RESTAURANT",
-  "HOTEL",
-  "ACTIVITY",
-  "TRANSIT",
-])
+const optionalId = z.string().min(1).optional()
+const optionalDateTime = z.iso.datetime().optional()
+const commandEnvelope = {
+  expectedRevision: z.number().int().nonnegative(),
+  idempotencyKey: z.string().min(1).max(200),
+}
 
-const edgeStatusSchema = z.enum(["PLANNED", "INCOMPLETE"])
+const eventBase = {
+  id: optionalId,
+  parentEventId: optionalId,
+  origin: z.enum(JOURNEY_EVENT_ORIGINS).default("AGENT_INSERTED"),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  plannedStartAt: optionalDateTime,
+  plannedEndAt: optionalDateTime,
+  actualStartAt: optionalDateTime,
+  actualEndAt: optionalDateTime,
+}
 
-const transportModeSchema = z.enum([
-  "FLIGHT",
-  "TRAIN",
-  "CAR",
-  "BUS",
-  "WALK",
-  "TAXI",
-  "SUBWAY",
-  "RENTAL",
-])
+const executable = {
+  executionStatus: z.enum(JOURNEY_EVENT_EXECUTION_STATUSES).default("PLANNED"),
+}
 
-const requestModeSchema = z.enum(["DRIVE", "WALK", "TRANSIT"])
-const routePreferenceSchema = z.enum([
-  "RECOMMENDED",
-  "FASTEST",
-  "LOW_COST",
-  "FEWER_TRANSFERS",
-  "LESS_WALKING",
-])
-
-const nodeCreateSchema = z.object({
-  id: z.string().min(1).optional(),
-  name: z.string().min(1),
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-  placeId: z.string().min(1).optional(),
+const locationDetailSchema = z.object({
+  plannedPlaceId: optionalId,
+  actualPlaceId: optionalId,
+  plannedLat: z.number().min(-90).max(90),
+  plannedLng: z.number().min(-180).max(180),
+  actualLat: z.number().min(-90).max(90).optional(),
+  actualLng: z.number().min(-180).max(180).optional(),
   coordinateSystem: z.string().min(1).optional(),
   coordinateProvider: z.string().min(1).optional(),
-  providerPlaceId: z.string().min(1).optional(),
-  category: nodeCategorySchema,
-  durationMinutes: z.number().int().nonnegative().optional(),
-  notes: z.string().optional(),
+  providerPlaceId: optionalId,
+  plannedDurationMinutes: z.number().int().nonnegative().optional(),
+  actualDurationMinutes: z.number().int().nonnegative().optional(),
 })
 
-const nodePatchSchema = z
-  .object({
-    name: z.string().min(1).optional(),
-    lat: z.number().min(-90).max(90).optional(),
-    lng: z.number().min(-180).max(180).optional(),
-    placeId: z.string().min(1).nullable().optional(),
-    coordinateSystem: z.string().min(1).nullable().optional(),
-    coordinateProvider: z.string().min(1).nullable().optional(),
-    providerPlaceId: z.string().min(1).nullable().optional(),
-    category: nodeCategorySchema.optional(),
-    durationMinutes: z.number().int().nonnegative().nullable().optional(),
-    notes: z.string().nullable().optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one patch field is required",
-  })
+const eventCreateSchema = z.discriminatedUnion("type", [
+  z.object({
+    ...eventBase,
+    type: z.literal("SECTION"),
+    detail: z.object({
+      kind: z.enum(JOURNEY_SECTION_KINDS),
+      placeId: optionalId,
+      lat: z.number().min(-90).max(90).optional(),
+      lng: z.number().min(-180).max(180).optional(),
+      coordinateSystem: z.string().min(1).optional(),
+      coordinateProvider: z.string().min(1).optional(),
+      providerPlaceId: optionalId,
+    }),
+  }),
+  z.object({
+    ...eventBase,
+    ...executable,
+    type: z.literal("VISIT"),
+    detail: locationDetailSchema,
+  }),
+  z.object({
+    ...eventBase,
+    ...executable,
+    type: z.literal("STAY"),
+    detail: locationDetailSchema.extend({ checkInNote: z.string().optional() }),
+  }),
+  z.object({
+    ...eventBase,
+    ...executable,
+    type: z.literal("MEAL"),
+    detail: locationDetailSchema.extend({ cuisine: z.string().optional() }),
+  }),
+  z.object({
+    ...eventBase,
+    ...executable,
+    type: z.literal("ACTIVITY"),
+    detail: locationDetailSchema.extend({
+      bookingReference: z.string().optional(),
+    }),
+  }),
+  z.object({
+    ...eventBase,
+    ...executable,
+    type: z.literal("TRANSIT"),
+    detail: z.object({
+      plannedFromEventId: optionalId,
+      plannedToEventId: optionalId,
+      transportMode: z.enum(TRANSPORT_MODES),
+      requestMode: z.enum(TRANSIT_REQUEST_MODES).optional(),
+      preference: z.enum(TRANSIT_PREFERENCES).optional(),
+      plannedDepartAt: optionalDateTime,
+      plannedDurationMinutes: z.number().int().nonnegative().optional(),
+      plannedDistanceKm: z.number().nonnegative().optional(),
+      plannedCostEstimate: z.number().nonnegative().optional(),
+      notes: z.string().optional(),
+    }),
+  }),
+  z.object({
+    ...eventBase,
+    type: z.literal("NOTE"),
+    detail: z.object({ body: z.string() }),
+  }),
+])
 
-const edgeCreateSchema = z
-  .object({
-    id: z.string().min(1).optional(),
-    fromNodeId: z.string().min(1).optional(),
-    toNodeId: z.string().min(1).optional(),
-    status: edgeStatusSchema,
-    transportMode: transportModeSchema.optional(),
-    durationMinutes: z.number().int().nonnegative().optional(),
-    distanceKm: z.number().nonnegative().optional(),
-    costEstimate: z.number().nonnegative().optional(),
-    notes: z.string().optional(),
-    requestMode: requestModeSchema.optional(),
-    departAt: z.string().datetime({ offset: true }).optional(),
-    preference: routePreferenceSchema.optional(),
-  })
-  .refine(
-    (value) => value.status !== "PLANNED" || Boolean(value.transportMode),
-    { message: "PLANNED edges require transportMode" }
-  )
+const positionSchema = z.discriminatedUnion("placement", [
+  z.object({ placement: z.literal("start"), parentEventId: optionalId }),
+  z.object({ placement: z.literal("end"), parentEventId: optionalId }),
+  z.object({ placement: z.literal("before"), eventId: z.string().min(1) }),
+  z.object({ placement: z.literal("after"), eventId: z.string().min(1) }),
+])
 
-const edgePatchSchema = z
-  .object({
-    status: edgeStatusSchema.optional(),
-    transportMode: transportModeSchema.nullable().optional(),
-    durationMinutes: z.number().int().nonnegative().nullable().optional(),
-    distanceKm: z.number().nonnegative().nullable().optional(),
-    costEstimate: z.number().nonnegative().nullable().optional(),
-    notes: z.string().nullable().optional(),
-    requestMode: requestModeSchema.nullable().optional(),
-    departAt: z.string().datetime({ offset: true }).nullable().optional(),
-    preference: routePreferenceSchema.nullable().optional(),
-    selectedPlanId: z.string().min(1).nullable().optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one patch field is required",
-  })
+export const getCurrentJourneyInputSchema = z.object({})
 
-export const getCurrentDraftInputSchema = z.object({})
-
-export const replaceDraftInputSchema = z.object({
-  route: z.unknown().nullable(),
+export const replaceJourneyInputSchema = z.object({
+  ...commandEnvelope,
+  journey: z.unknown().nullable(),
 })
 
-export const routeAddStartNodeInputSchema = z.object({
-  route: z
+export const addJourneyEventInputSchema = z.object({
+  ...commandEnvelope,
+  event: eventCreateSchema,
+  position: positionSchema,
+})
+
+export const moveJourneyEventInputSchema = z.object({
+  ...commandEnvelope,
+  eventId: z.string().min(1),
+  position: positionSchema,
+})
+
+export const removeJourneyEventInputSchema = z.object({
+  ...commandEnvelope,
+  eventId: z.string().min(1),
+  cascade: z.boolean().optional(),
+})
+
+export const updateJourneyEventInputSchema = z.object({
+  ...commandEnvelope,
+  eventId: z.string().min(1),
+  patch: z
     .object({
-      name: z.string().min(1).optional(),
-      description: z.string().optional(),
+      title: z.string().min(1).optional(),
+      description: z.string().nullable().optional(),
+      executionStatus: z.enum(JOURNEY_EVENT_EXECUTION_STATUSES).optional(),
+      plannedStartAt: z.iso.datetime().nullable().optional(),
+      plannedEndAt: z.iso.datetime().nullable().optional(),
+      actualStartAt: z.iso.datetime().nullable().optional(),
+      actualEndAt: z.iso.datetime().nullable().optional(),
+      detail: z.record(z.string(), z.unknown()).optional(),
     })
-    .optional(),
-  node: nodeCreateSchema,
+    .refine((patch) => Object.keys(patch).length > 0, {
+      message: "At least one patch field is required",
+    }),
 })
 
-export const appendNodeInputSchema = z.object({
-  node: nodeCreateSchema,
-  edge: edgeCreateSchema,
+export const replaceJourneyEventInputSchema = z.object({
+  ...commandEnvelope,
+  eventId: z.string().min(1),
+  replacement: eventCreateSchema,
 })
 
-export const insertNodeInputSchema = z.object({
-  beforeNodeId: z.string().min(1),
-  node: nodeCreateSchema,
-  beforeEdge: edgeCreateSchema.optional(),
-  afterEdge: edgeCreateSchema,
-})
-
-export const removeNodeRangeInputSchema = z.object({
-  startNodeId: z.string().min(1),
-  endNodeId: z.string().min(1),
-  bridgeEdge: edgeCreateSchema.optional(),
-})
-
-export const updateNodeInputSchema = z.object({
-  nodeId: z.string().min(1),
-  patch: nodePatchSchema,
-})
-
-export const linkPlaceToNodeInputSchema = z.object({
-  nodeId: z.string().min(1),
-  routeNodeId: z.string().min(1).optional(),
+export const linkPlaceInputSchema = z.object({
+  ...commandEnvelope,
+  eventId: z.string().min(1),
   place: z.object({
-    placeId: z.string().min(1).optional(),
+    placeId: optionalId,
     name: z.string().min(1),
-    category: z.string().min(1).optional(),
     address: z.string().optional(),
-    providerPlaceId: z.string().min(1).optional(),
+    providerPlaceId: optionalId,
     coordinate: z.object({
       lat: z.number().min(-90).max(90),
       lng: z.number().min(-180).max(180),
@@ -157,63 +183,16 @@ export const linkPlaceToNodeInputSchema = z.object({
   }),
 })
 
-export const updateEdgeInputSchema = z
-  .object({
-    edgeId: z.string().min(1).optional(),
-    fromNodeId: z.string().min(1).optional(),
-    toNodeId: z.string().min(1).optional(),
-    patch: edgePatchSchema,
-  })
-  .refine(
-    (value) =>
-      Boolean(value.edgeId) ||
-      (Boolean(value.fromNodeId) && Boolean(value.toNodeId)),
-    { message: "edgeId or fromNodeId/toNodeId is required" }
-  )
-
-export const planEdgeInputSchema = z.object({
-  edgeId: z.string().min(1),
-  routeNodeId: z.string().min(1).optional(),
+export const planTransitInputSchema = z.object({
+  ...commandEnvelope,
+  eventId: z.string().min(1),
 })
 
-export const selectRoutePlanInputSchema = planEdgeInputSchema.extend({
+export const selectTransitPlanInputSchema = planTransitInputSchema.extend({
   planId: z.string().min(1),
 })
 
-export const subPlanCreateInputSchema = z.object({
-  routeNodeId: z.string().min(1),
-  subPlan: z
-    .object({
-      id: z.string().min(1).optional(),
-      nodes: z
-        .array(
-          nodeCreateSchema.extend({
-            order: z.number().int().nonnegative().optional(),
-          })
-        )
-        .optional(),
-      edges: z.array(edgeCreateSchema).optional(),
-    })
-    .optional(),
-})
-
-export const subPlanNodeInputSchema = appendNodeInputSchema.extend({
-  routeNodeId: z.string().min(1),
-})
-
-export const subPlanInsertNodeInputSchema = insertNodeInputSchema.extend({
-  routeNodeId: z.string().min(1),
-})
-
-export const subPlanRemoveNodeRangeInputSchema =
-  removeNodeRangeInputSchema.extend({
-    routeNodeId: z.string().min(1),
-  })
-
-export const subPlanUpdateNodeInputSchema = updateNodeInputSchema.extend({
-  routeNodeId: z.string().min(1),
-})
-
-export const subPlanUpdateEdgeInputSchema = updateEdgeInputSchema.extend({
-  routeNodeId: z.string().min(1),
+export const undoJourneyInputSchema = z.object({
+  ...commandEnvelope,
+  steps: z.number().int().positive().max(20).optional(),
 })

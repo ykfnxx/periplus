@@ -45,9 +45,9 @@ export const periplusServerConfig = {
       return envString("PERIPLUS_AMAP_WEB_SERVICE_KEY")
     },
   },
-  routePlanning: {
+  transitPlanning: {
     get retention() {
-      return envString("PERIPLUS_ROUTE_PLAN_RETENTION", "SESSION_ONLY") ===
+      return envString("PERIPLUS_TRANSIT_PLAN_RETENTION", "SESSION_ONLY") ===
         "PERSISTED"
         ? ("PERSISTED" as const)
         : ("SESSION_ONLY" as const)
@@ -76,11 +76,6 @@ export const periplusServerConfig = {
         "PERIPLUS_KIMI_HOME_SOURCE",
         join(homedir(), ".kimi-code")
       )
-    },
-  },
-  mcp: {
-    get routeUserId() {
-      return envString("PERIPLUS_MCP_USER_ID", "dev-admin")
     },
   },
 } as const

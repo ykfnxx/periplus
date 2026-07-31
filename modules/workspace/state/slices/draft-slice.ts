@@ -1,114 +1,138 @@
 import {
-  applyRoutePlanBundle,
-  buildRoutePlanRequest,
-  mergeWorkspaceRoutePlans,
-  routePlanFingerprint,
-  selectedRoutePlan,
-} from "@/lib/routes/planning"
-import { mapRouteEdges } from "@/modules/workspace/state/helpers"
+  applyTransitPlanBundle,
+  buildTransitPlanRequest,
+  mergeWorkspaceTransitPlans,
+  selectedTransitPlan,
+  transitPlanFingerprint,
+} from "@/lib/journeys/planning"
+import { mapTransitEvents } from "@/modules/workspace/state/helpers"
 import type {
   DraftSlice,
   WorkspaceSlice,
 } from "@/modules/workspace/state/types"
-import type { DraftRoute } from "@/types/route"
+import type { DraftJourney } from "@/types/journey"
 
 export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set) => ({
-  draftRoute: null,
-  setDraftRoute: (draftRoute) =>
+  draftJourney: null,
+  setDraftJourney: (draftJourney) =>
     set((state) => {
-      const mergedRoute = mergeWorkspaceRoutePlans(state.draftRoute, draftRoute)
-      const activeRouteNodeStillExists = Boolean(
-        mergedRoute?.nodes.some((node) => node.id === state.activeRouteNodeId)
+      const mergedJourney = mergeWorkspaceTransitPlans(
+        state.draftJourney,
+        draftJourney
+      )
+      const activeSectionStillExists = Boolean(
+        mergedJourney?.events.some(
+          (event) =>
+            event.id === state.activeSectionEventId && event.type === "SECTION"
+        )
       )
       const topologyChanged =
-        routeTopologyKey(state.draftRoute) !== routeTopologyKey(mergedRoute)
+        journeyTopologyKey(state.draftJourney) !==
+        journeyTopologyKey(mergedJourney)
       return {
-        draftRoute: mergedRoute,
-        ...(mergedRoute && topologyChanged
+        draftJourney: mergedJourney,
+        ...(mergedJourney && topologyChanged
           ? {
               mapFocusRequest: {
                 requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
                 target: {
-                  type: "active-route" as const,
-                  maxZoom: activeRouteNodeStillExists ? 15 : 12,
+                  type: "active-journey" as const,
+                  maxZoom: activeSectionStillExists ? 15 : 12,
                 },
               },
             }
           : {}),
-        ...(mergedRoute && activeRouteNodeStillExists
+        ...(mergedJourney && activeSectionStillExists
           ? {}
           : {
               viewLevel: "overview" as const,
-              activeRouteNodeId: null,
-              hoveredRouteNodeId: null,
-              selectedEdgeId: null,
-              selectedLocationPoint: null,
+              activeSectionEventId: null,
+              hoveredEventId: null,
+              selectedTransitEventId: null,
+              selectedLocationEvent: null,
               selectedLocationAnchor: null,
             }),
       }
     }),
-  markRoutePlansPlanning: (edgeIds) =>
+  markTransitPlansPlanning: (eventIds) =>
     set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge) =>
-        edgeIds.includes(edge.id)
+      draftJourney: mapTransitEvents(state.draftJourney, (event) =>
+        eventIds.includes(event.id)
           ? {
-              ...edge,
-              planningStatus: edge.plans?.length ? "STALE" : "PLANNING",
+              ...event,
+              detail: {
+                ...event.detail,
+                planningStatus: event.detail.plans?.length
+                  ? "STALE"
+                  : "PLANNING",
+              },
             }
-          : edge
+          : event
       ),
     })),
-  applyRoutePlanBundles: (bundles) =>
+  applyTransitPlanBundles: (bundles) =>
     set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge, nodes) => {
-        const bundle = bundles.find((item) => item.edgeId === edge.id)
-        if (!bundle) return edge
-        const from = nodes.find((node) => node.id === edge.fromNodeId)
-        const to = nodes.find((node) => node.id === edge.toNodeId)
-        const request =
-          from && to ? buildRoutePlanRequest(edge, from, to) : null
+      draftJourney: mapTransitEvents(state.draftJourney, (event) => {
+        const bundle = bundles.find((item) => item.transitEventId === event.id)
+        if (!bundle || !state.draftJourney) return event
+        const request = buildTransitPlanRequest(
+          event,
+          state.draftJourney.events
+        )
         if (
           !request ||
-          routePlanFingerprint(request) !== bundle.requestFingerprint
+          transitPlanFingerprint(request) !== bundle.requestFingerprint
         ) {
-          return edge
+          return event
         }
-        return applyRoutePlanBundle(edge, bundle)
+        return applyTransitPlanBundle(event, bundle)
       }),
     })),
-  markRoutePlanFailures: (failures) =>
+  markTransitPlanFailures: (failures) =>
     set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge) => {
-        const failure = failures.find((item) => item.edgeId === edge.id)
+      draftJourney: mapTransitEvents(state.draftJourney, (event) => {
+        const failure = failures.find(
+          (item) => item.transitEventId === event.id
+        )
         return failure
           ? {
-              ...edge,
-              planningStatus: edge.plans?.length ? "STALE" : "FAILED",
-              planningWarning: failure.message,
+              ...event,
+              detail: {
+                ...event.detail,
+                planningStatus: event.detail.plans?.length ? "STALE" : "FAILED",
+                planningWarning: failure.message,
+              },
             }
-          : edge
+          : event
       }),
     })),
-  selectRoutePlan: (edgeId, planId) =>
+  selectTransitPlan: (eventId, planId) =>
     set((state) => ({
-      draftRoute: mapRouteEdges(state.draftRoute, (edge) => {
+      draftJourney: mapTransitEvents(state.draftJourney, (event) => {
         if (
-          edge.id !== edgeId ||
-          !edge.plans?.some((plan) => plan.id === planId)
+          event.id !== eventId ||
+          !event.detail.plans?.some((plan) => plan.id === planId)
         ) {
-          return edge
+          return event
         }
-        const next = { ...edge, selectedPlanId: planId }
-        const selected = selectedRoutePlan(next)
+        const next = {
+          ...event,
+          detail: { ...event.detail, selectedPlanId: planId },
+        }
+        const selected = selectedTransitPlan(next)
         return {
           ...next,
-          durationMinutes: selected
-            ? Math.max(1, Math.round(selected.durationSeconds / 60))
-            : edge.durationMinutes,
-          distanceKm: selected
-            ? Math.round((selected.distanceMeters / 1000) * 10) / 10
-            : edge.distanceKm,
-          costEstimate: selected?.fareAmount ?? edge.costEstimate,
+          detail: {
+            ...next.detail,
+            plannedDurationMinutes: selected
+              ? Math.max(1, Math.round(selected.durationSeconds / 60))
+              : event.detail.plannedDurationMinutes,
+            plannedDistanceKm: selected
+              ? Math.round((selected.distanceMeters / 1000) * 10) / 10
+              : event.detail.plannedDistanceKm,
+            plannedCostEstimate:
+              selected?.fareAmount ?? event.detail.plannedCostEstimate,
+          },
         }
       }),
     })),
@@ -118,17 +142,17 @@ export const createDraftSlice: WorkspaceSlice<DraftSlice> = (set) => ({
   setDraftSaveState: (draftSaveState) => set({ draftSaveState }),
 })
 
-function routeTopologyKey(route: DraftRoute | null) {
-  if (!route) return ""
-  const topLevel = route.nodes
-    .map((node) => `${node.id}:${node.lng}:${node.lat}:${node.order}`)
-    .join("|")
-  const subPlans = route.subPlans
-    .map((subPlan) =>
-      subPlan.nodes
-        .map((node) => `${node.id}:${node.lng}:${node.lat}:${node.order}`)
-        .join("|")
+function journeyTopologyKey(journey: DraftJourney | null) {
+  if (!journey) return ""
+  const events = journey.events
+    .map(
+      (event) => `${event.id}:${event.parentEventId ?? "root"}:${event.type}`
     )
-    .join("::")
-  return `${route.id}:${topLevel}:${subPlans}`
+    .join("|")
+  const links = journey.links
+    .map(
+      (link) => `${link.id}:${link.fromEventId}:${link.toEventId}:${link.kind}`
+    )
+    .join("|")
+  return `${journey.id}:${events}:${links}`
 }
