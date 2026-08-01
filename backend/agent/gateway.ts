@@ -2,12 +2,23 @@ import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import type { AuthContext } from "@/modules/auth/server/context"
 import {
+  placeEnrichInputSchema,
+  placeResolveForJourneyEventInputSchema,
+  placeResolveInputSchema,
+  placeSearchInputSchema,
+} from "@/backend/mcp/schemas/place"
+import {
   targetCommandBodySchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type TargetCommandEnvelope,
   type TargetProjectionMode,
 } from "@/modules/data-model/contracts"
 import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
+import {
+  createPlaceIntelligenceService,
+  type PlaceIntelligenceService,
+  type PlaceProviderUsageContext,
+} from "@/modules/data/places/place-service"
 import {
   appendWorkspaceMessage,
   createWorkspaceSuggestion,
@@ -39,6 +50,13 @@ interface AgentGatewayOptions {
   agentRunLeaseSeconds?: number
   heartbeatIntervalMs?: number | null
   now?: () => Date
+  placeService?: Pick<
+    PlaceIntelligenceService,
+    | "searchPlaces"
+    | "resolvePlace"
+    | "resolvePlaceForJourneyEvent"
+    | "enrichPlace"
+  >
 }
 
 interface RunningAgent {
@@ -68,6 +86,39 @@ export type AgentToolRequest =
       idempotencyKey: string
       command: unknown
     }
+  | { type: "place.search"; requestId: string; input: unknown }
+  | { type: "place.resolve"; requestId: string; input: unknown }
+  | {
+      type: "place.resolve_for_journey_event"
+      requestId: string
+      input: unknown
+    }
+  | { type: "place.enrich"; requestId: string; input: unknown }
+
+type PlaceAgentToolRequest = Extract<
+  AgentToolRequest,
+  { type: `place.${string}` }
+>
+
+function isPlaceToolRequest(
+  request: AgentToolRequest
+): request is PlaceAgentToolRequest {
+  return request.type.startsWith("place.")
+}
+
+function asInputRecord(input: unknown): Record<string, unknown> {
+  return input != null && typeof input === "object"
+    ? (input as Record<string, unknown>)
+    : {}
+}
+
+function withoutRequestId<T extends { requestId: string }>(
+  input: T
+): Omit<T, "requestId"> {
+  const output: Partial<T> = { ...input }
+  delete output.requestId
+  return output as Omit<T, "requestId">
+}
 
 function conversationMessages(
   document: NonNullable<
@@ -101,6 +152,9 @@ export class AgentGateway {
   private readonly agentRunLeaseSeconds: number
   private readonly heartbeatIntervalMs: number | null
   private readonly now: () => Date
+  private readonly placeService: NonNullable<
+    AgentGatewayOptions["placeService"]
+  >
 
   constructor(
     private readonly commands: WorkspaceCommandService,
@@ -115,6 +169,7 @@ export class AgentGateway {
         ? Math.max(1_000, Math.floor((this.agentRunLeaseSeconds * 1000) / 3))
         : options.heartbeatIntervalMs
     this.now = options.now ?? (() => new Date())
+    this.placeService = options.placeService ?? createPlaceIntelligenceService()
   }
 
   async start(
@@ -253,6 +308,36 @@ export class AgentGateway {
     running.runtimeRun?.cancel()
   }
 
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.get" }>
+  ): Promise<{
+    workspace: NonNullable<
+      Awaited<ReturnType<WorkspaceCommandService["getDocument"]>>
+    >
+  }>
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.project" }>
+  ): Promise<{
+    projection: ReturnType<typeof resolveJourneyProjection>
+    headWorkspaceRevision: number
+  }>
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.command" }>
+  ): Promise<{
+    result: Awaited<ReturnType<WorkspaceCommandService["execute"]>>
+    workspace: Awaited<ReturnType<WorkspaceCommandService["getDocument"]>>
+  }>
+  async executeTool(
+    capabilityToken: string,
+    request: PlaceAgentToolRequest
+  ): Promise<unknown>
+  async executeTool(
+    capabilityToken: string,
+    request: AgentToolRequest
+  ): Promise<unknown>
   async executeTool(capabilityToken: string, request: AgentToolRequest) {
     const running = this.runsByCapability.get(capabilityToken)
     if (!running || running.finished) {
@@ -285,6 +370,9 @@ export class AgentGateway {
         headWorkspaceRevision: document.session.headWorkspaceRevision,
       }
     }
+    if (isPlaceToolRequest(request)) {
+      return this.executePlaceTool(running, request)
+    }
     const envelope: TargetCommandEnvelope = {
       aggregateId: running.workspaceId,
       expectedRevision: request.expectedRevision,
@@ -298,6 +386,84 @@ export class AgentGateway {
       running.workspaceId
     )
     return { result, workspace: document }
+  }
+
+  private async executePlaceTool(
+    running: RunningAgent,
+    request: PlaceAgentToolRequest
+  ) {
+    const usageContext: PlaceProviderUsageContext = {
+      userId: running.context.userId,
+      workspaceId: running.workspaceId,
+      agentRunId: running.runId,
+      requestId: request.requestId,
+    }
+    if (request.type === "place.search") {
+      const input = withoutRequestId(
+        placeSearchInputSchema.parse({
+          ...asInputRecord(request.input),
+          requestId: request.requestId,
+        })
+      )
+      return this.placeService.searchPlaces(input, usageContext)
+    }
+    if (request.type === "place.resolve") {
+      const input = withoutRequestId(
+        placeResolveInputSchema.parse({
+          ...asInputRecord(request.input),
+          requestId: request.requestId,
+        })
+      )
+      return this.placeService.resolvePlace(input, usageContext)
+    }
+    if (request.type === "place.enrich") {
+      const input = withoutRequestId(
+        placeEnrichInputSchema.parse({
+          ...asInputRecord(request.input),
+          requestId: request.requestId,
+        })
+      )
+      return this.placeService.enrichPlace(input, usageContext)
+    }
+
+    const input = withoutRequestId(
+      placeResolveForJourneyEventInputSchema.parse({
+        ...asInputRecord(request.input),
+        requestId: request.requestId,
+      })
+    )
+    const document = await this.commands.getDocument(
+      running.context,
+      running.workspaceId
+    )
+    if (!document) throw new WorkspaceInputError("Workspace was not found")
+    const event = document.session.headGraph.events.find(
+      (candidate) => candidate.id === input.eventId
+    )
+    if (
+      !event ||
+      (event.retiredRevision != null &&
+        event.retiredRevision <= document.session.headGraph.revision)
+    ) {
+      throw new WorkspaceInputError(
+        "Place target must be an active event in the current Workspace"
+      )
+    }
+    if (
+      event.type !== "VISIT" &&
+      event.type !== "STAY" &&
+      event.type !== "MEAL" &&
+      event.type !== "ACTIVITY"
+    ) {
+      throw new WorkspaceInputError(
+        "Place target must be a VISIT, STAY, MEAL, or ACTIVITY event"
+      )
+    }
+    return this.placeService.resolvePlaceForJourneyEvent(
+      input,
+      event.type,
+      usageContext
+    )
   }
 
   private toolServers(

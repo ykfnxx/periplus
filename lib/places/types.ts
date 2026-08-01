@@ -138,16 +138,20 @@ export type PlaceResolveForJourneyEventResult =
   | {
       status: "ready"
       place: PlaceSearchResult
-      linkToolCall: {
-        tool: "journey.link_place"
-        input: {
+      command: {
+        name: "journey.update_event"
+        payload: {
           eventId: string
-          place: {
-            placeId?: string
-            name: string
-            address?: string
-            providerPlaceId?: string
-            coordinate: PlaceCoordinate
+          patch: {
+            type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
+            detail: {
+              plannedPlaceId?: string
+              plannedLat: number
+              plannedLng: number
+              coordinateSystem: CoordinateSystem
+              coordinateProvider?: string
+              providerPlaceId?: string
+            }
           }
         }
       }

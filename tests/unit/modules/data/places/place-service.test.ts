@@ -66,51 +66,115 @@ function serviceFor(confidenceSource = catalogCandidate()) {
       .fn()
       .mockResolvedValue({ candidates: [amapCandidate()], warnings: [] }),
   }
+  const logUsage = vi.fn().mockResolvedValue(undefined)
   return {
-    service: new PlaceIntelligenceService(repository, provider),
+    service: new PlaceIntelligenceService(repository, provider, logUsage),
     repository,
+    provider,
+    logUsage,
   }
 }
 
 describe("PlaceIntelligenceService", () => {
   it("aggregates catalog and live results into a journey-ready place", async () => {
-    const { service } = serviceFor()
+    const { service, logUsage } = serviceFor()
 
-    const result = await service.resolvePlaceForJourneyEvent({
-      text: "故宫博物院",
-      city: "北京",
-      eventId: "event-1",
-    })
+    const result = await service.resolvePlaceForJourneyEvent(
+      {
+        text: "故宫博物院",
+        city: "北京",
+        eventId: "event-1",
+      },
+      "VISIT",
+      {
+        userId: "owner-1",
+        workspaceId: "workspace-1",
+        agentRunId: "run-1",
+        requestId: "place-request-1",
+      }
+    )
 
     expect(result).toMatchObject({
       status: "ready",
       place: { placeId: "palace", canAddToJourney: true },
-      linkToolCall: {
-        tool: "journey.link_place",
-        input: {
+      command: {
+        name: "journey.update_event",
+        payload: {
           eventId: "event-1",
-          place: {
-            placeId: "palace",
-            providerPlaceId: "B000A8UIN8",
-            coordinate: { coordinateSystem: "GCJ02" },
+          patch: {
+            type: "VISIT",
+            detail: {
+              plannedPlaceId: "palace",
+              providerPlaceId: "B000A8UIN8",
+              coordinateSystem: "GCJ02",
+              plannedLat: 39.916,
+              plannedLng: 116.397,
+            },
           },
         },
       },
     })
+    expect(logUsage).toHaveBeenCalledWith(
+      "place_search",
+      "success",
+      undefined,
+      {
+        userId: "owner-1",
+        workspaceId: "workspace-1",
+        agentRunId: "run-1",
+        requestId: "place-request-1",
+      }
+    )
   })
 
   it("writes back a clear provider match during enrichment", async () => {
-    const { service, repository } = serviceFor()
+    const { service, repository, logUsage } = serviceFor()
 
-    const result = await service.enrichPlace({
-      placeId: "palace",
-      fields: ["coordinates", "provider_match"],
-    })
+    const result = await service.enrichPlace(
+      {
+        placeId: "palace",
+        fields: ["coordinates", "provider_match"],
+      },
+      { requestId: "enrich-request-1" }
+    )
 
     expect(result.matchStatus).toBe("AUTO_APPROVED")
     expect(repository.linkProviderMatch).toHaveBeenCalledWith(
       "palace",
       expect.objectContaining({ name: "故宫博物院" })
+    )
+    expect(logUsage).toHaveBeenCalledWith(
+      "place_enrich",
+      "success",
+      undefined,
+      { requestId: "enrich-request-1" }
+    )
+  })
+
+  it("records provider warning failures against the scoped request", async () => {
+    const { service, repository, provider, logUsage } = serviceFor()
+    repository.search.mockResolvedValue({ candidates: [], topConfidence: 0 })
+    provider.search.mockResolvedValue({
+      candidates: [],
+      warnings: [
+        {
+          provider: "amap",
+          code: "quota_exceeded",
+          message: "quota exhausted",
+        },
+      ],
+    })
+
+    await service.searchPlaces(
+      { query: "故宫", includeLiveProvider: true },
+      { workspaceId: "workspace-1", requestId: "search-error-1" }
+    )
+
+    expect(logUsage).toHaveBeenCalledWith(
+      "place_search",
+      "error",
+      "quota_exceeded",
+      { workspaceId: "workspace-1", requestId: "search-error-1" }
     )
   })
 })

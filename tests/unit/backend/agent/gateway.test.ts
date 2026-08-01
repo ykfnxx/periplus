@@ -13,6 +13,7 @@ import {
   type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
+import { PlaceIntelligenceService } from "@/modules/data/places/place-service"
 import { createWorkspace } from "@/modules/data/workspaces/workspace-repository"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 
@@ -342,6 +343,105 @@ describe.sequential("P3 persistent AgentGateway", () => {
       "afternoon",
     ])
     sectionRuntime.exit(0)
+  })
+
+  it("attributes live place calls to the scoped run and rejects cross-Workspace event targets", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: graph(`agent-place-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const foreignWorkspace = await createWorkspace(context, {
+      graph: graph(`agent-place-foreign-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const repository = {
+      search: vi.fn().mockResolvedValue({ candidates: [], topConfidence: 0 }),
+      findById: vi.fn().mockResolvedValue(null),
+      persistLiveCandidates: vi.fn().mockResolvedValue(undefined),
+      linkProviderMatch: vi.fn().mockResolvedValue(undefined),
+      persistMatchReview: vi.fn().mockResolvedValue("review-1"),
+    }
+    const provider = {
+      search: vi.fn().mockResolvedValue({
+        candidates: [
+          {
+            candidateId: "amap-west-lake",
+            provider: "amap" as const,
+            providerId: "B-west-lake",
+            name: "西湖",
+            normalizedName: "西湖",
+            aliases: [],
+            category: "SIGHT" as const,
+            city: "杭州市",
+            coordinates: [
+              {
+                provider: "amap" as const,
+                coordinateSystem: "GCJ02" as const,
+                lat: 30.25,
+                lng: 120.15,
+                accuracy: "provider_poi" as const,
+                source: "provider_search" as const,
+              },
+            ],
+            sources: [{ provider: "amap" as const, providerId: "B-west-lake" }],
+            sourceConfidence: 0.8,
+            fromLiveProvider: true,
+          },
+        ],
+        warnings: [],
+      }),
+    }
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+      placeService: new PlaceIntelligenceService(repository, provider),
+    })
+    await gateway.start(context, workspace.id, "find place", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    await gateway.executeTool(token, {
+      type: "place.search",
+      requestId: `place-search-${workspace.id}`,
+      input: {
+        query: "西湖",
+        city: "杭州",
+        includeLiveProvider: true,
+        workspaceId: foreignWorkspace.id,
+      },
+    })
+
+    await expect(
+      prisma.providerUsageLog.findFirstOrThrow({
+        where: { requestId: `place-search-${workspace.id}` },
+      })
+    ).resolves.toMatchObject({
+      provider: "amap",
+      purpose: "place_search",
+      status: "success",
+      userId: ownerId,
+      workspaceId: workspace.id,
+      agentRunId: expect.any(String),
+    })
+    await expect(
+      gateway.executeTool(token, {
+        type: "place.resolve_for_journey_event",
+        requestId: `place-foreign-${workspace.id}`,
+        input: {
+          text: "西湖",
+          eventId: `${foreignWorkspace.headGraph.id}-visit`,
+        },
+      })
+    ).rejects.toThrow("active event in the current Workspace")
+    expect(provider.search).toHaveBeenCalledOnce()
+    expect(
+      await prisma.providerUsageLog.count({
+        where: { requestId: `place-foreign-${workspace.id}` },
+      })
+    ).toBe(0)
+
+    runtime.exit(0)
   })
 
   it("reclaims an expired crash-orphan without losing persisted messages or commands", async () => {
