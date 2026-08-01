@@ -280,7 +280,7 @@ describe("P3 Journey projection resolver", () => {
       (event) => event.id === "confirmed-start"
     )!
     if (fallbackEvent.type !== "VISIT") throw new Error("fixture invariant")
-    fallbackEvent.executionStatus = "STARTED"
+    fallbackEvent.executionStatus = "CONFIRMED"
     delete fallbackEvent.actualStartAt
     delete fallbackEvent.actualEndAt
     expect(

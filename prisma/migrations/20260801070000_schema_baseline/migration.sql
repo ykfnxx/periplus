@@ -144,6 +144,7 @@ CREATE TABLE "JourneyEvent" (
     CONSTRAINT "JourneyEvent_section_time_check" CHECK (
       "type" <> 'SECTION' OR ("plannedStartAt" IS NULL AND "plannedEndAt" IS NULL AND "actualStartAt" IS NULL AND "actualEndAt" IS NULL)
     ),
+    CONSTRAINT "JourneyEvent_started_fact_check" CHECK ("executionStatus" <> 'STARTED' OR "actualStartAt" IS NOT NULL),
     CONSTRAINT "JourneyEvent_placement_check" CHECK ("placementStatus" IN ('SCHEDULED', 'UNSCHEDULED')),
     CONSTRAINT "JourneyEvent_origin_check" CHECK ("origin" IN ('ORIGINAL', 'USER_INSERTED', 'AGENT_INSERTED', 'FORKED', 'SOURCE_DERIVED')),
     CONSTRAINT "JourneyEvent_revision_check" CHECK ("introducedRevision" > 0 AND ("retiredRevision" IS NULL OR "retiredRevision" >= "introducedRevision")),

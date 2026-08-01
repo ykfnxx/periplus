@@ -147,8 +147,17 @@ function buildEvent(
   parentSectionEventId: string | null,
   placementStatus: "SCHEDULED" | "UNSCHEDULED"
 ): TargetJourneyEvent {
+  const origin =
+    envelope.actor.kind === "AGENT" ? "AGENT_INSERTED" : "USER_INSERTED"
   return {
     ...create,
+    origin,
+    ...(create.type === "SECTION" || create.type === "NOTE"
+      ? {}
+      : { executionStatus: "PLANNED" as const }),
+    ...(create.type === "TRANSIT"
+      ? { detail: { ...create.detail, routeState: "EMPTY" as const } }
+      : {}),
     id: create.id ?? deterministicId(envelope, "event"),
     journeyId: graph.id,
     parentSectionEventId,
@@ -475,6 +484,104 @@ function applyUpdatePatch(
     }
   }
   event.updatedAt = now
+}
+
+const TRANSIT_REQUEST_DETAIL_FIELDS = [
+  "plannedFromEventId",
+  "plannedToEventId",
+  "transportMode",
+  "requestMode",
+  "preference",
+  "plannedDepartAt",
+] as const
+
+const TRANSIT_ENDPOINT_DETAIL_FIELDS = [
+  "plannedPlaceId",
+  "plannedLat",
+  "plannedLng",
+  "coordinateSystem",
+  "coordinateProvider",
+  "providerPlaceId",
+] as const
+
+function selectedFields(
+  detail: Record<string, unknown>,
+  fields: readonly string[]
+) {
+  return Object.fromEntries(fields.map((field) => [field, detail[field]]))
+}
+
+function staleTransitPlanningAfterEventUpdate(
+  graph: TargetJourneyGraphSnapshot,
+  previous: TargetJourneyEvent,
+  current: TargetJourneyEvent,
+  now: string
+) {
+  const stale = (transit: Extract<TargetJourneyEvent, { type: "TRANSIT" }>) => {
+    if (!transit.detail.activePlanningRunId || !transit.detail.selectedPlanId) {
+      return
+    }
+    transit.detail.routeState = "ROUTE_STALE"
+    transit.updatedAt = now
+  }
+
+  if (previous.type === "TRANSIT" && current.type === "TRANSIT") {
+    const previousRequest = selectedFields(
+      previous.detail,
+      TRANSIT_REQUEST_DETAIL_FIELDS
+    )
+    const currentRequest = selectedFields(
+      current.detail,
+      TRANSIT_REQUEST_DETAIL_FIELDS
+    )
+    if (json(previousRequest) !== json(currentRequest)) stale(current)
+    return
+  }
+  if (
+    previous.type !== "VISIT" &&
+    previous.type !== "STAY" &&
+    previous.type !== "MEAL" &&
+    previous.type !== "ACTIVITY"
+  ) {
+    return
+  }
+  if (
+    current.type !== "VISIT" &&
+    current.type !== "STAY" &&
+    current.type !== "MEAL" &&
+    current.type !== "ACTIVITY"
+  ) {
+    return
+  }
+  const previousEndpoint = selectedFields(
+    previous.detail,
+    TRANSIT_ENDPOINT_DETAIL_FIELDS
+  )
+  const currentEndpoint = selectedFields(
+    current.detail,
+    TRANSIT_ENDPOINT_DETAIL_FIELDS
+  )
+  if (json(previousEndpoint) === json(currentEndpoint)) return
+  for (const transit of activeEvents(graph)) {
+    if (
+      transit.type === "TRANSIT" &&
+      (transit.detail.plannedFromEventId === current.id ||
+        transit.detail.plannedToEventId === current.id)
+    ) {
+      stale(transit)
+    }
+  }
+}
+
+function retireActiveContentLinks(
+  graph: TargetJourneyGraphSnapshot,
+  eventIds: ReadonlySet<string>
+) {
+  for (const link of [...graph.eventAssetLinks, ...graph.eventSourceLinks]) {
+    if (eventIds.has(link.eventId) && !link.retiredRevision) {
+      link.retiredRevision = graph.revision
+    }
+  }
 }
 
 function diffEventIds(
@@ -885,6 +992,14 @@ async function applyContentCommand(
   }
   if (command.name === "journey.link_source_item") {
     requireEvent(graph, command.payload.eventId)
+    if (
+      command.payload.approvedForJourneySharing &&
+      !command.payload.excerpt?.trim()
+    ) {
+      throw new WorkspaceInputError(
+        "Shared SourceItem links require a nonblank excerpt"
+      )
+    }
     const item = await prisma.sourceItem.findUnique({
       where: { id: command.payload.sourceItemId },
       include: { sourceDocument: { include: { sourcePack: true } } },
@@ -993,11 +1108,13 @@ function applyJourneyCommand(
     }
     case "journey.update_event": {
       const event = requireEvent(graph, command.payload.eventId)
+      const previous = clone(event)
       applyUpdatePatch(
         event,
         command.payload.patch as Record<string, unknown>,
         now
       )
+      staleTransitPlanningAfterEventUpdate(graph, previous, event, now)
       break
     }
     case "journey.move_event":
@@ -1135,6 +1252,7 @@ function applyJourneyCommand(
         target.retiredRevision = graph.revision
         target.updatedAt = now
       }
+      retireActiveContentLinks(graph, targets)
       break
     }
     case "journey.replace_event": {
@@ -1183,6 +1301,7 @@ function applyJourneyCommand(
       }
       predecessor.retiredRevision = graph.revision
       predecessor.updatedAt = now
+      retireActiveContentLinks(graph, new Set([predecessor.id]))
       graph.events.push(successor)
       for (const child of activeChildren) {
         child.parentSectionEventId = successor.id
@@ -1330,7 +1449,15 @@ function applyJourneyCommand(
           "Actual facts must match an executable Event"
         )
       }
-      event.executionStatus = "CONFIRMED"
+      if (
+        event.executionStatus === "CONFIRMED" ||
+        event.executionStatus === "SKIPPED" ||
+        event.executionStatus === "CANCELLED"
+      ) {
+        throw new WorkspaceInputError(
+          `Cannot confirm Event from ${event.executionStatus}`
+        )
+      }
       if (command.payload.actual.actualStartAt !== undefined) {
         event.actualStartAt = command.payload.actual.actualStartAt
       }
@@ -1338,6 +1465,16 @@ function applyJourneyCommand(
         event.actualEndAt = command.payload.actual.actualEndAt
       }
       Object.assign(event.detail, command.payload.actual.detail)
+      if (command.payload.finalize === false) {
+        if (!event.actualStartAt) {
+          throw new WorkspaceInputError(
+            "Starting an Event requires actualStartAt"
+          )
+        }
+        event.executionStatus = "STARTED"
+      } else {
+        event.executionStatus = "CONFIRMED"
+      }
       event.updatedAt = now
       break
     }
@@ -1347,6 +1484,15 @@ function applyJourneyCommand(
       if (event.type === "SECTION" || event.type === "NOTE") {
         throw new WorkspaceInputError(
           "Only executable Events have execution status"
+        )
+      }
+      if (
+        event.executionStatus === "CONFIRMED" ||
+        event.executionStatus === "SKIPPED" ||
+        event.executionStatus === "CANCELLED"
+      ) {
+        throw new WorkspaceInputError(
+          `Cannot ${command.name === "journey.skip_event" ? "skip" : "cancel"} Event from ${event.executionStatus}`
         )
       }
       event.executionStatus =

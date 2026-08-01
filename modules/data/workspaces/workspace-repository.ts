@@ -21,6 +21,7 @@ import {
   type TargetWorkspaceSession,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
+import { validateJourneyGraph } from "@/modules/data/journeys/journey-graph-validator"
 
 export class WorkspaceInputError extends Error {
   constructor(message: string) {
@@ -369,7 +370,7 @@ export async function createWorkspace(
     now?: Date
   }
 ) {
-  let graph = targetJourneyGraphSnapshotSchema.parse(input.graph)
+  let graph = validateJourneyGraph(input.graph)
   if (graph.ownerId !== context.userId && !isAdmin(context)) {
     throw new PermissionDeniedError("Workspace graph must belong to its owner")
   }

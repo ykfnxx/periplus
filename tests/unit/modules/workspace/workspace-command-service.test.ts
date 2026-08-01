@@ -9,6 +9,12 @@ import type {
   TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
 import { TARGET_CONTRACT_FIXTURES } from "@/modules/data-model/contracts"
+import {
+  createAsset,
+  createSourceDocument,
+  createSourceItem,
+  createSourcePack,
+} from "@/modules/data/content/content-repository"
 import { prisma } from "@/modules/data/db/prisma"
 import { TransitPlanningService } from "@/modules/data/transit/transit-planning-service"
 import {
@@ -22,17 +28,27 @@ import {
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 
 const ownerId = `workspace-command-owner-${randomUUID()}`
+const otherOwnerId = `workspace-command-other-${randomUUID()}`
 const context = { userId: ownerId, role: "user" as const }
+const otherContext = { userId: otherOwnerId, role: "user" as const }
 const now = "2026-08-01T00:00:00.000Z"
 
 beforeAll(async () => {
-  await prisma.user.create({
-    data: {
-      id: ownerId,
-      name: "Workspace command owner",
-      email: `${ownerId}@periplus.local`,
-      emailVerified: true,
-    },
+  await prisma.user.createMany({
+    data: [
+      {
+        id: ownerId,
+        name: "Workspace command owner",
+        email: `${ownerId}@periplus.local`,
+        emailVerified: true,
+      },
+      {
+        id: otherOwnerId,
+        name: "Workspace command other",
+        email: `${otherOwnerId}@periplus.local`,
+        emailVerified: true,
+      },
+    ],
   })
 })
 
@@ -140,6 +156,15 @@ function nestedSectionGraph() {
   const fixture = TARGET_CONTRACT_FIXTURES.find(
     (candidate) => candidate.id === "02-city-day-event-drilldown"
   )!.cases.find((candidate) => candidate.id === "city-day-drilldown")!
+  const input = structuredClone(fixture.input.graph!)
+  input.ownerId = ownerId
+  return input
+}
+
+function readyTransitFixtureGraph() {
+  const fixture = TARGET_CONTRACT_FIXTURES.find(
+    (candidate) => candidate.id === "03-transit-plan-choice"
+  )!.cases.find((candidate) => candidate.id === "select-low-cost")!
   const input = structuredClone(fixture.input.graph!)
   input.ownerId = ownerId
   return input
@@ -441,8 +466,6 @@ describe.sequential("P3 persistent Workspace command bus", () => {
           successor: {
             id: `${transitInput.id}-a2`,
             type: "VISIT",
-            origin: "USER_INSERTED",
-            executionStatus: "PLANNED",
             title: "A2",
             detail: {
               plannedLat: 30.26,
@@ -489,7 +512,6 @@ describe.sequential("P3 persistent Workspace command bus", () => {
           successor: {
             id: `${sectionInput.id}-section-2`,
             type: "SECTION",
-            origin: "USER_INSERTED",
             title: "Day 1 revised",
             detail: {
               kind: "DAY",
@@ -534,8 +556,6 @@ describe.sequential("P3 persistent Workspace command bus", () => {
           successor: {
             id: `${forkInput.id}-fork-2`,
             type: "VISIT",
-            origin: "USER_INSERTED",
-            executionStatus: "PLANNED",
             title: "Fork 2",
             detail: {
               plannedLat: 30.27,
@@ -580,6 +600,7 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     event.executionStatus = "STARTED"
     event.actualStartAt = "2026-08-01T01:00:00.000Z"
     event.detail.actualLat = 30.251
+    event.detail.actualLng = 120.151
     const workspace = await createWorkspace(context, {
       graph: input,
       now: new Date(now),
@@ -594,7 +615,7 @@ describe.sequential("P3 persistent Workspace command bus", () => {
           actual: {
             type: "VISIT",
             actualEndAt: "2026-08-01T02:00:00.000Z",
-            detail: { actualLng: 120.151 },
+            detail: { actualDurationMinutes: 60 },
           },
         },
       })
@@ -611,8 +632,164 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       executionStatus: "CONFIRMED",
       actualStartAt: "2026-08-01T01:00:00.000Z",
       actualEndAt: "2026-08-01T02:00:00.000Z",
-      detail: { actualLat: 30.251, actualLng: 120.151 },
+      detail: {
+        actualLat: 30.251,
+        actualLng: 120.151,
+        actualDurationMinutes: 60,
+      },
     })
+  })
+
+  it("derives add/replace provenance and gates execution state transitions", async () => {
+    const input = graph(`workspace-authority-${randomUUID()}`)
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    const createVisit = (id: string, title: string) => ({
+      id,
+      type: "VISIT" as const,
+      title,
+      detail: {
+        plannedLat: 30.2,
+        plannedLng: 120.1,
+        coordinateSystem: "GCJ02" as const,
+      },
+    })
+    await service.execute(
+      context,
+      command(workspace.id, 0, "user-add-authority", {
+        name: "journey.add_event",
+        payload: {
+          event: createVisit("user-added", "user added"),
+          position: { placement: "UNSCHEDULED" },
+        },
+      })
+    )
+    const run = await startWorkspaceAgentRun(
+      context,
+      workspace.id,
+      new Date(now),
+      `runtime-${randomUUID()}`
+    )
+    await service.execute(
+      context,
+      command(
+        workspace.id,
+        1,
+        "agent-add-authority",
+        {
+          name: "journey.add_event",
+          payload: {
+            event: createVisit("agent-added", "agent added"),
+            position: { placement: "UNSCHEDULED" },
+          },
+        },
+        { kind: "AGENT", agentRunId: run!.id }
+      )
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 2, "user-add-cancel", {
+        name: "journey.add_event",
+        payload: {
+          event: createVisit("cancel-added", "cancel added"),
+          position: { placement: "UNSCHEDULED" },
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 3, "start-through-authority", {
+        name: "journey.confirm_actual",
+        payload: {
+          eventId: "user-added",
+          finalize: false,
+          actual: {
+            type: "VISIT",
+            actualStartAt: "2026-08-01T01:00:00.000Z",
+            detail: { actualLat: 30.21, actualLng: 120.11 },
+          },
+        },
+      })
+    )
+    expect(
+      (
+        await service.getDocument(context, workspace.id)
+      )?.session.headGraph.events.find((event) => event.id === "user-added")
+    ).toMatchObject({ executionStatus: "STARTED" })
+    await service.execute(
+      context,
+      command(workspace.id, 4, "confirm-through-authority", {
+        name: "journey.confirm_actual",
+        payload: {
+          eventId: "user-added",
+          actual: {
+            type: "VISIT",
+            actualEndAt: "2026-08-01T02:00:00.000Z",
+            detail: {},
+          },
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 5, "skip-through-authority", {
+        name: "journey.skip_event",
+        payload: { eventId: "agent-added" },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 6, "cancel-through-authority", {
+        name: "journey.cancel_event",
+        payload: { eventId: "cancel-added" },
+      })
+    )
+    const recovered = await service.getDocument(context, workspace.id)
+    expect(
+      recovered?.session.headGraph.events
+        .filter((event) =>
+          ["user-added", "agent-added", "cancel-added"].includes(event.id)
+        )
+        .map((event) => ({
+          id: event.id,
+          origin: event.origin,
+          executionStatus:
+            event.type === "SECTION" || event.type === "NOTE"
+              ? undefined
+              : event.executionStatus,
+        }))
+    ).toEqual([
+      {
+        id: "user-added",
+        origin: "USER_INSERTED",
+        executionStatus: "CONFIRMED",
+      },
+      {
+        id: "agent-added",
+        origin: "AGENT_INSERTED",
+        executionStatus: "SKIPPED",
+      },
+      {
+        id: "cancel-added",
+        origin: "USER_INSERTED",
+        executionStatus: "CANCELLED",
+      },
+    ])
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 7, "confirm-terminal-event", {
+          name: "journey.confirm_actual",
+          payload: {
+            eventId: "agent-added",
+            actual: { type: "VISIT", detail: {} },
+          },
+        })
+      )
+    ).rejects.toThrow("Cannot confirm Event from SKIPPED")
   })
 
   it("allows only a linear same-domain Observation supersession chain", async () => {
@@ -1000,7 +1177,6 @@ describe.sequential("P3 persistent Workspace command bus", () => {
             successor: {
               id: "day-successor",
               type: "SECTION",
-              origin: "USER_INSERTED",
               title: "第一天（新）",
               detail: {
                 kind: "DAY",
@@ -1014,6 +1190,294 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       )
     ).resolves.toMatchObject({
       projectionInvalidationScopes: [null, "city", "day", "day-successor"],
+    })
+  })
+
+  it("rejects malformed structured branches before scratch or command persistence", async () => {
+    const crossingFixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "06-strict-nested-branch"
+    )!.cases.find((candidate) => candidate.id === "crossing-branch-error")!
+    const crossing = structuredClone(crossingFixture.input.graph!)
+    crossing.ownerId = ownerId
+    await expect(
+      createWorkspace(context, { graph: crossing, now: new Date(now) })
+    ).rejects.toThrow("cross")
+
+    const input = graph(`workspace-invalid-branch-${randomUUID()}`)
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    await expect(
+      new WorkspaceCommandService().execute(
+        context,
+        command(workspace.id, 0, "reuse-branch-key", {
+          name: "journey.add_link",
+          payload: {
+            link: {
+              fromEventId: `${input.id}-a`,
+              toEventId: `${input.id}-b`,
+              kind: "ALTERNATIVE",
+              branchKey: "rain",
+              rank: 3072,
+            },
+          },
+        })
+      )
+    ).rejects.toThrow("continuous path")
+    const recovered = await new WorkspaceCommandService().getDocument(
+      context,
+      workspace.id
+    )
+    expect(recovered?.session.headWorkspaceRevision).toBe(0)
+    expect(recovered?.session.headGraph.links).toHaveLength(4)
+  })
+
+  it("marks selected Transit planning stale after request or endpoint edits", async () => {
+    const service = new WorkspaceCommandService()
+    const requestWorkspace = await createWorkspace(context, {
+      graph: readyTransitFixtureGraph(),
+      now: new Date(now),
+    })
+    await expect(
+      service.execute(
+        context,
+        command(requestWorkspace.id, 0, "edit-transit-request", {
+          name: "journey.update_event",
+          payload: {
+            eventId: "transit",
+            patch: {
+              type: "TRANSIT",
+              detail: { preference: "LOW_COST" },
+            },
+          },
+        })
+      )
+    ).resolves.toMatchObject({ changedEventIds: ["transit"] })
+    const requestResult = await service.getDocument(
+      context,
+      requestWorkspace.id
+    )
+    expect(
+      requestResult?.session.headGraph.events.find(
+        (event) => event.id === "transit"
+      )
+    ).toMatchObject({ detail: { routeState: "ROUTE_STALE" } })
+
+    const endpointWorkspace = await createWorkspace(context, {
+      graph: readyTransitFixtureGraph(),
+      now: new Date(now),
+    })
+    await expect(
+      service.execute(
+        context,
+        command(endpointWorkspace.id, 0, "edit-transit-endpoint", {
+          name: "journey.update_event",
+          payload: {
+            eventId: "start",
+            patch: {
+              type: "VISIT",
+              detail: { plannedLat: 31 },
+            },
+          },
+        })
+      )
+    ).resolves.toMatchObject({ changedEventIds: ["start", "transit"] })
+    const endpointResult = await service.getDocument(
+      context,
+      endpointWorkspace.id
+    )
+    expect(
+      endpointResult?.session.headGraph.events.find(
+        (event) => event.id === "transit"
+      )
+    ).toMatchObject({ detail: { routeState: "ROUTE_STALE" } })
+  })
+
+  it("rejects approved source links without excerpts for owner and shared external packs", async () => {
+    const sourceItem = async (
+      sourceContext: typeof context,
+      visibility: "PRIVATE" | "SHARED"
+    ) => {
+      const asset = await createAsset(sourceContext, {
+        kind: "FILE",
+        storageKey: `workspace-source/${randomUUID()}.pdf`,
+        mimeType: "application/pdf",
+        sizeBytes: 32,
+        checksum: `workspace-source-${randomUUID()}`,
+      })
+      const pack = await createSourcePack(sourceContext, {
+        title: "Workspace source",
+        visibility,
+      })
+      const document = await createSourceDocument(sourceContext, {
+        sourcePackId: pack.id,
+        assetId: asset.id,
+        title: "Workspace source document",
+      })
+      return createSourceItem(sourceContext, {
+        sourceDocumentId: document.id,
+        kind: "NOTE",
+        title: "Workspace source item",
+        sourceOrder: 0,
+        confidence: 0.9,
+      })
+    }
+    const [ownerItem, externalItem] = await Promise.all([
+      sourceItem(context, "PRIVATE"),
+      sourceItem(otherContext, "SHARED"),
+    ])
+    const workspace = await createWorkspace(context, {
+      graph: graph(`workspace-source-excerpt-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    for (const [index, item] of [ownerItem, externalItem].entries()) {
+      await expect(
+        service.execute(
+          context,
+          command(workspace.id, 0, `missing-source-excerpt-${index}`, {
+            name: "journey.link_source_item",
+            payload: {
+              eventId: `${workspace.headGraph.id}-a`,
+              sourceItemId: item.id,
+              role: "EVIDENCE",
+              approvedForJourneySharing: true,
+            },
+          })
+        )
+      ).rejects.toThrow("nonblank excerpt")
+    }
+  })
+
+  it("retires active content links with ordinary, recursive, and replacement Events", async () => {
+    const withContent = (
+      input: TargetJourneyGraphSnapshot,
+      eventId: string
+    ) => {
+      input.eventAssetLinks.push({
+        id: `${eventId}-asset-link`,
+        journeyId: input.id,
+        eventId,
+        assetId: `${eventId}-asset`,
+        assetChecksum: `${eventId}-checksum`,
+        role: "GALLERY",
+        rank: 0,
+        visibility: "PRIVATE",
+        introducedRevision: 1,
+        createdAt: now,
+      })
+      input.eventSourceLinks.push({
+        id: `${eventId}-source-link`,
+        journeyId: input.id,
+        eventId,
+        sourceItemId: `${eventId}-source-item`,
+        sourceDocumentId: `${eventId}-source-document`,
+        sourceDocumentChecksum: `${eventId}-source-checksum`,
+        role: "EVIDENCE",
+        confidence: 0.9,
+        rank: 0,
+        approvedForJourneySharing: false,
+        introducedRevision: 1,
+        createdAt: now,
+      })
+      return input
+    }
+    const service = new WorkspaceCommandService()
+
+    const ordinaryInput = withContent(
+      sectionGraph(`workspace-content-retire-${randomUUID()}`, "LINEAR"),
+      ""
+    )
+    const ordinaryEventId = `${ordinaryInput.id}-a`
+    ordinaryInput.eventAssetLinks[0]!.eventId = ordinaryEventId
+    ordinaryInput.eventSourceLinks[0]!.eventId = ordinaryEventId
+    const ordinaryWorkspace = await createWorkspace(context, {
+      graph: ordinaryInput,
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(ordinaryWorkspace.id, 0, "retire-content-event", {
+        name: "journey.retire_event",
+        payload: { eventId: ordinaryEventId },
+      })
+    )
+    const ordinary = await service.getDocument(context, ordinaryWorkspace.id)
+    expect(ordinary?.session.headGraph.eventAssetLinks[0]).toMatchObject({
+      retiredRevision: 2,
+    })
+    expect(ordinary?.session.headGraph.eventSourceLinks[0]).toMatchObject({
+      retiredRevision: 2,
+    })
+
+    const recursiveInput = sectionGraph(
+      `workspace-content-recursive-${randomUUID()}`,
+      "LINEAR"
+    )
+    const recursiveEventId = `${recursiveInput.id}-b`
+    withContent(recursiveInput, recursiveEventId)
+    const recursiveWorkspace = await createWorkspace(context, {
+      graph: recursiveInput,
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(recursiveWorkspace.id, 0, "retire-content-section", {
+        name: "journey.retire_event",
+        payload: {
+          eventId: `${recursiveInput.id}-section`,
+          sectionChildren: "RECURSIVE_RETIRE",
+        },
+      })
+    )
+    const recursive = await service.getDocument(context, recursiveWorkspace.id)
+    expect(recursive?.session.headGraph.eventAssetLinks[0]).toMatchObject({
+      retiredRevision: 2,
+    })
+    expect(recursive?.session.headGraph.eventSourceLinks[0]).toMatchObject({
+      retiredRevision: 2,
+    })
+
+    const replacementInput = sectionGraph(
+      `workspace-content-replace-${randomUUID()}`,
+      "LINEAR"
+    )
+    const predecessorEventId = `${replacementInput.id}-a`
+    withContent(replacementInput, predecessorEventId)
+    const replacementWorkspace = await createWorkspace(context, {
+      graph: replacementInput,
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(replacementWorkspace.id, 0, "replace-content-event", {
+        name: "journey.replace_event",
+        payload: {
+          predecessorEventId,
+          successor: {
+            id: `${replacementInput.id}-a2`,
+            type: "VISIT",
+            title: "A2",
+            detail: {
+              plannedLat: 30.2,
+              plannedLng: 120.1,
+              coordinateSystem: "GCJ02",
+            },
+          },
+          reason: "replace content event",
+        },
+      })
+    )
+    const replacement = await service.getDocument(
+      context,
+      replacementWorkspace.id
+    )
+    expect(replacement?.session.headGraph.eventAssetLinks[0]).toMatchObject({
+      retiredRevision: 2,
+    })
+    expect(replacement?.session.headGraph.eventSourceLinks[0]).toMatchObject({
+      retiredRevision: 2,
     })
   })
 

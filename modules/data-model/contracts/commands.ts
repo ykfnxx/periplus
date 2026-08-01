@@ -103,6 +103,7 @@ export const targetCommandBodySchema = z.discriminatedUnion("name", [
     payload: z.object({
       eventId: idSchema,
       actual: targetConfirmActualSchema,
+      finalize: z.boolean().optional(),
     }),
   }),
   z.object({

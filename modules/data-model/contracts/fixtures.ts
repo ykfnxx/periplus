@@ -1406,8 +1406,6 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
             successor: {
               type: "VISIT",
               id: "replacement-c",
-              origin: "USER_INSERTED",
-              executionStatus: "PLANNED",
               title: "C",
               detail: {
                 plannedLat: 30.25,

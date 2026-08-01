@@ -7,7 +7,10 @@ import {
   type TargetResolvedEvent,
   type TargetResolvedJourneyProjection,
 } from "@/modules/data-model/contracts"
-import { validateJourneyGraph } from "@/modules/data/journeys/journey-graph-validator"
+import {
+  findStructuredBranchIssue,
+  validateJourneyGraph,
+} from "@/modules/data/journeys/journey-graph-validator"
 
 export type JourneyProjectionErrorCode =
   | "INVALID_REVISION"
@@ -347,8 +350,6 @@ function selectedEventsForScope(
       (!link.retiredRevision || link.retiredRevision > revision)
   )
 
-  validateAlternativeBranchKeys(scopedLinks)
-  validateBranchIntervals(scopedEvents, scopedLinks)
   const selectedLinks = selectCurrentBranchLinks(
     graph,
     revision,
@@ -488,6 +489,8 @@ export function resolveJourneyProjection({
   mode,
   asOfRevision,
 }: ResolveJourneyProjectionInput): TargetResolvedJourneyProjection {
+  const branchIssue = findStructuredBranchIssue(input)
+  if (branchIssue) fail(branchIssue.code, branchIssue.message)
   const graph = validateJourneyGraph(input)
   if (asOfRevision !== undefined && asOfRevision !== graph.revision) {
     fail(
