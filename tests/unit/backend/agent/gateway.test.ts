@@ -162,6 +162,7 @@ describe.sequential("P3 persistent AgentGateway", () => {
       async () => {
         const document = await commands.getDocument(context, workspace.id)
         expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
+        expect(events.at(-1)).toMatchObject({ type: "agent.run.completed" })
       },
       { timeout: 5_000 }
     )
@@ -175,7 +176,6 @@ describe.sequential("P3 persistent AgentGateway", () => {
       { role: "ASSISTANT", content: "已完成" },
     ])
     expect(restarted?.session.headGraph.events[0]?.title).toBe("西湖（Agent）")
-    expect(events.at(-1)).toMatchObject({ type: "agent.run.completed" })
     await expect(
       gateway.executeTool(token, { type: "workspace.get" })
     ).rejects.toThrow("invalid or expired")

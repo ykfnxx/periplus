@@ -623,14 +623,15 @@ describe("P2A Journey core repository", () => {
       fromEventId: string,
       toEventId: string,
       kind: "MAIN" | "ALTERNATIVE",
-      rank = 1024
+      rank = 1024,
+      branchKey = suffix
     ): TargetJourneyGraphSnapshot["links"][number] => ({
       id: `${journeyId}-${suffix}`,
       journeyId,
       fromEventId,
       toEventId,
       kind,
-      ...(kind === "ALTERNATIVE" ? { branchKey: suffix } : {}),
+      ...(kind === "ALTERNATIVE" ? { branchKey } : {}),
       rank,
       introducedRevision: 1,
     })
@@ -643,13 +644,41 @@ describe("P2A Journey core repository", () => {
         link("root", sectionA.id, sectionB.id, "MAIN"),
         selectedLink1,
         link("selected-1-join", selected1.id, join1.id, "MAIN"),
-        link("fork-1-alt", fork1.id, alternative1.id, "ALTERNATIVE", 2048),
-        link("alternative-1-join", alternative1.id, join1.id, "ALTERNATIVE"),
+        link(
+          "fork-1-alt",
+          fork1.id,
+          alternative1.id,
+          "ALTERNATIVE",
+          2048,
+          "fork-1-alt"
+        ),
+        link(
+          "alternative-1-join",
+          alternative1.id,
+          join1.id,
+          "ALTERNATIVE",
+          1024,
+          "fork-1-alt"
+        ),
         link("join-1-fork-2", join1.id, fork2.id, "MAIN"),
         selectedLink2,
         link("selected-2-join", selected2.id, join2.id, "MAIN"),
-        link("fork-2-alt", fork2.id, alternative2.id, "ALTERNATIVE", 2048),
-        link("alternative-2-join", alternative2.id, join2.id, "ALTERNATIVE"),
+        link(
+          "fork-2-alt",
+          fork2.id,
+          alternative2.id,
+          "ALTERNATIVE",
+          2048,
+          "fork-2-alt"
+        ),
+        link(
+          "alternative-2-join",
+          alternative2.id,
+          join2.id,
+          "ALTERNATIVE",
+          1024,
+          "fork-2-alt"
+        ),
       ],
       branchSelections: [
         {
@@ -712,8 +741,10 @@ describe("P2A Journey core repository", () => {
       "b",
       "c",
       "d",
+      "e",
+      "f",
     ])
-    const [a, b, c, d] = initial.events.map((event) => event.id)
+    const [a, , c, d, , f] = initial.events.map((event) => event.id)
     const firstLinkId = `${initial.id}-alternative-1`
     const secondLinkId = `${initial.id}-alternative-2`
     initial.links.push(
@@ -730,8 +761,8 @@ describe("P2A Journey core repository", () => {
       {
         id: secondLinkId,
         journeyId: initial.id,
-        fromEventId: b!,
-        toEventId: d!,
+        fromEventId: d!,
+        toEventId: f!,
         kind: "ALTERNATIVE",
         branchKey: "second",
         rank: 5120,
@@ -747,8 +778,8 @@ describe("P2A Journey core repository", () => {
     swapped.revision = 2
     const firstLink = swapped.links.find((link) => link.id === firstLinkId)!
     const secondLink = swapped.links.find((link) => link.id === secondLinkId)!
-    firstLink.fromEventId = b!
-    firstLink.toEventId = d!
+    firstLink.fromEventId = d!
+    firstLink.toEventId = f!
     secondLink.fromEventId = a!
     secondLink.toEventId = c!
 
@@ -761,8 +792,8 @@ describe("P2A Journey core repository", () => {
 
     expect(result?.links.find((link) => link.id === firstLinkId)).toMatchObject(
       {
-        fromEventId: b,
-        toEventId: d,
+        fromEventId: d,
+        toEventId: f,
         branchKey: "first",
       }
     )
@@ -775,7 +806,7 @@ describe("P2A Journey core repository", () => {
     })
     expect(
       await prisma.journeyEvent.count({ where: { journeyId: initial.id } })
-    ).toBe(4)
+    ).toBe(6)
   })
 
   it("retires and restores nested SECTION trees in either Event id order", async () => {
@@ -1056,8 +1087,9 @@ describe("P2A Journey core repository", () => {
       "middle",
       "fork-b",
       "branch",
+      "join",
     ])
-    const [forkA, middle, forkB, branch] = initial.events.map(
+    const [forkA, middle, forkB, branch, join] = initial.events.map(
       (event) => event.id
     )
     const selectedLinkId = `${initial.id}-alternative`
@@ -1081,6 +1113,15 @@ describe("P2A Journey core repository", () => {
         introducedRevision: 1,
       },
       {
+        id: `${initial.id}-main-c`,
+        journeyId: initial.id,
+        fromEventId: forkB!,
+        toEventId: join!,
+        kind: "MAIN",
+        rank: 3072,
+        introducedRevision: 1,
+      },
+      {
         id: selectedLinkId,
         journeyId: initial.id,
         fromEventId: forkA!,
@@ -1088,6 +1129,16 @@ describe("P2A Journey core repository", () => {
         kind: "ALTERNATIVE",
         branchKey: "retargeted",
         rank: 2048,
+        introducedRevision: 1,
+      },
+      {
+        id: `${initial.id}-alternative-join`,
+        journeyId: initial.id,
+        fromEventId: branch!,
+        toEventId: join!,
+        kind: "ALTERNATIVE",
+        branchKey: "retargeted",
+        rank: 1024,
         introducedRevision: 1,
       },
     ]
@@ -1247,6 +1298,7 @@ describe("P2A Journey core repository", () => {
     const forkALinkId = `${initial.id}-fork-a`
     const aJoinLinkId = `${initial.id}-a-join`
     const forkBLinkId = `${initial.id}-fork-b`
+    const bJoinLinkId = `${initial.id}-b-join`
     initial.links = [
       {
         id: forkALinkId,
@@ -1277,7 +1329,7 @@ describe("P2A Journey core repository", () => {
         introducedRevision: 1,
       },
       {
-        id: `${initial.id}-b-join`,
+        id: bJoinLinkId,
         journeyId: initial.id,
         fromEventId: branchB!,
         toEventId: join!,
@@ -1327,6 +1379,12 @@ describe("P2A Journey core repository", () => {
     )) {
       link.retiredRevision = 2
     }
+    for (const link of selectedB.links.filter((candidate) =>
+      [forkBLinkId, bJoinLinkId].includes(candidate.id)
+    )) {
+      link.kind = "MAIN"
+      delete link.branchKey
+    }
     const retired = await commitJourneyGraph(
       context,
       initial.id,
@@ -1345,6 +1403,12 @@ describe("P2A Journey core repository", () => {
       [forkALinkId, aJoinLinkId].includes(candidate.id)
     )) {
       delete link.retiredRevision
+    }
+    for (const link of restoredA.links.filter((candidate) =>
+      [forkBLinkId, bJoinLinkId].includes(candidate.id)
+    )) {
+      link.kind = "ALTERNATIVE"
+      link.branchKey = "rain"
     }
     restoredA.branchSelections.push({
       id: `${initial.id}-selection-a-2`,
@@ -1606,14 +1670,26 @@ describe("P2A Journey core repository", () => {
       "fork",
       "main",
       "alternative",
+      "join",
     ])
-    const [fork, main, alternative] = branch.events.map((event) => event.id)
+    const [fork, main, alternative, join] = branch.events.map(
+      (event) => event.id
+    )
     branch.links = [
       {
         id: `${branch.id}-main`,
         journeyId: branch.id,
         fromEventId: fork!,
         toEventId: main!,
+        kind: "MAIN",
+        rank: 1024,
+        introducedRevision: 1,
+      },
+      {
+        id: `${branch.id}-main-join`,
+        journeyId: branch.id,
+        fromEventId: main!,
+        toEventId: join!,
         kind: "MAIN",
         rank: 1024,
         introducedRevision: 1,
@@ -1626,6 +1702,16 @@ describe("P2A Journey core repository", () => {
         kind: "ALTERNATIVE",
         branchKey: "rain",
         rank: 2048,
+        introducedRevision: 1,
+      },
+      {
+        id: `${branch.id}-alternative-join`,
+        journeyId: branch.id,
+        fromEventId: alternative!,
+        toEventId: join!,
+        kind: "ALTERNATIVE",
+        branchKey: "rain",
+        rank: 1024,
         introducedRevision: 1,
       },
     ]
