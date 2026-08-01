@@ -27,6 +27,13 @@ export interface TransitPlanBatchResult {
   failures: TransitPlanFailure[]
 }
 
+export interface TransitPlanUsageContext {
+  userId?: string
+  workspaceId?: string
+  agentRunId?: string
+  requestId?: string
+}
+
 export type PersistedTransitPlanningResult =
   | {
       status: "READY"
@@ -43,7 +50,11 @@ export type PersistedTransitPlanningResult =
 interface PlanningServiceOptions {
   provider?: TransitPlanProvider
   sleep?: (milliseconds: number) => Promise<void>
-  logUsage?: (status: string, code?: string) => Promise<void>
+  logUsage?: (
+    status: string,
+    code?: string,
+    context?: TransitPlanUsageContext
+  ) => Promise<void>
 }
 
 const MAX_ATTEMPTS = 3
@@ -53,7 +64,11 @@ const RATE_LIMIT_RETRY_BASE_DELAY_MS = 1_000
 export class TransitPlanningService {
   private readonly provider: TransitPlanProvider
   private readonly sleep: (milliseconds: number) => Promise<void>
-  private readonly logUsage: (status: string, code?: string) => Promise<void>
+  private readonly logUsage: (
+    status: string,
+    code?: string,
+    context?: TransitPlanUsageContext
+  ) => Promise<void>
   private readonly inFlight = new Map<string, Promise<TransitPlanBundle>>()
   private queue: Promise<unknown> = Promise.resolve()
 
@@ -66,7 +81,7 @@ export class TransitPlanningService {
     this.logUsage = options.logUsage ?? logProviderUsage
   }
 
-  plan(request: TransitPlanRequest) {
+  plan(request: TransitPlanRequest, usageContext?: TransitPlanUsageContext) {
     const dedupeKey = JSON.stringify({
       ...request,
       transitEventId: undefined,
@@ -78,7 +93,9 @@ export class TransitPlanningService {
       )
     }
 
-    const pending = this.enqueue(() => this.planWithRetry(request))
+    const pending = this.enqueue(() =>
+      this.planWithRetry(request, usageContext)
+    )
       .then((bundle) => rekeyBundle(bundle, request.transitEventId))
       .finally(() => {
         this.inFlight.delete(dedupeKey)
@@ -175,7 +192,10 @@ export class TransitPlanningService {
 
     let bundle: TransitPlanBundle
     try {
-      bundle = await this.plan(request)
+      bundle = await this.plan(request, {
+        userId: context.userId,
+        requestId: options.idempotencyKey,
+      })
     } catch (error) {
       const failure = normalizeFailure(request.transitEventId, error)
       const run: TargetTransitPlanningRun = {
@@ -218,12 +238,15 @@ export class TransitPlanningService {
     return { status: "READY", run, graph }
   }
 
-  private async planWithRetry(request: TransitPlanRequest) {
+  private async planWithRetry(
+    request: TransitPlanRequest,
+    usageContext?: TransitPlanUsageContext
+  ) {
     let lastError: unknown
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         const result = await this.provider.plan(request)
-        await this.logUsage("success")
+        await this.logUsage("success", undefined, usageContext)
         return result
       } catch (error) {
         lastError = error
@@ -233,7 +256,8 @@ export class TransitPlanningService {
         if (!retryable || attempt === MAX_ATTEMPTS) {
           await this.logUsage(
             "error",
-            error instanceof TransitProviderError ? error.code : "UNKNOWN"
+            error instanceof TransitProviderError ? error.code : "UNKNOWN",
+            usageContext
           )
           throw error
         }
@@ -344,8 +368,21 @@ function planningRunFromBundle(
   }
 }
 
-async function logProviderUsage(status: string, code?: string) {
+async function logProviderUsage(
+  status: string,
+  code?: string,
+  context?: TransitPlanUsageContext
+) {
   await prisma.providerUsageLog.create({
-    data: { provider: "amap", purpose: "transit_plan", status, code },
+    data: {
+      provider: "amap",
+      purpose: "transit_plan",
+      status,
+      code,
+      userId: context?.userId,
+      workspaceId: context?.workspaceId,
+      agentRunId: context?.agentRunId,
+      requestId: context?.requestId,
+    },
   })
 }

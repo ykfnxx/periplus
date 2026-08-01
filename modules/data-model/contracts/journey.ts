@@ -1073,6 +1073,7 @@ export type TargetJourneyGraphSnapshot = z.infer<
   typeof targetJourneyGraphSnapshotSchema
 >
 export type TargetJourneyRevision = z.infer<typeof targetJourneyRevisionSchema>
+export type TargetResolvedEvent = z.infer<typeof targetResolvedEventSchema>
 export type TargetResolvedJourneyProjection = z.infer<
   typeof targetResolvedJourneyProjectionSchema
 >

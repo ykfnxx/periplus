@@ -1,25 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { ZodError } from "zod"
-import { periplusServerConfig } from "@/config/periplus.server"
+import type { AgentGateway, AgentToolRequest } from "./agent/gateway"
 import {
-  DraftInputError,
-  DraftSessionService,
-} from "@/modules/workspace/server/draft-session-service"
-import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
-import { ensureSessionId } from "./session"
-import type { AuthContext } from "@/modules/auth/server/context"
-import type { JourneyToolName } from "@/modules/workspace/server/contracts"
-import type { AgentEventEmitter } from "./types"
+  WorkspaceIdempotencyConflictError,
+  WorkspaceInputError,
+  WorkspaceRevisionConflictError,
+} from "@/modules/data/workspaces/workspace-repository"
 
 type JsonBody = Record<string, unknown>
-
-function applyCors(req: IncomingMessage, res: ServerResponse) {
-  const origin = req.headers.origin ?? periplusServerConfig.app.frontendOrigin
-  res.setHeader("Access-Control-Allow-Origin", origin)
-  res.setHeader("Access-Control-Allow-Credentials", "true")
-  res.setHeader("Access-Control-Allow-Headers", "content-type")
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-}
 
 function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "Content-Type": "application/json" })
@@ -33,104 +21,67 @@ async function readJson(req: IncomingMessage): Promise<JsonBody> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as JsonBody
 }
 
-function errorBody(error: unknown) {
-  if (error instanceof ZodError) {
+function errorResponse(error: unknown) {
+  if (error instanceof ZodError || error instanceof WorkspaceInputError) {
     return {
-      error: {
-        code: "invalid_input",
-        message: error.issues.map((issue) => issue.message).join("; "),
+      status: 400,
+      body: {
+        error: {
+          code: "invalid_input",
+          message:
+            error instanceof ZodError
+              ? error.issues.map((issue) => issue.message).join("; ")
+              : error.message,
+        },
       },
     }
   }
-  if (error instanceof DraftInputError) {
-    return { error: { code: "invalid_input", message: error.message } }
+  if (error instanceof WorkspaceRevisionConflictError) {
+    return {
+      status: 409,
+      body: { error: { code: "revision_conflict", message: error.message } },
+    }
   }
-  if (error instanceof Error) {
-    return { error: { code: "internal_error", message: error.message } }
-  }
-  return {
-    error: { code: "internal_error", message: "Unexpected backend error" },
-  }
-}
-
-function parseAuthContext(body: JsonBody): AuthContext {
-  if (typeof body.userId !== "string" || !body.userId) {
-    throw new DraftInputError("Missing user id")
+  if (error instanceof WorkspaceIdempotencyConflictError) {
+    return {
+      status: 409,
+      body: { error: { code: "idempotency_conflict", message: error.message } },
+    }
   }
   return {
-    userId: body.userId,
-    role: body.role === "admin" ? "admin" : "user",
+    status: 500,
+    body: {
+      error: {
+        code: "internal_error",
+        message: error instanceof Error ? error.message : "Unexpected error",
+      },
+    },
   }
 }
 
 export async function handleInternalRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  drafts: DraftSessionService,
-  commands: WorkspaceCommandService,
-  broadcast: AgentEventEmitter
+  agentGateway: AgentGateway
 ) {
-  applyCors(req, res)
-
-  if (req.method === "OPTIONS") {
-    res.writeHead(204)
-    res.end()
-    return
-  }
-
   const url = new URL(req.url ?? "/", "http://periplus.local")
-
-  if (req.method === "GET" && url.pathname === "/session") {
-    const sessionId = ensureSessionId(req, res)
-    sendJson(res, 200, {
-      sessionId,
-      draft: drafts.getSnapshot(sessionId),
-      messages: drafts.getConversationMessages(sessionId),
-    })
-    return
-  }
-
-  if (req.method === "POST" && url.pathname === "/session") {
+  if (req.method === "POST" && url.pathname === "/internal/agent-tool") {
     try {
       const body = await readJson(req)
-      const context = parseAuthContext(body)
-      const sessionId =
-        typeof body.sessionId === "string" && body.sessionId
-          ? body.sessionId
-          : ensureSessionId(req, res)
-      drafts.bindSessionContext(sessionId, context)
-      sendJson(res, 200, {
-        sessionId,
-        draft: drafts.getSnapshot(sessionId),
-        messages: drafts.getConversationMessages(sessionId),
-      })
-    } catch (error) {
-      sendJson(res, 400, errorBody(error))
-    }
-    return
-  }
-
-  if (req.method === "POST" && url.pathname === "/internal/draft-tool") {
-    try {
-      const body = await readJson(req)
-      const sessionId = String(body.sessionId)
-      const result = await commands.executeDraftTool(
-        sessionId,
-        body.tool as JourneyToolName,
-        (body.input as Record<string, unknown> | undefined) ?? {}
+      if (typeof body.capabilityToken !== "string") {
+        throw new WorkspaceInputError("Agent capability token is required")
+      }
+      const result = await agentGateway.executeTool(
+        body.capabilityToken,
+        body.request as AgentToolRequest
       )
-
-      broadcast(sessionId, {
-        type: "draft.updated",
-        payload: result,
-      })
       sendJson(res, 200, { result })
     } catch (error) {
-      sendJson(res, 400, errorBody(error))
+      const response = errorResponse(error)
+      sendJson(res, response.status, response.body)
     }
     return
   }
-
   sendJson(res, 404, {
     error: { code: "not_found", message: "Endpoint not found" },
   })

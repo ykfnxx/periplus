@@ -1231,6 +1231,10 @@ CREATE UNIQUE INDEX "EventSourceLink_current_rank_key"
 ON "EventSourceLink"("eventId", "role", "rank")
 WHERE "retiredRevision" IS NULL;
 
+CREATE UNIQUE INDEX "WorkspaceAgentRun_one_running_key"
+ON "WorkspaceAgentRun"("workspaceId")
+WHERE "status" = 'RUNNING';
+
 -- Parent containment and active scope-local topology.
 CREATE TRIGGER "JourneyEvent_parent_insert_guard"
 BEFORE INSERT ON "JourneyEvent"

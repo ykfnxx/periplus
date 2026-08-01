@@ -111,6 +111,28 @@ function json(value: unknown) {
   return JSON.stringify(value)
 }
 
+function hasPrismaCode(error: unknown, code: string) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  )
+}
+
+function commandEnvelopeFromPatch(value: string | unknown) {
+  try {
+    const patch = typeof value === "string" ? JSON.parse(value) : value
+    if (!patch || typeof patch !== "object") return undefined
+    const entry = Array.isArray(patch) ? patch[0] : patch
+    return entry && typeof entry === "object"
+      ? (entry as { commandEnvelope?: unknown }).commandEnvelope
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function parseGraph(value: string, label: string) {
   try {
     return targetJourneyGraphSnapshotSchema.parse(JSON.parse(value))
@@ -387,21 +409,47 @@ export async function getWorkspaceDocument(
   if (!found) return null
   const record = await touchOrExpire(found as WorkspaceRecord, now)
   const session = mapSession(record)
-  const sourceRevision = session.sourceJourneyId
+  const sourceJourney = session.sourceJourneyId
     ? await prisma.journey.findUnique({
         where: { id: session.sourceJourneyId },
         select: { revision: true },
       })
     : null
+  const baseGraph =
+    session.sourceJourneyId && session.baseJourneyRevision !== null
+      ? await prisma.journeyRevision
+          .findUnique({
+            where: {
+              journeyId_revision: {
+                journeyId: session.sourceJourneyId,
+                revision: session.baseJourneyRevision,
+              },
+            },
+            select: { snapshotJson: true },
+          })
+          .then((revision) =>
+            revision
+              ? parseGraph(
+                  revision.snapshotJson,
+                  `Journey ${session.sourceJourneyId} revision ${session.baseJourneyRevision}`
+                )
+              : null
+          )
+      : record.revisions[0]
+        ? parseGraph(
+            record.revisions[0].beforeGraphJson,
+            `Workspace ${workspaceId} initial graph`
+          )
+        : session.headGraph
   const draftState =
     session.status === "ACTIVE" &&
-    sourceRevision &&
+    sourceJourney &&
     session.baseJourneyRevision !== null &&
-    sourceRevision.revision > session.baseJourneyRevision
+    sourceJourney.revision > session.baseJourneyRevision
       ? "STALE"
-      : session.headWorkspaceRevision > 0
-        ? "DIRTY"
-        : "CLEAN"
+      : baseGraph && json(baseGraph) === json(session.headGraph)
+        ? "CLEAN"
+        : "DIRTY"
 
   return targetWorkspaceDocumentSchema.parse({
     session,
@@ -431,9 +479,12 @@ export async function appendWorkspaceRevision(
   const actor = targetActorReferenceSchema.parse(
     input.actor ?? { kind: "USER", userId: context.userId }
   )
-  if (actor.kind !== "USER" || actor.userId !== context.userId) {
+  if (actor.kind === "USER" && actor.userId !== context.userId) {
+    throw new WorkspaceInputError("Workspace USER actor must be authenticated")
+  }
+  if (actor.kind === "SYSTEM") {
     throw new WorkspaceInputError(
-      "direct Workspace writes require the authenticated USER actor"
+      "SYSTEM Workspace writes require a trusted internal writer"
     )
   }
   const now = input.now ?? new Date()
@@ -446,6 +497,18 @@ export async function appendWorkspaceRevision(
     if (!record) return null
     assertOwner(context, record.ownerId)
 
+    if (actor.kind === "AGENT") {
+      const run = await tx.workspaceAgentRun.findUnique({
+        where: { id: actor.agentRunId },
+        select: { workspaceId: true, status: true },
+      })
+      if (!run || run.workspaceId !== workspaceId || run.status !== "RUNNING") {
+        throw new WorkspaceInputError(
+          "Workspace AGENT actor requires a running same-Workspace Agent run"
+        )
+      }
+    }
+
     const existing = await tx.workspaceRevision.findUnique({
       where: {
         workspaceId_idempotencyKey: {
@@ -455,11 +518,19 @@ export async function appendWorkspaceRevision(
       },
     })
     if (existing) {
+      const existingEnvelope = commandEnvelopeFromPatch(existing.patchJson)
+      const requestedEnvelope = commandEnvelopeFromPatch(input.patch)
+      const sameTypedCommand =
+        existingEnvelope !== undefined &&
+        requestedEnvelope !== undefined &&
+        json(existingEnvelope) === json(requestedEnvelope)
+      const sameLegacyWrite =
+        existing.afterGraphJson === json(after) &&
+        existing.patchJson === json(input.patch) &&
+        existing.inversePatchJson === json(input.inversePatch)
       if (
         existing.commandName !== commandNames[input.commandName] ||
-        existing.afterGraphJson !== json(after) ||
-        existing.patchJson !== json(input.patch) ||
-        existing.inversePatchJson !== json(input.inversePatch)
+        (!sameTypedCommand && !sameLegacyWrite)
       ) {
         throw new WorkspaceIdempotencyConflictError()
       }
@@ -540,6 +611,47 @@ export async function appendWorkspaceRevision(
     if (updated.count !== 1) throw new WorkspaceRevisionConflictError()
     return mapRevision(revision)
   })
+}
+
+export async function getWorkspaceRevision(
+  context: AuthContext,
+  workspaceId: string,
+  revision: number
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  const record = await prisma.workspaceRevision.findUnique({
+    where: { workspaceId_revision: { workspaceId, revision } },
+  })
+  return record ? mapRevision(record) : null
+}
+
+export async function getWorkspaceRevisionByIdempotencyKey(
+  context: AuthContext,
+  workspaceId: string,
+  idempotencyKey: string
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  const record = await prisma.workspaceRevision.findUnique({
+    where: {
+      workspaceId_idempotencyKey: { workspaceId, idempotencyKey },
+    },
+  })
+  return record ? mapRevision(record) : null
+}
+
+export async function listWorkspaceRevisions(
+  context: AuthContext,
+  workspaceId: string
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  const records = await prisma.workspaceRevision.findMany({
+    where: { workspaceId },
+    orderBy: { revision: "asc" },
+  })
+  return records.map(mapRevision)
 }
 
 export async function appendWorkspaceMessage(
@@ -636,13 +748,23 @@ export async function startWorkspaceAgentRun(
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return null
   await requireActiveWorkspace(workspace, now)
-  const record = await prisma.workspaceAgentRun.create({
-    data: {
-      workspaceId,
-      status: "RUNNING",
-      startedAt: now,
-    },
-  })
+  let record
+  try {
+    record = await prisma.workspaceAgentRun.create({
+      data: {
+        workspaceId,
+        status: "RUNNING",
+        startedAt: now,
+      },
+    })
+  } catch (error) {
+    if (hasPrismaCode(error, "P2002")) {
+      throw new WorkspaceRevisionConflictError(
+        "Workspace already has a running Agent"
+      )
+    }
+    throw error
+  }
   return targetWorkspaceAgentRunSchema.parse({
     ...record,
     startedAt: record.startedAt.toISOString(),

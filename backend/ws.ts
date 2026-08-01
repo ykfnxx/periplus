@@ -1,13 +1,9 @@
 import type { Server } from "node:http"
 import { WebSocket, WebSocketServer } from "ws"
-import { AgentGateway } from "./agent/gateway"
-import {
-  DraftInputError,
-  DraftSessionService,
-} from "@/modules/workspace/server/draft-session-service"
+import { targetCommandEnvelopeSchema } from "@/modules/data-model/contracts"
+import { verifyWorkspaceTicket } from "@/modules/data/workspaces/workspace-ticket"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
-import { isJourneyToolName } from "@/modules/workspace/server/contracts"
-import { getSessionId } from "./session"
+import { AgentGateway } from "./agent/gateway"
 import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
 
 interface WireMessage {
@@ -16,179 +12,136 @@ interface WireMessage {
 }
 
 function send(socket: WebSocket, event: AgentEvent) {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(event))
-  }
+  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event))
 }
 
 function errorEvent(error: unknown, commandId?: string): AgentEvent {
-  if (error instanceof DraftInputError || error instanceof Error) {
-    return { type: "error", payload: { message: error.message, commandId } }
-  }
   return {
     type: "error",
-    payload: { message: "Unexpected WebSocket error", commandId },
+    payload: {
+      message: error instanceof Error ? error.message : "Unexpected error",
+      commandId,
+    },
   }
 }
 
 export function createAgentWebSocketServer(
   server: Server,
-  drafts: DraftSessionService,
   commands: WorkspaceCommandService,
   agentGateway: AgentGateway
 ) {
   const wss = new WebSocketServer({ noServer: true })
-  const socketsBySession = new Map<string, Set<WebSocket>>()
-
-  const broadcast: AgentEventEmitter = (sessionId, event) => {
-    const sockets = socketsBySession.get(sessionId)
-    if (!sockets) return
-    for (const socket of sockets) send(socket, event)
+  const socketsByWorkspace = new Map<string, Set<WebSocket>>()
+  const broadcast: AgentEventEmitter = (workspaceId, event) => {
+    for (const socket of socketsByWorkspace.get(workspaceId) ?? []) {
+      send(socket, event)
+    }
   }
 
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://periplus.local")
     if (url.pathname !== "/ws") return
-
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req)
-    })
+    try {
+      verifyWorkspaceTicket(url.searchParams.get("ticket") ?? "")
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req)
+      })
+    } catch {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n")
+      socket.destroy()
+    }
   })
 
   wss.on("connection", (socket, req) => {
-    const sessionId = getSessionId(req)
-    if (!sessionId) {
-      send(socket, {
-        type: "error",
-        payload: { message: "Missing session id" },
-      })
-      socket.close()
-      return
-    }
-    const context = drafts.getSessionContext(sessionId)
-    if (!context) {
-      send(socket, {
-        type: "error",
-        payload: { message: "Missing authenticated session context" },
-      })
-      socket.close()
-      return
-    }
-
-    const sessionSockets =
-      socketsBySession.get(sessionId) ?? new Set<WebSocket>()
-    sessionSockets.add(socket)
-    socketsBySession.set(sessionId, sessionSockets)
-    send(socket, {
-      type: "session.ready",
-      payload: drafts.getSnapshot(sessionId),
-    })
-
-    socket.on("message", async (rawMessage) => {
-      let commandId: string | undefined
-      try {
-        const message = JSON.parse(rawMessage.toString("utf8")) as WireMessage
-        const payload = message.payload ?? {}
-        commandId =
-          typeof payload.commandId === "string" ? payload.commandId : undefined
-
-        if (message.type === "draft.get") {
-          send(socket, {
-            type: "draft.updated",
-            payload: drafts.getSnapshot(sessionId),
-          })
-          return
-        }
-        if (message.type === "draft.load_saved_journey") {
-          const snapshot = await commands.loadSavedJourney(
-            context,
-            sessionId,
-            String(payload.journeyId)
-          )
-          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          return
-        }
-        if (message.type === "draft.replace") {
-          const snapshot = commands.replaceDraft(
-            sessionId,
-            payload.journey as never
-          )
-          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          return
-        }
-        if (message.type === "draft.reset") {
-          const snapshot = commands.resetDraft(sessionId)
-          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          return
-        }
-        if (message.type === "draft.save") {
-          const snapshot = await commands.saveDraft(context, sessionId)
-          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          broadcast(sessionId, { type: "draft.saved", payload: snapshot })
-          return
-        }
-        if (message.type === "draft.command") {
-          if (!isJourneyToolName(payload.tool)) {
-            throw new DraftInputError("Unknown journey command")
-          }
-          const input =
-            payload.input && typeof payload.input === "object"
-              ? (payload.input as Record<string, unknown>)
-              : {}
-          const snapshot = await commands.executeDraftTool(
-            sessionId,
-            payload.tool,
-            input
-          )
-          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          return
-        }
-        if (message.type === "agent.run.start") {
-          const mode: AgentMode =
-            payload.mode === "suggest" ? "suggest" : "auto"
-          await agentGateway.start(
-            sessionId,
-            String(payload.prompt),
-            mode,
-            broadcast
-          )
-          return
-        }
-        if (message.type === "agent.run.cancel") {
-          agentGateway.cancel(sessionId)
-          return
-        }
-        if (message.type === "agent.diff.accept") {
-          const snapshot = await commands.acceptSuggestion(
-            sessionId,
-            String(payload.suggestionId)
-          )
-          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          broadcast(sessionId, {
-            type: "agent.diff.accepted",
-            payload: snapshot,
-          })
-          return
-        }
-        if (message.type === "agent.diff.reject") {
-          const snapshot = commands.rejectSuggestion(
-            sessionId,
-            String(payload.suggestionId)
-          )
-          broadcast(sessionId, { type: "draft.updated", payload: snapshot })
-          broadcast(sessionId, {
-            type: "agent.diff.rejected",
-            payload: snapshot,
-          })
-        }
-      } catch (error) {
-        send(socket, errorEvent(error, commandId))
+    void (async () => {
+      const url = new URL(req.url ?? "/", "http://periplus.local")
+      const claims = verifyWorkspaceTicket(url.searchParams.get("ticket") ?? "")
+      const context = { userId: claims.subjectUserId, role: "user" as const }
+      const workspaceId = claims.workspaceId
+      const document = await commands.getDocument(context, workspaceId)
+      if (!document) {
+        send(socket, {
+          type: "error",
+          payload: { message: "Workspace was not found" },
+        })
+        socket.close()
+        return
       }
-    })
 
-    socket.on("close", () => {
-      sessionSockets.delete(socket)
-      if (sessionSockets.size === 0) socketsBySession.delete(sessionId)
+      const workspaceSockets =
+        socketsByWorkspace.get(workspaceId) ?? new Set<WebSocket>()
+      workspaceSockets.add(socket)
+      socketsByWorkspace.set(workspaceId, workspaceSockets)
+      send(socket, { type: "workspace.ready", payload: document })
+
+      socket.on("message", (rawMessage) => {
+        void (async () => {
+          let commandId: string | undefined
+          try {
+            const message = JSON.parse(
+              rawMessage.toString("utf8")
+            ) as WireMessage
+            const payload = message.payload ?? {}
+            commandId =
+              typeof payload.commandId === "string"
+                ? payload.commandId
+                : undefined
+
+            if (message.type === "workspace.get") {
+              send(socket, {
+                type: "workspace.updated",
+                payload: await commands.getDocument(context, workspaceId),
+              })
+              return
+            }
+            if (message.type === "workspace.command") {
+              const supplied =
+                payload.envelope && typeof payload.envelope === "object"
+                  ? (payload.envelope as Record<string, unknown>)
+                  : payload
+              const envelope = targetCommandEnvelopeSchema.parse({
+                ...supplied,
+                aggregateId: workspaceId,
+                actor: { kind: "USER", userId: context.userId },
+              })
+              const result = await commands.execute(context, envelope)
+              const current = await commands.getDocument(context, workspaceId)
+              broadcast(workspaceId, {
+                type: "workspace.updated",
+                payload: { result, workspace: current },
+              })
+              return
+            }
+            if (message.type === "agent.run.start") {
+              const mode: AgentMode =
+                payload.mode === "suggest" ? "suggest" : "auto"
+              await agentGateway.start(
+                context,
+                workspaceId,
+                String(payload.prompt ?? ""),
+                mode,
+                broadcast
+              )
+              return
+            }
+            if (message.type === "agent.run.cancel") {
+              agentGateway.cancel(workspaceId)
+              return
+            }
+            throw new Error(`Unsupported WebSocket message ${message.type}`)
+          } catch (error) {
+            send(socket, errorEvent(error, commandId))
+          }
+        })()
+      })
+
+      socket.on("close", () => {
+        workspaceSockets.delete(socket)
+        if (workspaceSockets.size === 0) socketsByWorkspace.delete(workspaceId)
+      })
+    })().catch((error) => {
+      send(socket, errorEvent(error))
+      socket.close()
     })
   })
 

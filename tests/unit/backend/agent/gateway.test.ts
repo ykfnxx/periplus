@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest"
+import { randomUUID } from "node:crypto"
+import { beforeAll, describe, expect, it, vi } from "vitest"
 import { AgentGateway } from "@/backend/agent/gateway"
 import type {
   AgentRuntime,
@@ -6,8 +7,26 @@ import type {
   AgentRuntimeObserver,
   AgentRuntimeRequest,
 } from "@/backend/agent/runtime"
-import { DraftSessionService } from "@/modules/workspace/server/draft-session-service"
 import type { AgentEvent } from "@/backend/types"
+import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
+import { prisma } from "@/modules/data/db/prisma"
+import { createWorkspace } from "@/modules/data/workspaces/workspace-repository"
+import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
+
+const ownerId = `agent-gateway-owner-${randomUUID()}`
+const context = { userId: ownerId, role: "user" as const }
+const now = "2026-08-01T00:00:00.000Z"
+
+beforeAll(async () => {
+  await prisma.user.create({
+    data: {
+      id: ownerId,
+      name: "Agent gateway owner",
+      email: `${ownerId}@periplus.local`,
+      emailVerified: true,
+    },
+  })
+})
 
 class FakeRuntime implements AgentRuntime {
   readonly id = "fake-runtime"
@@ -15,10 +34,7 @@ class FakeRuntime implements AgentRuntime {
   observer: AgentRuntimeObserver | null = null
   cancel = vi.fn()
 
-  async start(
-    request: AgentRuntimeRequest,
-    observer: AgentRuntimeObserver
-  ) {
+  async start(request: AgentRuntimeRequest, observer: AgentRuntimeObserver) {
     this.request = request
     this.observer = observer
     return {
@@ -30,82 +46,176 @@ class FakeRuntime implements AgentRuntime {
   exit(code: number | null) {
     const result: AgentRuntimeExit = {
       code,
-      metadata: {
-        runtimeId: this.id,
-        workDir: "/tmp/fake-runtime",
-      },
+      metadata: { runtimeId: this.id, workDir: "/tmp/fake-runtime" },
     }
     this.observer?.onExit(result)
   }
 }
 
-function setup() {
-  const store = new DraftSessionService()
+function graph(id: string): TargetJourneyGraphSnapshot {
+  return {
+    id,
+    ownerId,
+    revision: 1,
+    status: "DRAFT",
+    visibility: "PRIVATE",
+    title: "Agent workspace",
+    events: [
+      {
+        id: `${id}-visit`,
+        journeyId: id,
+        parentSectionEventId: null,
+        placementStatus: "SCHEDULED",
+        origin: "ORIGINAL",
+        title: "西湖",
+        introducedRevision: 1,
+        createdAt: now,
+        updatedAt: now,
+        type: "VISIT",
+        executionStatus: "PLANNED",
+        detail: {
+          plannedLat: 30.25,
+          plannedLng: 120.15,
+          coordinateSystem: "GCJ02",
+        },
+      },
+    ],
+    links: [],
+    replacements: [],
+    branchSelections: [],
+    transitPlanningRuns: [],
+    eventAssetLinks: [],
+    observations: [],
+    eventSourceLinks: [],
+  }
+}
+
+async function setup() {
+  const workspace = await createWorkspace(context, {
+    graph: graph(`agent-workspace-${randomUUID()}`),
+    now: new Date(now),
+  })
+  const commands = new WorkspaceCommandService()
   const runtime = new FakeRuntime()
   const events: AgentEvent[] = []
-  const gateway = new AgentGateway(store, runtime, {
+  const gateway = new AgentGateway(commands, runtime, {
     backendUrl: "http://127.0.0.1:3002",
     projectRoot: "/workspace/periplus",
   })
-  const emit = (_sessionId: string, event: AgentEvent) => events.push(event)
-  return { store, runtime, events, gateway, emit }
+  const emit = (_workspaceId: string, event: AgentEvent) => events.push(event)
+  return { workspace, commands, runtime, events, gateway, emit }
 }
 
-describe("AgentGateway", () => {
-  it("runs through a generic runtime and injects the draft tool server", async () => {
-    const { store, runtime, events, gateway, emit } = setup()
+function capabilityToken(runtime: FakeRuntime) {
+  const content = runtime.request?.toolServers[0]?.configFile?.content
+  if (!content) throw new Error("missing Agent tool config")
+  return JSON.parse(content).capabilityToken as string
+}
 
-    await gateway.start("session-1", "规划杭州路线", "auto", emit)
+describe.sequential("P3 persistent AgentGateway", () => {
+  it("runs with a scoped capability and persists commands/messages across restart", async () => {
+    const { workspace, commands, runtime, events, gateway, emit } =
+      await setup()
+    await gateway.start(context, workspace.id, "规划杭州路线", "auto", emit)
 
     expect(runtime.request).toMatchObject({
       prompt: expect.stringContaining("规划杭州路线"),
       toolServers: [
         {
-          id: "periplus-draft",
+          id: "periplus-workspace",
           configFile: {
             argument: "--config",
-            content: expect.stringContaining('"sessionId": "session-1"'),
+            content: expect.stringContaining('"capabilityToken"'),
           },
         },
       ],
     })
-    expect(store.isLocked("session-1")).toBe(true)
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "draft.locked" }),
-        expect.objectContaining({
-          type: "agent.run.started",
-          payload: expect.objectContaining({ runtimeId: "fake-runtime" }),
-        }),
+        expect.objectContaining({ type: "workspace.locked" }),
+        expect.objectContaining({ type: "agent.run.started" }),
       ])
     )
 
-    runtime.observer?.onStdout("已完成")
-    runtime.exit(0)
-
-    expect(store.isLocked("session-1")).toBe(false)
-    expect(store.getConversationMessages("session-1")).toMatchObject([
-      { role: "user", content: "规划杭州路线" },
-      { role: "assistant", content: "已完成" },
-    ])
-    expect(events.at(-1)).toMatchObject({
-      type: "agent.run.completed",
-      payload: {
-        runtimeId: "fake-runtime",
-        workDir: "/tmp/fake-runtime",
+    const token = capabilityToken(runtime)
+    const mutation = await gateway.executeTool(token, {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "agent-update-visit",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "西湖（Agent）" },
+        },
       },
     })
+    expect(mutation.result).toMatchObject({ newRevision: 1 })
+
+    runtime.observer?.onStdout("已完成")
+    runtime.exit(0)
+    await vi.waitFor(
+      async () => {
+        const document = await commands.getDocument(context, workspace.id)
+        expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
+      },
+      { timeout: 5_000 }
+    )
+
+    const restarted = await new WorkspaceCommandService().getDocument(
+      context,
+      workspace.id
+    )
+    expect(restarted?.messages).toMatchObject([
+      { role: "USER", content: "规划杭州路线" },
+      { role: "ASSISTANT", content: "已完成" },
+    ])
+    expect(restarted?.session.headGraph.events[0]?.title).toBe("西湖（Agent）")
+    expect(events.at(-1)).toMatchObject({ type: "agent.run.completed" })
+    await expect(
+      gateway.executeTool(token, { type: "workspace.get" })
+    ).rejects.toThrow("invalid or expired")
   })
 
-  it("starts suggest mode without runtime tool servers and can cancel it", async () => {
-    const { runtime, gateway, emit } = setup()
-
-    await gateway.start("session-1", "给出修改建议", "suggest", emit)
+  it("uses no mutation tools in suggest mode and persists the suggestion", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "给出修改建议", "suggest", emit)
     expect(runtime.request?.toolServers).toEqual([])
 
-    gateway.cancel("session-1")
-    expect(runtime.cancel).toHaveBeenCalledOnce()
-
+    runtime.observer?.onStdout(
+      JSON.stringify({
+        title: "调整西湖标题",
+        summary: "仅建议，不自动执行",
+        basedOnWorkspaceRevision: 0,
+        commands: [
+          {
+            expectedRevision: 0,
+            idempotencyKey: "suggest-update",
+            command: {
+              name: "journey.update_event",
+              payload: {
+                eventId: `${workspace.headGraph.id}-visit`,
+                patch: { type: "VISIT", title: "建议标题" },
+              },
+            },
+          },
+        ],
+      })
+    )
     runtime.exit(0)
+    await vi.waitFor(
+      async () => {
+        const document = await commands.getDocument(context, workspace.id)
+        expect(document?.suggestions).toHaveLength(1)
+        expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
+      },
+      { timeout: 5_000 }
+    )
+    const document = await commands.getDocument(context, workspace.id)
+    expect(document?.session.headWorkspaceRevision).toBe(0)
+    expect(document?.suggestions[0]).toMatchObject({
+      title: "调整西湖标题",
+      basedOnWorkspaceRevision: 0,
+    })
   })
 })

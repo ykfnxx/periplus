@@ -32,7 +32,7 @@ const targetPositionSchema = z.discriminatedUnion("placement", [
   }),
 ])
 
-const commandBodySchema = z.discriminatedUnion("name", [
+export const targetCommandBodySchema = z.discriminatedUnion("name", [
   z.object({
     name: z.literal("journey.add_event"),
     payload: z.object({
@@ -176,7 +176,7 @@ export const targetCommandEnvelopeSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
   idempotencyKey: idSchema,
   actor: targetActorReferenceSchema,
-  command: commandBodySchema,
+  command: targetCommandBodySchema,
 })
 
 export const targetCommandResultSchema = z.object({

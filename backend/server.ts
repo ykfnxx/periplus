@@ -1,56 +1,40 @@
 import { createServer } from "node:http"
 import { loadProjectEnv } from "@/config/env.server"
 import { periplusServerConfig } from "@/config/periplus.server"
-import type { AgentEventEmitter } from "./types"
+import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
+import { AgentGateway } from "./agent/gateway"
+import { KimiCodeRuntime } from "./agent/runtimes/kimi-code-runtime"
+import { handleInternalRequest } from "./internal-api"
+import { createAgentWebSocketServer } from "./ws"
 
 loadProjectEnv()
 
-const [
-  { AgentGateway },
-  { KimiCodeRuntime },
-  { DraftSessionService },
-  { WorkspaceCommandService },
-  { transitPlanningService },
-  { handleInternalRequest },
-  { createAgentWebSocketServer },
-] = await Promise.all([
-  import("./agent/gateway"),
-  import("./agent/runtimes/kimi-code-runtime"),
-  import("@/modules/workspace/server/draft-session-service"),
-  import("@/modules/workspace/server/workspace-command-service"),
-  import("@/modules/data/transit/transit-planning-service"),
-  import("./internal-api"),
-  import("./ws"),
-])
-
 const port = periplusServerConfig.agentBackend.port
 const backendUrl = periplusServerConfig.agentBackend.url
-const drafts = new DraftSessionService(transitPlanningService)
-const commands = new WorkspaceCommandService(drafts)
-let broadcast: AgentEventEmitter = () => undefined
-
-const server = createServer((req, res) => {
-  handleInternalRequest(req, res, drafts, commands, broadcast).catch(
-    (error) => {
-      res.writeHead(500, { "Content-Type": "application/json" })
-      res.end(
-        JSON.stringify({
-          error: { code: "internal_error", message: error.message },
-        })
-      )
-    }
-  )
-})
+const commands = new WorkspaceCommandService()
 const runtime = new KimiCodeRuntime({
   binary: periplusServerConfig.kimi.bin,
   identityHomeSource: periplusServerConfig.kimi.homeSource,
 })
-const agentGateway = new AgentGateway(drafts, runtime, {
+const agentGateway = new AgentGateway(commands, runtime, {
   backendUrl,
   projectRoot: process.cwd(),
 })
+const server = createServer((req, res) => {
+  void handleInternalRequest(req, res, agentGateway).catch((error) => {
+    res.writeHead(500, { "Content-Type": "application/json" })
+    res.end(
+      JSON.stringify({
+        error: {
+          code: "internal_error",
+          message: error instanceof Error ? error.message : "Unexpected error",
+        },
+      })
+    )
+  })
+})
 
-broadcast = createAgentWebSocketServer(server, drafts, commands, agentGateway)
+createAgentWebSocketServer(server, commands, agentGateway)
 
 server.listen(port, periplusServerConfig.agentBackend.host, () => {
   console.log(`Periplus backend listening on ${backendUrl}`)

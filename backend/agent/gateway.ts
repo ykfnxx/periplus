@@ -1,10 +1,22 @@
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
-import { DraftSessionService } from "@/modules/workspace/server/draft-session-service"
+import type { AuthContext } from "@/modules/auth/server/context"
+import {
+  targetCommandBodySchema,
+  type TargetCommandEnvelope,
+} from "@/modules/data-model/contracts"
+import {
+  appendWorkspaceMessage,
+  createWorkspaceSuggestion,
+  finishWorkspaceAgentRun,
+  startWorkspaceAgentRun,
+  WorkspaceInputError,
+} from "@/modules/data/workspaces/workspace-repository"
+import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import type {
+  AgentConversationMessage,
   AgentEventEmitter,
   AgentMode,
-  AgentConversationMessage,
 } from "../types"
 import { buildPrompt } from "./prompt"
 import type {
@@ -21,12 +33,41 @@ interface AgentGatewayOptions {
 }
 
 interface RunningAgent {
+  workspaceId: string
+  context: AuthContext
   runId: string
+  capabilityToken: string
   runtimeRun: AgentRuntimeRun | null
   cancelled: boolean
   finished: boolean
   runtimeFailed: boolean
   stdout: string
+}
+
+export type AgentToolRequest =
+  | { type: "workspace.get" }
+  | {
+      type: "workspace.command"
+      expectedRevision: number
+      idempotencyKey: string
+      command: unknown
+    }
+
+function conversationMessages(
+  document: NonNullable<
+    Awaited<ReturnType<WorkspaceCommandService["getDocument"]>>
+  >
+): AgentConversationMessage[] {
+  return document.messages
+    .filter((message) => message.role !== "SYSTEM")
+    .map((message) => ({
+      id: message.id,
+      role: message.role === "USER" ? "user" : "assistant",
+      content: message.content,
+      runId: message.agentRunId ?? null,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+    }))
 }
 
 function draftPrompt(
@@ -39,117 +80,168 @@ function draftPrompt(
 
 export class AgentGateway {
   private readonly runs = new Map<string, RunningAgent>()
+  private readonly runsByCapability = new Map<string, RunningAgent>()
 
   constructor(
-    private readonly store: DraftSessionService,
+    private readonly commands: WorkspaceCommandService,
     private readonly runtime: AgentRuntime,
     private readonly options: AgentGatewayOptions
   ) {}
 
   async start(
-    sessionId: string,
+    context: AuthContext,
+    workspaceId: string,
     prompt: string,
     mode: AgentMode,
     emit: AgentEventEmitter
   ) {
-    if (this.runs.has(sessionId) || this.store.isLocked(sessionId)) {
-      emit(sessionId, {
+    const initial = await this.commands.getDocument(context, workspaceId)
+    if (!initial) throw new WorkspaceInputError("Workspace was not found")
+    if (
+      this.runs.has(workspaceId) ||
+      initial.agentRuns.some((run) => run.status === "RUNNING")
+    ) {
+      emit(workspaceId, {
         type: "error",
-        payload: { message: "当前草稿正在由 Agent 修改" },
+        payload: { message: "当前 Workspace 正在由 Agent 修改" },
       })
       return
     }
 
-    const runId = `run-${randomUUID()}`
-    this.store.addUserConversationMessage(sessionId, prompt)
-    const conversationMessages = this.store.getConversationMessages(sessionId)
-    const snapshot = this.store.getSnapshot(sessionId)
+    const persistedRun = await startWorkspaceAgentRun(context, workspaceId)
+    if (!persistedRun) throw new WorkspaceInputError("Workspace was not found")
+    try {
+      await appendWorkspaceMessage(context, workspaceId, {
+        role: "USER",
+        content: prompt,
+      })
+    } catch (error) {
+      await finishWorkspaceAgentRun(context, workspaceId, persistedRun.id, {
+        status: "FAILED",
+        errorCode: "AGENT_MESSAGE_FAILED",
+        errorMessage:
+          error instanceof Error ? error.message : "User message failed",
+      })
+      throw error
+    }
+    const capabilityToken = randomUUID()
     const running: RunningAgent = {
-      runId,
+      workspaceId,
+      context,
+      runId: persistedRun.id,
+      capabilityToken,
       runtimeRun: null,
       cancelled: false,
       finished: false,
       runtimeFailed: false,
       stdout: "",
     }
+    this.runs.set(workspaceId, running)
+    this.runsByCapability.set(capabilityToken, running)
 
-    this.runs.set(sessionId, running)
-    this.store.lock(sessionId, runId)
-    emit(sessionId, {
-      type: "draft.locked",
-      payload: this.store.getSnapshot(sessionId),
-    })
-    emit(sessionId, {
+    const document = await this.commands.getDocument(context, workspaceId)
+    if (!document) throw new WorkspaceInputError("Workspace was not found")
+    emit(workspaceId, { type: "workspace.locked", payload: document })
+    emit(workspaceId, {
       type: "agent.run.started",
-      payload: { runId, runtimeId: this.runtime.id },
+      payload: { runId: running.runId, runtimeId: this.runtime.id },
     })
 
     try {
       const runtimeRun = await this.runtime.start(
         {
-          runId,
-          prompt: draftPrompt(conversationMessages, mode, snapshot),
-          toolServers: this.toolServers(sessionId, mode),
+          runId: running.runId,
+          prompt: draftPrompt(conversationMessages(document), mode, document),
+          toolServers: this.toolServers(running, mode),
         },
         {
           onStdout: (text) => {
             running.stdout += text
-            this.store.appendAssistantConversationDelta(sessionId, runId, text)
-            emit(sessionId, {
+            emit(workspaceId, {
               type: "agent.message.delta",
-              payload: { runId, stream: "stdout", text },
+              payload: { runId: running.runId, stream: "stdout", text },
             })
           },
           onStderr: (text) => {
-            emit(sessionId, {
+            emit(workspaceId, {
               type: "agent.message.delta",
-              payload: { runId, stream: "stderr", text },
+              payload: { runId: running.runId, stream: "stderr", text },
             })
           },
           onError: (error) => {
             running.runtimeFailed = true
-            emit(sessionId, {
+            emit(workspaceId, {
               type: "agent.run.failed",
-              payload: { runId, message: error.message },
+              payload: { runId: running.runId, message: error.message },
             })
           },
           onExit: (result) => {
-            this.finish(sessionId, running, mode, result, emit)
+            void this.finish(running, mode, result, emit)
           },
         }
       )
-
       running.runtimeRun = runtimeRun
       if (running.cancelled) runtimeRun.cancel()
     } catch (error) {
-      this.failToStart(sessionId, running, error, emit)
+      await this.failToStart(running, error, emit)
     }
   }
 
-  cancel(sessionId: string) {
-    const running = this.runs.get(sessionId)
+  cancel(workspaceId: string) {
+    const running = this.runs.get(workspaceId)
     if (!running || running.finished) return
-
     running.cancelled = true
     running.runtimeRun?.cancel()
   }
 
-  private toolServers(sessionId: string, mode: AgentMode): AgentToolServer[] {
-    if (mode !== "auto") return []
+  async executeTool(capabilityToken: string, request: AgentToolRequest) {
+    const running = this.runsByCapability.get(capabilityToken)
+    if (!running || running.finished) {
+      throw new WorkspaceInputError(
+        "Agent tool capability is invalid or expired"
+      )
+    }
+    if (request.type === "workspace.get") {
+      const document = await this.commands.getDocument(
+        running.context,
+        running.workspaceId
+      )
+      if (!document) throw new WorkspaceInputError("Workspace was not found")
+      return { workspace: document }
+    }
+    const envelope: TargetCommandEnvelope = {
+      aggregateId: running.workspaceId,
+      expectedRevision: request.expectedRevision,
+      idempotencyKey: request.idempotencyKey,
+      actor: { kind: "AGENT", agentRunId: running.runId },
+      command: targetCommandBodySchema.parse(request.command),
+    }
+    const result = await this.commands.execute(running.context, envelope)
+    const document = await this.commands.getDocument(
+      running.context,
+      running.workspaceId
+    )
+    return { result, workspace: document }
+  }
 
+  private toolServers(
+    running: RunningAgent,
+    mode: AgentMode
+  ): AgentToolServer[] {
+    if (mode !== "auto") return []
     return [
       {
-        id: "periplus-draft",
+        id: "periplus-workspace",
         command: join(this.options.projectRoot, "node_modules/.bin/tsx"),
         args: ["backend/mcp/server.ts"],
         cwd: this.options.projectRoot,
         configFile: {
-          fileName: "draft-mcp-config.json",
+          fileName: "workspace-mcp-config.json",
           argument: "--config",
           content: JSON.stringify(
             {
               backendUrl: this.options.backendUrl,
-              sessionId,
+              capabilityToken: running.capabilityToken,
             },
             null,
             2
@@ -159,8 +251,7 @@ export class AgentGateway {
     ]
   }
 
-  private finish(
-    sessionId: string,
+  private async finish(
     running: RunningAgent,
     mode: AgentMode,
     result: AgentRuntimeExit,
@@ -168,72 +259,88 @@ export class AgentGateway {
   ) {
     if (running.finished) return
     running.finished = true
-    this.runs.delete(sessionId)
+    this.runs.delete(running.workspaceId)
+    this.runsByCapability.delete(running.capabilityToken)
 
     let failed = running.runtimeFailed || result.code !== 0
-    if (mode === "suggest" && result.code === 0 && !running.cancelled) {
-      try {
-        const suggestion = this.store.createSuggestion(
-          sessionId,
-          parseSuggestion(running.stdout)
-        )
-        emit(sessionId, {
-          type: "agent.diff.suggested",
-          payload: suggestion.pendingSuggestions[0] ?? null,
-        })
-        emit(sessionId, {
-          type: "draft.updated",
-          payload: suggestion,
-        })
-      } catch (error) {
-        failed = true
-        emit(sessionId, {
-          type: "agent.run.failed",
-          payload: {
-            runId: running.runId,
-            message:
-              error instanceof Error
-                ? error.message
-                : "Suggestion parse failed",
-          },
+    try {
+      if (running.stdout) {
+        await appendWorkspaceMessage(running.context, running.workspaceId, {
+          role: "ASSISTANT",
+          content: running.stdout,
+          agentRunId: running.runId,
         })
       }
+      if (mode === "suggest" && result.code === 0 && !running.cancelled) {
+        const suggestion = parseSuggestion(running.stdout)
+        await createWorkspaceSuggestion(running.context, running.workspaceId, {
+          title: suggestion.title,
+          summary: suggestion.summary,
+          commandPayloads: suggestion.commandPayloads,
+          basedOnWorkspaceRevision: suggestion.basedOnWorkspaceRevision,
+        })
+      }
+    } catch (error) {
+      failed = true
+      emit(running.workspaceId, {
+        type: "agent.run.failed",
+        payload: {
+          runId: running.runId,
+          message:
+            error instanceof Error ? error.message : "Agent output failed",
+        },
+      })
     }
 
-    this.store.unlock(sessionId, running.runId)
-    emit(sessionId, {
-      type: "draft.unlocked",
-      payload: this.store.getSnapshot(sessionId),
-    })
-    emit(sessionId, {
+    await finishWorkspaceAgentRun(
+      running.context,
+      running.workspaceId,
+      running.runId,
+      {
+        status: running.cancelled
+          ? "CANCELLED"
+          : failed
+            ? "FAILED"
+            : "SUCCEEDED",
+        errorCode: failed ? "AGENT_RUNTIME_FAILED" : undefined,
+      }
+    )
+    const document = await this.commands.getDocument(
+      running.context,
+      running.workspaceId
+    )
+    emit(running.workspaceId, { type: "workspace.unlocked", payload: document })
+    emit(running.workspaceId, {
       type: running.cancelled
         ? "agent.run.cancelled"
         : failed
           ? "agent.run.failed"
           : "agent.run.completed",
-      payload: {
-        runId: running.runId,
-        code: result.code,
-        ...result.metadata,
-      },
+      payload: { runId: running.runId, code: result.code, ...result.metadata },
     })
   }
 
-  private failToStart(
-    sessionId: string,
+  private async failToStart(
     running: RunningAgent,
     error: unknown,
     emit: AgentEventEmitter
   ) {
     if (running.finished) return
     running.finished = true
-    this.runs.delete(sessionId)
-    this.store.unlock(sessionId, running.runId)
-    emit(sessionId, {
-      type: "draft.unlocked",
-      payload: this.store.getSnapshot(sessionId),
-    })
-    emit(sessionId, {
+    this.runs.delete(running.workspaceId)
+    this.runsByCapability.delete(running.capabilityToken)
+    await finishWorkspaceAgentRun(
+      running.context,
+      running.workspaceId,
+      running.runId,
+      {
+        status: "FAILED",
+        errorCode: "AGENT_START_FAILED",
+        errorMessage:
+          error instanceof Error ? error.message : "Agent runtime failed",
+      }
+    )
+    emit(running.workspaceId, {
       type: "agent.run.failed",
       payload: {
         runId: running.runId,

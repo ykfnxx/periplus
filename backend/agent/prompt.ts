@@ -1,7 +1,4 @@
-import {
-  JOURNEY_TOOL_NAMES,
-  type AgentConversationMessage,
-} from "@/modules/workspace/server/contracts"
+import { type AgentConversationMessage } from "@/modules/workspace/server/contracts"
 import type { AgentMode } from "../types"
 
 function formatConversationMessage(message: AgentConversationMessage) {
@@ -11,9 +8,9 @@ function formatConversationMessage(message: AgentConversationMessage) {
 function basePrompt(messages: AgentConversationMessage[]) {
   return [
     "你是 Periplus 的旅程规划 Agent。",
-    "所有修改都必须通过 typed JourneyEvent 工具作用于当前草稿；保存由用户在前端触发。",
+    "所有修改都必须通过 typed Workspace command 工具作用于持久 Workspace；禁止直接写数据库。",
     "SECTION 只用于层级分组，VISIT/STAY/MEAL/ACTIVITY/TRANSIT 才是可执行事件；TRANSIT 必须是显式事件。",
-    "修改前读取当前 revision；每个修改工具都传 expectedRevision 和唯一 idempotencyKey，成功后使用返回的新 revision。",
+    "修改前读取 headWorkspaceRevision；每个 command 都传 expectedRevision 和唯一 idempotencyKey，成功后使用返回的新 revision。",
     "下面是当前会话从开始到现在的完整上下文，请基于历史继续对话，只执行最后一条用户需求。",
     "",
     "完整对话：",
@@ -38,14 +35,17 @@ export function buildPrompt(
         {
           title: "简短建议标题",
           summary: "给用户看的简短变更摘要",
-          toolCalls: [
+          basedOnWorkspaceRevision: 3,
+          commands: [
             {
-              tool: "journey.update_event",
-              input: {
-                expectedRevision: 3,
-                idempotencyKey: "suggestion-update-event-1",
-                eventId: "event-id",
-                patch: { description: "新的备注" },
+              expectedRevision: 3,
+              idempotencyKey: "suggestion-update-event-1",
+              command: {
+                name: "journey.update_event",
+                payload: {
+                  eventId: "event-id",
+                  patch: { type: "VISIT", description: "新的备注" },
+                },
               },
             },
           ],
@@ -54,9 +54,7 @@ export function buildPrompt(
         2
       ),
       "",
-      `允许的 tool 值：${JOURNEY_TOOL_NAMES.filter(
-        (name) => name !== "get_current_journey"
-      ).join(", ")}`,
+      "commands.command 必须符合 TargetCommandBody（例如 journey.update_event / journey.select_branch / journey.undo）。",
       "",
       "当前草稿快照：",
       draftJson,
