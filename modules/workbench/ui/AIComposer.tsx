@@ -16,7 +16,11 @@ import {
 import type { TargetCommandEnvelope } from "@/modules/data-model/contracts"
 import AgentModeToggle from "./AgentModeToggle"
 
-export default function AIComposer() {
+export default function AIComposer({
+  onPromptSent,
+}: {
+  onPromptSent?: () => void
+}) {
   const document = useWorkspaceStore((state) => state.workspaceDocument)
   const composerInput = useWorkspaceStore((state) => state.composerInput)
   const agentMode = useWorkspaceStore((state) => state.agentMode)
@@ -82,6 +86,7 @@ export default function AIComposer() {
     setWorkbenchTab("chat")
     sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
     setComposerInput("")
+    onPromptSent?.()
   }
 
   const submitPrompt = (event: FormEvent) => {

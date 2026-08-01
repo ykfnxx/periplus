@@ -7,7 +7,6 @@ import {
   BusFront,
   CalendarDays,
   Car,
-  Check,
   Clock3,
   Footprints,
   Landmark,
@@ -271,13 +270,21 @@ function VisitEventCard({
   return (
     <>
       {photos.length ? (
-        <span className="scrollbar-hidden flex h-28 gap-1 overflow-x-auto bg-cream">
-          {photos.map((photo, index) => (
+        <span
+          data-photo-board
+          className={`grid h-28 gap-2 px-4 pt-4 ${
+            photos.length === 1
+              ? "grid-cols-1"
+              : photos.length === 2
+                ? "grid-cols-2"
+                : "grid-cols-3"
+          }`}
+        >
+          {photos.slice(0, 3).map((photo, index) => (
             <span
               key={photo.id}
-              className={`relative shrink-0 overflow-hidden ${
-                photos.length === 1 || index === 0 ? "w-full" : "w-36"
-              }`}
+              data-photo-item
+              className="relative min-w-0 overflow-hidden rounded-lg bg-cream"
             >
               <Image
                 src={photo.url}
@@ -287,6 +294,11 @@ function VisitEventCard({
                 unoptimized
                 className="object-cover"
               />
+              {index === 2 && photos.length > 3 ? (
+                <span className="absolute inset-0 flex items-center justify-center bg-ink/55 text-sm font-black text-soft-white">
+                  +{photos.length - 3}
+                </span>
+              ) : null}
             </span>
           ))}
         </span>
@@ -579,45 +591,39 @@ function TransitTimelineRow({
           <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
             选择路线方案
           </p>
-          <div className="space-y-2">
-            {activeRun!.plans.map((candidate) => {
-              const isCurrent = plan?.id === candidate.id
-              return (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  aria-pressed={isCurrent}
-                  onClick={() => onSelectPlan(candidate.id)}
-                  className={`grid w-full grid-cols-[1fr_auto] items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${
-                    isCurrent
-                      ? "border-russet bg-white shadow-sm"
-                      : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
-                  }`}
-                >
-                  <span className="min-w-0">
-                    <span className="flex items-center gap-2 text-[11px] font-black text-ink">
-                      {candidate.label}
-                      {isCurrent ? (
-                        <span className="inline-flex items-center gap-1 text-[9px] text-coral">
-                          <Check className="h-3 w-3" aria-hidden="true" />
-                          当前
-                        </span>
-                      ) : null}
+          <div className="relative -mx-3">
+            <div className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10">
+              {activeRun!.plans.map((candidate) => {
+                const isCurrent = plan?.id === candidate.id
+                return (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    aria-pressed={isCurrent}
+                    onClick={() => onSelectPlan(candidate.id)}
+                    className={`h-10 w-[122px] shrink-0 rounded-lg border px-2 text-left transition ${
+                      isCurrent
+                        ? "border-russet bg-white shadow-sm"
+                        : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
+                    }`}
+                  >
+                    <span className="block min-w-0">
+                      <span className="block truncate text-[10px] font-black text-ink">
+                        <span className="truncate">{candidate.label}</span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-[9px] font-bold text-teak">
+                        {formatTransitDuration(candidate.durationSeconds)} ·{" "}
+                        {formatTransitDistance(candidate.distanceMeters)}
+                      </span>
                     </span>
-                    <span className="mt-1 block text-[10px] font-bold text-teak">
-                      {formatTransitDuration(candidate.durationSeconds)} ·{" "}
-                      {formatTransitDistance(candidate.distanceMeters)}
-                      {candidate.fareAmount !== undefined
-                        ? ` · 约 ¥${candidate.fareAmount}`
-                        : ""}
-                    </span>
-                  </span>
-                  <span className="text-[10px] font-black text-bluegray">
-                    {isCurrent ? "地图已同步" : "切换"}
-                  </span>
-                </button>
-              )
-            })}
+                  </button>
+                )
+              })}
+            </div>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0 right-0 h-full w-8 bg-gradient-to-l from-route-blue-soft to-transparent"
+            />
           </div>
         </div>
       ) : null}

@@ -7,6 +7,7 @@ import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
 import { TARGET_CONTRACT_FIXTURES } from "@/modules/data-model/contracts/fixtures"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import { plannedLocationOf } from "@/lib/journeys/locations"
 
 function workspaceDocument() {
   return workspaceDocumentForStory(
@@ -44,6 +45,7 @@ describe("target Workspace route preview", () => {
     const lanzhouCard = screen.getByRole("button", {
       name: "查看城市 兰州",
     })
+    expect(within(lanzhouCard).getByText("城市")).toBeVisible()
     expect(lanzhouCard.querySelector(".bg-marker-mint")).not.toBeNull()
     expect(lanzhouCard.querySelector(".bg-marker-yellow")).toBeNull()
   })
@@ -158,6 +160,77 @@ describe("target Workspace route preview", () => {
     expect(screen.getByText("离店")).toBeVisible()
   })
 
+  it("keeps visit photos inside independently rounded media boards", () => {
+    const document = workspaceDocument()
+    const visit = getJourneyScopeProjection(
+      document.session.headGraph,
+      "section",
+      "section-xian"
+    ).items.find((item) => item.event.type === "VISIT")
+    if (!visit || visit.event.type !== "VISIT") {
+      throw new Error("visit fixture is missing")
+    }
+    const location = plannedLocationOf(visit.event)
+    if (!location) throw new Error("visit fixture location is missing")
+    act(() => {
+      useWorkspaceStore.getState().applyWorkspaceDocument(document)
+      useWorkspaceStore.getState().setPhotoShares(
+        Array.from({ length: 4 }, (_, index) => ({
+          id: `photo-${index}`,
+          ownerId: "owner",
+          ownerName: "Owner",
+          lat: location.lat,
+          lng: location.lng,
+          imageDataUrl:
+            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+          caption: `photo ${index}`,
+          createdAt: index,
+          canDelete: true,
+        }))
+      )
+    })
+
+    render(<RouteTimeline items={[visit]} />)
+
+    const card = screen.getByRole("button", {
+      name: `选择事件 ${visit.event.title}`,
+    })
+    const board = card.querySelector("[data-photo-board]")
+    expect(board).not.toBeNull()
+    const photoItems = board?.querySelectorAll("[data-photo-item]") ?? []
+    expect(photoItems).toHaveLength(3)
+    for (const item of photoItems) expect(item).toHaveClass("rounded-lg")
+    expect(within(card).getByText("+1")).toBeVisible()
+  })
+
+  it("renders transit choices as an icon-free clipped horizontal scroller", () => {
+    const fixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "03-transit-plan-choice"
+    )
+    const graph = fixture?.cases[0]?.input.graph
+    if (!graph) throw new Error("transit choice fixture is missing")
+    act(() => {
+      useWorkspaceStore
+        .getState()
+        .applyWorkspaceDocument(workspaceDocumentForStory(graph))
+    })
+    const items = getJourneyScopeProjection(graph, "overview", null).items
+    render(<RouteTimeline items={items} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "交通事件 驾车" }))
+
+    const choices = screen
+      .getByText("选择路线方案")
+      .parentElement?.querySelector(".overflow-x-auto")
+    expect(choices).not.toBeNull()
+    expect(choices).toHaveClass("scrollbar-hidden", "flex", "px-4")
+    for (const label of ["推荐", "最快", "低价"]) {
+      const button = screen.getByText(label).closest("button")
+      expect(button).toHaveClass("h-10", "w-[122px]")
+      expect(button?.querySelector("svg")).toBeNull()
+    }
+  })
+
   it("drills from CITY to DAY to events and returns to the parent scope", () => {
     const fixture = TARGET_CONTRACT_FIXTURES.find(
       (candidate) => candidate.id === "02-city-day-event-drilldown"
@@ -173,18 +246,21 @@ describe("target Workspace route preview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "查看城市 杭州" }))
     expect(useWorkspaceStore.getState().activeSectionEventId).toBe("city")
-    expect(
-      screen.getByRole("tab", { name: "杭州" })
-    ).toHaveAttribute("aria-selected", "true")
-    expect(
-      screen.getByRole("tab", { name: "第一天" })
-    ).toHaveAttribute("aria-selected", "false")
+    expect(screen.getByRole("tab", { name: "杭州" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    )
+    expect(screen.getByRole("tab", { name: "第一天" })).toHaveAttribute(
+      "aria-selected",
+      "false"
+    )
 
     fireEvent.click(screen.getByRole("button", { name: "进入分组 第一天" }))
     expect(useWorkspaceStore.getState().activeSectionEventId).toBe("day")
-    expect(
-      screen.getByRole("tab", { name: "第一天" })
-    ).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("tab", { name: "第一天" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    )
     expect(screen.getByRole("button", { name: "选择事件 西湖" })).toBeVisible()
 
     fireEvent.click(screen.getByRole("button", { name: "返回上一级" }))

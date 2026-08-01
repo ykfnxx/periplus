@@ -114,18 +114,14 @@ export default function WorkbenchShell() {
   }
 
   if (layout === "wide") {
+    const isChatCollapsed = collapsedPanels.has("chat")
     return (
       <section
         ref={sectionRef}
         aria-label="旅行规划工作台"
         className="pointer-events-none absolute top-5 bottom-5 left-5 z-20 flex gap-5"
       >
-        {collapsedPanels.has("chat") ? (
-          <CollapsedPanelRail
-            label="AI 旅行助手"
-            onExpand={() => toggleWidePanel("chat")}
-          />
-        ) : (
+        {isChatCollapsed ? null : (
           <AIWorkbenchPanel
             className="pointer-events-auto flex w-[340px]"
             showInitialState={showInitialState}
@@ -141,6 +137,8 @@ export default function WorkbenchShell() {
           <ItineraryPanel
             className="pointer-events-auto flex w-[414px]"
             onCollapse={() => toggleWidePanel("preview")}
+            showContextualComposer={isChatCollapsed}
+            onPromptSent={() => toggleWidePanel("chat")}
           />
         )}
       </section>
@@ -281,10 +279,14 @@ function AIWorkbenchPanel({
 function ItineraryPanel({
   className,
   onCollapse,
+  showContextualComposer = false,
+  onPromptSent,
   framed = true,
 }: {
   className: string
   onCollapse?: () => void
+  showContextualComposer?: boolean
+  onPromptSent?: () => void
   framed?: boolean
 }) {
   return (
@@ -298,6 +300,14 @@ function ItineraryPanel({
       <div className="periplus-chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         <RoutePreview onCollapse={onCollapse} />
       </div>
+      {showContextualComposer ? (
+        <div className="shrink-0 border-t border-ink-10 bg-soft-white px-5 pt-3 pb-4">
+          <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
+            继续修改行程
+          </p>
+          <AIComposer onPromptSent={onPromptSent} />
+        </div>
+      ) : null}
     </div>
   )
 }
