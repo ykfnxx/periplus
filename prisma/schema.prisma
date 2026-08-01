@@ -13,6 +13,12 @@ enum JourneyStatus {
   COMPLETED
 }
 
+enum JourneyVisibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+}
+
 enum JourneyEventType {
   SECTION
   VISIT
@@ -39,6 +45,11 @@ enum JourneyEventOrigin {
   SOURCE_DERIVED
 }
 
+enum JourneyEventPlacementStatus {
+  SCHEDULED
+  UNSCHEDULED
+}
+
 enum JourneyEventLinkKind {
   MAIN
   ALTERNATIVE
@@ -48,6 +59,12 @@ enum JourneySectionKind {
   CITY
   DAY
   THEME
+}
+
+enum ActorKind {
+  USER
+  AGENT
+  SYSTEM
 }
 
 enum TransportMode {
@@ -75,6 +92,175 @@ enum TransitPreference {
   LESS_WALKING
 }
 
+enum TransitRouteState {
+  EMPTY
+  READY
+  ROUTE_STALE
+}
+
+enum TransitPlanningRunStatus {
+  PLANNING
+  READY
+  FAILED
+}
+
+enum TransitSegmentMode {
+  WALK
+  DRIVE
+  BUS
+  SUBWAY
+  RAIL
+  TAXI
+  FLIGHT
+}
+
+enum CoordinateSystem {
+  WGS84
+  GCJ02
+  BD09
+  LOCAL
+}
+
+enum GeometryKind {
+  ROAD_NETWORK
+  TRANSIT_LINE
+  SCHEMATIC
+  NONE
+}
+
+enum TrafficBasis {
+  REALTIME
+  PREDICTED
+  TYPICAL
+  SCHEDULED
+  UNKNOWN
+}
+
+enum WorkspaceStatus {
+  ACTIVE
+  EXPIRED
+  ARCHIVED
+}
+
+enum WorkspaceCommandName {
+  JOURNEY_ADD_EVENT           @map("journey.add_event")
+  JOURNEY_UPDATE_EVENT        @map("journey.update_event")
+  JOURNEY_MOVE_EVENT          @map("journey.move_event")
+  JOURNEY_PLACE_EVENT         @map("journey.place_event")
+  JOURNEY_RETIRE_EVENT        @map("journey.retire_event")
+  JOURNEY_REPLACE_EVENT       @map("journey.replace_event")
+  JOURNEY_ADD_LINK            @map("journey.add_link")
+  JOURNEY_RETIRE_LINK         @map("journey.retire_link")
+  JOURNEY_SELECT_BRANCH       @map("journey.select_branch")
+  JOURNEY_PLAN_TRANSIT        @map("journey.plan_transit")
+  JOURNEY_SELECT_TRANSIT_PLAN @map("journey.select_transit_plan")
+  JOURNEY_CONFIRM_ACTUAL      @map("journey.confirm_actual")
+  JOURNEY_SKIP_EVENT          @map("journey.skip_event")
+  JOURNEY_CANCEL_EVENT        @map("journey.cancel_event")
+  JOURNEY_ATTACH_ASSET        @map("journey.attach_asset")
+  JOURNEY_ADD_OBSERVATION     @map("journey.add_observation")
+  JOURNEY_LINK_SOURCE_ITEM    @map("journey.link_source_item")
+  JOURNEY_UNDO                @map("journey.undo")
+  WORKSPACE_REFRESH           @map("workspace.refresh")
+  WORKSPACE_REPLAY            @map("workspace.replay")
+  WORKSPACE_FORK              @map("workspace.fork")
+  WORKSPACE_COMMIT            @map("workspace.commit")
+}
+
+enum WorkspaceMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum WorkspaceSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  STALE
+}
+
+enum WorkspaceAgentRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum AssetKind {
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+}
+
+enum AssetVisibility {
+  PRIVATE
+  JOURNEY
+  PUBLIC
+}
+
+enum EventAssetRole {
+  COVER
+  GALLERY
+  RECEIPT
+  REFERENCE
+}
+
+enum ObservationKind {
+  NOTE
+  RATING
+  COST
+  WEATHER
+  FACT
+}
+
+enum ObservationPhase {
+  PLANNED
+  ACTUAL
+}
+
+enum SourcePackVisibility {
+  PRIVATE
+  SHARED
+}
+
+enum SourcePackStatus {
+  DRAFT
+  PROCESSING
+  READY
+  FAILED
+  ARCHIVED
+}
+
+enum SourceDocumentProcessingStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum SourceItemKind {
+  PLACE
+  PERSON
+  EVENT
+  QUOTE
+  NOTE
+}
+
+enum SourceItemResolutionState {
+  UNRESOLVED
+  CANDIDATE
+  CONFIRMED
+  REJECTED
+}
+
+enum EventSourceRole {
+  INSPIRATION
+  EVIDENCE
+  NAVIGATION
+}
+
 enum PlaceCategory {
   SIGHT
   PARK
@@ -96,321 +282,26 @@ enum PlaceSourceQuality {
   NEEDS_REVIEW
 }
 
-model Journey {
-  id          String                 @id @default(uuid())
-  ownerId     String
-  owner       User                   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  revision    Int                    @default(1)
-  status      JourneyStatus          @default(DRAFT)
-  visibility  String                 @default("private")
-  title       String
-  description String?
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-  events      JourneyEvent[]
-  links       JourneyEventLink[]
-  revisions   JourneyEventRevision[]
-
-  @@index([ownerId])
-}
-
-model JourneyEvent {
-  id                         String                       @id @default(uuid())
-  journeyId                  String
-  journey                    Journey                      @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  parentEventId              String?
-  parentEvent                JourneyEvent?                @relation("JourneyEventChildren", fields: [parentEventId], references: [id], onDelete: Cascade)
-  childEvents                JourneyEvent[]               @relation("JourneyEventChildren")
-  replacedByEventId          String?
-  replacedByEvent            JourneyEvent?                @relation("JourneyEventReplacement", fields: [replacedByEventId], references: [id], onDelete: SetNull)
-  replaces                   JourneyEvent[]               @relation("JourneyEventReplacement")
-  type                       JourneyEventType
-  executionStatus            JourneyEventExecutionStatus?
-  origin                     JourneyEventOrigin           @default(ORIGINAL)
-  title                      String
-  description                String?
-  plannedStartAt             DateTime?
-  plannedEndAt               DateTime?
-  actualStartAt              DateTime?
-  actualEndAt                DateTime?
-  createdAt                  DateTime                     @default(now())
-  updatedAt                  DateTime                     @updatedAt
-  sectionDetail              SectionEventDetail?
-  visitDetail                VisitEventDetail?
-  transitDetail              TransitEventDetail?          @relation("TransitEventOwner")
-  stayDetail                 StayEventDetail?
-  mealDetail                 MealEventDetail?
-  activityDetail             ActivityEventDetail?
-  noteDetail                 NoteEventDetail?
-  outgoingLinks              JourneyEventLink[]           @relation("JourneyEventLinkFrom")
-  incomingLinks              JourneyEventLink[]           @relation("JourneyEventLinkTo")
-  plannedTransitOrigins      TransitEventDetail[]         @relation("TransitPlannedFrom")
-  plannedTransitDestinations TransitEventDetail[]         @relation("TransitPlannedTo")
-  actualTransitOrigins       TransitEventDetail[]         @relation("TransitActualFrom")
-  actualTransitDestinations  TransitEventDetail[]         @relation("TransitActualTo")
-  revisions                  JourneyEventRevision[]
-  attachments                JourneyEventAttachment[]
-
-  @@index([journeyId])
-  @@index([parentEventId])
-  @@index([type])
-  @@index([executionStatus])
-}
-
-model JourneyEventLink {
-  id          String               @id @default(uuid())
-  journeyId   String
-  journey     Journey              @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  fromEventId String
-  fromEvent   JourneyEvent         @relation("JourneyEventLinkFrom", fields: [fromEventId], references: [id], onDelete: Cascade)
-  toEventId   String
-  toEvent     JourneyEvent         @relation("JourneyEventLinkTo", fields: [toEventId], references: [id], onDelete: Cascade)
-  kind        JourneyEventLinkKind @default(MAIN)
-  branchKey   String?
-  rank        String?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-
-  @@unique([journeyId, fromEventId, toEventId, kind])
-  @@index([journeyId, kind])
-  @@index([fromEventId])
-  @@index([toEventId])
-}
-
-model SectionEventDetail {
-  eventId            String             @id
-  event              JourneyEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  kind               JourneySectionKind
-  placeId            String?
-  place              Place?             @relation("SectionEventPlace", fields: [placeId], references: [id], onDelete: SetNull)
-  lat                Float?
-  lng                Float?
-  coordinateSystem   String?
-  coordinateProvider String?
-  providerPlaceId    String?
-
-  @@index([placeId])
-}
-
-model VisitEventDetail {
-  eventId                String       @id
-  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  plannedPlaceId         String?
-  plannedPlace           Place?       @relation("VisitPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
-  actualPlaceId          String?
-  actualPlace            Place?       @relation("VisitActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
-  plannedLat             Float
-  plannedLng             Float
-  actualLat              Float?
-  actualLng              Float?
-  coordinateSystem       String?
-  coordinateProvider     String?
-  providerPlaceId        String?
-  plannedDurationMinutes Int?
-  actualDurationMinutes  Int?
-
-  @@index([plannedPlaceId])
-  @@index([actualPlaceId])
-}
-
-model StayEventDetail {
-  eventId                String       @id
-  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  plannedPlaceId         String?
-  plannedPlace           Place?       @relation("StayPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
-  actualPlaceId          String?
-  actualPlace            Place?       @relation("StayActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
-  plannedLat             Float
-  plannedLng             Float
-  actualLat              Float?
-  actualLng              Float?
-  coordinateSystem       String?
-  coordinateProvider     String?
-  providerPlaceId        String?
-  plannedDurationMinutes Int?
-  actualDurationMinutes  Int?
-  checkInNote            String?
-
-  @@index([plannedPlaceId])
-  @@index([actualPlaceId])
-}
-
-model MealEventDetail {
-  eventId                String       @id
-  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  plannedPlaceId         String?
-  plannedPlace           Place?       @relation("MealPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
-  actualPlaceId          String?
-  actualPlace            Place?       @relation("MealActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
-  plannedLat             Float
-  plannedLng             Float
-  actualLat              Float?
-  actualLng              Float?
-  coordinateSystem       String?
-  coordinateProvider     String?
-  providerPlaceId        String?
-  plannedDurationMinutes Int?
-  actualDurationMinutes  Int?
-  cuisine                String?
-
-  @@index([plannedPlaceId])
-  @@index([actualPlaceId])
-}
-
-model ActivityEventDetail {
-  eventId                String       @id
-  event                  JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  plannedPlaceId         String?
-  plannedPlace           Place?       @relation("ActivityPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
-  actualPlaceId          String?
-  actualPlace            Place?       @relation("ActivityActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
-  plannedLat             Float
-  plannedLng             Float
-  actualLat              Float?
-  actualLng              Float?
-  coordinateSystem       String?
-  coordinateProvider     String?
-  providerPlaceId        String?
-  plannedDurationMinutes Int?
-  actualDurationMinutes  Int?
-  bookingReference       String?
-
-  @@index([plannedPlaceId])
-  @@index([actualPlaceId])
-}
-
-model TransitEventDetail {
-  eventId                String              @id
-  event                  JourneyEvent        @relation("TransitEventOwner", fields: [eventId], references: [id], onDelete: Cascade)
-  plannedFromEventId     String?
-  plannedFromEvent       JourneyEvent?       @relation("TransitPlannedFrom", fields: [plannedFromEventId], references: [id], onDelete: SetNull)
-  plannedToEventId       String?
-  plannedToEvent         JourneyEvent?       @relation("TransitPlannedTo", fields: [plannedToEventId], references: [id], onDelete: SetNull)
-  actualFromEventId      String?
-  actualFromEvent        JourneyEvent?       @relation("TransitActualFrom", fields: [actualFromEventId], references: [id], onDelete: SetNull)
-  actualToEventId        String?
-  actualToEvent          JourneyEvent?       @relation("TransitActualTo", fields: [actualToEventId], references: [id], onDelete: SetNull)
-  transportMode          TransportMode
-  requestMode            TransitRequestMode?
-  preference             TransitPreference?
-  plannedDepartAt        DateTime?
-  actualDepartAt         DateTime?
-  plannedDurationMinutes Int?
-  actualDurationMinutes  Int?
-  plannedDistanceKm      Float?
-  actualDistanceKm       Float?
-  plannedCostEstimate    Float?
-  actualCost             Float?
-  selectedPlanId         String?
-  planningStatus         String?
-  planningWarning        String?
-  notes                  String?
-  plans                  TransitPlan[]
-
-  @@index([plannedFromEventId])
-  @@index([plannedToEventId])
-}
-
-model NoteEventDetail {
-  eventId String       @id
-  event   JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  body    String
-}
-
-model TransitPlan {
-  id                 String             @id
-  transitEventId     String
-  transitEvent       TransitEventDetail @relation(fields: [transitEventId], references: [eventId], onDelete: Cascade)
-  provider           String
-  rank               Int
-  label              String
-  strategy           String
-  distanceMeters     Float
-  durationSeconds    Int
-  fareAmount         Float?
-  trafficBasis       String
-  calculatedAt       DateTime
-  validUntil         DateTime?
-  requestFingerprint String
-  segments           TransitSegment[]
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-
-  @@index([transitEventId])
-  @@index([requestFingerprint])
-}
-
-model TransitSegment {
-  id                  String      @id
-  transitPlanId       String
-  transitPlan         TransitPlan @relation(fields: [transitPlanId], references: [id], onDelete: Cascade)
-  order               Int
-  mode                String
-  fromName            String?
-  toName              String?
-  lineName            String?
-  distanceMeters      Float?
-  durationSeconds     Int?
-  fareAmount          Float?
-  departAt            DateTime?
-  arriveAt            DateTime?
-  coordinateSystem    String
-  geometryKind        String
-  positionsJson       String
-  trafficSectionsJson String?
-
-  @@unique([transitPlanId, order])
-  @@index([transitPlanId])
-}
-
-model JourneyEventRevision {
-  id               String        @id @default(uuid())
-  journeyId        String
-  journey          Journey       @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  eventId          String?
-  event            JourneyEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
-  journeyRevision  Int
-  operation        String
-  patchJson        String
-  inversePatchJson String?
-  actorId          String
-  idempotencyKey   String?
-  createdAt        DateTime      @default(now())
-
-  @@unique([journeyId, idempotencyKey])
-  @@index([journeyId, journeyRevision])
-  @@index([eventId])
-}
-
-model JourneyEventAttachment {
-  id        String       @id @default(uuid())
-  eventId   String
-  event     JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  type      String
-  url       String
-  metadata  String?
-  createdAt DateTime     @default(now())
-
-  @@index([eventId])
-}
-
 model User {
-  id            String         @id
+  id            String    @id
   name          String
-  email         String         @unique
-  emailVerified Boolean        @default(false)
+  email         String    @unique
+  emailVerified Boolean   @default(false)
   image         String?
-  role          String?        @default("user")
-  banned        Boolean?       @default(false)
+  role          String?   @default("user")
+  banned        Boolean?  @default(false)
   banReason     String?
   banExpires    DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  sessions      Session[]
-  accounts      Account[]
-  journeys      Journey[]
-  photos        Photo[]
-  agentSessions AgentSession[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions          Session[]          @relation("UserSessions")
+  accounts          Account[]          @relation("UserAccounts")
+  journeys          Journey[]          @relation("OwnedJourneys")
+  workspaces        WorkspaceSession[] @relation("OwnedWorkspaces")
+  assets            Asset[]            @relation("OwnedAssets")
+  sourcePacks       SourcePack[]       @relation("OwnedSourcePacks")
+  providerUsageLogs ProviderUsageLog[] @relation("UserProviderUsage")
 
   @@map("user")
 }
@@ -424,8 +315,9 @@ model Session {
   ipAddress      String?
   userAgent      String?
   userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   impersonatedBy String?
+
+  user User @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("session")
@@ -436,7 +328,6 @@ model Account {
   accountId             String
   providerId            String
   userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?
   refreshToken          String?
   idToken               String?
@@ -446,6 +337,8 @@ model Account {
   password              String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+
+  user User @relation("UserAccounts", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
   @@index([userId])
@@ -464,55 +357,710 @@ model Verification {
   @@map("verification")
 }
 
-model Photo {
-  id        String   @id @default(uuid())
-  ownerId   String
-  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  url       String
-  filePath  String
-  lat       Float
-  lng       Float
-  caption   String?
-  mimeType  String
-  size      Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Journey {
+  id          String            @id @default(uuid())
+  ownerId     String
+  revision    Int               @default(1)
+  status      JourneyStatus     @default(DRAFT)
+  visibility  JourneyVisibility @default(PRIVATE)
+  title       String
+  description String?
+  deletedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  owner            User                      @relation("OwnedJourneys", fields: [ownerId], references: [id], onDelete: Restrict)
+  revisions        JourneyRevision[]         @relation("JourneyRevisions")
+  events           JourneyEvent[]            @relation("JourneyEvents")
+  links            JourneyEventLink[]        @relation("JourneyLinks")
+  replacements     JourneyEventReplacement[] @relation("JourneyReplacements")
+  branchSelections JourneyBranchSelection[]  @relation("JourneyBranchSelections")
+  workspaces       WorkspaceSession[]        @relation("JourneyWorkspaces")
+  assetLinks       EventAssetLink[]          @relation("JourneyAssetLinks")
+  sourceLinks      EventSourceLink[]         @relation("JourneySourceLinks")
 
   @@index([ownerId])
+  @@index([deletedAt])
+}
+
+model JourneyRevision {
+  id                  String    @id @default(uuid())
+  journeyId           String
+  revision            Int
+  operation           String
+  snapshotJson        String
+  patchJson           String
+  inversePatchJson    String
+  actorKind           ActorKind
+  actorUserId         String?
+  actorAgentRunId     String?
+  idempotencyKey      String
+  parentRevisionId    String?
+  workspaceRevisionId String?   @unique
+  createdAt           DateTime  @default(now())
+
+  journey           Journey            @relation("JourneyRevisions", fields: [journeyId], references: [id], onDelete: Restrict)
+  parent            JourneyRevision?   @relation("JourneyRevisionLineage", fields: [journeyId, parentRevisionId], references: [journeyId, id], onDelete: Restrict)
+  child             JourneyRevision?   @relation("JourneyRevisionLineage")
+  workspaceRevision WorkspaceRevision? @relation("CommittedWorkspaceRevision", fields: [workspaceRevisionId], references: [id], onDelete: SetNull)
+
+  introducedEvents      JourneyEvent[]            @relation("IntroducedJourneyEvents")
+  retiredEvents         JourneyEvent[]            @relation("RetiredJourneyEvents")
+  introducedLinks       JourneyEventLink[]        @relation("IntroducedJourneyLinks")
+  retiredLinks          JourneyEventLink[]        @relation("RetiredJourneyLinks")
+  replacements          JourneyEventReplacement[] @relation("JourneyRevisionReplacements")
+  branchSelections      JourneyBranchSelection[]  @relation("BranchSelectionRevision")
+  basedWorkspaces       WorkspaceSession[]        @relation("WorkspaceBaseJourneyRevision")
+  introducedAssetLinks  EventAssetLink[]          @relation("IntroducedEventAssetLinks")
+  retiredAssetLinks     EventAssetLink[]          @relation("RetiredEventAssetLinks")
+  introducedSourceLinks EventSourceLink[]         @relation("IntroducedEventSourceLinks")
+  retiredSourceLinks    EventSourceLink[]         @relation("RetiredEventSourceLinks")
+
+  @@unique([journeyId, revision])
+  @@unique([journeyId, id])
+  @@unique([journeyId, parentRevisionId])
+  @@unique([journeyId, idempotencyKey])
   @@index([createdAt])
 }
 
-model AgentSession {
-  id        String   @id
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model JourneyEvent {
+  id                   String                       @id @default(uuid())
+  journeyId            String
+  parentSectionEventId String?
+  type                 JourneyEventType
+  executionStatus      JourneyEventExecutionStatus?
+  placementStatus      JourneyEventPlacementStatus  @default(SCHEDULED)
+  origin               JourneyEventOrigin           @default(ORIGINAL)
+  title                String
+  description          String?
+  plannedStartAt       DateTime?
+  plannedEndAt         DateTime?
+  actualStartAt        DateTime?
+  actualEndAt          DateTime?
+  introducedRevision   Int
+  retiredRevision      Int?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
 
-  @@index([userId])
+  journey       Journey          @relation("JourneyEvents", fields: [journeyId], references: [id], onDelete: Restrict)
+  parentSection JourneyEvent?    @relation("SectionChildren", fields: [journeyId, parentSectionEventId], references: [journeyId, id], onDelete: Restrict)
+  childEvents   JourneyEvent[]   @relation("SectionChildren")
+  introducedBy  JourneyRevision  @relation("IntroducedJourneyEvents", fields: [journeyId, introducedRevision], references: [journeyId, revision], onDelete: Restrict)
+  retiredBy     JourneyRevision? @relation("RetiredJourneyEvents", fields: [journeyId, retiredRevision], references: [journeyId, revision], onDelete: Restrict)
+
+  sectionDetail  SectionEventDetail?
+  visitDetail    VisitEventDetail?
+  transitDetail  TransitEventDetail?  @relation("TransitEventDetail")
+  stayDetail     StayEventDetail?
+  mealDetail     MealEventDetail?
+  activityDetail ActivityEventDetail?
+  noteDetail     NoteEventDetail?
+
+  outgoingLinks          JourneyEventLink[]       @relation("OutgoingJourneyLinks")
+  incomingLinks          JourneyEventLink[]       @relation("IncomingJourneyLinks")
+  replacementPredecessor JourneyEventReplacement? @relation("ReplacementPredecessor")
+  replacementSuccessor   JourneyEventReplacement? @relation("ReplacementSuccessor")
+  forkSelections         JourneyBranchSelection[] @relation("ForkSelections")
+  plannedTransitOrigins  TransitEventDetail[]     @relation("TransitPlannedFrom")
+  plannedTransitTargets  TransitEventDetail[]     @relation("TransitPlannedTo")
+  actualTransitOrigins   TransitEventDetail[]     @relation("TransitActualFrom")
+  actualTransitTargets   TransitEventDetail[]     @relation("TransitActualTo")
+  assetLinks             EventAssetLink[]         @relation("EventAssetLinks")
+  observations           EventObservation[]       @relation("EventObservations")
+  sourceLinks            EventSourceLink[]        @relation("EventSourceLinks")
+
+  @@unique([journeyId, id])
+  @@index([journeyId, parentSectionEventId])
+  @@index([journeyId, type])
+  @@index([journeyId, executionStatus])
+  @@index([journeyId, placementStatus])
+  @@index([journeyId, retiredRevision])
+}
+
+model JourneyEventLink {
+  id                 String               @id @default(uuid())
+  journeyId          String
+  fromEventId        String
+  toEventId          String
+  kind               JourneyEventLinkKind @default(MAIN)
+  branchKey          String?
+  rank               Int
+  introducedRevision Int
+  retiredRevision    Int?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  journey      Journey                  @relation("JourneyLinks", fields: [journeyId], references: [id], onDelete: Restrict)
+  fromEvent    JourneyEvent             @relation("OutgoingJourneyLinks", fields: [journeyId, fromEventId], references: [journeyId, id], onDelete: Restrict)
+  toEvent      JourneyEvent             @relation("IncomingJourneyLinks", fields: [journeyId, toEventId], references: [journeyId, id], onDelete: Restrict)
+  introducedBy JourneyRevision          @relation("IntroducedJourneyLinks", fields: [journeyId, introducedRevision], references: [journeyId, revision], onDelete: Restrict)
+  retiredBy    JourneyRevision?         @relation("RetiredJourneyLinks", fields: [journeyId, retiredRevision], references: [journeyId, revision], onDelete: Restrict)
+  selections   JourneyBranchSelection[] @relation("SelectedBranchLink")
+
+  @@unique([journeyId, id])
+  @@unique([journeyId, fromEventId, toEventId, kind, introducedRevision])
+  @@index([journeyId, kind, retiredRevision])
+  @@index([journeyId, fromEventId])
+  @@index([journeyId, toEventId])
+}
+
+model JourneyEventReplacement {
+  id                 String   @id @default(uuid())
+  journeyId          String
+  predecessorEventId String
+  successorEventId   String
+  revision           Int
+  reason             String
+  createdAt          DateTime @default(now())
+
+  journey     Journey         @relation("JourneyReplacements", fields: [journeyId], references: [id], onDelete: Restrict)
+  predecessor JourneyEvent    @relation("ReplacementPredecessor", fields: [journeyId, predecessorEventId], references: [journeyId, id], onDelete: Restrict)
+  successor   JourneyEvent    @relation("ReplacementSuccessor", fields: [journeyId, successorEventId], references: [journeyId, id], onDelete: Restrict)
+  createdBy   JourneyRevision @relation("JourneyRevisionReplacements", fields: [journeyId, revision], references: [journeyId, revision], onDelete: Restrict)
+
+  @@unique([journeyId, predecessorEventId])
+  @@unique([journeyId, successorEventId])
+  @@index([journeyId, revision])
+}
+
+model JourneyBranchSelection {
+  id              String    @id @default(uuid())
+  journeyId       String
+  forkEventId     String
+  selectedLinkId  String
+  journeyRevision Int
+  supersedesId    String?   @unique
+  actorKind       ActorKind
+  actorUserId     String?
+  actorAgentRunId String?
+  reason          String?
+  createdAt       DateTime  @default(now())
+
+  journey      Journey                 @relation("JourneyBranchSelections", fields: [journeyId], references: [id], onDelete: Restrict)
+  fork         JourneyEvent            @relation("ForkSelections", fields: [journeyId, forkEventId], references: [journeyId, id], onDelete: Restrict)
+  selectedLink JourneyEventLink        @relation("SelectedBranchLink", fields: [journeyId, selectedLinkId], references: [journeyId, id], onDelete: Restrict)
+  supersedes   JourneyBranchSelection? @relation("BranchSelectionSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy JourneyBranchSelection? @relation("BranchSelectionSupersession")
+  revision     JourneyRevision         @relation("BranchSelectionRevision", fields: [journeyId, journeyRevision], references: [journeyId, revision], onDelete: Restrict)
+
+  @@index([journeyId, forkEventId, createdAt])
+  @@index([journeyId, journeyRevision])
+}
+
+model SectionEventDetail {
+  eventId          String             @id
+  kind             JourneySectionKind
+  localDate        String?
+  timezone         String?
+  placeId          String?
+  lat              Float?
+  lng              Float?
+  coordinateSystem CoordinateSystem?
+  sourcePackId     String?
+
+  event JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  place Place?       @relation("SectionEventPlace", fields: [placeId], references: [id], onDelete: SetNull)
+
+  @@index([placeId])
+}
+
+model VisitEventDetail {
+  eventId                String           @id
+  plannedPlaceId         String?
+  actualPlaceId          String?
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       CoordinateSystem
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+
+  event        JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlace Place?       @relation("VisitPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlace  Place?       @relation("VisitActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
+}
+
+model StayEventDetail {
+  eventId                String           @id
+  plannedPlaceId         String?
+  actualPlaceId          String?
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       CoordinateSystem
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  checkInNote            String?
+
+  event        JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlace Place?       @relation("StayPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlace  Place?       @relation("StayActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
+}
+
+model MealEventDetail {
+  eventId                String           @id
+  plannedPlaceId         String?
+  actualPlaceId          String?
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       CoordinateSystem
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  cuisine                String?
+
+  event        JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlace Place?       @relation("MealPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlace  Place?       @relation("MealActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
+}
+
+model ActivityEventDetail {
+  eventId                String           @id
+  plannedPlaceId         String?
+  actualPlaceId          String?
+  plannedLat             Float
+  plannedLng             Float
+  actualLat              Float?
+  actualLng              Float?
+  coordinateSystem       CoordinateSystem
+  coordinateProvider     String?
+  providerPlaceId        String?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  bookingReference       String?
+
+  event        JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  plannedPlace Place?       @relation("ActivityPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
+  actualPlace  Place?       @relation("ActivityActualPlace", fields: [actualPlaceId], references: [id], onDelete: SetNull)
+
+  @@index([plannedPlaceId])
+  @@index([actualPlaceId])
+}
+
+model TransitEventDetail {
+  eventId                String              @id
+  plannedFromEventId     String?
+  plannedToEventId       String?
+  actualFromEventId      String?
+  actualToEventId        String?
+  transportMode          TransportMode
+  requestMode            TransitRequestMode?
+  preference             TransitPreference?
+  plannedDepartAt        DateTime?
+  actualDepartAt         DateTime?
+  plannedDurationMinutes Int?
+  actualDurationMinutes  Int?
+  plannedDistanceKm      Float?
+  actualDistanceKm       Float?
+  plannedCostEstimate    Float?
+  actualCost             Float?
+  activePlanningRunId    String?
+  selectedPlanId         String?
+  routeState             TransitRouteState   @default(EMPTY)
+  notes                  String?
+
+  event             JourneyEvent         @relation("TransitEventDetail", fields: [eventId], references: [id], onDelete: Cascade)
+  plannedFrom       JourneyEvent?        @relation("TransitPlannedFrom", fields: [plannedFromEventId], references: [id], onDelete: SetNull)
+  plannedTo         JourneyEvent?        @relation("TransitPlannedTo", fields: [plannedToEventId], references: [id], onDelete: SetNull)
+  actualFrom        JourneyEvent?        @relation("TransitActualFrom", fields: [actualFromEventId], references: [id], onDelete: SetNull)
+  actualTo          JourneyEvent?        @relation("TransitActualTo", fields: [actualToEventId], references: [id], onDelete: SetNull)
+  planningRuns      TransitPlanningRun[] @relation("TransitPlanningRuns")
+  activePlanningRun TransitPlanningRun?  @relation("ActiveTransitPlanningRun", fields: [eventId, activePlanningRunId], references: [transitEventId, id], onDelete: Restrict)
+  selectedPlan      TransitPlan?         @relation("SelectedTransitPlan", fields: [eventId, activePlanningRunId, selectedPlanId], references: [transitEventId, planningRunId, id], onDelete: Restrict)
+
+  @@index([plannedFromEventId])
+  @@index([plannedToEventId])
+  @@index([actualFromEventId])
+  @@index([actualToEventId])
+}
+
+model NoteEventDetail {
+  eventId String @id
+  body    String
+
+  event JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+model TransitPlanningRun {
+  id                 String                   @id @default(uuid())
+  transitEventId     String
+  requestFingerprint String
+  provider           String
+  status             TransitPlanningRunStatus
+  errorCode          String?
+  errorMessage       String?
+  warning            String?
+  calculatedAt       DateTime
+  validUntil         DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  transitEvent   TransitEventDetail   @relation("TransitPlanningRuns", fields: [transitEventId], references: [eventId], onDelete: Cascade)
+  activeForEvent TransitEventDetail[] @relation("ActiveTransitPlanningRun")
+  plans          TransitPlan[]        @relation("TransitRunPlans")
+
+  @@unique([transitEventId, id])
+  @@index([transitEventId, status])
+  @@index([requestFingerprint])
+}
+
+model TransitPlan {
+  id              String       @id @default(uuid())
+  planningRunId   String
+  transitEventId  String
+  provider        String
+  rank            Int
+  label           String
+  strategy        String
+  distanceMeters  Float
+  durationSeconds Int
+  fareAmount      Float?
+  trafficBasis    TrafficBasis
+  calculatedAt    DateTime
+  validUntil      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  planningRun      TransitPlanningRun   @relation("TransitRunPlans", fields: [transitEventId, planningRunId], references: [transitEventId, id], onDelete: Cascade)
+  selectedForEvent TransitEventDetail[] @relation("SelectedTransitPlan")
+  segments         TransitSegment[]     @relation("TransitPlanSegments")
+
+  @@unique([transitEventId, planningRunId, id])
+  @@unique([planningRunId, rank])
+  @@index([transitEventId, planningRunId])
+}
+
+model TransitSegment {
+  id                  String             @id @default(uuid())
+  transitPlanId       String
+  order               Int
+  mode                TransitSegmentMode
+  fromName            String?
+  toName              String?
+  lineName            String?
+  distanceMeters      Float?
+  durationSeconds     Int?
+  fareAmount          Float?
+  departAt            DateTime?
+  arriveAt            DateTime?
+  coordinateSystem    CoordinateSystem
+  geometryKind        GeometryKind
+  positionsJson       String
+  trafficSectionsJson String?
+
+  transitPlan TransitPlan @relation("TransitPlanSegments", fields: [transitPlanId], references: [id], onDelete: Cascade)
+
+  @@unique([transitPlanId, order])
+  @@index([transitPlanId])
+}
+
+model WorkspaceSession {
+  id                    String          @id @default(uuid())
+  ownerId               String
+  sourceJourneyId       String?
+  baseJourneyRevision   Int?
+  headWorkspaceRevision Int             @default(0)
+  status                WorkspaceStatus @default(ACTIVE)
+  headGraphJson         String
+  expiresAt             DateTime
+  lastAccessAt          DateTime
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  archivedAt            DateTime?
+
+  owner             User                  @relation("OwnedWorkspaces", fields: [ownerId], references: [id], onDelete: Restrict)
+  sourceJourney     Journey?              @relation("JourneyWorkspaces", fields: [sourceJourneyId], references: [id], onDelete: Restrict)
+  baseRevision      JourneyRevision?      @relation("WorkspaceBaseJourneyRevision", fields: [sourceJourneyId, baseJourneyRevision], references: [journeyId, revision], onDelete: Restrict)
+  revisions         WorkspaceRevision[]   @relation("WorkspaceRevisions")
+  messages          WorkspaceMessage[]    @relation("WorkspaceMessages")
+  suggestions       WorkspaceSuggestion[] @relation("WorkspaceSuggestions")
+  agentRuns         WorkspaceAgentRun[]   @relation("WorkspaceAgentRuns")
+  providerUsageLogs ProviderUsageLog[]    @relation("WorkspaceProviderUsage")
+
+  @@index([ownerId, status])
+  @@index([sourceJourneyId])
+  @@index([expiresAt])
+}
+
+model WorkspaceRevision {
+  id               String               @id @default(uuid())
+  workspaceId      String
+  revision         Int
+  parentRevisionId String?
+  commandName      WorkspaceCommandName
+  beforeGraphJson  String
+  afterGraphJson   String
+  patchJson        String
+  inversePatchJson String
+  actorKind        ActorKind
+  actorUserId      String?
+  actorAgentRunId  String?
+  idempotencyKey   String
+  createdAt        DateTime             @default(now())
+
+  workspace                WorkspaceSession   @relation("WorkspaceRevisions", fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent                   WorkspaceRevision? @relation("WorkspaceRevisionLineage", fields: [workspaceId, parentRevisionId], references: [workspaceId, id], onDelete: Restrict)
+  child                    WorkspaceRevision? @relation("WorkspaceRevisionLineage")
+  committedJourneyRevision JourneyRevision?   @relation("CommittedWorkspaceRevision")
+
+  @@unique([workspaceId, revision])
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, parentRevisionId])
+  @@unique([workspaceId, idempotencyKey])
+  @@index([createdAt])
+}
+
+model WorkspaceMessage {
+  id          String               @id @default(uuid())
+  workspaceId String
+  role        WorkspaceMessageRole
+  content     String
+  agentRunId  String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  workspace WorkspaceSession   @relation("WorkspaceMessages", fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentRun  WorkspaceAgentRun? @relation("AgentRunMessages", fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([agentRunId])
+}
+
+model WorkspaceSuggestion {
+  id                       String                    @id @default(uuid())
+  workspaceId              String
+  title                    String
+  summary                  String
+  commandPayloadsJson      String
+  basedOnWorkspaceRevision Int
+  status                   WorkspaceSuggestionStatus @default(PENDING)
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+
+  workspace WorkspaceSession @relation("WorkspaceSuggestions", fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+}
+
+model WorkspaceAgentRun {
+  id           String                  @id @default(uuid())
+  workspaceId  String
+  status       WorkspaceAgentRunStatus
+  startedAt    DateTime
+  completedAt  DateTime?
+  errorCode    String?
+  errorMessage String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  workspace         WorkspaceSession   @relation("WorkspaceAgentRuns", fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages          WorkspaceMessage[] @relation("AgentRunMessages")
+  providerUsageLogs ProviderUsageLog[] @relation("AgentRunProviderUsage")
+
+  @@index([workspaceId, status])
+}
+
+model Asset {
+  id           String          @id @default(uuid())
+  ownerId      String
+  kind         AssetKind
+  visibility   AssetVisibility @default(PRIVATE)
+  storageKey   String          @unique
+  originalName String?
+  mimeType     String
+  sizeBytes    Int
+  checksum     String
+  capturedAt   DateTime?
+  lat          Float?
+  lng          Float?
+  createdAt    DateTime        @default(now())
+  deletedAt    DateTime?
+
+  owner          User             @relation("OwnedAssets", fields: [ownerId], references: [id], onDelete: Restrict)
+  eventLinks     EventAssetLink[] @relation("AssetEventLinks")
+  sourceDocument SourceDocument?  @relation("SourceDocumentAsset")
+
+  @@index([ownerId, createdAt])
+  @@index([checksum])
+  @@index([deletedAt])
+}
+
+model EventAssetLink {
+  id                 String          @id @default(uuid())
+  journeyId          String
+  eventId            String
+  assetId            String
+  assetChecksum      String
+  role               EventAssetRole
+  rank               Int
+  caption            String?
+  visibility         AssetVisibility
+  introducedRevision Int
+  retiredRevision    Int?
+  createdAt          DateTime        @default(now())
+
+  journey      Journey          @relation("JourneyAssetLinks", fields: [journeyId], references: [id], onDelete: Restrict)
+  event        JourneyEvent     @relation("EventAssetLinks", fields: [journeyId, eventId], references: [journeyId, id], onDelete: Cascade)
+  asset        Asset            @relation("AssetEventLinks", fields: [assetId], references: [id], onDelete: Restrict)
+  introducedBy JourneyRevision  @relation("IntroducedEventAssetLinks", fields: [journeyId, introducedRevision], references: [journeyId, revision], onDelete: Restrict)
+  retiredBy    JourneyRevision? @relation("RetiredEventAssetLinks", fields: [journeyId, retiredRevision], references: [journeyId, revision], onDelete: Restrict)
+
+  @@unique([eventId, assetId, role, introducedRevision])
+  @@index([journeyId, eventId, retiredRevision])
+  @@index([assetId])
+}
+
+model EventObservation {
+  id              String           @id @default(uuid())
+  eventId         String
+  kind            ObservationKind
+  phase           ObservationPhase
+  body            String?
+  valueJson       String?
+  observedAt      DateTime
+  actorKind       ActorKind
+  actorUserId     String?
+  actorAgentRunId String?
+  supersedesId    String?          @unique
+  visibility      AssetVisibility
+  createdAt       DateTime         @default(now())
+
+  event        JourneyEvent      @relation("EventObservations", fields: [eventId], references: [id], onDelete: Cascade)
+  supersedes   EventObservation? @relation("ObservationSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy EventObservation? @relation("ObservationSupersession")
+
+  @@index([eventId, observedAt])
+}
+
+model SourcePack {
+  id         String               @id @default(uuid())
+  ownerId    String
+  title      String
+  visibility SourcePackVisibility @default(PRIVATE)
+  status     SourcePackStatus     @default(DRAFT)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  archivedAt DateTime?
+
+  owner     User             @relation("OwnedSourcePacks", fields: [ownerId], references: [id], onDelete: Restrict)
+  documents SourceDocument[] @relation("SourcePackDocuments")
+
+  @@index([ownerId, status])
+}
+
+model SourceDocument {
+  id               String                         @id @default(uuid())
+  sourcePackId     String
+  assetId          String                         @unique
+  checksum         String
+  title            String
+  pageCount        Int?
+  processingStatus SourceDocumentProcessingStatus @default(PENDING)
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+
+  sourcePack SourcePack        @relation("SourcePackDocuments", fields: [sourcePackId], references: [id], onDelete: Cascade)
+  asset      Asset             @relation("SourceDocumentAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  items      SourceItem[]      @relation("SourceDocumentItems")
+  eventLinks EventSourceLink[] @relation("SourceDocumentEventLinks")
+
+  @@index([sourcePackId])
+  @@index([checksum])
+}
+
+model SourceItem {
+  id               String                    @id @default(uuid())
+  sourceDocumentId String
+  kind             SourceItemKind
+  title            String
+  body             String?
+  sourceOrder      Int
+  page             String?
+  confidence       Float
+  resolutionState  SourceItemResolutionState @default(UNRESOLVED)
+  resolvedPlaceId  String?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  sourceDocument SourceDocument    @relation("SourceDocumentItems", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  resolvedPlace  Place?            @relation("ResolvedSourceItems", fields: [resolvedPlaceId], references: [id], onDelete: SetNull)
+  eventLinks     EventSourceLink[] @relation("SourceItemEventLinks")
+
+  @@unique([sourceDocumentId, sourceOrder])
+  @@index([resolvedPlaceId])
+}
+
+model EventSourceLink {
+  id                        String          @id @default(uuid())
+  journeyId                 String
+  eventId                   String
+  sourceItemId              String
+  sourceDocumentId          String
+  sourceDocumentChecksum    String
+  role                      EventSourceRole
+  excerpt                   String?
+  page                      String?
+  confidence                Float
+  rank                      Int
+  approvedForJourneySharing Boolean         @default(false)
+  introducedRevision        Int
+  retiredRevision           Int?
+  createdAt                 DateTime        @default(now())
+
+  journey        Journey          @relation("JourneySourceLinks", fields: [journeyId], references: [id], onDelete: Restrict)
+  event          JourneyEvent     @relation("EventSourceLinks", fields: [journeyId, eventId], references: [journeyId, id], onDelete: Cascade)
+  sourceItem     SourceItem       @relation("SourceItemEventLinks", fields: [sourceItemId], references: [id], onDelete: Restrict)
+  sourceDocument SourceDocument   @relation("SourceDocumentEventLinks", fields: [sourceDocumentId], references: [id], onDelete: Restrict)
+  introducedBy   JourneyRevision  @relation("IntroducedEventSourceLinks", fields: [journeyId, introducedRevision], references: [journeyId, revision], onDelete: Restrict)
+  retiredBy      JourneyRevision? @relation("RetiredEventSourceLinks", fields: [journeyId, retiredRevision], references: [journeyId, revision], onDelete: Restrict)
+
+  @@unique([eventId, sourceItemId, role, introducedRevision])
+  @@index([journeyId, eventId, retiredRevision])
+  @@index([sourceItemId])
+  @@index([sourceDocumentId])
 }
 
 model Place {
-  id                    String                @id @default(uuid())
-  name                  String
-  normalizedName        String
-  category              PlaceCategory
-  latWgs84              Float?
-  lngWgs84              Float?
-  latGcj02              Float?
-  lngGcj02              Float?
-  countryCode           String?
-  province              String?
-  city                  String?
-  district              String?
-  address               String?
-  description           String?
-  popularityScore       Float?
-  sourceQuality         PlaceSourceQuality    @default(CANDIDATE)
-  aliases               PlaceAlias[]
-  sources               PlaceSource[]
-  providerMatches       PlaceProviderMatch[]
+  id              String             @id @default(uuid())
+  name            String
+  normalizedName  String
+  category        PlaceCategory
+  latWgs84        Float?
+  lngWgs84        Float?
+  latGcj02        Float?
+  lngGcj02        Float?
+  countryCode     String?
+  province        String?
+  city            String?
+  district        String?
+  address         String?
+  description     String?
+  popularityScore Float?
+  sourceQuality   PlaceSourceQuality @default(CANDIDATE)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  aliases               PlaceAlias[]          @relation("PlaceAliases")
+  sources               PlaceSource[]         @relation("PlaceSources")
+  providerMatches       PlaceProviderMatch[]  @relation("PlaceProviderMatches")
   sectionEvents         SectionEventDetail[]  @relation("SectionEventPlace")
   plannedVisitEvents    VisitEventDetail[]    @relation("VisitPlannedPlace")
   actualVisitEvents     VisitEventDetail[]    @relation("VisitActualPlace")
@@ -522,8 +1070,7 @@ model Place {
   actualMealEvents      MealEventDetail[]     @relation("MealActualPlace")
   plannedActivityEvents ActivityEventDetail[] @relation("ActivityPlannedPlace")
   actualActivityEvents  ActivityEventDetail[] @relation("ActivityActualPlace")
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  resolvedSourceItems   SourceItem[]          @relation("ResolvedSourceItems")
 
   @@index([normalizedName])
   @@index([city])
@@ -534,11 +1081,12 @@ model Place {
 model PlaceAlias {
   id             String   @id @default(uuid())
   placeId        String
-  place          Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
   name           String
   normalizedName String
   locale         String?
   createdAt      DateTime @default(now())
+
+  place Place @relation("PlaceAliases", fields: [placeId], references: [id], onDelete: Cascade)
 
   @@unique([placeId, normalizedName])
   @@index([normalizedName])
@@ -547,7 +1095,6 @@ model PlaceAlias {
 model PlaceSource {
   id          String   @id @default(uuid())
   placeId     String
-  place       Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
   provider    String
   providerId  String
   license     String
@@ -556,25 +1103,28 @@ model PlaceSource {
   rawPayload  String?
   fetchedAt   DateTime @default(now())
 
+  place Place @relation("PlaceSources", fields: [placeId], references: [id], onDelete: Cascade)
+
   @@unique([provider, providerId])
   @@index([placeId])
   @@index([provider])
 }
 
 model PlaceProviderMatch {
-  id               String   @id @default(uuid())
+  id               String           @id @default(uuid())
   placeId          String
-  place            Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
   provider         String
   providerId       String
   confidence       Float
-  coordinateSystem String
+  coordinateSystem CoordinateSystem
   lat              Float
   lng              Float
   address          String?
   adcode           String?
   typeCode         String?
-  matchedAt        DateTime @default(now())
+  matchedAt        DateTime         @default(now())
+
+  place Place @relation("PlaceProviderMatches", fields: [placeId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerId])
   @@index([placeId])
@@ -582,7 +1132,7 @@ model PlaceProviderMatch {
 }
 
 model RawPlaceCandidate {
-  id               String         @id @default(uuid())
+  id               String            @id @default(uuid())
   provider         String
   providerId       String?
   queryHash        String?
@@ -591,12 +1141,12 @@ model RawPlaceCandidate {
   category         PlaceCategory?
   lat              Float?
   lng              Float?
-  coordinateSystem String?
+  coordinateSystem CoordinateSystem?
   rawPayload       String?
-  confidence       Float          @default(0)
-  status           String         @default("CACHED")
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  confidence       Float             @default(0)
+  status           String            @default("CACHED")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([provider, providerId])
   @@index([normalizedName])
@@ -617,13 +1167,25 @@ model ProviderRequestCache {
 }
 
 model ProviderUsageLog {
-  id        String   @id @default(uuid())
-  provider  String
-  purpose   String
-  status    String
-  code      String?
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  provider    String
+  purpose     String
+  status      String
+  code        String?
+  userId      String?
+  workspaceId String?
+  agentRunId  String?
+  requestId   String?
+  createdAt   DateTime @default(now())
+
+  user      User?              @relation("UserProviderUsage", fields: [userId], references: [id], onDelete: SetNull)
+  workspace WorkspaceSession?  @relation("WorkspaceProviderUsage", fields: [workspaceId], references: [id], onDelete: SetNull)
+  agentRun  WorkspaceAgentRun? @relation("AgentRunProviderUsage", fields: [agentRunId], references: [id], onDelete: SetNull)
 
   @@index([provider, purpose])
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([agentRunId])
+  @@index([requestId])
   @@index([createdAt])
 }
