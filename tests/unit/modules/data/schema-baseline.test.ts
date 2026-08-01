@@ -237,6 +237,19 @@ describe("P1 SQLite schema baseline", () => {
       `UPDATE "JourneyEventReplacement" SET "reason" = 'rewrite' WHERE "id" = 'replacement-1';`,
       /append-only/
     )
+    expectSqlFailure(
+      `DELETE FROM "JourneyEventReplacement" WHERE "id" = 'replacement-1';`,
+      /explicit Journey purge/
+    )
+    sqlite(`
+      UPDATE "Journey" SET "deletedAt" = '${NOW}' WHERE "id" = 'j1';
+      DELETE FROM "JourneyEventReplacement" WHERE "id" = 'replacement-1';
+    `)
+    expect(
+      sqliteJson<{ count: number }>(
+        `SELECT count(*) AS count FROM "JourneyEventReplacement" WHERE "id" = 'replacement-1'`
+      )[0]?.count
+    ).toBe(0)
   })
 
   it("enforces revision, idempotency, and linear-parent uniqueness", () => {
@@ -267,6 +280,15 @@ describe("P1 SQLite schema baseline", () => {
     expectSqlFailure(
       `UPDATE "Journey" SET "revision" = 2 WHERE "id" = 'j1';`,
       /persisted JourneyRevision/
+    )
+    sqlite(`
+      INSERT INTO "JourneyRevision" ("id", "journeyId", "revision", "operation", "snapshotJson", "patchJson", "inversePatchJson", "actorKind", "idempotencyKey", "parentRevisionId", "createdAt")
+      VALUES ('j1-r2', 'j1', 2, 'advance', '${graph("j1", "owner", 2)}', '[]', '[]', 'SYSTEM', 'j1-r2-key', 'j1-r1', '${NOW}');
+      UPDATE "Journey" SET "revision" = 2 WHERE "id" = 'j1';
+    `)
+    expectSqlFailure(
+      `DELETE FROM "JourneyRevision" WHERE "id" = 'j1-r2';`,
+      /explicit Journey purge/
     )
   })
 
@@ -330,6 +352,8 @@ describe("P1 SQLite schema baseline", () => {
     sqlite(`
       INSERT INTO "TransitPlan" ("id", "planningRunId", "transitEventId", "provider", "rank", "label", "strategy", "distanceMeters", "durationSeconds", "trafficBasis", "calculatedAt", "createdAt", "updatedAt")
       VALUES ('plan-1', 'run-1', 'transit', 'test', 0, 'One', 'RECOMMENDED', 100, 60, 'TYPICAL', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "TransitSegment" ("id", "transitPlanId", "order", "mode", "coordinateSystem", "geometryKind", "positionsJson")
+      VALUES ('segment-1', 'plan-1', 0, 'WALK', 'WGS84', 'NONE', '[]');
       UPDATE "TransitPlanningRun" SET "status" = 'READY' WHERE "id" = 'run-1';
       INSERT INTO "TransitPlanningRun" ("id", "transitEventId", "requestFingerprint", "provider", "status", "calculatedAt", "createdAt", "updatedAt")
       VALUES ('run-2', 'transit', 'fingerprint-2', 'test', 'PLANNING', '${NOW}', '${NOW}', '${NOW}');
@@ -364,12 +388,30 @@ describe("P1 SQLite schema baseline", () => {
       /CHECK/
     )
     expectSqlFailure(
+      `DELETE FROM "TransitSegment" WHERE "id" = 'segment-1';`,
+      /cannot be deleted/
+    )
+    expectSqlFailure(
+      `DELETE FROM "TransitPlan" WHERE "id" = 'plan-1';`,
+      /cannot be deleted/
+    )
+    expectSqlFailure(
+      `DELETE FROM "TransitPlanningRun" WHERE "id" = 'run-1';`,
+      /purging their Transit Event/
+    )
+    expectSqlFailure(
       `INSERT INTO "TransitPlanningRun" ("id", "transitEventId", "requestFingerprint", "provider", "status", "errorCode", "calculatedAt", "createdAt", "updatedAt")
        VALUES ('failed-run', 'transit', 'fingerprint-failed', 'test', 'FAILED', 'NO_ROUTE', '${NOW}', '${NOW}', '${NOW}');
        INSERT INTO "TransitPlan" ("id", "planningRunId", "transitEventId", "provider", "rank", "label", "strategy", "distanceMeters", "durationSeconds", "trafficBasis", "calculatedAt", "createdAt", "updatedAt")
        VALUES ('failed-plan', 'failed-run', 'transit', 'test', 0, 'Bad', 'NONE', 0, 0, 'UNKNOWN', '${NOW}', '${NOW}', '${NOW}');`,
       /finalized planning run/
     )
+    sqlite(`DELETE FROM "TransitEventDetail" WHERE "eventId" = 'transit';`)
+    expect(
+      sqliteJson<{ count: number }>(
+        `SELECT count(*) AS count FROM "TransitPlanningRun" WHERE "transitEventId" = 'transit'`
+      )[0]?.count
+    ).toBe(0)
   })
 
   it("enforces append-only branch selection supersession", () => {
@@ -400,6 +442,10 @@ describe("P1 SQLite schema baseline", () => {
     expectSqlFailure(
       `UPDATE "JourneyBranchSelection" SET "reason" = 'rewrite' WHERE "id" = 'selection-1';`,
       /append-only/
+    )
+    expectSqlFailure(
+      `DELETE FROM "JourneyBranchSelection" WHERE "id" = 'selection-2';`,
+      /explicit Journey purge/
     )
   })
 
@@ -477,6 +523,11 @@ describe("P1 SQLite schema baseline", () => {
     )
     expectSqlFailure(
       `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
+       VALUES ('forged-head-workspace', 'owner', 'j1', 1, 99, 'ACTIVE', '${graph("j1", "owner", 1)}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');`,
+      /start at head revision 0/
+    )
+    expectSqlFailure(
+      `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
        VALUES ('wrong-owner-workspace', 'owner', 'j2', 1, 0, 'ACTIVE', '${graph("j2", "owner", 1)}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');`,
       /must belong to its owner/
     )
@@ -501,6 +552,18 @@ describe("P1 SQLite schema baseline", () => {
     expectSqlFailure(
       `UPDATE "EventObservation" SET "body" = 'Rewrite' WHERE "id" = 'observation-1';`,
       /append-only/
+    )
+    expectSqlFailure(
+      `DELETE FROM "EventObservation" WHERE "id" = 'observation-2';`,
+      /purging their Event/
+    )
+    expectSqlFailure(
+      `DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r1';`,
+      /purging their Workspace/
+    )
+    expectSqlFailure(
+      `UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 0 WHERE "id" = 'workspace-1';`,
+      /advance by one/
     )
     expectSqlFailure(
       `INSERT INTO "EventObservation" ("id", "eventId", "kind", "phase", "valueJson", "observedAt", "actorKind", "actorUserId", "visibility", "createdAt")
@@ -546,9 +609,35 @@ describe("P1 SQLite schema baseline", () => {
       /immediately preceding/
     )
     sqlite(`
+      INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "parentRevisionId", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
+      VALUES
+        ('workspace-r2', 'workspace-1', 2, 'workspace-r1', 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'workspace-r2-key', '2026-08-02T00:01:00.000Z'),
+        ('workspace-r3', 'workspace-1', 3, 'workspace-r2', 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'workspace-r3-key', '2026-08-02T00:02:00.000Z');
+    `)
+    expectSqlFailure(
+      `UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 3 WHERE "id" = 'workspace-1';`,
+      /advance by one/
+    )
+    sqlite(`
+      UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 2 WHERE "id" = 'workspace-1';
+      UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 3 WHERE "id" = 'workspace-1';
+    `)
+    expectSqlFailure(
+      `DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r3';`,
+      /purging their Workspace/
+    )
+    sqlite(`
       INSERT INTO "JourneyRevision" ("id", "journeyId", "revision", "operation", "snapshotJson", "patchJson", "inversePatchJson", "actorKind", "idempotencyKey", "parentRevisionId", "workspaceRevisionId", "createdAt")
       VALUES ('j1-r2', 'j1', 2, 'commit workspace', '${graph("j1", "owner", 2)}', '[]', '[]', 'SYSTEM', 'j1-r2-key', 'j1-r1', 'workspace-r1', '${NOW}');
+      BEGIN;
+      UPDATE "WorkspaceSession"
+      SET "status" = 'ARCHIVED', "archivedAt" = '${NOW}'
+      WHERE "id" = 'workspace-1';
+      DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r3';
+      DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r2';
+      DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r1';
       DELETE FROM "WorkspaceSession" WHERE "id" = 'workspace-1';
+      COMMIT;
     `)
     expect(
       sqliteJson<{ workspaceRevisionId: string | null }>(

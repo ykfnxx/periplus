@@ -1490,6 +1490,14 @@ CREATE TRIGGER "JourneyEventReplacement_update_guard"
 BEFORE UPDATE ON "JourneyEventReplacement"
 BEGIN SELECT RAISE(ABORT, 'replacement records are append-only'); END;
 
+CREATE TRIGGER "JourneyEventReplacement_delete_guard"
+BEFORE DELETE ON "JourneyEventReplacement"
+WHEN EXISTS (
+  SELECT 1 FROM "Journey" journey
+  WHERE journey."id" = OLD."journeyId" AND journey."deletedAt" IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'replacement records can only be deleted during explicit Journey purge'); END;
+
 CREATE TRIGGER "JourneyBranchSelection_insert_guard"
 BEFORE INSERT ON "JourneyBranchSelection"
 WHEN
@@ -1529,6 +1537,14 @@ CREATE TRIGGER "JourneyBranchSelection_update_guard"
 BEFORE UPDATE ON "JourneyBranchSelection"
 BEGIN SELECT RAISE(ABORT, 'branch selections are append-only'); END;
 
+CREATE TRIGGER "JourneyBranchSelection_delete_guard"
+BEFORE DELETE ON "JourneyBranchSelection"
+WHEN EXISTS (
+  SELECT 1 FROM "Journey" journey
+  WHERE journey."id" = OLD."journeyId" AND journey."deletedAt" IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'branch selections can only be deleted during explicit Journey purge'); END;
+
 -- READY runs are finalized only after their stable Plan/Segment rows exist.
 CREATE TRIGGER "TransitPlanningRun_ready_insert_guard"
 BEFORE INSERT ON "TransitPlanningRun"
@@ -1566,6 +1582,14 @@ BEFORE UPDATE ON "TransitPlan"
 WHEN EXISTS (SELECT 1 FROM "TransitPlanningRun" WHERE "id" = OLD."planningRunId" AND "status" <> 'PLANNING')
 BEGIN SELECT RAISE(ABORT, 'Plans are immutable after a run leaves PLANNING'); END;
 
+CREATE TRIGGER "TransitPlan_delete_guard"
+BEFORE DELETE ON "TransitPlan"
+WHEN EXISTS (
+  SELECT 1 FROM "TransitPlanningRun" run
+  WHERE run."id" = OLD."planningRunId" AND run."status" <> 'PLANNING'
+)
+BEGIN SELECT RAISE(ABORT, 'Plans cannot be deleted after a run leaves PLANNING'); END;
+
 CREATE TRIGGER "TransitSegment_mutation_guard"
 BEFORE UPDATE ON "TransitSegment"
 WHEN EXISTS (
@@ -1575,6 +1599,15 @@ WHEN EXISTS (
 )
 BEGIN SELECT RAISE(ABORT, 'Segments are immutable after a run leaves PLANNING'); END;
 
+CREATE TRIGGER "TransitSegment_delete_guard"
+BEFORE DELETE ON "TransitSegment"
+WHEN EXISTS (
+  SELECT 1 FROM "TransitPlan" plan
+  JOIN "TransitPlanningRun" run ON run."id" = plan."planningRunId"
+  WHERE plan."id" = OLD."transitPlanId" AND run."status" <> 'PLANNING'
+)
+BEGIN SELECT RAISE(ABORT, 'Segments cannot be deleted after a run leaves PLANNING'); END;
+
 CREATE TRIGGER "TransitSegment_insert_guard"
 BEFORE INSERT ON "TransitSegment"
 WHEN EXISTS (
@@ -1583,6 +1616,14 @@ WHEN EXISTS (
   WHERE plan."id" = NEW."transitPlanId" AND run."status" <> 'PLANNING'
 )
 BEGIN SELECT RAISE(ABORT, 'finalized planning run cannot accept Segments'); END;
+
+CREATE TRIGGER "TransitPlanningRun_delete_guard"
+BEFORE DELETE ON "TransitPlanningRun"
+WHEN OLD."status" <> 'PLANNING' AND EXISTS (
+  SELECT 1 FROM "TransitEventDetail" detail
+  WHERE detail."eventId" = OLD."transitEventId"
+)
+BEGIN SELECT RAISE(ABORT, 'finalized planning runs can only be deleted by purging their Transit Event'); END;
 
 CREATE TRIGGER "TransitEventDetail_active_run_guard"
 BEFORE UPDATE OF "activePlanningRunId", "selectedPlanId", "routeState" ON "TransitEventDetail"
@@ -1675,6 +1716,11 @@ END;
 CREATE TRIGGER "EventObservation_update_guard"
 BEFORE UPDATE ON "EventObservation"
 BEGIN SELECT RAISE(ABORT, 'Observations are append-only'); END;
+
+CREATE TRIGGER "EventObservation_delete_guard"
+BEFORE DELETE ON "EventObservation"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" event WHERE event."id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'Observations can only be deleted by purging their Event'); END;
 
 CREATE TRIGGER "SourceDocument_asset_guard"
 BEFORE INSERT ON "SourceDocument"
@@ -1794,6 +1840,14 @@ CREATE TRIGGER "JourneyRevision_update_guard"
 BEFORE UPDATE OF "journeyId", "revision", "operation", "snapshotJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "actorAgentRunId", "idempotencyKey", "parentRevisionId", "createdAt" ON "JourneyRevision"
 BEGIN SELECT RAISE(ABORT, 'Journey revisions are append-only'); END;
 
+CREATE TRIGGER "JourneyRevision_delete_guard"
+BEFORE DELETE ON "JourneyRevision"
+WHEN EXISTS (
+  SELECT 1 FROM "Journey" journey
+  WHERE journey."id" = OLD."journeyId" AND journey."deletedAt" IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'Journey revisions can only be deleted during explicit Journey purge'); END;
+
 CREATE TRIGGER "JourneyRevision_workspace_guard"
 BEFORE INSERT ON "JourneyRevision"
 WHEN NEW."workspaceRevisionId" IS NOT NULL AND NOT EXISTS (
@@ -1836,14 +1890,31 @@ CREATE TRIGGER "WorkspaceRevision_update_guard"
 BEFORE UPDATE ON "WorkspaceRevision"
 BEGIN SELECT RAISE(ABORT, 'Workspace revisions are append-only'); END;
 
+-- ARCHIVED is the explicit hard-purge gate. The lineage RESTRICT FK then forces
+-- leaf-to-root deletion inside the same transaction before removing the Workspace.
+CREATE TRIGGER "WorkspaceRevision_delete_guard"
+BEFORE DELETE ON "WorkspaceRevision"
+WHEN EXISTS (
+  SELECT 1 FROM "WorkspaceSession" workspace
+  WHERE workspace."id" = OLD."workspaceId" AND workspace."status" <> 'ARCHIVED'
+)
+BEGIN SELECT RAISE(ABORT, 'Workspace revisions can only be deleted by purging their Workspace'); END;
+
+CREATE TRIGGER "WorkspaceSession_head_insert_guard"
+BEFORE INSERT ON "WorkspaceSession"
+WHEN NEW."headWorkspaceRevision" <> 0
+BEGIN SELECT RAISE(ABORT, 'new Workspace must start at head revision 0'); END;
+
 CREATE TRIGGER "WorkspaceSession_head_update_guard"
 BEFORE UPDATE OF "headWorkspaceRevision" ON "WorkspaceSession"
-WHEN NEW."headWorkspaceRevision" > 0 AND NOT EXISTS (
-  SELECT 1 FROM "WorkspaceRevision" revision
-  WHERE revision."workspaceId" = NEW."id"
-    AND revision."revision" = NEW."headWorkspaceRevision"
+WHEN NEW."headWorkspaceRevision" <> OLD."headWorkspaceRevision" AND (
+  NEW."headWorkspaceRevision" <> OLD."headWorkspaceRevision" + 1 OR NOT EXISTS (
+    SELECT 1 FROM "WorkspaceRevision" revision
+    WHERE revision."workspaceId" = NEW."id"
+      AND revision."revision" = NEW."headWorkspaceRevision"
+  )
 )
-BEGIN SELECT RAISE(ABORT, 'Workspace head must reference a persisted WorkspaceRevision'); END;
+BEGIN SELECT RAISE(ABORT, 'Workspace head must advance by one to a persisted WorkspaceRevision'); END;
 
 CREATE TRIGGER "ProviderUsageLog_agent_run_guard"
 BEFORE INSERT ON "ProviderUsageLog"
