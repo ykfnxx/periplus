@@ -497,11 +497,25 @@ function invalidationScopes(
   changedEventIds: readonly string[]
 ) {
   const values = new Set<string | null>()
+  const collectAncestors = (
+    graph: TargetJourneyGraphSnapshot,
+    parentSectionEventId: string | null
+  ) => {
+    const seen = new Set<string>()
+    let scope = parentSectionEventId
+    while (true) {
+      values.add(scope)
+      if (scope === null || seen.has(scope)) return
+      seen.add(scope)
+      const section = graph.events.find((event) => event.id === scope)
+      scope = section?.parentSectionEventId ?? null
+    }
+  }
   for (const eventId of changedEventIds) {
     const previous = before.events.find((event) => event.id === eventId)
     const current = after.events.find((event) => event.id === eventId)
-    if (previous) values.add(previous.parentSectionEventId)
-    if (current) values.add(current.parentSectionEventId)
+    if (previous) collectAncestors(before, previous.parentSectionEventId)
+    if (current) collectAncestors(after, current.parentSectionEventId)
   }
   return [...values].sort((left, right) => {
     if (left === right) return 0
@@ -1048,16 +1062,13 @@ function applyJourneyCommand(
       }
 
       const incident = activeLinks(graph).filter(
-        (link) =>
-          targets.has(link.fromEventId) || targets.has(link.toEventId)
+        (link) => targets.has(link.fromEventId) || targets.has(link.toEventId)
       )
       const boundaryIncoming = incident.filter(
-        (link) =>
-          targets.has(link.toEventId) && !targets.has(link.fromEventId)
+        (link) => targets.has(link.toEventId) && !targets.has(link.fromEventId)
       )
       const boundaryOutgoing = incident.filter(
-        (link) =>
-          targets.has(link.fromEventId) && !targets.has(link.toEventId)
+        (link) => targets.has(link.fromEventId) && !targets.has(link.toEventId)
       )
       let retainedBoundaryLinkId: string | undefined
       if (boundaryIncoming.length === 1 && boundaryOutgoing.length === 1) {
@@ -1196,10 +1207,7 @@ function applyJourneyCommand(
         (selection) => selection.forkEventId === predecessor.id
       )
       const predecessorChoice = currentSelection(graph, predecessor.id)
-      const replacementLinkByOldId = new Map<
-        string,
-        TargetJourneyEventLink
-      >()
+      const replacementLinkByOldId = new Map<string, TargetJourneyEventLink>()
       for (const link of activeLinks(graph)) {
         if (link.fromEventId === predecessor.id) {
           if (predecessorSelections.length) {

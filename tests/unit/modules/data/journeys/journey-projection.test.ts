@@ -109,10 +109,7 @@ describe("P3 Journey projection resolver", () => {
       })
     )
 
-    const reusedKey = graph(
-      "06-strict-nested-branch",
-      "two-level-nested-forks"
-    )
+    const reusedKey = graph("06-strict-nested-branch", "two-level-nested-forks")
     for (const link of reusedKey.links.filter(
       (candidate) => candidate.kind === "ALTERNATIVE"
     )) {
@@ -298,10 +295,7 @@ describe("P3 Journey projection resolver", () => {
       valueSource: "PLANNED",
     })
 
-    const mixed = graph(
-      "09-exact-projection-modes",
-      "canonical-input-order"
-    )
+    const mixed = graph("09-exact-projection-modes", "canonical-input-order")
     const mixedEvent = mixed.events.find(
       (event) => event.id === "confirmed-start"
     )!
@@ -312,6 +306,58 @@ describe("P3 Journey projection resolver", () => {
         graph: mixed,
         scopeSectionEventId: null,
         mode: "EXECUTION",
+      }).events[0]
+    ).toMatchObject({
+      startAt: "2026-08-01T01:00:00.000Z",
+      endAt: "2026-08-02T00:00:00.000Z",
+      valueSource: "PLANNED",
+    })
+  })
+
+  it("uses actual-to-planned field fallback for exact TRAVELOGUE times", () => {
+    const actual = graph("09-exact-projection-modes", "canonical-input-order")
+    expect(
+      resolveJourneyProjection({
+        graph: actual,
+        scopeSectionEventId: null,
+        mode: "TRAVELOGUE",
+      }).events[0]
+    ).toMatchObject({
+      startAt: "2026-08-01T01:00:00.000Z",
+      endAt: "2026-08-01T01:00:00.000Z",
+      valueSource: "ACTUAL",
+    })
+
+    const planned = structuredClone(actual)
+    const plannedEvent = planned.events.find(
+      (event) => event.id === "confirmed-start"
+    )!
+    if (plannedEvent.type !== "VISIT") throw new Error("fixture invariant")
+    delete plannedEvent.actualStartAt
+    delete plannedEvent.actualEndAt
+    expect(
+      resolveJourneyProjection({
+        graph: planned,
+        scopeSectionEventId: null,
+        mode: "TRAVELOGUE",
+      }).events[0]
+    ).toMatchObject({
+      startAt: "2026-08-01T00:00:00.000Z",
+      endAt: "2026-08-02T00:00:00.000Z",
+      valueSource: "PLANNED",
+    })
+
+    const mixed = structuredClone(actual)
+    const mixedEvent = mixed.events.find(
+      (event) => event.id === "confirmed-start"
+    )!
+    if (mixedEvent.type !== "VISIT") throw new Error("fixture invariant")
+    delete mixedEvent.actualEndAt
+    expect(
+      resolveJourneyProjection({
+        graph: mixed,
+        scopeSectionEventId: null,
+        mode: "TRAVELOGUE",
       }).events[0]
     ).toMatchObject({
       startAt: "2026-08-01T01:00:00.000Z",

@@ -330,7 +330,7 @@ function selectedEventsForScope(
   scopeSectionEventId: string | null,
   mode: TargetProjectionMode,
   revision: number
-) {
+): TargetJourneyEvent[] {
   const scopedEvents = graph.events.filter(
     (event) =>
       event.parentSectionEventId === scopeSectionEventId &&
@@ -377,15 +377,18 @@ function selectedEventsForScope(
     }
   }
   const selectedEvents = scopedEvents.filter((event) => reached.has(event.id))
-  return topologicalSort(
+  const ordered = topologicalSort(
     selectedEvents,
     selectedLinks.filter(
       (link) => reached.has(link.fromEventId) && reached.has(link.toEventId)
     )
-  ).filter(
+  )
+  if (mode !== "TRAVELOGUE") return ordered
+  return ordered.filter(
     (event) =>
-      mode !== "TRAVELOGUE" ||
-      (executableEvent(event) && event.executionStatus === "CONFIRMED")
+      (executableEvent(event) && event.executionStatus === "CONFIRMED") ||
+      (event.type === "SECTION" &&
+        selectedEventsForScope(graph, event.id, mode, revision).length > 0)
   )
 }
 
@@ -422,14 +425,6 @@ function resolveTimes(
       usesPlannedFallback: false,
     }
   }
-  if (mode === "TRAVELOGUE") {
-    return {
-      startAt: event.actualStartAt,
-      endAt: event.actualEndAt,
-      valueSource: "ACTUAL",
-      usesPlannedFallback: false,
-    }
-  }
   const startAt = event.actualStartAt ?? event.plannedStartAt
   const endAt = event.actualEndAt ?? event.plannedEndAt
   const usesPlannedFallback =
@@ -440,8 +435,7 @@ function resolveTimes(
   return {
     startAt,
     endAt,
-    valueSource:
-      hasActualTime && !usesPlannedFallback ? "ACTUAL" : "PLANNED",
+    valueSource: hasActualTime && !usesPlannedFallback ? "ACTUAL" : "PLANNED",
     usesPlannedFallback,
   }
 }
@@ -471,21 +465,19 @@ function derivedSectionTimes(
     .flatMap((times) => (times.endAt ? [times.endAt] : []))
     .sort()
   const allActual =
-    mode === "EXECUTION" &&
+    mode !== "PLANNER" &&
     childTimes.length > 0 &&
     childTimes.every(
-      (times) =>
-        times.valueSource === "ACTUAL" && !times.usesPlannedFallback
+      (times) => times.valueSource === "ACTUAL" && !times.usesPlannedFallback
     )
   return {
     startAt: starts[0],
     endAt: ends.at(-1),
     valueSource: allActual ? ("ACTUAL" as const) : ("PLANNED" as const),
     usesPlannedFallback:
-      mode === "EXECUTION" &&
+      mode !== "PLANNER" &&
       childTimes.some(
-        (times) =>
-          times.valueSource === "PLANNED" || times.usesPlannedFallback
+        (times) => times.valueSource === "PLANNED" || times.usesPlannedFallback
       ),
   }
 }
@@ -515,7 +507,7 @@ export function resolveJourneyProjection({
     graph,
     scopeSectionEventId,
     mode,
-    revision,
+    revision
   )
 
   const locationOrdinalByEventId = new Map<string, number>()

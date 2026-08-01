@@ -1182,6 +1182,22 @@ const deletedRootExecutionProjection: TargetResolvedJourneyProjection = {
     },
   ],
 }
+const deletedRootTravelogueProjection: TargetResolvedJourneyProjection = {
+  journeyId: deletedSectionGraph.id,
+  revision: 2,
+  scopeSectionEventId: null,
+  mode: "TRAVELOGUE",
+  events: [
+    {
+      eventId: "day",
+      resolvedPosition: 0,
+      title: "第一天",
+      startAt: SOON,
+      endAt: LATER,
+      valueSource: "ACTUAL",
+    },
+  ],
+}
 
 export interface TargetScenarioState {
   graph?: TargetJourneyGraphSnapshot
@@ -1674,6 +1690,7 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
             deletedProjection,
             deletedRootPlannerProjection,
             deletedRootExecutionProjection,
+            deletedRootTravelogueProjection,
           ],
           evidence: {
             sectionEventId: "day",

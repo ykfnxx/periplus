@@ -136,6 +136,15 @@ function command(
   }
 }
 
+function nestedSectionGraph() {
+  const fixture = TARGET_CONTRACT_FIXTURES.find(
+    (candidate) => candidate.id === "02-city-day-event-drilldown"
+  )!.cases.find((candidate) => candidate.id === "city-day-drilldown")!
+  const input = structuredClone(fixture.input.graph!)
+  input.ownerId = ownerId
+  return input
+}
+
 function transitGraph(id: string): TargetJourneyGraphSnapshot {
   const result = graph(id)
   result.events = [
@@ -564,7 +573,9 @@ describe.sequential("P3 persistent Workspace command bus", () => {
 
   it("merges partial actual confirmation without clearing prior facts", async () => {
     const input = graph(`workspace-confirm-partial-${randomUUID()}`)
-    const event = input.events.find((candidate) => candidate.id === `${input.id}-a`)!
+    const event = input.events.find(
+      (candidate) => candidate.id === `${input.id}-a`
+    )!
     if (event.type !== "VISIT") throw new Error("fixture invariant")
     event.executionStatus = "STARTED"
     event.actualStartAt = "2026-08-01T01:00:00.000Z"
@@ -910,6 +921,100 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     const recovered = await service.getDocument(context, workspace.id)
     expect(recovered?.session.headGraph.transitPlanningRuns).toHaveLength(1)
     expect(recovered?.session.headGraph.observations).toHaveLength(1)
+  })
+
+  it("invalidates every before/after SECTION ancestor scope through root", async () => {
+    const service = new WorkspaceCommandService()
+
+    const updateWorkspace = await createWorkspace(context, {
+      graph: nestedSectionGraph(),
+      now: new Date(now),
+    })
+    await expect(
+      service.execute(
+        context,
+        command(updateWorkspace.id, 0, "nested-time-update", {
+          name: "journey.update_event",
+          payload: {
+            eventId: "morning",
+            patch: {
+              type: "VISIT",
+              plannedStartAt: "2026-08-01T01:00:00.000Z",
+            },
+          },
+        })
+      )
+    ).resolves.toMatchObject({
+      projectionInvalidationScopes: [null, "city", "day"],
+    })
+
+    const moveWorkspace = await createWorkspace(context, {
+      graph: nestedSectionGraph(),
+      now: new Date(now),
+    })
+    await expect(
+      service.execute(
+        context,
+        command(moveWorkspace.id, 0, "move-section-scope", {
+          name: "journey.move_event",
+          payload: {
+            eventId: "day",
+            position: { placement: "START", parentSectionEventId: null },
+          },
+        })
+      )
+    ).resolves.toMatchObject({
+      projectionInvalidationScopes: [null, "city"],
+    })
+
+    const retireWorkspace = await createWorkspace(context, {
+      graph: nestedSectionGraph(),
+      now: new Date(now),
+    })
+    await expect(
+      service.execute(
+        context,
+        command(retireWorkspace.id, 0, "retire-section-subtree", {
+          name: "journey.retire_event",
+          payload: {
+            eventId: "city",
+            sectionChildren: "RECURSIVE_RETIRE",
+          },
+        })
+      )
+    ).resolves.toMatchObject({
+      projectionInvalidationScopes: [null, "city", "day"],
+    })
+
+    const replaceWorkspace = await createWorkspace(context, {
+      graph: nestedSectionGraph(),
+      now: new Date(now),
+    })
+    await expect(
+      service.execute(
+        context,
+        command(replaceWorkspace.id, 0, "replace-section-subtree", {
+          name: "journey.replace_event",
+          payload: {
+            predecessorEventId: "day",
+            successor: {
+              id: "day-successor",
+              type: "SECTION",
+              origin: "USER_INSERTED",
+              title: "第一天（新）",
+              detail: {
+                kind: "DAY",
+                localDate: "2026-08-01",
+                timezone: "Asia/Shanghai",
+              },
+            },
+            reason: "replace day",
+          },
+        })
+      )
+    ).resolves.toMatchObject({
+      projectionInvalidationScopes: [null, "city", "day", "day-successor"],
+    })
   })
 
   it("moves a linear Event while preserving the P0 Link identities", async () => {
