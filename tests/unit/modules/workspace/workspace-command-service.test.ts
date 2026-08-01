@@ -408,6 +408,287 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     ).toBe(0)
   })
 
+  it("atomically rewires Transit, SECTION-child, and fork-selection replacement dependencies", async () => {
+    const service = new WorkspaceCommandService()
+
+    const transitInput = transitGraph(
+      `workspace-replace-transit-${randomUUID()}`
+    )
+    const transit = transitInput.events.find(
+      (event) => event.id === `${transitInput.id}-transit`
+    )!
+    if (transit.type !== "TRANSIT") throw new Error("fixture invariant")
+    transit.detail.actualFromEventId = `${transitInput.id}-a`
+    const transitWorkspace = await createWorkspace(context, {
+      graph: transitInput,
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(transitWorkspace.id, 0, "replace-transit-endpoint", {
+        name: "journey.replace_event",
+        payload: {
+          predecessorEventId: `${transitInput.id}-a`,
+          successor: {
+            id: `${transitInput.id}-a2`,
+            type: "VISIT",
+            origin: "USER_INSERTED",
+            executionStatus: "PLANNED",
+            title: "A2",
+            detail: {
+              plannedLat: 30.26,
+              plannedLng: 120.16,
+              coordinateSystem: "GCJ02",
+            },
+          },
+          reason: "replace endpoint",
+        },
+      })
+    )
+    const replacedTransit = await service.getDocument(
+      context,
+      transitWorkspace.id
+    )
+    const transitAfter = replacedTransit?.session.headGraph.events.find(
+      (event) => event.id === `${transitInput.id}-transit`
+    )
+    if (transitAfter?.type !== "TRANSIT") throw new Error("fixture invariant")
+    expect(transitAfter.detail).toMatchObject({
+      plannedFromEventId: `${transitInput.id}-a2`,
+      actualFromEventId: `${transitInput.id}-a2`,
+    })
+    expect(
+      replacedTransit?.session.headGraph.links.find(
+        (link) => link.id === `${transitInput.id}-to-transit`
+      )
+    ).toMatchObject({ fromEventId: `${transitInput.id}-a2` })
+
+    const sectionInput = sectionGraph(
+      `workspace-replace-section-${randomUUID()}`,
+      "LINEAR"
+    )
+    const sectionWorkspace = await createWorkspace(context, {
+      graph: sectionInput,
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(sectionWorkspace.id, 0, "replace-section", {
+        name: "journey.replace_event",
+        payload: {
+          predecessorEventId: `${sectionInput.id}-section`,
+          successor: {
+            id: `${sectionInput.id}-section-2`,
+            type: "SECTION",
+            origin: "USER_INSERTED",
+            title: "Day 1 revised",
+            detail: {
+              kind: "DAY",
+              localDate: "2026-08-01",
+              timezone: "Asia/Shanghai",
+            },
+          },
+          reason: "replace section",
+        },
+      })
+    )
+    const replacedSection = await service.getDocument(
+      context,
+      sectionWorkspace.id
+    )
+    expect(
+      replacedSection?.session.headGraph.events
+        .filter((event) => event.id.endsWith("-a") || event.id.endsWith("-b"))
+        .map((event) => event.parentSectionEventId)
+    ).toEqual([`${sectionInput.id}-section-2`, `${sectionInput.id}-section-2`])
+
+    const forkInput = graph(`workspace-replace-fork-${randomUUID()}`)
+    forkInput.branchSelections.push({
+      id: `${forkInput.id}-selection-a`,
+      journeyId: forkInput.id,
+      forkEventId: `${forkInput.id}-fork`,
+      selectedLinkId: `${forkInput.id}-fork-a`,
+      journeyRevision: 1,
+      actor: { kind: "USER", userId: ownerId },
+      createdAt: now,
+    })
+    const forkWorkspace = await createWorkspace(context, {
+      graph: forkInput,
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(forkWorkspace.id, 0, "replace-fork", {
+        name: "journey.replace_event",
+        payload: {
+          predecessorEventId: `${forkInput.id}-fork`,
+          successor: {
+            id: `${forkInput.id}-fork-2`,
+            type: "VISIT",
+            origin: "USER_INSERTED",
+            executionStatus: "PLANNED",
+            title: "Fork 2",
+            detail: {
+              plannedLat: 30.27,
+              plannedLng: 120.17,
+              coordinateSystem: "GCJ02",
+            },
+          },
+          reason: "replace fork",
+        },
+      })
+    )
+    const replacedFork = await service.getDocument(context, forkWorkspace.id)
+    const forkGraph = replacedFork!.session.headGraph
+    expect(forkGraph.branchSelections).toHaveLength(2)
+    const currentForkChoice = forkGraph.branchSelections.at(-1)!
+    expect(currentForkChoice).toMatchObject({
+      forkEventId: `${forkInput.id}-fork-2`,
+    })
+    expect(currentForkChoice).not.toHaveProperty("supersedesId")
+    const selectedReplacementLink = forkGraph.links.find(
+      (link) => link.id === currentForkChoice.selectedLinkId
+    )!
+    expect(selectedReplacementLink).toMatchObject({
+      fromEventId: `${forkInput.id}-fork-2`,
+    })
+    expect(selectedReplacementLink).not.toHaveProperty("retiredRevision")
+    expect(
+      forkGraph.links
+        .filter((link) =>
+          [`${forkInput.id}-fork-a`, `${forkInput.id}-fork-b`].includes(link.id)
+        )
+        .every((link) => link.retiredRevision === 2)
+    ).toBe(true)
+  })
+
+  it("merges partial actual confirmation without clearing prior facts", async () => {
+    const input = graph(`workspace-confirm-partial-${randomUUID()}`)
+    const event = input.events.find((candidate) => candidate.id === `${input.id}-a`)!
+    if (event.type !== "VISIT") throw new Error("fixture invariant")
+    event.executionStatus = "STARTED"
+    event.actualStartAt = "2026-08-01T01:00:00.000Z"
+    event.detail.actualLat = 30.251
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+
+    await new WorkspaceCommandService().execute(
+      context,
+      command(workspace.id, 0, "confirm-partial", {
+        name: "journey.confirm_actual",
+        payload: {
+          eventId: `${input.id}-a`,
+          actual: {
+            type: "VISIT",
+            actualEndAt: "2026-08-01T02:00:00.000Z",
+            detail: { actualLng: 120.151 },
+          },
+        },
+      })
+    )
+    const recovered = await new WorkspaceCommandService().getDocument(
+      context,
+      workspace.id
+    )
+    expect(
+      recovered?.session.headGraph.events.find(
+        (candidate) => candidate.id === `${input.id}-a`
+      )
+    ).toMatchObject({
+      executionStatus: "CONFIRMED",
+      actualStartAt: "2026-08-01T01:00:00.000Z",
+      actualEndAt: "2026-08-01T02:00:00.000Z",
+      detail: { actualLat: 30.251, actualLng: 120.151 },
+    })
+  })
+
+  it("allows only a linear same-domain Observation supersession chain", async () => {
+    const input = graph(`workspace-observation-chain-${randomUUID()}`)
+    input.observations.push({
+      id: `${input.id}-observation-0`,
+      eventId: `${input.id}-a`,
+      kind: "NOTE",
+      phase: "ACTUAL",
+      body: "O",
+      observedAt: now,
+      actor: { kind: "USER", userId: ownerId },
+      visibility: "PRIVATE",
+      createdAt: now,
+    })
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    await service.execute(
+      context,
+      command(workspace.id, 0, "observation-1", {
+        name: "journey.add_observation",
+        payload: {
+          eventId: `${input.id}-a`,
+          observation: {
+            kind: "NOTE",
+            phase: "ACTUAL",
+            body: "O1",
+            supersedesId: `${input.id}-observation-0`,
+            visibility: "PRIVATE",
+          },
+        },
+      })
+    )
+    const afterFirst = await service.getDocument(context, workspace.id)
+    const observation1 = afterFirst!.session.headGraph.observations.at(-1)!
+
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 1, "observation-branch", {
+          name: "journey.add_observation",
+          payload: {
+            eventId: `${input.id}-a`,
+            observation: {
+              kind: "NOTE",
+              phase: "ACTUAL",
+              body: "invalid branch",
+              supersedesId: `${input.id}-observation-0`,
+              visibility: "PRIVATE",
+            },
+          },
+        })
+      )
+    ).rejects.toThrow("is not the current leaf")
+
+    await service.execute(
+      context,
+      command(workspace.id, 1, "observation-2", {
+        name: "journey.add_observation",
+        payload: {
+          eventId: `${input.id}-a`,
+          observation: {
+            kind: "NOTE",
+            phase: "ACTUAL",
+            body: "O2",
+            supersedesId: observation1.id,
+            visibility: "PRIVATE",
+          },
+        },
+      })
+    )
+    const recovered = await service.getDocument(context, workspace.id)
+    expect(recovered?.session.headGraph.observations).toHaveLength(3)
+    expect(recovered?.session.headGraph.observations.at(-1)).toMatchObject({
+      supersedesId: observation1.id,
+      body: "O2",
+    })
+    expect(
+      await prisma.workspaceRevision.count({
+        where: { workspaceId: workspace.id },
+      })
+    ).toBe(2)
+  })
+
   it("accepts only a running same-Workspace Agent actor", async () => {
     const workspace = await createWorkspace(context, {
       graph: graph(`workspace-agent-${randomUUID()}`),

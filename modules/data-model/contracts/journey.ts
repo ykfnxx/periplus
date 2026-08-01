@@ -933,6 +933,19 @@ export const targetJourneyGraphSnapshotSchema = z
     const observationById = new Map(
       graph.observations.map((observation) => [observation.id, observation])
     )
+    const observationSupersedesIds = graph.observations.flatMap(
+      (observation) =>
+        observation.supersedesId ? [observation.supersedesId] : []
+    )
+    if (
+      new Set(observationSupersedesIds).size !==
+      observationSupersedesIds.length
+    ) {
+      addIssue(
+        ["observations"],
+        "an Observation may be superseded by at most one successor"
+      )
+    }
     for (const observation of graph.observations) {
       if (!events.has(observation.eventId)) {
         addIssue(
@@ -953,6 +966,21 @@ export const targetJourneyGraphSnapshotSchema = z
           ["observations"],
           `observation ${observation.id} has an invalid supersedes relation`
         )
+      }
+    }
+    for (const observation of graph.observations) {
+      const seen = new Set<string>()
+      let cursor: typeof observation | undefined = observation
+      while (cursor?.supersedesId) {
+        if (seen.has(cursor.id)) {
+          addIssue(
+            ["observations"],
+            `observation supersession contains a cycle at ${cursor.id}`
+          )
+          break
+        }
+        seen.add(cursor.id)
+        cursor = observationById.get(cursor.supersedesId)
       }
     }
     for (const link of graph.eventAssetLinks) {

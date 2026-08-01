@@ -604,6 +604,53 @@ describe("breaking data-model target contracts", () => {
     })
   })
 
+  it("requires Observation supersession to be a single same-domain chain", () => {
+    const source = structuredClone(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).expected.state!.graph!
+    )
+
+    const branched = structuredClone(source)
+    branched.observations.push({
+      ...structuredClone(branched.observations[1]!),
+      id: "observation-branch",
+      supersedesId: "observation-1",
+      createdAt: "2026-08-01T02:00:00.000Z",
+    })
+
+    const cycle = structuredClone(source)
+    cycle.observations[0]!.supersedesId = "observation-2"
+
+    const crossEvent = structuredClone(source)
+    crossEvent.events.push({
+      ...structuredClone(crossEvent.events[0]!),
+      id: "content-event-other",
+      placementStatus: "UNSCHEDULED",
+      parentSectionEventId: null,
+    })
+    crossEvent.observations[1]!.eventId = "content-event-other"
+
+    const crossKind = structuredClone(source)
+    ;(crossKind.observations[1] as { kind: string }).kind = "FACT"
+
+    const crossPhase = structuredClone(source)
+    crossPhase.observations[1]!.phase = "PLANNED"
+
+    for (const invalid of [
+      branched,
+      cycle,
+      crossEvent,
+      crossKind,
+      crossPhase,
+    ]) {
+      expect(targetJourneyGraphSnapshotSchema.safeParse(invalid).success).toBe(
+        false
+      )
+    }
+  })
+
   it("does not let an EventAssetLink broaden Asset visibility", () => {
     const bundle = structuredClone(
       scenario(

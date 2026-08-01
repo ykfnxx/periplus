@@ -13,6 +13,7 @@ export type JourneyProjectionErrorCode =
   | "INVALID_REVISION"
   | "INVALID_SCOPE"
   | "INVALID_BRANCH_SELECTION"
+  | "INVALID_BRANCH_KEY"
   | "NON_CONVERGENT_BRANCH"
   | "CROSSING_BRANCH"
   | "UNRESOLVABLE_TOPOLOGY"
@@ -202,6 +203,79 @@ function validateBranchIntervals(
   }
 }
 
+function validateAlternativeBranchKeys(
+  links: readonly TargetJourneyEventLink[]
+) {
+  const incoming = new Map<string, number>()
+  const outgoing = new Map<string, number>()
+  for (const link of links) {
+    incoming.set(link.toEventId, (incoming.get(link.toEventId) ?? 0) + 1)
+    outgoing.set(link.fromEventId, (outgoing.get(link.fromEventId) ?? 0) + 1)
+  }
+  const groups = new Map<string, TargetJourneyEventLink[]>()
+  for (const link of links) {
+    if (link.kind !== "ALTERNATIVE" || !link.branchKey) continue
+    const group = groups.get(link.branchKey) ?? []
+    group.push(link)
+    groups.set(link.branchKey, group)
+  }
+
+  for (const [branchKey, group] of groups) {
+    const groupIncoming = new Map<string, number>()
+    const groupOutgoing = new Map<string, TargetJourneyEventLink[]>()
+    for (const link of group) {
+      groupIncoming.set(
+        link.toEventId,
+        (groupIncoming.get(link.toEventId) ?? 0) + 1
+      )
+      const values = groupOutgoing.get(link.fromEventId) ?? []
+      values.push(link)
+      groupOutgoing.set(link.fromEventId, values)
+    }
+    if (
+      [...groupIncoming.values()].some((count) => count > 1) ||
+      [...groupOutgoing.values()].some((values) => values.length > 1)
+    ) {
+      fail(
+        "INVALID_BRANCH_KEY",
+        `alternative branch ${branchKey} must form one non-branching path`
+      )
+    }
+    const starts = group
+      .map((link) => link.fromEventId)
+      .filter((eventId) => !groupIncoming.has(eventId))
+    const ends = group
+      .map((link) => link.toEventId)
+      .filter((eventId) => !groupOutgoing.has(eventId))
+    if (
+      new Set(starts).size !== 1 ||
+      new Set(ends).size !== 1 ||
+      (outgoing.get(starts[0]!) ?? 0) < 2 ||
+      (incoming.get(ends[0]!) ?? 0) < 2
+    ) {
+      fail(
+        "INVALID_BRANCH_KEY",
+        `alternative branch ${branchKey} must have one fork and one join`
+      )
+    }
+    const visited = new Set<string>()
+    let cursor: string | undefined = starts[0]
+    while (cursor) {
+      const next: TargetJourneyEventLink | undefined =
+        groupOutgoing.get(cursor)?.[0]
+      if (!next || visited.has(next.id)) break
+      visited.add(next.id)
+      cursor = next.toEventId
+    }
+    if (visited.size !== group.length || cursor !== ends[0]) {
+      fail(
+        "INVALID_BRANCH_KEY",
+        `alternative branch ${branchKey} must keep one continuous key from fork to join`
+      )
+    }
+  }
+}
+
 function selectCurrentBranchLinks(
   graph: TargetJourneyGraphSnapshot,
   revision: number,
@@ -273,6 +347,7 @@ function selectedEventsForScope(
       (!link.retiredRevision || link.retiredRevision > revision)
   )
 
+  validateAlternativeBranchKeys(scopedLinks)
   validateBranchIntervals(scopedEvents, scopedLinks)
   const selectedLinks = selectCurrentBranchLinks(
     graph,
@@ -355,22 +430,19 @@ function resolveTimes(
       usesPlannedFallback: false,
     }
   }
-  if (hasActualValue(event)) {
-    return {
-      startAt: event.actualStartAt ?? event.plannedStartAt,
-      endAt: event.actualEndAt ?? event.plannedEndAt,
-      valueSource: "ACTUAL",
-      usesPlannedFallback:
-        (!event.actualStartAt && event.plannedStartAt !== undefined) ||
-        (!event.actualEndAt && event.plannedEndAt !== undefined),
-    }
-  }
+  const startAt = event.actualStartAt ?? event.plannedStartAt
+  const endAt = event.actualEndAt ?? event.plannedEndAt
+  const usesPlannedFallback =
+    (!event.actualStartAt && event.plannedStartAt !== undefined) ||
+    (!event.actualEndAt && event.plannedEndAt !== undefined)
+  const hasActualTime =
+    event.actualStartAt !== undefined || event.actualEndAt !== undefined
   return {
-    startAt: event.plannedStartAt,
-    endAt: event.plannedEndAt,
-    valueSource: "PLANNED",
-    usesPlannedFallback:
-      event.plannedStartAt !== undefined || event.plannedEndAt !== undefined,
+    startAt,
+    endAt,
+    valueSource:
+      hasActualTime && !usesPlannedFallback ? "ACTUAL" : "PLANNED",
+    usesPlannedFallback,
   }
 }
 

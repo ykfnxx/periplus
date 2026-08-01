@@ -91,6 +91,59 @@ describe("P3 Journey projection resolver", () => {
     )
   })
 
+  it("requires one continuous branchKey path with a unique fork and join", () => {
+    const keyChanged = graph(
+      "05-current-branch-correction",
+      "correct-current-selection"
+    )
+    keyChanged.links.find((link) => link.id === "b-join")!.branchKey = "other"
+    expect(() =>
+      resolveJourneyProjection({
+        graph: keyChanged,
+        scopeSectionEventId: null,
+        mode: "PLANNER",
+      })
+    ).toThrowError(
+      expect.objectContaining<Partial<JourneyProjectionError>>({
+        code: "INVALID_BRANCH_KEY",
+      })
+    )
+
+    const reusedKey = graph(
+      "06-strict-nested-branch",
+      "two-level-nested-forks"
+    )
+    for (const link of reusedKey.links.filter(
+      (candidate) => candidate.kind === "ALTERNATIVE"
+    )) {
+      link.branchKey = "shared"
+    }
+    expect(() =>
+      resolveJourneyProjection({
+        graph: reusedKey,
+        scopeSectionEventId: null,
+        mode: "PLANNER",
+      })
+    ).toThrowError(
+      expect.objectContaining<Partial<JourneyProjectionError>>({
+        code: "INVALID_BRANCH_KEY",
+      })
+    )
+
+    const mainKey = graph(
+      "05-current-branch-correction",
+      "correct-current-selection"
+    )
+    mainKey.links.find((link) => link.id === "fork-a")!.branchKey = "illegal"
+    expect(() =>
+      resolveJourneyProjection({
+        graph: mainKey,
+        scopeSectionEventId: null,
+        mode: "PLANNER",
+      })
+    ).toThrow(/MAIN Link fork-a cannot carry branchKey/)
+  })
+
   it("requires an exact revision snapshot for historical projection", () => {
     const fixture = scenario(
       "05-current-branch-correction",
@@ -219,5 +272,51 @@ describe("P3 Journey projection resolver", () => {
         valueSource: "PLANNED",
       },
     ])
+  })
+
+  it("marks EXECUTION time source from selected fields, not lifecycle status", () => {
+    const plannedFallback = graph(
+      "09-exact-projection-modes",
+      "canonical-input-order"
+    )
+    const fallbackEvent = plannedFallback.events.find(
+      (event) => event.id === "confirmed-start"
+    )!
+    if (fallbackEvent.type !== "VISIT") throw new Error("fixture invariant")
+    fallbackEvent.executionStatus = "STARTED"
+    delete fallbackEvent.actualStartAt
+    delete fallbackEvent.actualEndAt
+    expect(
+      resolveJourneyProjection({
+        graph: plannedFallback,
+        scopeSectionEventId: null,
+        mode: "EXECUTION",
+      }).events[0]
+    ).toMatchObject({
+      startAt: "2026-08-01T00:00:00.000Z",
+      endAt: "2026-08-02T00:00:00.000Z",
+      valueSource: "PLANNED",
+    })
+
+    const mixed = graph(
+      "09-exact-projection-modes",
+      "canonical-input-order"
+    )
+    const mixedEvent = mixed.events.find(
+      (event) => event.id === "confirmed-start"
+    )!
+    if (mixedEvent.type !== "VISIT") throw new Error("fixture invariant")
+    delete mixedEvent.actualEndAt
+    expect(
+      resolveJourneyProjection({
+        graph: mixed,
+        scopeSectionEventId: null,
+        mode: "EXECUTION",
+      }).events[0]
+    ).toMatchObject({
+      startAt: "2026-08-01T01:00:00.000Z",
+      endAt: "2026-08-02T00:00:00.000Z",
+      valueSource: "PLANNED",
+    })
   })
 })

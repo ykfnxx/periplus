@@ -836,6 +836,29 @@ async function applyContentCommand(
             observation.id === command.payload.observation.supersedesId
         )
       : undefined
+    if (command.payload.observation.supersedesId && !superseded) {
+      throw new WorkspaceInputError("Superseded Observation was not found")
+    }
+    if (
+      superseded &&
+      (superseded.eventId !== command.payload.eventId ||
+        superseded.kind !== command.payload.observation.kind ||
+        superseded.phase !== command.payload.observation.phase)
+    ) {
+      throw new WorkspaceInputError(
+        "Observation supersession must keep event, kind, and phase"
+      )
+    }
+    if (
+      superseded &&
+      graph.observations.some(
+        (observation) => observation.supersedesId === superseded.id
+      )
+    ) {
+      throw new WorkspaceInputError(
+        `Observation ${superseded.id} is not the current leaf`
+      )
+    }
     graph.observations.push({
       ...command.payload.observation,
       id: deterministicId(envelope, "event-observation"),
@@ -1119,12 +1142,102 @@ function applyJourneyCommand(
       if (graph.events.some((candidate) => candidate.id === successor.id)) {
         throw new WorkspaceInputError(`Event ${successor.id} already exists`)
       }
+      const activeChildren = activeEvents(graph).filter(
+        (candidate) => candidate.parentSectionEventId === predecessor.id
+      )
+      if (activeChildren.length && successor.type !== "SECTION") {
+        throw new WorkspaceInputError(
+          `Replacing SECTION ${predecessor.id} with active children requires a SECTION successor`
+        )
+      }
+      const transitDependents = graph.events.filter(
+        (candidate) =>
+          candidate.type === "TRANSIT" &&
+          [
+            candidate.detail.plannedFromEventId,
+            candidate.detail.plannedToEventId,
+            candidate.detail.actualFromEventId,
+            candidate.detail.actualToEventId,
+          ].includes(predecessor.id)
+      )
+      if (
+        transitDependents.length &&
+        (successor.type === "SECTION" ||
+          successor.type === "TRANSIT" ||
+          successor.type === "NOTE")
+      ) {
+        throw new WorkspaceInputError(
+          `Replacement successor ${successor.id} cannot satisfy Transit endpoint dependencies`
+        )
+      }
       predecessor.retiredRevision = graph.revision
       predecessor.updatedAt = now
       graph.events.push(successor)
+      for (const child of activeChildren) {
+        child.parentSectionEventId = successor.id
+        child.updatedAt = now
+      }
+      for (const transit of transitDependents) {
+        if (transit.type !== "TRANSIT") continue
+        for (const endpoint of [
+          "plannedFromEventId",
+          "plannedToEventId",
+          "actualFromEventId",
+          "actualToEventId",
+        ] as const) {
+          if (transit.detail[endpoint] === predecessor.id) {
+            transit.detail[endpoint] = successor.id
+          }
+        }
+        transit.updatedAt = now
+      }
+
+      const predecessorSelections = graph.branchSelections.filter(
+        (selection) => selection.forkEventId === predecessor.id
+      )
+      const predecessorChoice = currentSelection(graph, predecessor.id)
+      const replacementLinkByOldId = new Map<
+        string,
+        TargetJourneyEventLink
+      >()
       for (const link of activeLinks(graph)) {
-        if (link.fromEventId === predecessor.id) link.fromEventId = successor.id
+        if (link.fromEventId === predecessor.id) {
+          if (predecessorSelections.length) {
+            link.retiredRevision = graph.revision
+            const replacementLink: TargetJourneyEventLink = {
+              ...link,
+              id: deterministicId(envelope, `replacement-link-${link.id}`),
+              fromEventId: successor.id,
+              introducedRevision: graph.revision,
+              retiredRevision: undefined,
+            }
+            graph.links.push(replacementLink)
+            replacementLinkByOldId.set(link.id, replacementLink)
+          } else {
+            link.fromEventId = successor.id
+          }
+        }
         if (link.toEventId === predecessor.id) link.toEventId = successor.id
+      }
+      if (predecessorChoice) {
+        const selectedLink = replacementLinkByOldId.get(
+          predecessorChoice.selectedLinkId
+        )
+        if (!selectedLink) {
+          throw new WorkspaceInputError(
+            `Replacement cannot preserve branch choice ${predecessorChoice.id}`
+          )
+        }
+        graph.branchSelections.push({
+          id: deterministicId(envelope, "replacement-branch-selection"),
+          journeyId: graph.id,
+          forkEventId: successor.id,
+          selectedLinkId: selectedLink.id,
+          journeyRevision: graph.revision,
+          actor: envelope.actor,
+          reason: `continue branch choice from replaced Event ${predecessor.id}`,
+          createdAt: timestampAfter(now, predecessorChoice.createdAt),
+        })
       }
       graph.replacements.push({
         id: deterministicId(envelope, "replacement"),
@@ -1210,8 +1323,12 @@ function applyJourneyCommand(
         )
       }
       event.executionStatus = "CONFIRMED"
-      event.actualStartAt = command.payload.actual.actualStartAt
-      event.actualEndAt = command.payload.actual.actualEndAt
+      if (command.payload.actual.actualStartAt !== undefined) {
+        event.actualStartAt = command.payload.actual.actualStartAt
+      }
+      if (command.payload.actual.actualEndAt !== undefined) {
+        event.actualEndAt = command.payload.actual.actualEndAt
+      }
       Object.assign(event.detail, command.payload.actual.detail)
       event.updatedAt = now
       break
