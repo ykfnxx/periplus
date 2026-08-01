@@ -17,11 +17,7 @@ import {
   validateJourneyGraph,
   validateJourneyGraphTransition,
 } from "./journey-graph-validator"
-import {
-  journeyInclude,
-  mapJourneyToGraph,
-  type JourneyRecord,
-} from "./journey-mapper"
+import { journeyInclude, mapJourneyToGraph } from "./journey-mapper"
 
 const journeyRevisionWriteSchema = z
   .object({
@@ -84,10 +80,102 @@ function inputError(error: unknown): never {
   throw error
 }
 
+function canonicalizeDateValues(value: unknown, key?: string): unknown {
+  if (
+    typeof value === "string" &&
+    key !== undefined &&
+    /(?:At|Until)$/.test(key)
+  ) {
+    return new Date(value).toISOString()
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeDateValues(item))
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([childKey, child]) => [
+        childKey,
+        canonicalizeDateValues(child, childKey),
+      ])
+    )
+  }
+  return value
+}
+
+function canonicalizeGraph(
+  graph: TargetJourneyGraphSnapshot
+): TargetJourneyGraphSnapshot {
+  const canonical = canonicalizeDateValues(graph) as TargetJourneyGraphSnapshot
+  const text = (left: string, right: string) => left.localeCompare(right)
+  const eventOrder = new Map<string, number>()
+
+  canonical.events.sort(
+    (left, right) =>
+      text(left.createdAt, right.createdAt) || text(left.id, right.id)
+  )
+  canonical.events.forEach((event, index) => eventOrder.set(event.id, index))
+  canonical.links.sort(
+    (left, right) =>
+      left.introducedRevision - right.introducedRevision ||
+      left.rank - right.rank ||
+      text(left.id, right.id)
+  )
+  canonical.replacements.sort(
+    (left, right) => left.revision - right.revision || text(left.id, right.id)
+  )
+  canonical.branchSelections.sort(
+    (left, right) =>
+      left.journeyRevision - right.journeyRevision ||
+      text(left.createdAt, right.createdAt) ||
+      text(left.id, right.id)
+  )
+  for (const run of canonical.transitPlanningRuns) {
+    run.plans.sort(
+      (left, right) => left.rank - right.rank || text(left.id, right.id)
+    )
+    for (const plan of run.plans) {
+      plan.segments.sort(
+        (left, right) => left.order - right.order || text(left.id, right.id)
+      )
+    }
+  }
+  canonical.transitPlanningRuns.sort(
+    (left, right) =>
+      (eventOrder.get(left.transitEventId) ?? Number.MAX_SAFE_INTEGER) -
+        (eventOrder.get(right.transitEventId) ?? Number.MAX_SAFE_INTEGER) ||
+      text(left.calculatedAt, right.calculatedAt) ||
+      text(left.id, right.id)
+  )
+  canonical.eventAssetLinks.sort(
+    (left, right) =>
+      left.introducedRevision - right.introducedRevision ||
+      left.rank - right.rank ||
+      text(left.id, right.id)
+  )
+  canonical.observations.sort(
+    (left, right) =>
+      (eventOrder.get(left.eventId) ?? Number.MAX_SAFE_INTEGER) -
+        (eventOrder.get(right.eventId) ?? Number.MAX_SAFE_INTEGER) ||
+      text(left.createdAt, right.createdAt) ||
+      text(left.id, right.id)
+  )
+  canonical.eventSourceLinks.sort(
+    (left, right) =>
+      left.introducedRevision - right.introducedRevision ||
+      left.rank - right.rank ||
+      text(left.id, right.id)
+  )
+
+  return validateJourneyGraph(canonical)
+}
+
 function validatedWrite(input: unknown): JourneyRevisionWrite {
   try {
     const value = journeyRevisionWriteSchema.parse(input)
-    return { ...value, graph: validateJourneyGraph(value.graph) }
+    return {
+      ...value,
+      graph: canonicalizeGraph(validateJourneyGraph(value.graph)),
+    }
   } catch (error) {
     inputError(error)
   }
@@ -142,6 +230,69 @@ function assertWriteOwner(context: AuthContext, ownerId: string) {
   if (!isAdmin(context) && ownerId !== context.userId) {
     throw new JourneyInputError(
       "Journey owner must match the authenticated user"
+    )
+  }
+}
+
+async function assertActorAuthorized(
+  tx: Prisma.TransactionClient,
+  context: AuthContext,
+  actor: TargetActorReference,
+  workspaceRevisionId?: string
+) {
+  if (actor.kind === "USER") {
+    if (actor.userId !== context.userId) {
+      throw new JourneyInputError(
+        "USER actor must match the authenticated user"
+      )
+    }
+    return
+  }
+  if (actor.kind === "SYSTEM") {
+    throw new JourneyInputError(
+      "SYSTEM actor is not available through the authenticated Journey boundary"
+    )
+  }
+
+  const run = await tx.workspaceAgentRun.findUnique({
+    where: { id: actor.agentRunId },
+    select: {
+      workspaceId: true,
+      workspace: { select: { ownerId: true } },
+    },
+  })
+  if (!run || run.workspace.ownerId !== context.userId) {
+    throw new JourneyInputError(
+      "AGENT actor must reference a WorkspaceAgentRun owned by the authenticated user"
+    )
+  }
+  if (!workspaceRevisionId) return
+
+  const workspaceRevision = await tx.workspaceRevision.findUnique({
+    where: { id: workspaceRevisionId },
+    select: { workspaceId: true },
+  })
+  if (!workspaceRevision || workspaceRevision.workspaceId !== run.workspaceId) {
+    throw new JourneyInputError(
+      "AGENT actor and workspace revision must belong to the same Workspace"
+    )
+  }
+}
+
+async function assertWriteActorsAuthorized(
+  tx: Prisma.TransactionClient,
+  context: AuthContext,
+  write: JourneyRevisionWrite,
+  actor: TargetActorReference,
+  selections: TargetJourneyGraphSnapshot["branchSelections"]
+) {
+  await assertActorAuthorized(tx, context, actor, write.workspaceRevisionId)
+  for (const selection of selections) {
+    await assertActorAuthorized(
+      tx,
+      context,
+      selection.actor,
+      write.workspaceRevisionId
     )
   }
 }
@@ -263,25 +414,39 @@ function eventEnvelopeData(
 }
 
 function eventEnvelopeUpdateData(
+  previous: TargetJourneyEvent,
   event: TargetJourneyEvent
 ): Prisma.JourneyEventUncheckedUpdateInput {
-  const data = eventEnvelopeData(event.journeyId, event)
-  return {
-    parentSectionEventId: data.parentSectionEventId,
-    type: data.type,
-    executionStatus: data.executionStatus,
-    placementStatus: data.placementStatus,
-    origin: data.origin,
-    title: data.title,
-    description: data.description,
-    plannedStartAt: data.plannedStartAt,
-    plannedEndAt: data.plannedEndAt,
-    actualStartAt: data.actualStartAt,
-    actualEndAt: data.actualEndAt,
-    introducedRevision: data.introducedRevision,
-    retiredRevision: data.retiredRevision,
-    updatedAt: data.updatedAt,
+  const before = eventEnvelopeData(previous.journeyId, previous)
+  const after = eventEnvelopeData(event.journeyId, event)
+  const changed = (key: keyof typeof after) =>
+    json(before[key]) !== json(after[key])
+  const data: Prisma.JourneyEventUncheckedUpdateInput = {
+    ...(changed("parentSectionEventId")
+      ? { parentSectionEventId: after.parentSectionEventId }
+      : {}),
+    ...(changed("executionStatus")
+      ? { executionStatus: after.executionStatus }
+      : {}),
+    ...(changed("placementStatus")
+      ? { placementStatus: after.placementStatus }
+      : {}),
+    ...(changed("title") ? { title: after.title } : {}),
+    ...(changed("description") ? { description: after.description } : {}),
+    ...(changed("plannedStartAt")
+      ? { plannedStartAt: after.plannedStartAt }
+      : {}),
+    ...(changed("plannedEndAt") ? { plannedEndAt: after.plannedEndAt } : {}),
+    ...(changed("actualStartAt") ? { actualStartAt: after.actualStartAt } : {}),
+    ...(changed("actualEndAt") ? { actualEndAt: after.actualEndAt } : {}),
+    ...(changed("retiredRevision")
+      ? { retiredRevision: after.retiredRevision }
+      : {}),
   }
+  if (changed("updatedAt") || Object.keys(data).length > 0) {
+    data.updatedAt = after.updatedAt
+  }
+  return data
 }
 
 function locationDetailData(
@@ -487,6 +652,70 @@ function containmentOrder(events: readonly TargetJourneyEvent[]) {
   )
 }
 
+function dependencySafeEventUpdateOrder(
+  previousEvents: ReadonlyMap<string, TargetJourneyEvent>,
+  events: readonly TargetJourneyEvent[]
+) {
+  const ordered = containmentOrder(
+    events.filter((event) => previousEvents.has(event.id))
+  )
+  const restoring: TargetJourneyEvent[] = []
+  const regular: TargetJourneyEvent[] = []
+  const retiring: TargetJourneyEvent[] = []
+
+  for (const event of ordered) {
+    const previous = previousEvents.get(event.id)!
+    if (
+      previous.retiredRevision !== undefined &&
+      event.retiredRevision === undefined
+    ) {
+      restoring.push(event)
+    } else if (
+      previous.retiredRevision === undefined &&
+      event.retiredRevision !== undefined
+    ) {
+      retiring.push(event)
+    } else {
+      regular.push(event)
+    }
+  }
+
+  return [...restoring, ...regular, ...retiring.reverse()]
+}
+
+function temporaryLinkParkingEndpoints(
+  previous: TargetJourneyGraphSnapshot,
+  nextEventsById: ReadonlyMap<string, TargetJourneyEvent>,
+  topologyChangedEventIds: ReadonlySet<string>
+) {
+  const candidates = previous.events
+    .filter((event) => {
+      const next = nextEventsById.get(event.id)
+      return (
+        next !== undefined &&
+        !topologyChangedEventIds.has(event.id) &&
+        event.placementStatus === "SCHEDULED" &&
+        event.retiredRevision === undefined &&
+        next.placementStatus === "SCHEDULED" &&
+        next.retiredRevision === undefined &&
+        event.parentSectionEventId === next.parentSectionEventId
+      )
+    })
+    .sort((left, right) => left.id.localeCompare(right.id))
+
+  for (const from of candidates) {
+    const to = candidates.find(
+      (candidate) =>
+        candidate.id !== from.id &&
+        candidate.parentSectionEventId === from.parentSectionEventId
+    )
+    if (to) return { fromEventId: from.id, toEventId: to.id }
+  }
+  throw new JourneyInputError(
+    "selected Link topology change requires two stable active Events in one scope"
+  )
+}
+
 function revisionSignature(
   write: JourneyRevisionWrite,
   actor: TargetActorReference
@@ -620,18 +849,6 @@ async function createSelections(
   }
 }
 
-async function readJourneyInTransaction(
-  tx: Prisma.TransactionClient,
-  id: string
-): Promise<JourneyRecord> {
-  const journey = await tx.journey.findUnique({
-    where: { id },
-    include: journeyInclude,
-  })
-  if (!journey) throw new JourneyInputError("Journey not found")
-  return journey
-}
-
 function hasPrismaCode(error: unknown, code: string) {
   return (
     typeof error === "object" &&
@@ -678,6 +895,13 @@ export async function createJourney(
 
   try {
     return await prisma.$transaction(async (tx) => {
+      await assertWriteActorsAuthorized(
+        tx,
+        context,
+        write,
+        actor,
+        write.graph.branchSelections
+      )
       const existing = await tx.journey.findUnique({
         where: { id: write.graph.id },
         select: { id: true, ownerId: true },
@@ -714,6 +938,10 @@ export async function createJourney(
         await tx.journeyEvent.create({
           data: eventEnvelopeData(write.graph.id, event),
         })
+        await tx.journeyEvent.update({
+          where: { id: event.id },
+          data: { updatedAt: new Date(event.updatedAt) },
+        })
       }
       for (const event of write.graph.events) {
         await createEventDetail(tx, event)
@@ -724,9 +952,7 @@ export async function createJourney(
       }
       await createSelections(tx, write.graph.branchSelections)
 
-      return mapJourneyToGraph(
-        await readJourneyInTransaction(tx, write.graph.id)
-      )
+      return graphFromRevisionJson(json(write.graph))
     })
   } catch (error) {
     if (
@@ -762,6 +988,7 @@ export async function commitJourneyGraph(
       })
       if (!record) return null
       assertWriteOwner(context, record.ownerId)
+      await assertActorAuthorized(tx, context, actor, write.workspaceRevisionId)
 
       const replay = await findIdempotentRevision(tx, id, write, actor)
       if (replay) return replay
@@ -783,6 +1010,21 @@ export async function commitJourneyGraph(
         assertReadonlyDomainsUnchanged(previous, next)
       } catch (error) {
         inputError(error)
+      }
+
+      const previousSelections = new Set(
+        previous.branchSelections.map((selection) => selection.id)
+      )
+      const newSelections = next.branchSelections.filter(
+        (selection) => !previousSelections.has(selection.id)
+      )
+      for (const selection of newSelections) {
+        await assertActorAuthorized(
+          tx,
+          context,
+          selection.actor,
+          write.workspaceRevisionId
+        )
       }
 
       const parentRevision = await tx.journeyRevision.findUnique({
@@ -811,6 +1053,10 @@ export async function commitJourneyGraph(
         await tx.journeyEvent.create({
           data: eventEnvelopeData(id, event),
         })
+        await tx.journeyEvent.update({
+          where: { id: event.id },
+          data: { updatedAt: new Date(event.updatedAt) },
+        })
       }
       for (const event of newEvents) await createEventDetail(tx, event)
 
@@ -818,12 +1064,6 @@ export async function commitJourneyGraph(
         previous.links.map((link) => [link.id, link])
       )
       const newLinks = next.links.filter((link) => !previousLinks.has(link.id))
-      const previousSelections = new Set(
-        previous.branchSelections.map((selection) => selection.id)
-      )
-      const newSelections = next.branchSelections.filter(
-        (selection) => !previousSelections.has(selection.id)
-      )
       const linksNeededBySelections = new Set(
         newSelections.map((selection) => selection.selectedLinkId)
       )
@@ -890,27 +1130,55 @@ export async function commitJourneyGraph(
             topologyChangedEventIds.has(link.toEventId))
         )
       })
-      const suspendedLinkIds = new Set(linksToSuspend.map((link) => link.id))
-      for (const link of linksToSuspend) {
-        if (currentTargetSelections.has(link.id)) {
-          throw new JourneyInputError(
-            `current selected Link ${link.id} cannot change topology`
-          )
+      const parkedLinkIds = new Set(
+        linksToSuspend
+          .filter((link) => currentTargetSelections.has(link.id))
+          .map((link) => link.id)
+      )
+      const retiredForMoveLinkIds = new Set(
+        linksToSuspend
+          .filter((link) => !parkedLinkIds.has(link.id))
+          .map((link) => link.id)
+      )
+      if (parkedLinkIds.size > 0) {
+        const parking = temporaryLinkParkingEndpoints(
+          previous,
+          nextEventsById,
+          topologyChangedEventIds
+        )
+        for (const link of linksToSuspend.filter((candidate) =>
+          parkedLinkIds.has(candidate.id)
+        )) {
+          await tx.journeyEventLink.update({
+            where: { id: link.id },
+            data: {
+              ...parking,
+              kind: "ALTERNATIVE",
+              branchKey: `__temporary_move__:${link.id}`,
+            },
+          })
         }
       }
-      for (const link of linksToSuspend) {
+      for (const link of linksToSuspend.filter((candidate) =>
+        retiredForMoveLinkIds.has(candidate.id)
+      )) {
         await tx.journeyEventLink.update({
           where: { id: link.id },
           data: { retiredRevision: next.revision },
         })
       }
 
-      for (const event of next.events) {
-        if (!previousEvents.has(event.id)) continue
-        await tx.journeyEvent.update({
-          where: { id: event.id },
-          data: eventEnvelopeUpdateData(event),
-        })
+      for (const event of dependencySafeEventUpdateOrder(
+        previousEvents,
+        next.events
+      )) {
+        const data = eventEnvelopeUpdateData(
+          previousEvents.get(event.id)!,
+          event
+        )
+        if (Object.keys(data).length > 0) {
+          await tx.journeyEvent.update({ where: { id: event.id }, data })
+        }
       }
       for (const event of next.events) {
         if (!previousEvents.has(event.id)) continue
@@ -930,7 +1198,7 @@ export async function commitJourneyGraph(
             rank: link.rank,
             retiredRevision:
               link.retiredRevision ??
-              (suspendedLinkIds.has(link.id) ? next.revision : null),
+              (retiredForMoveLinkIds.has(link.id) ? next.revision : null),
           },
         })
       }
@@ -944,7 +1212,7 @@ export async function commitJourneyGraph(
         if (
           !previousLinks.has(link.id) ||
           link.retiredRevision !== undefined ||
-          !suspendedLinkIds.has(link.id)
+          !retiredForMoveLinkIds.has(link.id)
         ) {
           continue
         }
@@ -979,7 +1247,7 @@ export async function commitJourneyGraph(
       })
       if (updated.count !== 1) throw new JourneyRevisionConflictError()
 
-      return mapJourneyToGraph(await readJourneyInTransaction(tx, id))
+      return graphFromRevisionJson(json(next))
     })
   } catch (error) {
     if (

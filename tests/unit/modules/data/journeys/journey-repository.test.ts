@@ -17,18 +17,27 @@ import {
 } from "@/modules/data/journeys/journey-repository"
 
 const ownerId = `journey-core-owner-${randomUUID()}`
+const otherUserId = `journey-core-other-${randomUUID()}`
 const context = { userId: ownerId, role: "user" as const }
 const now = "2026-08-01T00:00:00.000Z"
 const later = "2026-08-01T01:00:00.000Z"
 
 beforeAll(async () => {
-  await prisma.user.create({
-    data: {
-      id: ownerId,
-      name: "Journey Core Test",
-      email: `${ownerId}@periplus.local`,
-      emailVerified: true,
-    },
+  await prisma.user.createMany({
+    data: [
+      {
+        id: ownerId,
+        name: "Journey Core Test",
+        email: `${ownerId}@periplus.local`,
+        emailVerified: true,
+      },
+      {
+        id: otherUserId,
+        name: "Other Journey Core Test",
+        email: `${otherUserId}@periplus.local`,
+        emailVerified: true,
+      },
+    ],
   })
 })
 
@@ -181,6 +190,66 @@ describe("P2A Journey core repository", () => {
     expect(revision1?.snapshot).toEqual(initial)
     expect(revision2?.snapshot).toEqual(next)
     expect(revision2?.parentRevisionId).toBe(revision1?.id)
+  })
+
+  it("returns the same canonical snapshot for the first write and replay", async () => {
+    const initial = graph(`journey-canonical-${randomUUID()}`, [
+      "z-event",
+      "a-event",
+      "m-event",
+    ])
+    initial.events.reverse()
+    initial.links.reverse()
+    for (const event of initial.events) {
+      event.createdAt = "2026-08-01T08:00:00+08:00"
+      event.updatedAt = "2026-08-01T08:00:00+08:00"
+    }
+    const request = write(initial, "create canonical journey", "create")
+
+    const created = await createJourney(context, request)
+    const replay = await createJourney(context, request)
+
+    expect(JSON.stringify(replay)).toBe(JSON.stringify(created))
+    expect(created.events.map((event) => event.id)).toEqual(
+      [...created.events.map((event) => event.id)].sort()
+    )
+    expect(created.links.map((link) => link.rank)).toEqual([1024, 2048])
+    expect(created.events.every((event) => event.createdAt === now)).toBe(true)
+    expect(
+      JSON.stringify(
+        (await getJourneyRevision(context, initial.id, 1))?.snapshot
+      )
+    ).toBe(JSON.stringify(created))
+
+    const next = structuredClone(created)
+    next.revision = 2
+    next.events.reverse()
+    next.links.reverse()
+    for (const event of next.events) {
+      event.updatedAt = "2026-08-01T09:00:00+08:00"
+    }
+    const updateRequest = write(next, "canonical update", "canonical-update")
+    const updated = await commitJourneyGraph(
+      context,
+      initial.id,
+      updateRequest,
+      1
+    )
+    const updateReplay = await commitJourneyGraph(
+      context,
+      initial.id,
+      updateRequest,
+      1
+    )
+    expect(JSON.stringify(updateReplay)).toBe(JSON.stringify(updated))
+    expect(updated?.events.every((event) => event.updatedAt === later)).toBe(
+      true
+    )
+    expect(
+      JSON.stringify(
+        (await getJourneyRevision(context, initial.id, 2))?.snapshot
+      )
+    ).toBe(JSON.stringify(updated))
   })
 
   it("allows only one concurrent writer to advance the same head revision", async () => {
@@ -351,6 +420,170 @@ describe("P2A Journey core repository", () => {
     ).toEqual(initial.links[1])
   })
 
+  it("moves a selected branch across SECTION scopes with stable identities", async () => {
+    const journeyId = `journey-selected-scope-${randomUUID()}`
+    const sectionA = section(`${journeyId}-section-a`, journeyId, "A")
+    const sectionB = section(`${journeyId}-section-b`, journeyId, "B")
+    const fork = visit(`${journeyId}-fork`, journeyId, "fork")
+    const branchA = visit(`${journeyId}-branch-a`, journeyId, "branch A")
+    const branchB = visit(`${journeyId}-branch-b`, journeyId, "branch B")
+    const join = visit(`${journeyId}-join`, journeyId, "join")
+    for (const event of [fork, branchA, branchB, join]) {
+      event.parentSectionEventId = sectionA.id
+    }
+    const initial: TargetJourneyGraphSnapshot = {
+      ...graph(journeyId, []),
+      events: [sectionA, sectionB, fork, branchA, branchB, join],
+      links: [
+        {
+          id: `${journeyId}-root-link`,
+          journeyId,
+          fromEventId: sectionA.id,
+          toEventId: sectionB.id,
+          kind: "MAIN",
+          rank: 1024,
+          introducedRevision: 1,
+        },
+        {
+          id: `${journeyId}-fork-a`,
+          journeyId,
+          fromEventId: fork.id,
+          toEventId: branchA.id,
+          kind: "MAIN",
+          rank: 1024,
+          introducedRevision: 1,
+        },
+        {
+          id: `${journeyId}-a-join`,
+          journeyId,
+          fromEventId: branchA.id,
+          toEventId: join.id,
+          kind: "MAIN",
+          rank: 1024,
+          introducedRevision: 1,
+        },
+        {
+          id: `${journeyId}-fork-b`,
+          journeyId,
+          fromEventId: fork.id,
+          toEventId: branchB.id,
+          kind: "ALTERNATIVE",
+          branchKey: "rain",
+          rank: 2048,
+          introducedRevision: 1,
+        },
+        {
+          id: `${journeyId}-b-join`,
+          journeyId,
+          fromEventId: branchB.id,
+          toEventId: join.id,
+          kind: "ALTERNATIVE",
+          branchKey: "rain",
+          rank: 1024,
+          introducedRevision: 1,
+        },
+      ],
+      branchSelections: [
+        {
+          id: `${journeyId}-selection-a`,
+          journeyId,
+          forkEventId: fork.id,
+          selectedLinkId: `${journeyId}-fork-a`,
+          journeyRevision: 1,
+          actor: { kind: "USER", userId: ownerId },
+          createdAt: now,
+        },
+      ],
+    }
+    const created = await createJourney(
+      context,
+      write(initial, "create selected branch", "create")
+    )
+    const moved = structuredClone(created)
+    moved.revision = 2
+    for (const event of moved.events.filter((candidate) =>
+      [fork.id, branchA.id, branchB.id, join.id].includes(candidate.id)
+    )) {
+      event.parentSectionEventId = sectionB.id
+      event.updatedAt = later
+    }
+
+    const result = await commitJourneyGraph(
+      context,
+      journeyId,
+      write(moved, "move selected branch", "move-selected-branch"),
+      1
+    )
+
+    expect(result?.links).toStrictEqual(created.links)
+    expect(result?.branchSelections).toStrictEqual(created.branchSelections)
+    expect(
+      result?.events
+        .filter((event) =>
+          [fork.id, branchA.id, branchB.id, join.id].includes(event.id)
+        )
+        .every((event) => event.parentSectionEventId === sectionB.id)
+    ).toBe(true)
+    expect(await prisma.journeyEventLink.count({ where: { journeyId } })).toBe(
+      5
+    )
+  })
+
+  it("retires and restores nested SECTION trees in either Event id order", async () => {
+    for (const [parentSuffix, childSuffix] of [
+      ["z-parent", "a-child"],
+      ["a-parent", "z-child"],
+    ] as const) {
+      const journeyId = `journey-nested-${randomUUID()}`
+      const parent = section(
+        `${journeyId}-${parentSuffix}`,
+        journeyId,
+        "parent"
+      )
+      const child = visit(`${journeyId}-${childSuffix}`, journeyId, "child")
+      child.parentSectionEventId = parent.id
+      const initial: TargetJourneyGraphSnapshot = {
+        ...graph(journeyId, []),
+        events: [child, parent],
+      }
+      const created = await createJourney(
+        context,
+        write(initial, "create nested journey", "create")
+      )
+
+      const retired = structuredClone(created)
+      retired.revision = 2
+      for (const event of retired.events) event.retiredRevision = 2
+      const retiredResult = await commitJourneyGraph(
+        context,
+        journeyId,
+        write(retired, "retire nested tree", "retire"),
+        1
+      )
+      expect(
+        retiredResult?.events.every((event) => event.retiredRevision === 2)
+      ).toBe(true)
+
+      const restored = structuredClone(retiredResult!)
+      restored.revision = 3
+      for (const event of restored.events) delete event.retiredRevision
+      const restoredResult = await commitJourneyGraph(
+        context,
+        journeyId,
+        write(restored, "restore nested tree", "restore"),
+        2
+      )
+      expect(
+        restoredResult?.events.every(
+          (event) => event.retiredRevision === undefined
+        )
+      ).toBe(true)
+      expect(await prisma.journeyRevision.count({ where: { journeyId } })).toBe(
+        3
+      )
+    }
+  })
+
   it("retires, undoes, and replaces without deleting Event history", async () => {
     const initial = graph(`journey-lineage-${randomUUID()}`, ["a"])
     const created = await createJourney(
@@ -510,6 +743,121 @@ describe("P2A Journey core repository", () => {
     expect(
       await prisma.journeyRevision.count({ where: { journeyId: initial.id } })
     ).toBe(2)
+  })
+
+  it("binds revision and selection provenance to the authenticated principal", async () => {
+    const createAgentRun = async (runOwnerId: string) => {
+      const workspaceId = `workspace-${randomUUID()}`
+      const agentRunId = `agent-run-${randomUUID()}`
+      const createdAt = new Date()
+      await prisma.workspaceSession.create({
+        data: {
+          id: workspaceId,
+          ownerId: runOwnerId,
+          headGraphJson: JSON.stringify({ ownerId: runOwnerId }),
+          expiresAt: new Date(createdAt.getTime() + 60 * 60 * 1000),
+          lastAccessAt: createdAt,
+          createdAt,
+        },
+      })
+      await prisma.workspaceAgentRun.create({
+        data: {
+          id: agentRunId,
+          workspaceId,
+          status: "RUNNING",
+          startedAt: new Date(now),
+        },
+      })
+      return agentRunId
+    }
+
+    const ownedAgentRunId = await createAgentRun(ownerId)
+    const externalAgentRunId = await createAgentRun(otherUserId)
+    const ownedAgentJourney = graph(`journey-owned-agent-${randomUUID()}`, [
+      "visit",
+    ])
+    await createJourney(context, {
+      ...write(ownedAgentJourney, "owned agent write", "create"),
+      actor: { kind: "AGENT", agentRunId: ownedAgentRunId },
+    })
+    expect(
+      (await getJourneyRevision(context, ownedAgentJourney.id, 1))?.actor
+    ).toStrictEqual({ kind: "AGENT", agentRunId: ownedAgentRunId })
+
+    for (const [label, actor] of [
+      ["other user", { kind: "USER", userId: otherUserId }],
+      ["system", { kind: "SYSTEM" }],
+      ["external agent", { kind: "AGENT", agentRunId: externalAgentRunId }],
+    ] as const) {
+      const rejected = graph(`journey-spoof-${label}-${randomUUID()}`, [
+        "visit",
+      ])
+      await expect(
+        createJourney(context, {
+          ...write(rejected, `spoof ${label}`, "create"),
+          actor,
+        })
+      ).rejects.toBeInstanceOf(JourneyInputError)
+      expect(
+        await prisma.journeyRevision.count({
+          where: { journeyId: rejected.id },
+        })
+      ).toBe(0)
+    }
+
+    const branch = graph(`journey-selection-spoof-${randomUUID()}`, [
+      "fork",
+      "main",
+      "alternative",
+    ])
+    const [fork, main, alternative] = branch.events.map((event) => event.id)
+    branch.links = [
+      {
+        id: `${branch.id}-main`,
+        journeyId: branch.id,
+        fromEventId: fork!,
+        toEventId: main!,
+        kind: "MAIN",
+        rank: 1024,
+        introducedRevision: 1,
+      },
+      {
+        id: `${branch.id}-alternative`,
+        journeyId: branch.id,
+        fromEventId: fork!,
+        toEventId: alternative!,
+        kind: "ALTERNATIVE",
+        branchKey: "rain",
+        rank: 2048,
+        introducedRevision: 1,
+      },
+    ]
+    const created = await createJourney(
+      context,
+      write(branch, "create branch", "create")
+    )
+    const spoofedSelection = structuredClone(created)
+    spoofedSelection.revision = 2
+    spoofedSelection.branchSelections.push({
+      id: `${branch.id}-spoofed-selection`,
+      journeyId: branch.id,
+      forkEventId: fork!,
+      selectedLinkId: branch.links[0]!.id,
+      journeyRevision: 2,
+      actor: { kind: "USER", userId: otherUserId },
+      createdAt: later,
+    })
+    await expect(
+      commitJourneyGraph(
+        context,
+        branch.id,
+        write(spoofedSelection, "spoof selection actor", "spoof-selection"),
+        1
+      )
+    ).rejects.toBeInstanceOf(JourneyInputError)
+    expect(
+      await prisma.journeyRevision.count({ where: { journeyId: branch.id } })
+    ).toBe(1)
   })
 
   it("rejects Transit/Content side effects before creating a revision", async () => {
