@@ -1951,13 +1951,15 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       now: new Date(now),
     })
     const service = new WorkspaceCommandService({
-      transitPlanning: {
-        plan: vi.fn(async (request: TransitPlanRequest) => ({
-          transitEventId: request.transitEventId,
-          requestFingerprint: transitPlanFingerprint(request),
-          plans: [],
-        })),
-      },
+      transitPlanning: new TransitPlanningService({
+        provider: {
+          plan: vi.fn(async (request: TransitPlanRequest) => ({
+            transitEventId: request.transitEventId,
+            requestFingerprint: transitPlanFingerprint(request),
+            plans: [],
+          })),
+        },
+      }),
     })
     await expect(
       service.execute(
@@ -1982,6 +1984,15 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     expect(
       document?.session.headGraph.events.find((event) => event.id === "transit")
     ).toMatchObject({ detail: { routeState: "ROUTE_STALE" } })
+    await expect(
+      prisma.providerUsageLog.findFirstOrThrow({
+        where: { requestId: "malformed-provider-bundle" },
+      })
+    ).resolves.toMatchObject({
+      workspaceId: workspace.id,
+      status: "error",
+      code: "MALFORMED_RESPONSE",
+    })
 
     const duplicateRankInput = transitGraph(
       `workspace-duplicate-provider-rank-${randomUUID()}`
@@ -1991,25 +2002,27 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       now: new Date(now),
     })
     const duplicateRankService = new WorkspaceCommandService({
-      transitPlanning: {
-        plan: vi.fn(async (request: TransitPlanRequest) => ({
-          transitEventId: request.transitEventId,
-          requestFingerprint: transitPlanFingerprint(request),
-          plans: [0, 1].map((index) => ({
-            id: `duplicate-rank-${index}`,
-            provider: "mock" as const,
-            rank: 0,
-            label: `Plan ${index}`,
-            strategy: "recommended",
-            distanceMeters: 1_000 + index,
-            durationSeconds: 300 + index,
-            trafficBasis: "TYPICAL" as const,
-            calculatedAt: now,
+      transitPlanning: new TransitPlanningService({
+        provider: {
+          plan: vi.fn(async (request: TransitPlanRequest) => ({
+            transitEventId: request.transitEventId,
             requestFingerprint: transitPlanFingerprint(request),
-            segments: [],
+            plans: [0, 1].map((index) => ({
+              id: `duplicate-rank-${index}`,
+              provider: "mock" as const,
+              rank: 0,
+              label: `Plan ${index}`,
+              strategy: "recommended",
+              distanceMeters: 1_000 + index,
+              durationSeconds: 300 + index,
+              trafficBasis: "TYPICAL" as const,
+              calculatedAt: now,
+              requestFingerprint: transitPlanFingerprint(request),
+              segments: [],
+            })),
           })),
-        })),
-      },
+        },
+      }),
     })
     await duplicateRankService.execute(
       context,
@@ -2036,6 +2049,15 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       ),
     })
     await expect(
+      prisma.providerUsageLog.findFirstOrThrow({
+        where: { requestId: "duplicate-provider-rank" },
+      })
+    ).resolves.toMatchObject({
+      workspaceId: duplicateRankWorkspace.id,
+      status: "error",
+      code: "MALFORMED_RESPONSE",
+    })
+    await expect(
       duplicateRankService.execute(
         context,
         command(duplicateRankWorkspace.id, 1, "commit-duplicate-rank", {
@@ -2044,6 +2066,66 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         })
       )
     ).resolves.toMatchObject({ outcome: { type: "workspace.committed" } })
+
+    const invalidTimeInput = transitGraph(
+      `workspace-invalid-provider-time-${randomUUID()}`
+    )
+    const invalidTimeWorkspace = await createWorkspace(context, {
+      graph: invalidTimeInput,
+      now: new Date(now),
+    })
+    const invalidTimeService = new WorkspaceCommandService({
+      transitPlanning: new TransitPlanningService({
+        provider: {
+          plan: vi.fn(async (request: TransitPlanRequest) => ({
+            transitEventId: request.transitEventId,
+            requestFingerprint: transitPlanFingerprint(request),
+            plans: [
+              {
+                id: "invalid-time",
+                provider: "mock" as const,
+                rank: 0,
+                label: "Invalid time",
+                strategy: "recommended",
+                distanceMeters: 1_000,
+                durationSeconds: 300,
+                trafficBasis: "TYPICAL" as const,
+                calculatedAt: "not-an-iso-datetime",
+                requestFingerprint: transitPlanFingerprint(request),
+                segments: [],
+              },
+            ],
+          })),
+        },
+      }),
+    })
+    await invalidTimeService.execute(
+      context,
+      command(invalidTimeWorkspace.id, 0, "invalid-provider-time", {
+        name: "journey.plan_transit",
+        payload: {
+          eventId: `${invalidTimeInput.id}-transit`,
+          forceRefresh: true,
+        },
+      })
+    )
+    expect(
+      (
+        await invalidTimeService.getDocument(context, invalidTimeWorkspace.id)
+      )?.session.headGraph.transitPlanningRuns.at(-1)
+    ).toMatchObject({
+      status: "FAILED",
+      errorCode: "MALFORMED_RESPONSE",
+    })
+    await expect(
+      prisma.providerUsageLog.findFirstOrThrow({
+        where: { requestId: "invalid-provider-time" },
+      })
+    ).resolves.toMatchObject({
+      workspaceId: invalidTimeWorkspace.id,
+      status: "error",
+      code: "MALFORMED_RESPONSE",
+    })
   })
 
   it("forks, replays, and atomically commits a CORE-TRANSIT-CONTENT-undo chain", async () => {

@@ -6,7 +6,10 @@ import {
   type TransitPlanRequest,
 } from "@/lib/journeys/planning"
 import type { AuthContext } from "@/modules/auth/server/context"
-import type { TargetTransitPlanningRun } from "@/modules/data-model/contracts"
+import {
+  targetTransitPlanningRunSchema,
+  type TargetTransitPlanningRun,
+} from "@/modules/data-model/contracts"
 import { getJourneyRevisionByIdempotencyKey } from "@/modules/data/journeys/journey-repository"
 import {
   commitTransitPlanningRun,
@@ -252,6 +255,7 @@ export class TransitPlanningService {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         const result = await this.provider.plan(request)
+        validateProviderBundle(request, result)
         await this.logUsage("success", undefined, usageContext)
         return result
       } catch (error) {
@@ -279,6 +283,47 @@ export class TransitPlanningService {
 }
 
 export const transitPlanningService = new TransitPlanningService()
+
+function validateProviderBundle(
+  request: TransitPlanRequest,
+  bundle: TransitPlanBundle
+) {
+  try {
+    const requestFingerprint = transitPlanFingerprint(request)
+    if (
+      bundle.transitEventId !== request.transitEventId ||
+      bundle.requestFingerprint !== requestFingerprint
+    ) {
+      throw new Error(
+        "Transit provider returned a stale or mismatched response"
+      )
+    }
+    if (
+      bundle.plans.some(
+        (plan) => plan.requestFingerprint !== requestFingerprint
+      )
+    ) {
+      throw new Error(
+        "Transit provider returned a plan for another request fingerprint"
+      )
+    }
+    targetTransitPlanningRunSchema.parse(
+      planningRunFromBundle(
+        "provider-validation-run",
+        bundle,
+        "1970-01-01T00:00:00.000Z",
+        requestFingerprint
+      )
+    )
+  } catch (error) {
+    throw new TransitProviderError(
+      "MALFORMED_RESPONSE",
+      error instanceof Error
+        ? error.message
+        : "Transit provider returned a malformed response"
+    )
+  }
+}
 
 function rekeyBundle(
   bundle: TransitPlanBundle,
