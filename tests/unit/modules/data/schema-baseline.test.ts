@@ -616,8 +616,8 @@ describe("P1 SQLite schema baseline", () => {
       INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
       VALUES ('workspace-r1', 'workspace-1', 1, 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'workspace-r1-key', '${NOW}');
       UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 1 WHERE "id" = 'workspace-1';
-      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "startedAt", "createdAt", "updatedAt")
-      VALUES ('agent-run-1', 'workspace-1', 'RUNNING', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "runtimeOwnerId", "heartbeatAt", "leaseExpiresAt", "startedAt", "createdAt", "updatedAt")
+      VALUES ('agent-run-1', 'workspace-1', 'RUNNING', 'runtime-1', '${NOW}', '2026-08-02T00:01:00.000Z', '${NOW}', '${NOW}', '${NOW}');
     `)
     expectSqlFailure(
       `INSERT INTO "EventObservation" ("id", "eventId", "kind", "phase", "body", "observedAt", "actorKind", "actorUserId", "supersedesId", "visibility", "createdAt")
@@ -684,8 +684,8 @@ describe("P1 SQLite schema baseline", () => {
       INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
       VALUES ('gc-workspace-r1', 'gc-workspace', 1, 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'gc-workspace-r1-key', '${NOW}');
       UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 1 WHERE "id" = 'gc-workspace';
-      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "startedAt", "createdAt", "updatedAt")
-      VALUES ('gc-agent-run', 'gc-workspace', 'RUNNING', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "runtimeOwnerId", "heartbeatAt", "leaseExpiresAt", "startedAt", "createdAt", "updatedAt")
+      VALUES ('gc-agent-run', 'gc-workspace', 'RUNNING', 'runtime-gc', '${NOW}', '2026-08-02T00:01:00.000Z', '${NOW}', '${NOW}', '${NOW}');
       INSERT INTO "WorkspaceMessage" ("id", "workspaceId", "role", "content", "agentRunId", "createdAt", "updatedAt")
       VALUES ('gc-message', 'gc-workspace', 'ASSISTANT', 'GC', 'gc-agent-run', '${NOW}', '${NOW}');
       INSERT INTO "ProviderUsageLog" ("id", "provider", "purpose", "status", "workspaceId", "agentRunId", "createdAt")

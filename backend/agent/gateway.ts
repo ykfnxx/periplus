@@ -3,12 +3,15 @@ import { join } from "node:path"
 import type { AuthContext } from "@/modules/auth/server/context"
 import {
   targetCommandBodySchema,
+  WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type TargetCommandEnvelope,
 } from "@/modules/data-model/contracts"
 import {
   appendWorkspaceMessage,
   createWorkspaceSuggestion,
   finishWorkspaceAgentRun,
+  heartbeatWorkspaceAgentRun,
+  reconcileExpiredWorkspaceAgentRun,
   startWorkspaceAgentRun,
   WorkspaceInputError,
 } from "@/modules/data/workspaces/workspace-repository"
@@ -30,6 +33,10 @@ import { parseSuggestion } from "./suggestion"
 interface AgentGatewayOptions {
   backendUrl: string
   projectRoot: string
+  runtimeOwnerId?: string
+  agentRunLeaseSeconds?: number
+  heartbeatIntervalMs?: number | null
+  now?: () => Date
 }
 
 interface RunningAgent {
@@ -42,6 +49,7 @@ interface RunningAgent {
   finished: boolean
   runtimeFailed: boolean
   stdout: string
+  heartbeatTimer: ReturnType<typeof setInterval> | null
 }
 
 export type AgentToolRequest =
@@ -81,12 +89,25 @@ function draftPrompt(
 export class AgentGateway {
   private readonly runs = new Map<string, RunningAgent>()
   private readonly runsByCapability = new Map<string, RunningAgent>()
+  private readonly runtimeOwnerId: string
+  private readonly agentRunLeaseSeconds: number
+  private readonly heartbeatIntervalMs: number | null
+  private readonly now: () => Date
 
   constructor(
     private readonly commands: WorkspaceCommandService,
     private readonly runtime: AgentRuntime,
     private readonly options: AgentGatewayOptions
-  ) {}
+  ) {
+    this.runtimeOwnerId = options.runtimeOwnerId ?? randomUUID()
+    this.agentRunLeaseSeconds =
+      options.agentRunLeaseSeconds ?? WORKSPACE_AGENT_RUN_LEASE_SECONDS
+    this.heartbeatIntervalMs =
+      options.heartbeatIntervalMs === undefined
+        ? Math.max(1_000, Math.floor((this.agentRunLeaseSeconds * 1000) / 3))
+        : options.heartbeatIntervalMs
+    this.now = options.now ?? (() => new Date())
+  }
 
   async start(
     context: AuthContext,
@@ -95,20 +116,40 @@ export class AgentGateway {
     mode: AgentMode,
     emit: AgentEventEmitter
   ) {
-    const initial = await this.commands.getDocument(context, workspaceId)
+    let initial = await this.commands.getDocument(context, workspaceId)
     if (!initial) throw new WorkspaceInputError("Workspace was not found")
-    if (
-      this.runs.has(workspaceId) ||
-      initial.agentRuns.some((run) => run.status === "RUNNING")
-    ) {
+    if (this.runs.has(workspaceId)) {
       emit(workspaceId, {
         type: "error",
         payload: { message: "当前 Workspace 正在由 Agent 修改" },
       })
       return
     }
+    if (initial.agentRuns.some((run) => run.status === "RUNNING")) {
+      await reconcileExpiredWorkspaceAgentRun(
+        context,
+        workspaceId,
+        this.runtimeOwnerId,
+        this.now()
+      )
+      initial = await this.commands.getDocument(context, workspaceId)
+      if (!initial) throw new WorkspaceInputError("Workspace was not found")
+      if (initial.agentRuns.some((run) => run.status === "RUNNING")) {
+        emit(workspaceId, {
+          type: "error",
+          payload: { message: "当前 Workspace 正在由 Agent 修改" },
+        })
+        return
+      }
+    }
 
-    const persistedRun = await startWorkspaceAgentRun(context, workspaceId)
+    const persistedRun = await startWorkspaceAgentRun(
+      context,
+      workspaceId,
+      this.now(),
+      this.runtimeOwnerId,
+      this.agentRunLeaseSeconds
+    )
     if (!persistedRun) throw new WorkspaceInputError("Workspace was not found")
     try {
       await appendWorkspaceMessage(context, workspaceId, {
@@ -116,12 +157,19 @@ export class AgentGateway {
         content: prompt,
       })
     } catch (error) {
-      await finishWorkspaceAgentRun(context, workspaceId, persistedRun.id, {
-        status: "FAILED",
-        errorCode: "AGENT_MESSAGE_FAILED",
-        errorMessage:
-          error instanceof Error ? error.message : "User message failed",
-      })
+      try {
+        await finishWorkspaceAgentRun(context, workspaceId, persistedRun.id, {
+          status: "FAILED",
+          errorCode: "AGENT_MESSAGE_FAILED",
+          errorMessage:
+            error instanceof Error ? error.message : "User message failed",
+          runtimeOwnerId: this.runtimeOwnerId,
+          now: this.now(),
+        })
+      } catch {
+        // Preserve the original persistence failure. The expired lease is
+        // reclaimable by the next runtime even if terminalization also fails.
+      }
       throw error
     }
     const capabilityToken = randomUUID()
@@ -135,19 +183,20 @@ export class AgentGateway {
       finished: false,
       runtimeFailed: false,
       stdout: "",
+      heartbeatTimer: null,
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
-
-    const document = await this.commands.getDocument(context, workspaceId)
-    if (!document) throw new WorkspaceInputError("Workspace was not found")
-    emit(workspaceId, { type: "workspace.locked", payload: document })
-    emit(workspaceId, {
-      type: "agent.run.started",
-      payload: { runId: running.runId, runtimeId: this.runtime.id },
-    })
+    this.startHeartbeat(running)
 
     try {
+      const document = await this.commands.getDocument(context, workspaceId)
+      if (!document) throw new WorkspaceInputError("Workspace was not found")
+      emit(workspaceId, { type: "workspace.locked", payload: document })
+      emit(workspaceId, {
+        type: "agent.run.started",
+        payload: { runId: running.runId, runtimeId: this.runtime.id },
+      })
       const runtimeRun = await this.runtime.start(
         {
           runId: running.runId,
@@ -157,12 +206,14 @@ export class AgentGateway {
         {
           onStdout: (text) => {
             running.stdout += text
+            this.heartbeatInBackground(running)
             emit(workspaceId, {
               type: "agent.message.delta",
               payload: { runId: running.runId, stream: "stdout", text },
             })
           },
           onStderr: (text) => {
+            this.heartbeatInBackground(running)
             emit(workspaceId, {
               type: "agent.message.delta",
               payload: { runId: running.runId, stream: "stderr", text },
@@ -201,6 +252,7 @@ export class AgentGateway {
         "Agent tool capability is invalid or expired"
       )
     }
+    await this.heartbeat(running)
     if (request.type === "workspace.get") {
       const document = await this.commands.getDocument(
         running.context,
@@ -251,6 +303,45 @@ export class AgentGateway {
     ]
   }
 
+  private startHeartbeat(running: RunningAgent) {
+    if (this.heartbeatIntervalMs === null) return
+    running.heartbeatTimer = setInterval(() => {
+      void this.heartbeat(running).catch(() => {
+        running.runtimeFailed = true
+        running.cancelled = true
+        running.runtimeRun?.cancel()
+      })
+    }, this.heartbeatIntervalMs)
+    running.heartbeatTimer.unref?.()
+  }
+
+  private heartbeat(running: RunningAgent) {
+    return heartbeatWorkspaceAgentRun(
+      running.context,
+      running.workspaceId,
+      running.runId,
+      this.runtimeOwnerId,
+      this.now(),
+      this.agentRunLeaseSeconds
+    )
+  }
+
+  private heartbeatInBackground(running: RunningAgent) {
+    void this.heartbeat(running).catch(() => {
+      if (running.finished) return
+      running.runtimeFailed = true
+      running.cancelled = true
+      running.runtimeRun?.cancel()
+    })
+  }
+
+  private releaseRuntime(running: RunningAgent) {
+    if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
+    running.heartbeatTimer = null
+    this.runs.delete(running.workspaceId)
+    this.runsByCapability.delete(running.capabilityToken)
+  }
+
   private async finish(
     running: RunningAgent,
     mode: AgentMode,
@@ -259,8 +350,8 @@ export class AgentGateway {
   ) {
     if (running.finished) return
     running.finished = true
-    this.runs.delete(running.workspaceId)
-    this.runsByCapability.delete(running.capabilityToken)
+    if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
+    running.heartbeatTimer = null
 
     let failed = running.runtimeFailed || result.code !== 0
     try {
@@ -292,19 +383,35 @@ export class AgentGateway {
       })
     }
 
-    await finishWorkspaceAgentRun(
-      running.context,
-      running.workspaceId,
-      running.runId,
-      {
-        status: running.cancelled
-          ? "CANCELLED"
-          : failed
-            ? "FAILED"
-            : "SUCCEEDED",
-        errorCode: failed ? "AGENT_RUNTIME_FAILED" : undefined,
-      }
-    )
+    try {
+      await finishWorkspaceAgentRun(
+        running.context,
+        running.workspaceId,
+        running.runId,
+        {
+          status: running.cancelled
+            ? "CANCELLED"
+            : failed
+              ? "FAILED"
+              : "SUCCEEDED",
+          errorCode: failed ? "AGENT_RUNTIME_FAILED" : undefined,
+          runtimeOwnerId: this.runtimeOwnerId,
+          now: this.now(),
+        }
+      )
+    } catch (error) {
+      failed = true
+      emit(running.workspaceId, {
+        type: "agent.run.failed",
+        payload: {
+          runId: running.runId,
+          message:
+            error instanceof Error ? error.message : "Agent finish failed",
+        },
+      })
+    } finally {
+      this.releaseRuntime(running)
+    }
     const document = await this.commands.getDocument(
       running.context,
       running.workspaceId
@@ -327,19 +434,25 @@ export class AgentGateway {
   ) {
     if (running.finished) return
     running.finished = true
-    this.runs.delete(running.workspaceId)
-    this.runsByCapability.delete(running.capabilityToken)
-    await finishWorkspaceAgentRun(
-      running.context,
-      running.workspaceId,
-      running.runId,
-      {
-        status: "FAILED",
-        errorCode: "AGENT_START_FAILED",
-        errorMessage:
-          error instanceof Error ? error.message : "Agent runtime failed",
-      }
-    )
+    if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
+    running.heartbeatTimer = null
+    try {
+      await finishWorkspaceAgentRun(
+        running.context,
+        running.workspaceId,
+        running.runId,
+        {
+          status: "FAILED",
+          errorCode: "AGENT_START_FAILED",
+          errorMessage:
+            error instanceof Error ? error.message : "Agent runtime failed",
+          runtimeOwnerId: this.runtimeOwnerId,
+          now: this.now(),
+        }
+      )
+    } finally {
+      this.releaseRuntime(running)
+    }
     emit(running.workspaceId, {
       type: "agent.run.failed",
       payload: {

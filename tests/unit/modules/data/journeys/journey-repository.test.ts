@@ -1500,6 +1500,9 @@ describe("P2A Journey core repository", () => {
           id: agentRunId,
           workspaceId,
           status: "RUNNING",
+          runtimeOwnerId: `test-runtime-${runOwnerId}`,
+          heartbeatAt: new Date(now),
+          leaseExpiresAt: new Date("2026-08-01T00:01:00.000Z"),
           startedAt: new Date(now),
         },
       })

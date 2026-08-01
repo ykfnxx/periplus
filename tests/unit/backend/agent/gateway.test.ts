@@ -218,4 +218,69 @@ describe.sequential("P3 persistent AgentGateway", () => {
       basedOnWorkspaceRevision: 0,
     })
   })
+
+  it("reclaims an expired crash-orphan without losing persisted messages or commands", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: graph(`agent-restart-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    let clock = new Date("2026-08-01T00:00:00.000Z")
+    const runtime1 = new FakeRuntime()
+    const gateway1 = new AgentGateway(commands, runtime1, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      runtimeOwnerId: "runtime-epoch-1",
+      agentRunLeaseSeconds: 10,
+      heartbeatIntervalMs: null,
+      now: () => clock,
+    })
+    const emit = vi.fn()
+    await gateway1.start(context, workspace.id, "first prompt", "auto", emit)
+    await gateway1.executeTool(capabilityToken(runtime1), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "command-before-crash",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "persisted before crash" },
+        },
+      },
+    })
+    runtime1.observer?.onStdout("partial stdout is intentionally not durable")
+
+    clock = new Date("2026-08-01T00:00:11.000Z")
+    const runtime2 = new FakeRuntime()
+    const gateway2 = new AgentGateway(commands, runtime2, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      runtimeOwnerId: "runtime-epoch-2",
+      agentRunLeaseSeconds: 10,
+      heartbeatIntervalMs: null,
+      now: () => clock,
+    })
+    await gateway2.start(context, workspace.id, "resume prompt", "auto", emit)
+    expect(runtime2.request).not.toBeNull()
+
+    const recovered = await commands.getDocument(context, workspace.id, clock)
+    expect(recovered?.agentRuns).toMatchObject([
+      { status: "FAILED", errorCode: "AGENT_RUN_ORPHANED" },
+      { status: "RUNNING", runtimeOwnerId: "runtime-epoch-2" },
+    ])
+    expect(recovered?.messages.map((message) => message.content)).toEqual([
+      "first prompt",
+      "resume prompt",
+    ])
+    expect(recovered?.session.headGraph.events[0]?.title).toBe(
+      "persisted before crash"
+    )
+
+    runtime2.exit(0)
+    await vi.waitFor(async () => {
+      const document = await commands.getDocument(context, workspace.id, clock)
+      expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
+    })
+  })
 })

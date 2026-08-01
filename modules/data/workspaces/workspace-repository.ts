@@ -13,6 +13,7 @@ import {
   targetWorkspaceSessionSchema,
   targetWorkspaceSuggestionSchema,
   WORKSPACE_ACTIVE_LEASE_DAYS,
+  WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type TargetActorReference,
   type TargetJourneyGraphSnapshot,
   type TargetWorkspaceDocument,
@@ -256,6 +257,9 @@ function mapAgentRun(
     id: record.id,
     workspaceId: record.workspaceId,
     status: record.status,
+    runtimeOwnerId: record.runtimeOwnerId ?? undefined,
+    heartbeatAt: record.heartbeatAt?.toISOString(),
+    leaseExpiresAt: record.leaseExpiresAt?.toISOString(),
     startedAt: record.startedAt.toISOString(),
     completedAt: record.completedAt?.toISOString(),
     errorCode: record.errorCode ?? undefined,
@@ -743,7 +747,9 @@ export async function createWorkspaceSuggestion(
 export async function startWorkspaceAgentRun(
   context: AuthContext,
   workspaceId: string,
-  now = new Date()
+  now = new Date(),
+  runtimeOwnerId = `direct-${context.userId}`,
+  leaseSeconds = WORKSPACE_AGENT_RUN_LEASE_SECONDS
 ) {
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return null
@@ -754,6 +760,9 @@ export async function startWorkspaceAgentRun(
       data: {
         workspaceId,
         status: "RUNNING",
+        runtimeOwnerId,
+        heartbeatAt: now,
+        leaseExpiresAt: new Date(now.getTime() + leaseSeconds * 1000),
         startedAt: now,
       },
     })
@@ -767,6 +776,9 @@ export async function startWorkspaceAgentRun(
   }
   return targetWorkspaceAgentRunSchema.parse({
     ...record,
+    runtimeOwnerId: record.runtimeOwnerId ?? undefined,
+    heartbeatAt: record.heartbeatAt?.toISOString(),
+    leaseExpiresAt: record.leaseExpiresAt?.toISOString(),
     startedAt: record.startedAt.toISOString(),
     completedAt: record.completedAt?.toISOString(),
     errorCode: record.errorCode ?? undefined,
@@ -776,12 +788,74 @@ export async function startWorkspaceAgentRun(
   })
 }
 
+export async function heartbeatWorkspaceAgentRun(
+  context: AuthContext,
+  workspaceId: string,
+  runId: string,
+  runtimeOwnerId: string,
+  now = new Date(),
+  leaseSeconds = WORKSPACE_AGENT_RUN_LEASE_SECONDS
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  await requireActiveWorkspace(workspace, now)
+  const updated = await prisma.workspaceAgentRun.updateMany({
+    where: {
+      id: runId,
+      workspaceId,
+      status: "RUNNING",
+      runtimeOwnerId,
+    },
+    data: {
+      heartbeatAt: now,
+      leaseExpiresAt: new Date(now.getTime() + leaseSeconds * 1000),
+    },
+  })
+  if (updated.count !== 1) {
+    throw new WorkspaceRevisionConflictError(
+      "Agent run lease is no longer owned by this runtime"
+    )
+  }
+  return true
+}
+
+export async function reconcileExpiredWorkspaceAgentRun(
+  context: AuthContext,
+  workspaceId: string,
+  runtimeOwnerId: string,
+  now = new Date()
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  await requireActiveWorkspace(workspace, now)
+  const updated = await prisma.workspaceAgentRun.updateMany({
+    where: {
+      workspaceId,
+      status: "RUNNING",
+      leaseExpiresAt: { lte: now },
+      OR: [
+        { runtimeOwnerId: null },
+        { runtimeOwnerId: { not: runtimeOwnerId } },
+      ],
+    },
+    data: {
+      status: "FAILED",
+      completedAt: now,
+      leaseExpiresAt: null,
+      errorCode: "AGENT_RUN_ORPHANED",
+      errorMessage: "Agent runtime lease expired before completion",
+    },
+  })
+  return updated.count
+}
+
 export async function finishWorkspaceAgentRun(
   context: AuthContext,
   workspaceId: string,
   runId: string,
   input: {
     status: Exclude<TargetWorkspaceAgentRun["status"], "RUNNING">
+    runtimeOwnerId?: string
     errorCode?: string
     errorMessage?: string
     now?: Date
@@ -791,10 +865,16 @@ export async function finishWorkspaceAgentRun(
   if (!workspace) return null
   await requireActiveWorkspace(workspace, input.now ?? new Date())
   const updated = await prisma.workspaceAgentRun.updateMany({
-    where: { id: runId, workspaceId, status: "RUNNING" },
+    where: {
+      id: runId,
+      workspaceId,
+      status: "RUNNING",
+      ...(input.runtimeOwnerId ? { runtimeOwnerId: input.runtimeOwnerId } : {}),
+    },
     data: {
       status: input.status,
       completedAt: input.now ?? new Date(),
+      leaseExpiresAt: null,
       errorCode: input.errorCode ?? null,
       errorMessage: input.errorMessage ?? null,
     },
@@ -808,6 +888,9 @@ export async function finishWorkspaceAgentRun(
   return record
     ? targetWorkspaceAgentRunSchema.parse({
         ...record,
+        runtimeOwnerId: record.runtimeOwnerId ?? undefined,
+        heartbeatAt: record.heartbeatAt?.toISOString(),
+        leaseExpiresAt: record.leaseExpiresAt?.toISOString(),
         startedAt: record.startedAt.toISOString(),
         completedAt: record.completedAt?.toISOString(),
         errorCode: record.errorCode ?? undefined,

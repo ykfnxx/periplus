@@ -861,21 +861,25 @@ model WorkspaceSuggestion {
 }
 
 model WorkspaceAgentRun {
-  id           String                  @id @default(uuid())
-  workspaceId  String
-  status       WorkspaceAgentRunStatus
-  startedAt    DateTime
-  completedAt  DateTime?
-  errorCode    String?
-  errorMessage String?
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
+  id             String                  @id @default(uuid())
+  workspaceId    String
+  status         WorkspaceAgentRunStatus
+  runtimeOwnerId String?
+  heartbeatAt    DateTime?
+  leaseExpiresAt DateTime?
+  startedAt      DateTime
+  completedAt    DateTime?
+  errorCode      String?
+  errorMessage   String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   workspace         WorkspaceSession   @relation("WorkspaceAgentRuns", fields: [workspaceId], references: [id], onDelete: Cascade)
   messages          WorkspaceMessage[] @relation("AgentRunMessages")
   providerUsageLogs ProviderUsageLog[] @relation("AgentRunProviderUsage")
 
   @@index([workspaceId, status])
+  @@index([status, leaseExpiresAt])
 }
 
 model Asset {
