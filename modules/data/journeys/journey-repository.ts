@@ -698,132 +698,48 @@ function dependencySafeEventUpdateOrder(
 
 type JourneyLink = TargetJourneyGraphSnapshot["links"][number]
 
-function temporaryLinkParkingCandidates(
-  previous: TargetJourneyGraphSnapshot,
-  nextEventsById: ReadonlyMap<string, TargetJourneyEvent>,
-  topologyChangedEventIds: ReadonlySet<string>
-) {
-  const candidates = previous.events
-    .filter((event) => {
-      const next = nextEventsById.get(event.id)
-      return (
-        next !== undefined &&
-        !topologyChangedEventIds.has(event.id) &&
-        event.placementStatus === "SCHEDULED" &&
-        event.retiredRevision === undefined &&
-        next.placementStatus === "SCHEDULED" &&
-        next.retiredRevision === undefined &&
-        event.parentSectionEventId === next.parentSectionEventId
-      )
-    })
-    .sort((left, right) => left.id.localeCompare(right.id))
-
-  return candidates.flatMap((from) =>
-    candidates
-      .filter(
-        (to) =>
-          to.id !== from.id &&
-          to.parentSectionEventId === from.parentSectionEventId
-      )
-      .map((to) => ({ fromEventId: from.id, toEventId: to.id }))
-  )
+type TemporaryLinkParking = {
+  linkId: string
+  fromEventId: string
+  toEventId: string
 }
 
-function selectedLinkParkingComponents(links: readonly JourneyLink[]) {
-  const remaining = new Map(links.map((link) => [link.id, link]))
-  const components: JourneyLink[][] = []
-
-  while (remaining.size > 0) {
-    const first = [...remaining.values()].sort((left, right) =>
-      left.id.localeCompare(right.id)
-    )[0]!
-    const component: JourneyLink[] = []
-    const endpointIds = new Set<string>()
-    const queue = [first]
-    remaining.delete(first.id)
-
-    while (queue.length > 0) {
-      const link = queue.shift()!
-      component.push(link)
-      endpointIds.add(link.fromEventId)
-      endpointIds.add(link.toEventId)
-      let expanded = true
-      while (expanded) {
-        expanded = false
-        for (const candidate of remaining.values()) {
-          if (
-            endpointIds.has(candidate.fromEventId) ||
-            endpointIds.has(candidate.toEventId)
-          ) {
-            remaining.delete(candidate.id)
-            queue.push(candidate)
-            endpointIds.add(candidate.fromEventId)
-            endpointIds.add(candidate.toEventId)
-            expanded = true
-          }
-        }
-      }
-    }
-    components.push(
-      component.sort((left, right) => left.id.localeCompare(right.id))
-    )
-  }
-
-  return components
-}
-
-function linkIdentity(
-  link: Pick<
-    JourneyLink,
-    "fromEventId" | "toEventId" | "kind" | "introducedRevision"
-  >
+async function parkLinksOnTemporaryEvents(
+  tx: Prisma.TransactionClient,
+  journeyId: string,
+  revision: number,
+  links: readonly JourneyLink[]
 ) {
-  return [
-    link.fromEventId,
-    link.toEventId,
-    link.kind,
-    link.introducedRevision,
-  ].join("\u0000")
-}
-
-function parkingIdentity(
-  link: Pick<JourneyLink, "introducedRevision">,
-  endpoints: { fromEventId: string; toEventId: string }
-) {
-  return linkIdentity({
-    ...endpoints,
-    kind: "ALTERNATIVE",
-    introducedRevision: link.introducedRevision,
+  const parking: TemporaryLinkParking[] = links.map((link) => ({
+    linkId: link.id,
+    fromEventId: randomUUID(),
+    toEventId: randomUUID(),
+  }))
+  const timestamp = new Date()
+  await tx.journeyEvent.createMany({
+    data: parking.flatMap(({ linkId, fromEventId, toEventId }) =>
+      [fromEventId, toEventId].map((eventId) => ({
+        id: eventId,
+        journeyId,
+        parentSectionEventId: null,
+        type: "NOTE" as const,
+        executionStatus: null,
+        placementStatus: "SCHEDULED" as const,
+        origin: "AGENT_INSERTED" as const,
+        title: `Temporary Link parking for ${linkId}`,
+        introducedRevision: revision,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }))
+    ),
   })
-}
-
-function assignTemporaryLinkParking(
-  previous: TargetJourneyGraphSnapshot,
-  next: TargetJourneyGraphSnapshot,
-  links: readonly JourneyLink[],
-  candidates: readonly { fromEventId: string; toEventId: string }[],
-  reservedParkingIdentities: ReadonlySet<string>
-) {
-  const occupied = new Set([...previous.links, ...next.links].map(linkIdentity))
-  for (const identity of reservedParkingIdentities) occupied.add(identity)
-  const assignments = new Map<
-    string,
-    { fromEventId: string; toEventId: string }
-  >()
-
-  for (const link of links) {
-    const endpoints = candidates.find(
-      (candidate) => !occupied.has(parkingIdentity(link, candidate))
-    )
-    if (!endpoints) {
-      throw new JourneyInputError(
-        "selected Link topology change has no collision-free temporary identity"
-      )
-    }
-    occupied.add(parkingIdentity(link, endpoints))
-    assignments.set(link.id, endpoints)
+  for (const { linkId, fromEventId, toEventId } of parking) {
+    await tx.journeyEventLink.update({
+      where: { id: linkId },
+      data: { fromEventId, toEventId },
+    })
   }
-  return assignments
+  return parking
 }
 
 function revisionSignature(
@@ -1250,7 +1166,6 @@ export async function commitJourneyGraph(
       const structurallyChangedLinkIds = new Set(
         structurallyChangedLinks.map((link) => link.id)
       )
-
       const linksToSuspend = next.links.filter((link) => {
         const before = previousLinks.get(link.id)
         return (
@@ -1262,142 +1177,31 @@ export async function commitJourneyGraph(
             topologyChangedEventIds.has(link.toEventId))
         )
       })
-      const selectedTargetsRequiringPreparation = next.links.filter((link) => {
-        if (!currentTargetSelections.has(link.id)) return false
-        const before = previousLinks.get(link.id)
-        return (
-          before === undefined ||
-          before.retiredRevision !== undefined ||
-          structurallyChangedLinkIds.has(link.id) ||
-          topologyChangedEventIds.has(link.fromEventId) ||
-          topologyChangedEventIds.has(link.toEventId)
-        )
-      })
-      const blocksSelectedTargetPreparation = (link: JourneyLink) => {
-        const before = previousLinks.get(link.id)!
-        return selectedTargetsRequiringPreparation.some(
-          (target) =>
-            target.id !== link.id &&
-            ((before.fromEventId === target.fromEventId &&
-              before.toEventId === target.toEventId &&
-              before.kind === target.kind &&
-              before.introducedRevision === target.introducedRevision) ||
-              (before.kind === "MAIN" &&
-                target.kind === "MAIN" &&
-                (before.fromEventId === target.fromEventId ||
-                  before.toEventId === target.toEventId)))
-        )
-      }
-      const parkedLinkIds = new Set(
-        linksToSuspend
-          .filter((link) => {
-            if (currentTargetSelections.has(link.id)) return true
-            if (!supersededCurrentLinkIds.has(link.id)) return false
-            const before = previousLinks.get(link.id)!
-            return (
-              topologyChangedEventIds.has(before.fromEventId) ||
-              topologyChangedEventIds.has(before.toEventId) ||
-              blocksSelectedTargetPreparation(link)
-            )
-          })
-          .map((link) => link.id)
-      )
-      const deferredPostSelectionLinkIds = new Set(
-        linksToSuspend
-          .filter(
-            (link) =>
-              supersededCurrentLinkIds.has(link.id) &&
-              !parkedLinkIds.has(link.id)
-          )
-          .map((link) => link.id)
-      )
-      const preSelectionParkedLinkIds = new Set(
-        [...parkedLinkIds].filter((linkId) =>
-          currentTargetSelections.has(linkId)
-        )
-      )
+      const parkedLinks = [
+        ...new Map(
+          [...linksToSuspend, ...structurallyChangedLinks].map((link) => [
+            link.id,
+            link,
+          ])
+        ).values(),
+      ]
+      const parkedLinkIds = new Set(parkedLinks.map((link) => link.id))
       const postSelectionParkedLinkIds = new Set(
         [...parkedLinkIds].filter(
-          (linkId) => !preSelectionParkedLinkIds.has(linkId)
+          (linkId) =>
+            supersededCurrentLinkIds.has(linkId) &&
+            !currentTargetSelections.has(linkId)
         )
       )
-      const parkedLinks = linksToSuspend.filter((link) =>
-        parkedLinkIds.has(link.id)
-      )
-      const retiredForMoveLinkIds = new Set(
-        linksToSuspend
-          .filter(
-            (link) =>
-              !parkedLinkIds.has(link.id) &&
-              !deferredPostSelectionLinkIds.has(link.id)
-          )
-          .map((link) => link.id)
-      )
-      for (const link of linksToSuspend.filter((candidate) =>
-        retiredForMoveLinkIds.has(candidate.id)
-      )) {
-        await tx.journeyEventLink.update({
-          where: { id: link.id },
-          data: { retiredRevision: next.revision },
-        })
-      }
-
-      if (parkedLinks.length > 0) {
-        const candidates = temporaryLinkParkingCandidates(
-          previous,
-          nextEventsById,
-          topologyChangedEventIds
+      const preSelectionParkedLinkIds = new Set(
+        [...parkedLinkIds].filter(
+          (linkId) => !postSelectionParkedLinkIds.has(linkId)
         )
-        const reservedParkingIdentities = new Set<string>()
-        for (const component of selectedLinkParkingComponents(parkedLinks)) {
-          const assignments = assignTemporaryLinkParking(
-            previous,
-            next,
-            component,
-            candidates,
-            reservedParkingIdentities
-          )
-          for (const link of component) {
-            const endpoints = assignments.get(link.id)!
-            await tx.journeyEventLink.update({
-              where: { id: link.id },
-              data: {
-                ...endpoints,
-                kind: "ALTERNATIVE",
-                branchKey: `__temporary_move__:${link.id}`,
-              },
-            })
-            reservedParkingIdentities.add(parkingIdentity(link, endpoints))
-          }
-
-          const componentEndpointIds = new Set(
-            component.flatMap((link) => [link.fromEventId, link.toEventId])
-          )
-          for (const event of eventUpdateOrder.filter((candidate) =>
-            componentEndpointIds.has(candidate.id)
-          )) {
-            await updateEventEnvelope(event)
-          }
-          for (const link of component.filter((candidate) =>
-            preSelectionParkedLinkIds.has(candidate.id)
-          )) {
-            reservedParkingIdentities.delete(
-              parkingIdentity(link, assignments.get(link.id)!)
-            )
-            await tx.journeyEventLink.update({
-              where: { id: link.id },
-              data: {
-                fromEventId: link.fromEventId,
-                toEventId: link.toEventId,
-                kind: link.kind,
-                branchKey: link.branchKey ?? null,
-                rank: link.rank,
-                retiredRevision: link.retiredRevision ?? null,
-              },
-            })
-          }
-        }
-      }
+      )
+      const temporaryParking =
+        parkedLinks.length > 0
+          ? await parkLinksOnTemporaryEvents(tx, id, next.revision, parkedLinks)
+          : []
       for (const event of eventUpdateOrder) {
         await updateEventEnvelope(event)
       }
@@ -1407,52 +1211,7 @@ export async function commitJourneyGraph(
       }
       for (const event of newEvents) await createEventDetail(tx, event)
 
-      for (const link of next.links) {
-        const before = previousLinks.get(link.id)
-        if (
-          !before ||
-          parkedLinkIds.has(link.id) ||
-          deferredPostSelectionLinkIds.has(link.id)
-        ) {
-          continue
-        }
-        await tx.journeyEventLink.update({
-          where: { id: link.id },
-          data: {
-            fromEventId: link.fromEventId,
-            toEventId: link.toEventId,
-            kind: link.kind,
-            branchKey: link.branchKey ?? null,
-            rank: link.rank,
-            retiredRevision:
-              link.retiredRevision ??
-              (retiredForMoveLinkIds.has(link.id) ? next.revision : null),
-          },
-        })
-      }
-
-      await createLinks(tx, newLinks)
-
-      for (const link of next.links) {
-        if (
-          !previousLinks.has(link.id) ||
-          link.retiredRevision !== undefined ||
-          !retiredForMoveLinkIds.has(link.id)
-        ) {
-          continue
-        }
-        await tx.journeyEventLink.update({
-          where: { id: link.id },
-          data: { retiredRevision: null },
-        })
-      }
-      await createSelections(tx, newSelections)
-
-      for (const link of next.links.filter((candidate) =>
-        [postSelectionParkedLinkIds, deferredPostSelectionLinkIds].some(
-          (linkIds) => linkIds.has(candidate.id)
-        )
-      )) {
+      const updateLinkToTarget = async (link: JourneyLink) => {
         await tx.journeyEventLink.update({
           where: { id: link.id },
           data: {
@@ -1463,6 +1222,33 @@ export async function commitJourneyGraph(
             rank: link.rank,
             retiredRevision: link.retiredRevision ?? null,
           },
+        })
+      }
+      for (const link of next.links.filter((candidate) =>
+        preSelectionParkedLinkIds.has(candidate.id)
+      )) {
+        await updateLinkToTarget(link)
+      }
+      for (const link of next.links) {
+        const before = previousLinks.get(link.id)
+        if (!before || parkedLinkIds.has(link.id)) continue
+        await updateLinkToTarget(link)
+      }
+
+      await createLinks(tx, newLinks)
+      await createSelections(tx, newSelections)
+
+      for (const link of next.links.filter((candidate) =>
+        postSelectionParkedLinkIds.has(candidate.id)
+      )) {
+        await updateLinkToTarget(link)
+      }
+      const temporaryEventIds = temporaryParking.flatMap(
+        ({ fromEventId, toEventId }) => [fromEventId, toEventId]
+      )
+      if (temporaryEventIds.length > 0) {
+        await tx.journeyEvent.deleteMany({
+          where: { id: { in: temporaryEventIds } },
         })
       }
 

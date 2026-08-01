@@ -485,6 +485,26 @@ describe("P2A Journey core repository", () => {
           branchKey: "occupied-parking-tuple",
           rank: 2048,
           introducedRevision: 1,
+        },
+        {
+          id: `${journeyId}-retired-reverse-main`,
+          journeyId,
+          fromEventId: sectionB.id,
+          toEventId: sectionA.id,
+          kind: "MAIN",
+          rank: 3072,
+          introducedRevision: 1,
+          retiredRevision: 1,
+        },
+        {
+          id: `${journeyId}-retired-reverse-alternative`,
+          journeyId,
+          fromEventId: sectionB.id,
+          toEventId: sectionA.id,
+          kind: "ALTERNATIVE",
+          branchKey: "retired-reverse",
+          rank: 4096,
+          introducedRevision: 1,
           retiredRevision: 1,
         },
         {
@@ -568,7 +588,7 @@ describe("P2A Journey core repository", () => {
         .every((event) => event.parentSectionEventId === sectionB.id)
     ).toBe(true)
     expect(await prisma.journeyEventLink.count({ where: { journeyId } })).toBe(
-      6
+      8
     )
   })
 
@@ -684,6 +704,78 @@ describe("P2A Journey core repository", () => {
     expect(await prisma.journeyEventLink.count({ where: { journeyId } })).toBe(
       10
     )
+  })
+
+  it("permutes stable Link tuples without colliding with retired identities", async () => {
+    const initial = graph(`journey-link-swap-${randomUUID()}`, [
+      "a",
+      "b",
+      "c",
+      "d",
+    ])
+    const [a, b, c, d] = initial.events.map((event) => event.id)
+    const firstLinkId = `${initial.id}-alternative-1`
+    const secondLinkId = `${initial.id}-alternative-2`
+    initial.links.push(
+      {
+        id: firstLinkId,
+        journeyId: initial.id,
+        fromEventId: a!,
+        toEventId: c!,
+        kind: "ALTERNATIVE",
+        branchKey: "first",
+        rank: 4096,
+        introducedRevision: 1,
+      },
+      {
+        id: secondLinkId,
+        journeyId: initial.id,
+        fromEventId: b!,
+        toEventId: d!,
+        kind: "ALTERNATIVE",
+        branchKey: "second",
+        rank: 5120,
+        introducedRevision: 1,
+      }
+    )
+    const created = await createJourney(
+      context,
+      write(initial, "create swappable Links", "create")
+    )
+
+    const swapped = structuredClone(created)
+    swapped.revision = 2
+    const firstLink = swapped.links.find((link) => link.id === firstLinkId)!
+    const secondLink = swapped.links.find((link) => link.id === secondLinkId)!
+    firstLink.fromEventId = b!
+    firstLink.toEventId = d!
+    secondLink.fromEventId = a!
+    secondLink.toEventId = c!
+
+    const result = await commitJourneyGraph(
+      context,
+      initial.id,
+      write(swapped, "swap stable Link tuples", "swap-links"),
+      1
+    )
+
+    expect(result?.links.find((link) => link.id === firstLinkId)).toMatchObject(
+      {
+        fromEventId: b,
+        toEventId: d,
+        branchKey: "first",
+      }
+    )
+    expect(
+      result?.links.find((link) => link.id === secondLinkId)
+    ).toMatchObject({
+      fromEventId: a,
+      toEventId: c,
+      branchKey: "second",
+    })
+    expect(
+      await prisma.journeyEvent.count({ where: { journeyId: initial.id } })
+    ).toBe(4)
   })
 
   it("retires and restores nested SECTION trees in either Event id order", async () => {
@@ -1046,6 +1138,100 @@ describe("P2A Journey core repository", () => {
     expect(
       await prisma.journeyRevision.count({ where: { journeyId: initial.id } })
     ).toBe(2)
+  })
+
+  it("parks the selected MAIN path before activating its replacement", async () => {
+    const initial = graph(`journey-main-selection-cycle-${randomUUID()}`, [
+      "fork",
+      "branch-a",
+      "join",
+    ])
+    const [fork, branchA, join] = initial.events.map((event) => event.id)
+    const selectionAId = `${initial.id}-selection-a`
+    initial.branchSelections = [
+      {
+        id: selectionAId,
+        journeyId: initial.id,
+        forkEventId: fork!,
+        selectedLinkId: initial.links[0]!.id,
+        journeyRevision: 1,
+        actor: { kind: "USER", userId: ownerId },
+        createdAt: now,
+      },
+    ]
+    const created = await createJourney(
+      context,
+      write(initial, "create selected MAIN path", "create")
+    )
+
+    const replaced = structuredClone(created)
+    replaced.revision = 2
+    const retiredBranch = replaced.events.find((event) => event.id === branchA)!
+    retiredBranch.retiredRevision = 2
+    retiredBranch.updatedAt = later
+    for (const link of replaced.links) link.retiredRevision = 2
+    const branchB = visit(`${initial.id}-branch-b`, initial.id, "branch B", 2)
+    replaced.events.push(branchB)
+    const forkBLinkId = `${initial.id}-fork-b`
+    const bJoinLinkId = `${initial.id}-b-join`
+    replaced.links.push(
+      {
+        id: forkBLinkId,
+        journeyId: initial.id,
+        fromEventId: fork!,
+        toEventId: branchB.id,
+        kind: "MAIN",
+        rank: 1024,
+        introducedRevision: 2,
+      },
+      {
+        id: bJoinLinkId,
+        journeyId: initial.id,
+        fromEventId: branchB.id,
+        toEventId: join!,
+        kind: "MAIN",
+        rank: 2048,
+        introducedRevision: 2,
+      }
+    )
+    replaced.branchSelections.push({
+      id: `${initial.id}-selection-b`,
+      journeyId: initial.id,
+      forkEventId: fork!,
+      selectedLinkId: forkBLinkId,
+      journeyRevision: 2,
+      supersedesId: selectionAId,
+      actor: { kind: "USER", userId: ownerId },
+      createdAt: later,
+    })
+
+    const result = await commitJourneyGraph(
+      context,
+      initial.id,
+      write(replaced, "replace selected MAIN path", "replace-main-path"),
+      1
+    )
+
+    expect(result?.events.find((event) => event.id === branchA)).toMatchObject({
+      retiredRevision: 2,
+    })
+    expect(result?.links.find((link) => link.id === forkBLinkId)).toMatchObject(
+      {
+        fromEventId: fork,
+        toEventId: branchB.id,
+        retiredRevision: undefined,
+      }
+    )
+    expect(result?.branchSelections.at(-1)).toMatchObject({
+      selectedLinkId: forkBLinkId,
+      supersedesId: selectionAId,
+    })
+    expect(
+      await prisma.journeyEvent.count({ where: { journeyId: initial.id } })
+    ).toBe(4)
+    expect(
+      await prisma.journeyEventLink.count({ where: { journeyId: initial.id } })
+    ).toBe(4)
   })
 
   it("restores a retired stable branch before reselecting it", async () => {
