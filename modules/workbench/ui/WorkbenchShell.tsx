@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react"
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   GripHorizontal,
@@ -38,6 +39,8 @@ type WidePanel = "chat" | "preview"
 
 export default function WorkbenchShell() {
   const sectionRef = useRef<HTMLElement>(null)
+  const returnSurfaceRef = useRef<WorkbenchTab>("preview")
+  const previousMobileSnapRef = useRef<MobileSheetSnap>("half")
   const layout = useWorkbenchLayout()
   const [collapsedPanels, setCollapsedPanels] = useState<Set<WidePanel>>(
     () => new Set()
@@ -154,6 +157,18 @@ export default function WorkbenchShell() {
             ? "56svh"
             : "47svh"
 
+    const openAssistant = () => {
+      returnSurfaceRef.current = workbenchTab
+      previousMobileSnapRef.current =
+        mobileSheetSnap === "collapsed" ? "half" : mobileSheetSnap
+      setWorkbenchTab("chat")
+      setMobileSheetSnap("expanded")
+    }
+    const returnFromAssistant = () => {
+      setWorkbenchTab(returnSurfaceRef.current)
+      setMobileSheetSnap(previousMobileSnapRef.current)
+    }
+
     return (
       <section
         ref={sectionRef}
@@ -176,14 +191,13 @@ export default function WorkbenchShell() {
                   className="flex h-full"
                   showInitialState={showInitialState}
                   framed={false}
+                  onMobileBack={returnFromAssistant}
                 />
               )}
             </div>
-            <CompactTabBar
-              activeTab={workbenchTab}
-              onSelect={setWorkbenchTab}
-              mobile
-            />
+            {workbenchTab === "preview" ? (
+              <MobileAssistantCta onOpen={openAssistant} />
+            ) : null}
           </>
         )}
       </section>
@@ -216,11 +230,13 @@ function AIWorkbenchPanel({
   className,
   showInitialState,
   onCollapse,
+  onMobileBack,
   framed = true,
 }: {
   className: string
   showInitialState: boolean
   onCollapse?: () => void
+  onMobileBack?: () => void
   framed?: boolean
 }) {
   const graph = useWorkspaceStore(selectWorkspaceGraph)
@@ -233,7 +249,11 @@ function AIWorkbenchPanel({
           : ""
       }`}
     >
-      <PanelHeader label="AI 旅行助手" onCollapse={onCollapse} />
+      <PanelHeader
+        label="AI 旅行助手"
+        onCollapse={onCollapse}
+        onBack={onMobileBack}
+      />
       {graph ? (
         <div className="shrink-0">
           <p className="px-5 pb-2 text-[11px] font-black text-teak">
@@ -285,15 +305,29 @@ function ItineraryPanel({
 function PanelHeader({
   label,
   onCollapse,
+  onBack,
 }: {
   label: string
   onCollapse?: () => void
+  onBack?: () => void
 }) {
   return (
     <div className="flex h-[64px] shrink-0 items-center justify-between gap-3 px-5">
-      <p className="text-[13px] font-black tracking-[0.08em] text-teak">
-        {label}
-      </p>
+      <div className="flex min-w-0 items-center gap-3">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="返回行程"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink-10 bg-cream text-ink transition hover:border-russet"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
+        <p className="truncate text-[13px] font-black tracking-[0.08em] text-teak">
+          {label}
+        </p>
+      </div>
       {onCollapse ? (
         <button
           type="button"
@@ -335,35 +369,27 @@ function CollapsedPanelRail({
 function CompactTabBar({
   activeTab,
   onSelect,
-  mobile = false,
 }: {
   activeTab: WorkbenchTab
   onSelect: (tab: WorkbenchTab) => void
-  mobile?: boolean
 }) {
   return (
     <div
       role="tablist"
       aria-label="工作台面板"
-      className={
-        mobile
-          ? "grid shrink-0 grid-cols-2 gap-2 border-t border-ink-10 bg-soft-white px-5 py-3"
-          : "grid shrink-0 grid-cols-2 border-b border-ink-10 bg-soft-white px-3 pt-2"
-      }
+      className="grid shrink-0 grid-cols-2 border-b border-ink-10 bg-soft-white px-3 pt-2"
     >
       <WorkbenchTabButton
         value="preview"
         label="行程"
         selected={activeTab === "preview"}
         onSelect={onSelect}
-        mobile={mobile}
       />
       <WorkbenchTabButton
         value="chat"
-        label={mobile ? "AI 助手" : "问问 AI"}
+        label="问问 AI"
         selected={activeTab === "chat"}
         onSelect={onSelect}
-        mobile={mobile}
       />
     </div>
   )
@@ -374,13 +400,11 @@ function WorkbenchTabButton({
   label,
   selected,
   onSelect,
-  mobile,
 }: {
   value: WorkbenchTab
   label: string
   selected: boolean
   onSelect: (tab: WorkbenchTab) => void
-  mobile: boolean
 }) {
   return (
     <button
@@ -388,17 +412,9 @@ function WorkbenchTabButton({
       role="tab"
       aria-selected={selected}
       onClick={() => onSelect(value)}
-      className={
-        mobile
-          ? `flex h-[42px] items-center justify-center gap-2 rounded-full text-[13px] font-black transition ${
-              selected
-                ? "bg-russet text-ink"
-                : "bg-cream text-ink hover:bg-ink hover:text-soft-white"
-            }`
-          : `relative h-10 text-xs font-black transition ${
-              selected ? "text-ink" : "text-teak hover:text-ink"
-            }`
-      }
+      className={`relative h-10 text-xs font-black transition ${
+        selected ? "text-ink" : "text-teak hover:text-ink"
+      }`}
     >
       {value === "preview" ? (
         <Map className="h-4 w-4" aria-hidden="true" />
@@ -406,10 +422,25 @@ function WorkbenchTabButton({
         <Sparkles className="h-4 w-4" aria-hidden="true" />
       )}
       {label}
-      {!mobile && selected ? (
+      {selected ? (
         <span className="absolute right-5 bottom-0 left-5 h-0.5 bg-russet" />
       ) : null}
     </button>
+  )
+}
+
+function MobileAssistantCta({ onOpen }: { onOpen: () => void }) {
+  return (
+    <div className="shrink-0 border-t border-ink-10 bg-soft-white px-5 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-ink text-[13px] font-black text-soft-white shadow-periplus-soft transition active:scale-[0.99]"
+      >
+        <Sparkles className="h-4 w-4" aria-hidden="true" />
+        打开 AI 助手
+      </button>
+    </div>
   )
 }
 

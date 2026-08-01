@@ -57,15 +57,49 @@ test.describe("Journey workspace", () => {
     ).toHaveAttribute("aria-selected", "true")
     await expect(
       page.getByRole("button", { name: "选择事件 西安城墙" })
-    ).toContainText("1")
+    ).toContainText("景点")
     await expect(
       page.getByRole("button", { name: "选择事件 大雁塔" })
-    ).toContainText("2")
+    ).toContainText("景点")
     await expect(
       page.getByRole("button", { name: "选择事件 回民街" })
-    ).toContainText("3")
+    ).toContainText("景点")
     await expect(
       page.getByRole("button", { name: "交通事件 出租车" })
+    ).toContainText("西安城墙→大雁塔")
+  })
+
+  test("uses one mobile drawer with contextual assistant actions", async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loadSilkRoadJourney(page)
+
+    await expect(page.getByRole("tablist", { name: "工作台面板" })).toHaveCount(
+      0
+    )
+    await expect(
+      page.getByRole("button", { name: "打开 AI 助手" })
+    ).toBeVisible()
+    await page.getByRole("tab", { name: "西安", exact: true }).click()
+    await expect(
+      page.getByRole("button", { name: "选择事件 西安城墙" })
+    ).toBeVisible()
+
+    await page.screenshot({
+      path: testInfo.outputPath("mobile-itinerary.png"),
+    })
+    await page.getByRole("button", { name: "打开 AI 助手" }).click()
+    await expect(
+      page.getByRole("button", { name: "返回行程", exact: true })
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "打开 AI 助手" })
+    ).toHaveCount(0)
+
+    await page.getByRole("button", { name: "返回行程", exact: true }).click()
+    await expect(
+      page.getByRole("button", { name: "打开 AI 助手" })
     ).toBeVisible()
   })
 

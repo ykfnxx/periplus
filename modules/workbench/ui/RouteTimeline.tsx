@@ -1,8 +1,23 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 import Image from "next/image"
-import { BusFront, Car, Footprints, Plane, TrainFront } from "lucide-react"
+import {
+  BedDouble,
+  BusFront,
+  CalendarDays,
+  Car,
+  Check,
+  Clock3,
+  Footprints,
+  Landmark,
+  MapPin,
+  Plane,
+  Route,
+  Sparkles,
+  TrainFront,
+  UtensilsCrossed,
+} from "lucide-react"
 import { matchPhotosToNode } from "@/lib/geo"
 import { plannedLocationOf } from "@/lib/journeys/locations"
 import {
@@ -34,6 +49,7 @@ type LocationJourneyEvent = Extract<
   { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
 >
 type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
+type MatchedPhoto = ReturnType<typeof matchPhotosToNode>[number]
 
 const transportLabels: Record<TransportMode, string> = {
   FLIGHT: "飞机",
@@ -104,24 +120,33 @@ export default function RouteTimeline({
   }
 
   const events = items.map((item) => item.event)
+  const eventById = new Map(graph?.events.map((event) => [event.id, event]))
   const transits = transitEvents(events)
   const durationMinutes = totalDurationMinutes(events)
   return (
     <div className="px-5 pt-2 pb-5">
-      <div className="rounded-[10px] border border-olive/20 bg-route-summary px-5 py-3.5">
-        <p className="text-[11px] font-black text-ink">城市行程</p>
-        <p className="mt-1 text-[18px] leading-6 font-black text-ink">
-          {locationCount(events)} 个地点
-          {durationMinutes ? ` · ${formatStayDuration(durationMinutes)}` : ""}
-        </p>
-        <p className="mt-1 text-[10px] font-bold text-teak">
+      <div className="rounded-xl border border-olive/20 bg-route-summary px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-black tracking-[0.08em] text-ink">
+              当前路线
+            </p>
+            <p className="mt-1 text-[18px] leading-6 font-black text-ink">
+              {locationCount(events)} 项安排
+              {durationMinutes
+                ? ` · ${formatStayDuration(durationMinutes)}`
+                : ""}
+            </p>
+          </div>
+          <Route className="mt-1 h-5 w-5 text-olive" aria-hidden="true" />
+        </div>
+        <p className="mt-2 text-[10px] font-bold text-teak">
           {readyTransitCount(events)}/{transits.length} 段真实路线 ·
-          地图与事件卡同步定位
+          方案确认后地图自动同步
         </p>
       </div>
 
-      <div className="relative mt-5 pl-10">
-        <div className="absolute top-4 bottom-4 left-[15px] w-0.5 bg-bluegray" />
+      <div className="mt-4 space-y-3">
         {items.map(({ event, resolved }) => {
           if (event.type === "SECTION") {
             return (
@@ -130,18 +155,34 @@ export default function RouteTimeline({
                 type="button"
                 aria-label={`进入分组 ${event.title}`}
                 onClick={() => enterSection(event.id)}
-                className="relative mb-3 w-full rounded-[10px] border border-ink-10 bg-white px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-russet"
+                className="group w-full rounded-xl border border-ink-10 bg-white px-4 py-4 text-left transition hover:-translate-y-0.5 hover:border-russet hover:shadow-periplus-soft"
               >
-                <span className="block text-[10px] font-black text-teak">
-                  {event.detail.kind} · 子行程
-                </span>
-                <span className="mt-1 block text-base font-black text-ink">
-                  {resolved.title}
+                <span className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-route-summary text-olive">
+                    <CalendarDays className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-black tracking-[0.08em] text-teak">
+                      {sectionKindLabel(event.detail.kind)} · 子行程
+                    </span>
+                    <span className="mt-1 block truncate text-base font-black text-ink">
+                      {resolved.title}
+                    </span>
+                  </span>
+                  <span className="text-[11px] font-black text-coral">
+                    进入
+                  </span>
                 </span>
               </button>
             )
           }
           if (event.type === "TRANSIT") {
+            const fromTitle = event.detail.plannedFromEventId
+              ? eventById.get(event.detail.plannedFromEventId)?.title
+              : undefined
+            const toTitle = event.detail.plannedToEventId
+              ? eventById.get(event.detail.plannedToEventId)?.title
+              : undefined
             return (
               <TransitTimelineRow
                 key={event.id}
@@ -151,6 +192,8 @@ export default function RouteTimeline({
                 onSelectPlan={(planId) => selectTransitPlan(event.id, planId)}
                 planningRuns={graph?.transitPlanningRuns ?? []}
                 resolved={resolved}
+                fromTitle={fromTitle}
+                toTitle={toTitle}
               />
             )
           }
@@ -172,7 +215,6 @@ export default function RouteTimeline({
                   if (element) itemRefs.current.set(event.id, element)
                   else itemRefs.current.delete(event.id)
                 }}
-                className="relative"
               >
                 <button
                   type="button"
@@ -181,45 +223,13 @@ export default function RouteTimeline({
                   onClick={() => selectLocation(event)}
                   onMouseEnter={() => setHoveredEventId(event.id)}
                   onMouseLeave={() => setHoveredEventId(null)}
-                  className={`mb-3 w-full rounded-[10px] border px-4 py-3 text-left transition ${
+                  className={`w-full overflow-hidden rounded-xl border text-left transition ${
                     selected
                       ? "border-russet bg-selected-soft shadow-periplus-soft"
-                      : "border-ink-10 bg-white hover:-translate-y-0.5 hover:border-russet"
+                      : "border-ink-10 bg-white hover:-translate-y-0.5 hover:border-russet hover:shadow-periplus-soft"
                   }`}
                 >
-                  <span className="absolute top-3 -left-[39px] flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-white bg-route-blue text-[10px] font-black text-ink shadow-sm">
-                    {resolved.locationOrdinal}
-                  </span>
-                  <span className="block text-[10px] font-black text-teak">
-                    {event.type} · {event.executionStatus ?? "分组"}
-                  </span>
-                  <span className="mt-1 block text-base font-black text-ink">
-                    {event.title}
-                  </span>
-                  {event.description ? (
-                    <span className="mt-1 block text-[12px] leading-5 text-walnut">
-                      {event.description}
-                    </span>
-                  ) : null}
-                  {photos.length ? (
-                    <span className="scrollbar-hidden mt-3 flex gap-2 overflow-x-auto">
-                      {photos.map((photo) => (
-                        <span
-                          key={photo.id}
-                          className="relative h-16 w-20 shrink-0 overflow-hidden rounded-lg"
-                        >
-                          <Image
-                            src={photo.url}
-                            alt=""
-                            fill
-                            sizes="80px"
-                            unoptimized
-                            className="object-cover"
-                          />
-                        </span>
-                      ))}
-                    </span>
-                  ) : null}
+                  <LocationEventCard event={event} photos={photos} />
                 </button>
               </div>
             )
@@ -227,7 +237,7 @@ export default function RouteTimeline({
           return event.type === "NOTE" ? (
             <div
               key={event.id}
-              className="mb-3 rounded-lg border border-ink-10 bg-cream px-4 py-3 text-sm text-walnut"
+              className="rounded-xl border border-dashed border-ink-15 bg-cream/55 px-4 py-3 text-sm leading-6 text-walnut"
             >
               {event.detail.body}
             </div>
@@ -238,6 +248,246 @@ export default function RouteTimeline({
   )
 }
 
+function LocationEventCard({
+  event,
+  photos,
+}: {
+  event: LocationJourneyEvent
+  photos: MatchedPhoto[]
+}) {
+  if (event.type === "MEAL") return <MealEventCard event={event} />
+  if (event.type === "ACTIVITY") return <ActivityEventCard event={event} />
+  if (event.type === "STAY") return <StayEventCard event={event} />
+  return <VisitEventCard event={event} photos={photos} />
+}
+
+function VisitEventCard({
+  event,
+  photos,
+}: {
+  event: Extract<LocationJourneyEvent, { type: "VISIT" }>
+  photos: MatchedPhoto[]
+}) {
+  return (
+    <>
+      {photos.length ? (
+        <span className="scrollbar-hidden flex h-28 gap-1 overflow-x-auto bg-cream">
+          {photos.map((photo, index) => (
+            <span
+              key={photo.id}
+              className={`relative shrink-0 overflow-hidden ${
+                photos.length === 1 || index === 0 ? "w-full" : "w-36"
+              }`}
+            >
+              <Image
+                src={photo.url}
+                alt=""
+                fill
+                sizes="380px"
+                unoptimized
+                className="object-cover"
+              />
+            </span>
+          ))}
+        </span>
+      ) : null}
+      <span className="block px-4 py-4">
+        <EventCardHeading
+          icon={<Landmark className="h-3.5 w-3.5" aria-hidden="true" />}
+          label="景点"
+          time={formatEventTime(event.plannedStartAt)}
+        />
+        <span className="mt-2 block text-[17px] leading-6 font-black text-ink">
+          {event.title}
+        </span>
+        {event.description ? (
+          <span className="mt-1 line-clamp-2 block text-[12px] leading-5 text-walnut">
+            {event.description}
+          </span>
+        ) : null}
+        <EventMetaRow
+          duration={event.detail.plannedDurationMinutes}
+          status={event.executionStatus}
+        />
+      </span>
+    </>
+  )
+}
+
+function MealEventCard({
+  event,
+}: {
+  event: Extract<LocationJourneyEvent, { type: "MEAL" }>
+}) {
+  return (
+    <span className="grid grid-cols-[52px_1fr] gap-3 p-4">
+      <span className="flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-russet/15 text-coral">
+        <UtensilsCrossed className="h-6 w-6" aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <EventCardHeading
+          icon={<Clock3 className="h-3.5 w-3.5" aria-hidden="true" />}
+          label={event.detail.cuisine ?? "餐饮"}
+          time={formatEventTime(event.plannedStartAt)}
+          tone="russet"
+        />
+        <span className="mt-2 block truncate text-[17px] leading-6 font-black text-ink">
+          {event.title}
+        </span>
+        {event.description ? (
+          <span className="mt-1 line-clamp-2 block text-[12px] leading-5 text-walnut">
+            {event.description}
+          </span>
+        ) : null}
+        <EventMetaRow
+          duration={event.detail.plannedDurationMinutes}
+          status={event.executionStatus}
+        />
+      </span>
+    </span>
+  )
+}
+
+function ActivityEventCard({
+  event,
+}: {
+  event: Extract<LocationJourneyEvent, { type: "ACTIVITY" }>
+}) {
+  return (
+    <span className="grid grid-cols-[72px_1fr]">
+      <span className="flex min-h-32 flex-col items-center justify-center bg-cream/70 px-2 text-center">
+        <Sparkles className="h-5 w-5 text-mustard" aria-hidden="true" />
+        <span className="mt-2 text-[13px] font-black text-ink">
+          {formatEventTime(event.plannedStartAt) ?? "灵活"}
+        </span>
+        <span className="mt-1 text-[10px] font-bold text-teak">体验</span>
+      </span>
+      <span className="min-w-0 px-4 py-4">
+        <EventCardHeading label="活动" tone="mustard" />
+        <span className="mt-2 block text-[17px] leading-6 font-black text-ink">
+          {event.title}
+        </span>
+        {event.description ? (
+          <span className="mt-1 line-clamp-2 block text-[12px] leading-5 text-walnut">
+            {event.description}
+          </span>
+        ) : null}
+        {event.detail.bookingReference ? (
+          <span className="mt-3 block rounded-lg bg-cream/65 px-3 py-2 text-[10px] font-bold text-teak">
+            预约凭证 · {event.detail.bookingReference}
+          </span>
+        ) : (
+          <EventMetaRow
+            duration={event.detail.plannedDurationMinutes}
+            status={event.executionStatus}
+          />
+        )}
+      </span>
+    </span>
+  )
+}
+
+function StayEventCard({
+  event,
+}: {
+  event: Extract<LocationJourneyEvent, { type: "STAY" }>
+}) {
+  return (
+    <span className="block p-4">
+      <span className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-bluegray/12 text-bluegray">
+          <BedDouble className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <EventCardHeading label="住宿" tone="bluegray" />
+          <span className="mt-1.5 block truncate text-[17px] leading-6 font-black text-ink">
+            {event.title}
+          </span>
+        </span>
+      </span>
+      <span className="mt-4 grid grid-cols-2 divide-x divide-ink-10 rounded-lg bg-route-blue-soft px-1 py-3">
+        <StayTime label="入住" value={formatEventTime(event.plannedStartAt)} />
+        <StayTime label="离店" value={formatEventTime(event.plannedEndAt)} />
+      </span>
+      {event.detail.checkInNote || event.description ? (
+        <span className="mt-3 block text-[11px] leading-5 text-walnut">
+          {event.detail.checkInNote ?? event.description}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+function EventCardHeading({
+  icon,
+  label,
+  time,
+  tone = "olive",
+}: {
+  icon?: ReactNode
+  label: string
+  time?: string | null
+  tone?: "olive" | "russet" | "mustard" | "bluegray"
+}) {
+  const toneClass = {
+    olive: "bg-route-summary text-ink",
+    russet: "bg-russet/15 text-coral",
+    mustard: "bg-mustard/20 text-ink",
+    bluegray: "bg-bluegray/12 text-bluegray",
+  }[tone]
+  return (
+    <span className="flex items-center justify-between gap-3">
+      <span
+        className={`inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[10px] font-black tracking-[0.06em] ${toneClass}`}
+      >
+        {icon}
+        {label}
+      </span>
+      {time ? (
+        <span className="text-[11px] font-black text-teak tabular-nums">
+          {time}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+function EventMetaRow({
+  duration,
+  status,
+}: {
+  duration?: number
+  status: LocationJourneyEvent["executionStatus"]
+}) {
+  return (
+    <span className="mt-3 flex items-center gap-3 text-[10px] font-bold text-teak">
+      {duration ? (
+        <span className="inline-flex items-center gap-1">
+          <Clock3 className="h-3 w-3" aria-hidden="true" />
+          {formatStayDuration(duration)}
+        </span>
+      ) : null}
+      <span className="inline-flex items-center gap-1">
+        <MapPin className="h-3 w-3" aria-hidden="true" />
+        {executionStatusLabel(status)}
+      </span>
+    </span>
+  )
+}
+
+function StayTime({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <span className="px-3">
+      <span className="block text-[9px] font-black tracking-[0.08em] text-teak">
+        {label}
+      </span>
+      <span className="mt-1 block text-[14px] font-black text-ink tabular-nums">
+        {value ?? "待定"}
+      </span>
+    </span>
+  )
+}
+
 function TransitTimelineRow({
   event,
   selected,
@@ -245,6 +495,8 @@ function TransitTimelineRow({
   onSelectPlan,
   planningRuns,
   resolved,
+  fromTitle,
+  toTitle,
 }: {
   event: TransitEvent
   selected: boolean
@@ -252,6 +504,8 @@ function TransitTimelineRow({
   onSelectPlan: (planId: string) => void
   planningRuns: readonly TargetTransitPlanningRun[]
   resolved: TargetResolvedEvent
+  fromTitle?: string
+  toTitle?: string
 }) {
   const activeRun = activeTransitPlanningRun(event, planningRuns)
   const plan = selectedTransitPlan(event, planningRuns)
@@ -269,58 +523,101 @@ function TransitTimelineRow({
     : event.detail.plannedDistanceKm
       ? formatTransitDistance(event.detail.plannedDistanceKm * 1_000)
       : null
-  const endpointOrdinals =
-    resolved.fromLocationOrdinal !== undefined &&
-    resolved.toLocationOrdinal !== undefined
-      ? `${resolved.fromLocationOrdinal} → ${resolved.toLocationOrdinal}`
-      : null
 
   return (
-    <div className="relative mb-3">
-      <span className="absolute top-3 -left-[32px] flex h-4 w-4 items-center justify-center rounded-full border-2 border-soft-white bg-bluegray">
-        <TransportIcon mode={event.detail.transportMode} />
-      </span>
+    <div
+      className="rounded-xl border border-bluegray/20 bg-route-blue-soft p-3"
+      data-selected-plan-id={plan?.id}
+      data-resolved-position={resolved.resolvedPosition}
+    >
       <button
         type="button"
         aria-label={`交通事件 ${modeLabel}`}
         aria-pressed={selected}
         onClick={onSelect}
-        className={`w-full rounded-lg border px-4 py-3 text-left transition ${
-          selected
-            ? "border-russet bg-selected-soft"
-            : "border-transparent bg-route-blue-soft hover:border-bluegray/30"
+        className={`w-full rounded-lg px-1 py-1 text-left transition ${
+          selected ? "text-ink" : "text-walnut hover:text-ink"
         }`}
       >
-        <span className="text-[11px] font-black text-bluegray">
-          {[endpointOrdinals, modeLabel, duration, distance]
-            .filter(Boolean)
-            .join(" · ")}
+        <span className="flex items-center gap-3">
+          <span
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+              selected
+                ? "bg-bluegray text-soft-white"
+                : "bg-white text-bluegray"
+            }`}
+          >
+            <TransportIcon mode={event.detail.transportMode} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-black tracking-[0.08em] text-bluegray">
+              {modeLabel}
+              {[duration, distance].filter(Boolean).length
+                ? ` · ${[duration, distance].filter(Boolean).join(" · ")}`
+                : ""}
+            </span>
+            <span className="mt-1 flex min-w-0 items-center gap-2 text-[12px] font-black text-ink">
+              <span className="truncate">{fromTitle ?? "出发地"}</span>
+              <span className="text-bluegray" aria-hidden="true">
+                →
+              </span>
+              <span className="truncate">{toTitle ?? "目的地"}</span>
+            </span>
+          </span>
+          <span className="shrink-0 text-[10px] font-black text-bluegray">
+            {selected ? "收起" : "方案"}
+          </span>
         </span>
         {activeRun?.warning ? (
-          <span className="mt-1.5 block text-[10px] text-coral">
+          <span className="mt-2 block rounded-md bg-white/70 px-2 py-1.5 text-[10px] leading-4 text-coral">
             {activeRun.warning}
           </span>
         ) : null}
       </button>
-      {selected && (activeRun?.plans.length ?? 0) > 1 ? (
-        <div className="mt-2 rounded-lg border border-ink-10 bg-white p-3">
-          <p className="mb-2 text-[10px] font-black text-teak">路线方案</p>
-          <div className="scrollbar-hidden flex gap-2 overflow-x-auto">
-            {activeRun!.plans.map((candidate) => (
-              <button
-                key={candidate.id}
-                type="button"
-                onClick={() => onSelectPlan(candidate.id)}
-                className={`shrink-0 rounded-lg px-3 py-1.5 text-[10px] font-black ${
-                  plan?.id === candidate.id
-                    ? "bg-russet text-ink"
-                    : "bg-cream text-walnut"
-                }`}
-              >
-                {candidate.label} ·{" "}
-                {formatTransitDuration(candidate.durationSeconds)}
-              </button>
-            ))}
+      {selected && (activeRun?.plans.length ?? 0) > 0 ? (
+        <div className="mt-3 border-t border-bluegray/15 pt-3">
+          <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
+            选择路线方案
+          </p>
+          <div className="space-y-2">
+            {activeRun!.plans.map((candidate) => {
+              const isCurrent = plan?.id === candidate.id
+              return (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  aria-pressed={isCurrent}
+                  onClick={() => onSelectPlan(candidate.id)}
+                  className={`grid w-full grid-cols-[1fr_auto] items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${
+                    isCurrent
+                      ? "border-russet bg-white shadow-sm"
+                      : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 text-[11px] font-black text-ink">
+                      {candidate.label}
+                      {isCurrent ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] text-coral">
+                          <Check className="h-3 w-3" aria-hidden="true" />
+                          当前
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-1 block text-[10px] font-bold text-teak">
+                      {formatTransitDuration(candidate.durationSeconds)} ·{" "}
+                      {formatTransitDistance(candidate.distanceMeters)}
+                      {candidate.fareAmount !== undefined
+                        ? ` · 约 ¥${candidate.fareAmount}`
+                        : ""}
+                    </span>
+                  </span>
+                  <span className="text-[10px] font-black text-bluegray">
+                    {isCurrent ? "地图已同步" : "切换"}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       ) : null}
@@ -329,7 +626,7 @@ function TransitTimelineRow({
 }
 
 function TransportIcon({ mode }: { mode: TransportMode }) {
-  const className = "h-2 w-2 text-soft-white"
+  const className = "h-5 w-5"
   if (mode === "FLIGHT") return <Plane className={className} />
   if (mode === "TRAIN") return <TrainFront className={className} />
   if (mode === "WALK") return <Footprints className={className} />
@@ -343,4 +640,27 @@ function formatStayDuration(minutes: number) {
   if (minutes < 60) return `${minutes} 分钟`
   const hours = minutes / 60
   return Number.isInteger(hours) ? `${hours} 小时` : `${hours.toFixed(1)} 小时`
+}
+
+function formatEventTime(value?: string) {
+  if (!value) return null
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value))
+}
+
+function executionStatusLabel(status: LocationJourneyEvent["executionStatus"]) {
+  if (status === "CONFIRMED") return "已确认"
+  if (status === "STARTED") return "进行中"
+  if (status === "SKIPPED") return "已跳过"
+  if (status === "CANCELLED") return "已取消"
+  return "计划中"
+}
+
+function sectionKindLabel(kind: "CITY" | "DAY" | "THEME") {
+  if (kind === "DAY") return "日期"
+  if (kind === "CITY") return "城市"
+  return "主题"
 }

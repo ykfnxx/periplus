@@ -36,14 +36,24 @@ export default function RouteScopeTabs() {
     : null
   const nestedPath: SectionEvent[] = []
   let cursor = activeSection
-  while (cursor?.parentSectionEventId) {
+  while (cursor) {
     nestedPath.unshift(cursor)
+    if (!cursor.parentSectionEventId) break
     const parentId = cursor.parentSectionEventId
     cursor = graph.events.find(
       (event): event is SectionEvent =>
         event.id === parentId && event.type === "SECTION"
     )
   }
+  const directChildSections = activeSection
+    ? getJourneyScopeProjection(
+        graph,
+        "section",
+        activeSection.id
+      ).events.filter(
+        (event): event is SectionEvent => event.type === "SECTION"
+      )
+    : []
 
   const selectOverview = () => {
     if (viewLevel === "overview") return
@@ -79,29 +89,38 @@ export default function RouteScopeTabs() {
         </button>
       ) : null}
       <div role="tablist" aria-label="行程范围" className="contents">
-        <ScopeTab
-          label="总览"
-          selected={viewLevel === "overview"}
-          onSelect={selectOverview}
-        />
-        {rootSections.map((section) => (
-          <ScopeTab
-            key={section.id}
-            label={section.title}
-            selected={
-              viewLevel === "section" && activeSectionEventId === section.id
-            }
-            onSelect={() => selectSection(section.id)}
-          />
-        ))}
-        {nestedPath.map((section) => (
-          <ScopeTab
-            key={section.id}
-            label={section.title}
-            selected={activeSectionEventId === section.id}
-            onSelect={() => selectSection(section.id)}
-          />
-        ))}
+        {viewLevel === "overview" ? (
+          <>
+            <ScopeTab label="总览" selected onSelect={selectOverview} />
+            {rootSections.map((section) => (
+              <ScopeTab
+                key={section.id}
+                label={section.title}
+                selected={false}
+                onSelect={() => selectSection(section.id)}
+              />
+            ))}
+          </>
+        ) : (
+          <>
+            {nestedPath.map((section) => (
+              <ScopeTab
+                key={section.id}
+                label={section.title}
+                selected={activeSectionEventId === section.id}
+                onSelect={() => selectSection(section.id)}
+              />
+            ))}
+            {directChildSections.map((section) => (
+              <ScopeTab
+                key={section.id}
+                label={section.title}
+                selected={false}
+                onSelect={() => selectSection(section.id)}
+              />
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

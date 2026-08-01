@@ -44,6 +44,20 @@ export default function RoutePreview({
   }
 
   const durationDays = totalDurationDays(view.events)
+  const activeSection =
+    view.level === "section"
+      ? graph.events.find(
+          (event) =>
+            event.id === activeSectionEventId && event.type === "SECTION"
+        )
+      : null
+  const scopeLabel =
+    activeSection?.type === "SECTION" && activeSection.detail.kind === "DAY"
+      ? "每日行程"
+      : activeSection?.type === "SECTION" &&
+          activeSection.detail.kind === "THEME"
+        ? "主题行程"
+        : "城市行程"
   const title =
     view.level === "overview"
       ? `${graph.title}${durationDays ? ` · ${durationDays} 天` : ""}`
@@ -55,7 +69,7 @@ export default function RoutePreview({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] font-black text-teak">
-              {view.level === "overview" ? "行程总览" : "城市行程"}
+              {view.level === "overview" ? "行程总览" : scopeLabel}
             </p>
             <h1
               aria-label={view.level === "overview" ? graph.title : view.title}

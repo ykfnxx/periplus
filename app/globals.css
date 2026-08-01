@@ -50,19 +50,21 @@ body {
 
 .periplus-map-marker {
   align-items: center;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 3px solid var(--color-soft-white);
   box-shadow: 0 8px 18px var(--color-ink-20);
   color: var(--color-white);
   cursor: pointer;
   display: flex;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 900;
-  height: 36px;
+  height: 30px;
   justify-content: center;
   line-height: 1;
+  min-width: 36px;
+  padding: 0 7px;
   transition: transform 0.2s ease;
-  width: 36px;
+  white-space: nowrap;
 }
 
 .periplus-map-marker:hover {
@@ -81,7 +83,7 @@ body {
 
 .periplus-map-marker--selected {
   border-color: var(--color-russet);
-  border-width: 5px;
+  border-width: 3px;
   box-shadow: 0 10px 22px var(--color-ink-30);
   transform: scale(1.2);
 }
