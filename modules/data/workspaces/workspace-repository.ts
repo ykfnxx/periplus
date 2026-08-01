@@ -316,7 +316,7 @@ export async function createWorkspace(
     now?: Date
   }
 ) {
-  const graph = targetJourneyGraphSnapshotSchema.parse(input.graph)
+  let graph = targetJourneyGraphSnapshotSchema.parse(input.graph)
   if (graph.ownerId !== context.userId && !isAdmin(context)) {
     throw new PermissionDeniedError("Workspace graph must belong to its owner")
   }
@@ -330,18 +330,35 @@ export async function createWorkspace(
     throw new WorkspaceInputError("source Journey must match graph identity")
   }
   if (input.sourceJourneyId) {
-    const source = await prisma.journey.findFirst({
+    const source = await prisma.journeyRevision.findUnique({
       where: {
-        id: input.sourceJourneyId,
-        ownerId: graph.ownerId,
-        revision: input.baseJourneyRevision,
-        deletedAt: null,
+        journeyId_revision: {
+          journeyId: input.sourceJourneyId,
+          revision: input.baseJourneyRevision!,
+        },
       },
-      select: { id: true },
+      select: {
+        snapshotJson: true,
+        journey: { select: { ownerId: true, deletedAt: true } },
+      },
     })
-    if (!source) {
+    if (
+      !source ||
+      source.journey.ownerId !== graph.ownerId ||
+      source.journey.deletedAt
+    ) {
       throw new WorkspaceInputError("source Journey base revision not found")
     }
+    const canonicalBase = parseGraph(
+      source.snapshotJson,
+      `Journey ${input.sourceJourneyId} revision ${input.baseJourneyRevision}`
+    )
+    if (json(canonicalBase) !== json(graph)) {
+      throw new WorkspaceInputError(
+        "source Workspace graph must match its base Journey revision snapshot"
+      )
+    }
+    graph = canonicalBase
   }
 
   const now = input.now ?? new Date()
@@ -689,11 +706,99 @@ export async function forkWorkspace(
   if (document.session.status !== "ACTIVE") {
     throw new WorkspaceInputError("Inactive Workspace cannot be forked")
   }
-  return createWorkspace(context, {
-    graph: document.session.headGraph,
-    sourceJourneyId: document.session.sourceJourneyId ?? undefined,
-    baseJourneyRevision: document.session.baseJourneyRevision ?? undefined,
-    now,
+  return prisma.$transaction(async (tx) => {
+    let baseGraph = document.session.headGraph
+    if (
+      document.session.sourceJourneyId &&
+      document.session.baseJourneyRevision !== null
+    ) {
+      const source = await tx.journeyRevision.findUnique({
+        where: {
+          journeyId_revision: {
+            journeyId: document.session.sourceJourneyId,
+            revision: document.session.baseJourneyRevision,
+          },
+        },
+        select: { snapshotJson: true },
+      })
+      if (!source) {
+        throw new WorkspaceRevisionConflictError(
+          "Workspace source base revision is missing"
+        )
+      }
+      baseGraph = parseGraph(
+        source.snapshotJson,
+        `Journey ${document.session.sourceJourneyId} revision ${document.session.baseJourneyRevision}`
+      )
+    } else if (document.session.headWorkspaceRevision > 0) {
+      const firstRevision = await tx.workspaceRevision.findUnique({
+        where: {
+          workspaceId_revision: { workspaceId, revision: 1 },
+        },
+        select: { beforeGraphJson: true },
+      })
+      if (!firstRevision) {
+        throw new WorkspaceRevisionConflictError(
+          "Workspace head has no persisted first revision"
+        )
+      }
+      baseGraph = parseGraph(
+        firstRevision.beforeGraphJson,
+        `Workspace ${workspaceId} fork base`
+      )
+    }
+
+    const forkId = randomUUID()
+    const created = await tx.workspaceSession.create({
+      data: {
+        id: forkId,
+        ownerId: document.session.ownerId,
+        sourceJourneyId: document.session.sourceJourneyId,
+        baseJourneyRevision: document.session.baseJourneyRevision,
+        headGraphJson: json(baseGraph),
+        expiresAt: leaseExpiry(now),
+        lastAccessAt: now,
+        createdAt: now,
+      },
+      include: workspaceInclude,
+    })
+    if (document.session.headWorkspaceRevision === 0) {
+      return mapSession(created)
+    }
+
+    await tx.workspaceRevision.create({
+      data: {
+        id: randomUUID(),
+        workspaceId: forkId,
+        revision: 1,
+        parentRevisionId: null,
+        commandName: commandNames["workspace.fork"],
+        beforeGraphJson: json(baseGraph),
+        afterGraphJson: json(document.session.headGraph),
+        patchJson: json([
+          {
+            op: "workspace.fork",
+            forkedFromWorkspaceId: workspaceId,
+            forkedFromWorkspaceRevision: document.session.headWorkspaceRevision,
+          },
+        ]),
+        inversePatchJson: json([{ op: "workspace.restore_fork_base" }]),
+        actorKind: "USER",
+        actorUserId: context.userId,
+        actorAgentRunId: null,
+        idempotencyKey: `workspace-fork-${randomUUID()}`,
+        createdAt: now,
+      },
+    })
+    const updated = await tx.workspaceSession.update({
+      where: { id: forkId },
+      data: {
+        headWorkspaceRevision: 1,
+        headGraphJson: json(document.session.headGraph),
+      },
+      include: workspaceInclude,
+    })
+    return mapSession(updated)
   })
 }
 

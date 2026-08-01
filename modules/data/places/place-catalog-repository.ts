@@ -29,6 +29,13 @@ const sourceQualityConfidence: Record<Uppercase<PlaceQuality>, number> = {
   NEEDS_REVIEW: 0.4,
 }
 
+const sourceQualityPriority = [
+  "VERIFIED",
+  "PROBABLE",
+  "CANDIDATE",
+  "NEEDS_REVIEW",
+] as const
+
 function providerFromString(value: string): PlaceProvider {
   if (
     value === "amap" ||
@@ -170,16 +177,25 @@ export class PlaceCatalogRepository {
       ],
     }
 
-    const places = await prisma.place.findMany({
-      where,
-      include: {
-        aliases: true,
-        sources: true,
-        providerMatches: true,
-      },
-      take: query.limit * 3,
-      orderBy: [{ sourceQuality: "asc" }, { updatedAt: "desc" }],
-    })
+    const prefetchLimit = query.limit * 3
+    const places = (
+      await Promise.all(
+        sourceQualityPriority.map((sourceQuality) =>
+          prisma.place.findMany({
+            where: { AND: [where, { sourceQuality }] },
+            include: {
+              aliases: true,
+              sources: true,
+              providerMatches: true,
+            },
+            take: prefetchLimit,
+            orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+          })
+        )
+      )
+    )
+      .flat()
+      .slice(0, prefetchLimit)
     const candidates = places.map(placeToCandidate)
     return {
       candidates,

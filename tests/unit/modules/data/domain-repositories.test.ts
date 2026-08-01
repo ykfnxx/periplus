@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto"
-import { beforeAll, describe, expect, it, vi } from "vitest"
+import { unlink } from "node:fs/promises"
+import { NextRequest } from "next/server"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
+import { GET as readPhotoFile } from "@/app/api/photos/[id]/file/route"
+import { POST as uploadPhoto } from "@/app/api/photos/route"
+import { normalizePlaceSearchInput } from "@/lib/places/normalize"
 import type {
   TargetJourneyEvent,
   TargetJourneyGraphSnapshot,
   TargetTransitPlanningRun,
 } from "@/modules/data-model/contracts"
+import { setTestAuthContext } from "@/modules/auth/server/context"
 import { prisma } from "@/modules/data/db/prisma"
 import {
   addEventObservation,
@@ -27,6 +33,10 @@ import {
   deletePhoto,
   listPhotosForOwner,
 } from "@/modules/data/photos/photo-repository"
+import {
+  privatePhotoExtension,
+  privatePhotoFilePath,
+} from "@/modules/data/photos/photo-storage"
 import { PlaceCatalogRepository } from "@/modules/data/places/place-catalog-repository"
 import {
   commitTransitPlanningRun,
@@ -61,6 +71,7 @@ const endId = `${journeyId}-end`
 const now = "2026-08-01T10:00:00.000Z"
 
 beforeAll(async () => {
+  vi.stubEnv("NODE_ENV", "test")
   await prisma.user.createMany({
     data: [
       {
@@ -77,6 +88,11 @@ beforeAll(async () => {
       },
     ],
   })
+})
+
+afterAll(() => {
+  setTestAuthContext(undefined)
+  vi.unstubAllEnvs()
 })
 
 function identity(id: string, parentSectionEventId: string | null) {
@@ -186,6 +202,14 @@ describe.sequential("P2B-P2D repositories", () => {
 
   it("persists Workspace snapshots and idempotent revisions", async () => {
     const createdJourney = await createJourney(context, journeyWrite(graph()))
+    await expect(
+      createWorkspace(context, {
+        graph: { ...createdJourney, title: "forged clean head" },
+        sourceJourneyId: journeyId,
+        baseJourneyRevision: 1,
+        now: new Date(now),
+      })
+    ).rejects.toThrow("must match its base Journey revision snapshot")
     const workspace = await createWorkspace(context, {
       graph: createdJourney,
       sourceJourneyId: journeyId,
@@ -197,9 +221,9 @@ describe.sequential("P2B-P2D repositories", () => {
     const revisionInput = {
       expectedRevision: 0,
       commandName: "workspace.refresh" as const,
-      after: createdJourney,
-      patch: [],
-      inversePatch: [],
+      after: { ...createdJourney, title: "Workspace draft title" },
+      patch: [{ op: "replace", path: "/title" }],
+      inversePatch: [{ op: "replace", path: "/title" }],
       idempotencyKey: `${workspace.id}-refresh`,
       now: new Date("2026-08-01T10:01:00.000Z"),
     }
@@ -216,6 +240,26 @@ describe.sequential("P2B-P2D repositories", () => {
     expect(replay?.id).toBe(first?.id)
     expect(
       (await getWorkspaceDocument(context, workspace.id))?.draftState
+    ).toBe("DIRTY")
+    const dirtyFork = await forkWorkspace(
+      context,
+      workspace.id,
+      new Date("2026-08-01T10:01:30.000Z")
+    )
+    expect(dirtyFork).toMatchObject({
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 1,
+      headWorkspaceRevision: 1,
+      headGraph: { title: "Workspace draft title" },
+    })
+    expect(
+      (
+        await getWorkspaceDocument(
+          context,
+          dirtyFork!.id,
+          new Date("2026-08-01T10:01:31.000Z")
+        )
+      )?.draftState
     ).toBe("DIRTY")
 
     const run = await startWorkspaceAgentRun(
@@ -879,6 +923,21 @@ describe.sequential("P2B-P2D repositories", () => {
       new Date("2026-08-02T00:00:00.000Z")
     )
     expect(stale?.draftState).toBe("STALE")
+    const staleFork = await forkWorkspace(
+      context,
+      workspaceId,
+      new Date("2026-08-02T00:00:01.000Z")
+    )
+    expect(staleFork?.headWorkspaceRevision).toBe(1)
+    expect(
+      (
+        await getWorkspaceDocument(
+          context,
+          staleFork!.id,
+          new Date("2026-08-02T00:00:02.000Z")
+        )
+      )?.draftState
+    ).toBe("STALE")
     const expired = await getWorkspaceDocument(
       context,
       workspaceId,
@@ -902,7 +961,7 @@ describe.sequential("P2B-P2D repositories", () => {
   it("adapts the existing Photo API boundary to owned IMAGE Assets", async () => {
     const filename = `${randomUUID()}.jpg`
     const photo = await createPhoto(context, {
-      url: `/uploads/photos/${filename}`,
+      storageKey: `private/photos/${filename}`,
       lat: 30.26,
       lng: 120.16,
       mimeType: "image/jpeg",
@@ -912,7 +971,7 @@ describe.sequential("P2B-P2D repositories", () => {
     })
     expect(photo).toMatchObject({
       ownerId,
-      url: `/uploads/photos/${filename}`,
+      url: `/api/photos/${photo.id}/file`,
       lat: 30.26,
       lng: 120.16,
       caption: "",
@@ -928,7 +987,7 @@ describe.sequential("P2B-P2D repositories", () => {
     expect(
       await prisma.asset.findUnique({ where: { id: photo.id } })
     ).toMatchObject({
-      storageKey: `/uploads/photos/${filename}`,
+      storageKey: `private/photos/${filename}`,
       deletedAt: expect.any(Date),
     })
     expect(
@@ -936,6 +995,80 @@ describe.sequential("P2B-P2D repositories", () => {
         (candidate) => candidate.id === photo.id
       )
     ).toBe(false)
+  })
+
+  it("stores PRIVATE photo uploads outside public and serves them only to the owner", async () => {
+    expect(privatePhotoExtension("image/svg+xml")).toBeNull()
+    expect(privatePhotoExtension("image/unknown")).toBeNull()
+    await expect(
+      createPhoto(context, {
+        storageKey: `/uploads/photos/${randomUUID()}.png`,
+        lat: 30.25,
+        lng: 120.17,
+        mimeType: "image/png",
+        size: 32,
+        checksum: `public-photo-${randomUUID()}`,
+        originalName: "public.png",
+      })
+    ).rejects.toThrow("must use private storage")
+    setTestAuthContext(context)
+    const svgFormData = new FormData()
+    svgFormData.set(
+      "file",
+      new File(["<svg></svg>"], "unsafe.svg", { type: "image/svg+xml" })
+    )
+    svgFormData.set("lat", "30.25")
+    svgFormData.set("lng", "120.17")
+    const svgResponse = await uploadPhoto({
+      formData: async () => svgFormData,
+    } as unknown as NextRequest)
+    expect(svgResponse.status).toBe(400)
+
+    const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+    const pngFormData = new FormData()
+    pngFormData.set(
+      "file",
+      new File([bytes], "private.png", { type: "image/png" })
+    )
+    pngFormData.set("lat", "30.25")
+    pngFormData.set("lng", "120.17")
+    const uploadResponse = await uploadPhoto({
+      formData: async () => pngFormData,
+    } as unknown as NextRequest)
+    expect(uploadResponse.status).toBe(201)
+    const uploaded = (await uploadResponse.json()) as {
+      id: string
+      url: string
+    }
+    expect(uploaded.url).toBe(`/api/photos/${uploaded.id}/file`)
+
+    const asset = await prisma.asset.findUniqueOrThrow({
+      where: { id: uploaded.id },
+    })
+    expect(asset.visibility).toBe("PRIVATE")
+    expect(asset.storageKey).toMatch(/^private\/photos\//)
+    expect(asset.storageKey).not.toContain("public")
+    const filePath = privatePhotoFilePath(asset.storageKey)
+    expect(filePath).not.toContain("/public/")
+
+    const request = new NextRequest(
+      `http://localhost/api/photos/${uploaded.id}/file`
+    )
+    const params = { params: Promise.resolve({ id: uploaded.id }) }
+
+    setTestAuthContext(null)
+    expect((await readPhotoFile(request, params)).status).toBe(401)
+
+    setTestAuthContext(otherContext)
+    expect((await readPhotoFile(request, params)).status).toBe(403)
+
+    setTestAuthContext(context)
+    const ownerResponse = await readPhotoFile(request, params)
+    expect(ownerResponse.status).toBe(200)
+    expect(ownerResponse.headers.get("cache-control")).toBe("private, no-store")
+    expect(new Uint8Array(await ownerResponse.arrayBuffer())).toEqual(bytes)
+
+    await unlink(filePath)
   })
 
   it("does not call the Transit provider again on an idempotent persisted replay", async () => {
@@ -1081,5 +1214,38 @@ describe.sequential("P2B-P2D repositories", () => {
         })
       )?.coordinateSystem
     ).toBe("BD09")
+  })
+
+  it("keeps verified places when lower-quality rows exceed the prefetch window", async () => {
+    const queryToken = `quality${randomUUID().replaceAll("-", "")}`
+    await prisma.place.createMany({
+      data: [
+        ...Array.from({ length: 4 }, (_, index) => ({
+          id: `${queryToken}-candidate-${index}`,
+          name: `${queryToken} candidate ${index}`,
+          normalizedName: `${queryToken}candidate${index}`,
+          category: "OTHER" as const,
+          sourceQuality: "CANDIDATE" as const,
+        })),
+        {
+          id: `${queryToken}-verified`,
+          name: `${queryToken} verified`,
+          normalizedName: `${queryToken}verified`,
+          category: "OTHER" as const,
+          sourceQuality: "VERIFIED" as const,
+        },
+      ],
+    })
+
+    const result = await new PlaceCatalogRepository().search(
+      normalizePlaceSearchInput({ query: queryToken, limit: 1 })
+    )
+
+    expect(result.candidates).toHaveLength(3)
+    expect(result.candidates[0]?.placeId).toBe(`${queryToken}-verified`)
+    expect(result.candidates.map((candidate) => candidate.placeId)).toContain(
+      `${queryToken}-verified`
+    )
+    expect(result.topConfidence).toBe(0.95)
   })
 })

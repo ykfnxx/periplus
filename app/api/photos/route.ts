@@ -11,16 +11,13 @@ import {
   listPhotos,
   PhotoInputError,
 } from "@/modules/data/photos/photo-repository"
+import {
+  createPrivatePhotoStorageKey,
+  privatePhotoExtension,
+  privatePhotoFilePath,
+} from "@/modules/data/photos/photo-storage"
 
 const maxPhotoSize = 5 * 1024 * 1024
-const uploadRoot = path.join(process.cwd(), "public", "uploads", "photos")
-
-const extensionByMimeType: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-}
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -59,7 +56,8 @@ export async function POST(request: NextRequest) {
         : undefined
 
     if (!(file instanceof File)) return badRequest("请选择图片文件")
-    if (!file.type.startsWith("image/")) return badRequest("请选择图片文件")
+    const extension = privatePhotoExtension(file.type)
+    if (!extension) return badRequest("仅支持 JPEG、PNG、WebP 或 GIF 图片")
     if (file.size > maxPhotoSize) return badRequest("图片大小不能超过 5MB")
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return badRequest("请选择照片位置")
@@ -68,18 +66,18 @@ export async function POST(request: NextRequest) {
       return badRequest("照片说明请在关联行程事件后填写")
     }
 
-    const extension = extensionByMimeType[file.type] ?? "bin"
     const filename = `${randomUUID()}.${extension}`
-    const filePath = path.join(uploadRoot, filename)
+    const storageKey = createPrivatePhotoStorageKey(filename)
+    const filePath = privatePhotoFilePath(storageKey)
     const bytes = Buffer.from(await file.arrayBuffer())
     const checksum = createHash("sha256").update(bytes).digest("hex")
-    await mkdir(uploadRoot, { recursive: true })
+    await mkdir(path.dirname(filePath), { recursive: true })
     await writeFile(filePath, bytes)
 
     let photo
     try {
       photo = await createPhoto(context, {
-        url: `/uploads/photos/${filename}`,
+        storageKey,
         lat,
         lng,
         caption,

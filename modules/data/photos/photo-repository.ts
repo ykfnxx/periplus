@@ -5,6 +5,10 @@ import {
   deleteAsset,
 } from "@/modules/data/content/content-repository"
 import { prisma } from "@/modules/data/db/prisma"
+import {
+  privatePhotoExtension,
+  privatePhotoFilePath,
+} from "@/modules/data/photos/photo-storage"
 import type { PhotoDto } from "@/types/photo"
 
 interface PhotoOwnerRecord {
@@ -24,7 +28,7 @@ interface PhotoAssetRecord {
 }
 
 interface CreatePhotoInput {
-  url: string
+  storageKey: string
   lat: number
   lng: number
   caption?: string
@@ -49,7 +53,7 @@ function mapPhotoToDto(
     id: photo.id,
     ownerId: photo.ownerId,
     ownerName: ownerName(photo.owner),
-    url: photo.storageKey,
+    url: `/api/photos/${encodeURIComponent(photo.id)}/file`,
     lat: photo.lat,
     lng: photo.lng,
     caption: "",
@@ -125,11 +129,23 @@ export async function createPhoto(
       "Photo captions are stored on EventAssetLink after attaching the Asset"
     )
   }
+  const extension = privatePhotoExtension(input.mimeType)
+  if (!extension) {
+    throw new PhotoInputError("Unsupported photo MIME type")
+  }
+  try {
+    privatePhotoFilePath(input.storageKey)
+  } catch {
+    throw new PhotoInputError("Photo storage key must use private storage")
+  }
+  if (!input.storageKey.endsWith(`.${extension}`)) {
+    throw new PhotoInputError("Photo storage key must match its MIME type")
+  }
 
   const asset = await createAsset(context, {
     kind: "IMAGE",
     visibility: "PRIVATE",
-    storageKey: input.url,
+    storageKey: input.storageKey,
     originalName: input.originalName,
     mimeType: input.mimeType,
     sizeBytes: input.size,
@@ -142,6 +158,31 @@ export async function createPhoto(
     include: photoInclude,
   })
   return mapPhotoToDto(context, photo)
+}
+
+export async function getPhotoFile(
+  context: AuthContext,
+  id: string
+): Promise<{
+  storageKey: string
+  mimeType: string
+} | null> {
+  const photo = await prisma.asset.findUnique({
+    where: { id, kind: "IMAGE", deletedAt: null },
+    select: {
+      ownerId: true,
+      storageKey: true,
+      mimeType: true,
+    },
+  })
+  if (!photo) return null
+  if (!isAdmin(context) && photo.ownerId !== context.userId) {
+    throw new PermissionDeniedError("Cannot read another user's photo")
+  }
+  return {
+    storageKey: photo.storageKey,
+    mimeType: photo.mimeType,
+  }
 }
 
 export async function updatePhotoCaption(
