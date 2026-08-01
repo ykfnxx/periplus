@@ -1,6 +1,9 @@
 import type { AuthContext } from "@/modules/auth/server/context"
 import { isAdmin, PermissionDeniedError } from "@/modules/auth/server/context"
-import { createAsset } from "@/modules/data/content/content-repository"
+import {
+  createAsset,
+  deleteAsset,
+} from "@/modules/data/content/content-repository"
 import { prisma } from "@/modules/data/db/prisma"
 import type { PhotoDto } from "@/types/photo"
 
@@ -174,9 +177,6 @@ export async function deletePhoto(
     throw new PermissionDeniedError("Cannot delete another user's photo")
   }
 
-  await prisma.asset.update({
-    where: { id },
-    data: { deletedAt: new Date() },
-  })
+  await deleteAsset(context, id)
   return { deleted: true }
 }

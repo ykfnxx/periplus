@@ -242,6 +242,25 @@ describe.sequential("P2B-P2D repositories", () => {
         agentRunId: foreignRun!.id,
       })
     ).rejects.toThrow("same Workspace")
+    await expect(
+      appendWorkspaceMessage(context, workspace.id, {
+        role: "SYSTEM",
+        content: "spoofed system message",
+      })
+    ).rejects.toThrow("trusted internal writer")
+    await expect(
+      appendWorkspaceMessage(context, workspace.id, {
+        role: "ASSISTANT",
+        content: "missing provenance",
+      })
+    ).rejects.toThrow("require a same-Workspace Agent run")
+    await expect(
+      appendWorkspaceMessage(context, workspace.id, {
+        role: "USER",
+        content: "wrong actor provenance",
+        agentRunId: run!.id,
+      })
+    ).rejects.toThrow("cannot bind an Agent run")
     const message = await appendWorkspaceMessage(context, workspace.id, {
       role: "ASSISTANT",
       content: "Persisted response",
@@ -418,6 +437,27 @@ describe.sequential("P2B-P2D repositories", () => {
         idempotencyKey: `${journeyId}-plan-ready`,
       })
     ).rejects.toThrow("idempotency key")
+    await expect(
+      commitTransitPlanningRun(context, journeyId, {
+        run,
+        selectedPlanId: run.plans[1]!.id,
+        expectedRevision: 2,
+        idempotencyKey: `${journeyId}-same-run-new-key`,
+      })
+    ).rejects.toThrow("another idempotency key")
+    expect((await getJourney(context, journeyId))?.revision).toBe(2)
+    expect(
+      (await getJourney(context, journeyId))?.events.find(
+        (event) => event.id === transitId
+      )?.detail
+    ).toMatchObject({ selectedPlanId: run.plans[0]!.id })
+    await expect(
+      commitTransitPlanningRun(context, journeyId, {
+        run,
+        expectedRevision: 1,
+        idempotencyKey: `${journeyId}-same-run-stale-revision`,
+      })
+    ).rejects.toThrow("updated by another session")
 
     const selected = await selectTransitPlan(context, journeyId, {
       transitEventId: transitId,
@@ -545,6 +585,12 @@ describe.sequential("P2B-P2D repositories", () => {
       })
     ).rejects.toThrow("idempotency key")
     expect((await getJourney(context, journeyId))?.revision).toBe(5)
+    await expect(deletePhoto(context, image.id)).rejects.toThrow(
+      "referenced by an active Event link"
+    )
+    expect(
+      await prisma.asset.findUnique({ where: { id: image.id } })
+    ).toMatchObject({ deletedAt: null })
 
     const observed = await addEventObservation(context, journeyId, {
       eventId: startId,
@@ -610,6 +656,12 @@ describe.sequential("P2B-P2D repositories", () => {
       title: "Guide",
       pageCount: 1,
     })
+    await expect(deleteAsset(context, sourceAsset.id)).rejects.toThrow(
+      "SourceDocument"
+    )
+    expect(
+      await prisma.asset.findUnique({ where: { id: sourceAsset.id } })
+    ).toMatchObject({ deletedAt: null })
     await expect(
       createSourceItem(context, {
         sourceDocumentId: document.id,

@@ -540,6 +540,19 @@ export async function appendWorkspaceMessage(
   })
   if (!workspace) return null
   await requireActiveWorkspace(workspace, now)
+  if (input.role === "SYSTEM") {
+    throw new WorkspaceInputError(
+      "SYSTEM messages require a trusted internal writer"
+    )
+  }
+  if (input.role === "USER" && input.agentRunId) {
+    throw new WorkspaceInputError("USER messages cannot bind an Agent run")
+  }
+  if (input.role === "ASSISTANT" && !input.agentRunId) {
+    throw new WorkspaceInputError(
+      "ASSISTANT messages require a same-Workspace Agent run"
+    )
+  }
   if (
     input.agentRunId &&
     !workspace.agentRuns.some((run) => run.id === input.agentRunId)

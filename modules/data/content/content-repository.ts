@@ -34,6 +34,24 @@ export class ContentInputError extends Error {
   }
 }
 
+export class AssetInUseError extends Error {
+  constructor(
+    message = "Asset is referenced by an active Event link or SourceDocument"
+  ) {
+    super(message)
+    this.name = "AssetInUseError"
+  }
+}
+
+function hasPrismaCode(error: unknown, code: string) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  )
+}
+
 function stableId(prefix: string, ...parts: string[]) {
   const digest = createHash("sha256").update(parts.join("\0")).digest("hex")
   return `${prefix}-${digest.slice(0, 32)}`
@@ -194,17 +212,36 @@ export async function getAsset(
 }
 
 export async function deleteAsset(context: AuthContext, assetId: string) {
-  const record = await prisma.asset.findUnique({ where: { id: assetId } })
-  if (!record) return false
-  if (!isAdmin(context) && record.ownerId !== context.userId) {
-    throw new PermissionDeniedError("Cannot delete another user's asset")
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const record = await tx.asset.findUnique({ where: { id: assetId } })
+      if (!record) return false
+      if (!isAdmin(context) && record.ownerId !== context.userId) {
+        throw new PermissionDeniedError("Cannot delete another user's asset")
+      }
+      if (record.deletedAt) return true
+
+      const activeEventLink = await tx.eventAssetLink.findFirst({
+        where: { assetId, retiredRevision: null },
+        select: { id: true },
+      })
+      const sourceDocument = await tx.sourceDocument.findUnique({
+        where: { assetId },
+        select: { id: true },
+      })
+      if (activeEventLink || sourceDocument) throw new AssetInUseError()
+
+      await tx.asset.update({
+        where: { id: assetId },
+        data: { deletedAt: new Date() },
+      })
+      return true
+    })
+  } catch (error) {
+    if (error instanceof AssetInUseError) throw error
+    if (hasPrismaCode(error, "P2003")) throw new AssetInUseError()
+    throw error
   }
-  if (record.deletedAt) return true
-  await prisma.asset.update({
-    where: { id: assetId },
-    data: { deletedAt: new Date() },
-  })
-  return true
 }
 
 export async function attachAssetToEvent(

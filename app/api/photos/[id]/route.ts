@@ -4,6 +4,7 @@ import {
   PermissionDeniedError,
   requireCurrentUser,
 } from "@/modules/auth/server/context"
+import { AssetInUseError } from "@/modules/data/content/content-repository"
 import {
   deletePhoto,
   updatePhotoCaption,
@@ -78,6 +79,9 @@ export async function DELETE(
     }
     if (error instanceof PermissionDeniedError) {
       return NextResponse.json({ error: error.message }, { status: 403 })
+    }
+    if (error instanceof AssetInUseError) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
     throw error
   }

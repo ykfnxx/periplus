@@ -112,6 +112,10 @@ export async function commitTransitPlanningRun(
   const current = await getJourney(context, journeyId)
   if (!current) return null
 
+  if (current.revision !== input.expectedRevision) {
+    throw new JourneyRevisionConflictError()
+  }
+
   const existing = current.transitPlanningRuns.find(
     (candidate) => candidate.id === run.id
   )
@@ -121,10 +125,9 @@ export async function commitTransitPlanningRun(
         `TransitPlanningRun ${run.id} already exists with another payload`
       )
     }
-    return current
-  }
-  if (current.revision !== input.expectedRevision) {
-    throw new JourneyRevisionConflictError()
+    throw new TransitInputError(
+      `TransitPlanningRun ${run.id} was committed with another idempotency key; use selectTransitPlan to change its selection`
+    )
   }
   if (run.transitEventId !== transitEvent(current, run.transitEventId).id) {
     throw new TransitInputError("planning run Transit Event is invalid")
