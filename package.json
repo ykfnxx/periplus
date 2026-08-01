@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:unit": "vitest --project=unit",
+    "test:schema": "vitest --project=unit --run tests/unit/modules/data/schema-baseline.test.ts",
     "test:storybook": "vitest --project=storybook",
     "test:map-integration": "vitest --config vitest.map-integration.config.ts --run",
     "test:e2e": "playwright test",
