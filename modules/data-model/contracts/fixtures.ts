@@ -907,6 +907,13 @@ const replayResult: TargetCommandResult = {
   inversePatch: {},
   projectionInvalidationScopes: [],
   replayedFromIdempotencyKey: true,
+  outcome: {
+    type: "workspace.replayed",
+    sourceWorkspaceId: workspaceDocument.session.id,
+    fromWorkspaceRevision: 1,
+    throughWorkspaceRevision: 1,
+    headWorkspaceRevision: 1,
+  },
 }
 
 const contentJourneyId = "fixture-11-content-journey"
@@ -1150,6 +1157,54 @@ const deletedProjection: TargetResolvedJourneyProjection = {
     },
   ],
 }
+const deletedRootPlannerProjection: TargetResolvedJourneyProjection = {
+  journeyId: deletedSectionGraph.id,
+  revision: 2,
+  scopeSectionEventId: null,
+  mode: "PLANNER",
+  events: [
+    {
+      eventId: "day",
+      resolvedPosition: 0,
+      title: "第一天",
+      startAt: NOW,
+      endAt: LATER,
+      valueSource: "PLANNED",
+    },
+  ],
+}
+const deletedRootExecutionProjection: TargetResolvedJourneyProjection = {
+  journeyId: deletedSectionGraph.id,
+  revision: 2,
+  scopeSectionEventId: null,
+  mode: "EXECUTION",
+  events: [
+    {
+      eventId: "day",
+      resolvedPosition: 0,
+      title: "第一天",
+      startAt: SOON,
+      endAt: LATER,
+      valueSource: "ACTUAL",
+    },
+  ],
+}
+const deletedRootTravelogueProjection: TargetResolvedJourneyProjection = {
+  journeyId: deletedSectionGraph.id,
+  revision: 2,
+  scopeSectionEventId: null,
+  mode: "TRAVELOGUE",
+  events: [
+    {
+      eventId: "day",
+      resolvedPosition: 0,
+      title: "第一天",
+      startAt: SOON,
+      endAt: LATER,
+      valueSource: "ACTUAL",
+    },
+  ],
+}
 
 export interface TargetScenarioState {
   graph?: TargetJourneyGraphSnapshot
@@ -1358,8 +1413,6 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
             successor: {
               type: "VISIT",
               id: "replacement-c",
-              origin: "USER_INSERTED",
-              executionStatus: "PLANNED",
               title: "C",
               detail: {
                 plannedLat: 30.25,
@@ -1638,7 +1691,12 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
               deletedJourneyRevision,
             ],
           },
-          projections: [deletedProjection],
+          projections: [
+            deletedProjection,
+            deletedRootPlannerProjection,
+            deletedRootExecutionProjection,
+            deletedRootTravelogueProjection,
+          ],
           evidence: {
             sectionEventId: "day",
             derivedStartAt: SOON,

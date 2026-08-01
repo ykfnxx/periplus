@@ -32,7 +32,7 @@ const targetPositionSchema = z.discriminatedUnion("placement", [
   }),
 ])
 
-const commandBodySchema = z.discriminatedUnion("name", [
+export const targetCommandBodySchema = z.discriminatedUnion("name", [
   z.object({
     name: z.literal("journey.add_event"),
     payload: z.object({
@@ -103,6 +103,7 @@ const commandBodySchema = z.discriminatedUnion("name", [
     payload: z.object({
       eventId: idSchema,
       actual: targetConfirmActualSchema,
+      finalize: z.boolean().optional(),
     }),
   }),
   z.object({
@@ -176,19 +177,83 @@ export const targetCommandEnvelopeSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
   idempotencyKey: idSchema,
   actor: targetActorReferenceSchema,
-  command: commandBodySchema,
+  command: targetCommandBodySchema,
 })
 
-export const targetCommandResultSchema = z.object({
-  aggregateId: idSchema,
-  commandName: z.enum(TARGET_COMMAND_NAMES),
-  newRevision: z.number().int().positive(),
-  changedEventIds: z.array(idSchema),
-  patch: z.unknown(),
-  inversePatch: z.unknown(),
-  projectionInvalidationScopes: z.array(idSchema.nullable()),
-  replayedFromIdempotencyKey: z.boolean(),
-})
+export const targetLifecycleCommandOutcomeSchema = z.discriminatedUnion(
+  "type",
+  [
+    z.object({
+      type: z.literal("workspace.refreshed"),
+      sourceJourneyId: idSchema,
+      baseJourneyRevision: z.number().int().positive(),
+      fromWorkspaceRevision: z.number().int().nonnegative(),
+      throughWorkspaceRevision: z.number().int().nonnegative(),
+      headWorkspaceRevision: z.number().int().positive(),
+    }),
+    z.object({
+      type: z.literal("workspace.replayed"),
+      sourceWorkspaceId: idSchema,
+      fromWorkspaceRevision: z.number().int().nonnegative(),
+      throughWorkspaceRevision: z.number().int().nonnegative(),
+      headWorkspaceRevision: z.number().int().positive(),
+    }),
+    z.object({
+      type: z.literal("workspace.forked"),
+      workspaceId: idSchema,
+      sourceWorkspaceId: idSchema,
+      sourceWorkspaceRevision: z.number().int().nonnegative(),
+      headWorkspaceRevision: z.number().int().nonnegative(),
+    }),
+    z.object({
+      type: z.literal("workspace.committed"),
+      journeyId: idSchema,
+      fromWorkspaceRevision: z.number().int().nonnegative(),
+      throughWorkspaceRevision: z.number().int().nonnegative(),
+      committedJourneyRevision: z.number().int().positive(),
+    }),
+  ]
+)
+
+export const targetCommandResultSchema = z
+  .object({
+    aggregateId: idSchema,
+    commandName: z.enum(TARGET_COMMAND_NAMES),
+    newRevision: z.number().int().positive(),
+    changedEventIds: z.array(idSchema),
+    patch: z.unknown(),
+    inversePatch: z.unknown(),
+    projectionInvalidationScopes: z.array(idSchema.nullable()),
+    replayedFromIdempotencyKey: z.boolean(),
+    outcome: targetLifecycleCommandOutcomeSchema.optional(),
+  })
+  .superRefine((result, context) => {
+    const expectedOutcome = (
+      {
+        "workspace.refresh": "workspace.refreshed",
+        "workspace.replay": "workspace.replayed",
+        "workspace.fork": "workspace.forked",
+        "workspace.commit": "workspace.committed",
+      } as Partial<Record<(typeof TARGET_COMMAND_NAMES)[number], string>>
+    )[result.commandName]
+    if (expectedOutcome && result.outcome?.type !== expectedOutcome) {
+      context.addIssue({
+        code: "custom",
+        path: ["outcome"],
+        message: `${result.commandName} requires a ${expectedOutcome} outcome`,
+      })
+    }
+    if (!expectedOutcome && result.outcome) {
+      context.addIssue({
+        code: "custom",
+        path: ["outcome"],
+        message: "Journey commands cannot return a Workspace lifecycle outcome",
+      })
+    }
+  })
 
 export type TargetCommandEnvelope = z.infer<typeof targetCommandEnvelopeSchema>
 export type TargetCommandResult = z.infer<typeof targetCommandResultSchema>
+export type TargetLifecycleCommandOutcome = z.infer<
+  typeof targetLifecycleCommandOutcomeSchema
+>

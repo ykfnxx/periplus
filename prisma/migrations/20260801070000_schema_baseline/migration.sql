@@ -144,6 +144,7 @@ CREATE TABLE "JourneyEvent" (
     CONSTRAINT "JourneyEvent_section_time_check" CHECK (
       "type" <> 'SECTION' OR ("plannedStartAt" IS NULL AND "plannedEndAt" IS NULL AND "actualStartAt" IS NULL AND "actualEndAt" IS NULL)
     ),
+    CONSTRAINT "JourneyEvent_started_fact_check" CHECK ("executionStatus" <> 'STARTED' OR "actualStartAt" IS NOT NULL),
     CONSTRAINT "JourneyEvent_placement_check" CHECK ("placementStatus" IN ('SCHEDULED', 'UNSCHEDULED')),
     CONSTRAINT "JourneyEvent_origin_check" CHECK ("origin" IN ('ORIGINAL', 'USER_INSERTED', 'AGENT_INSERTED', 'FORKED', 'SOURCE_DERIVED')),
     CONSTRAINT "JourneyEvent_revision_check" CHECK ("introducedRevision" > 0 AND ("retiredRevision" IS NULL OR "retiredRevision" >= "introducedRevision")),
@@ -578,6 +579,9 @@ CREATE TABLE "WorkspaceAgentRun" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "workspaceId" TEXT NOT NULL,
     "status" TEXT NOT NULL,
+    "runtimeOwnerId" TEXT,
+    "heartbeatAt" DATETIME,
+    "leaseExpiresAt" DATETIME,
     "startedAt" DATETIME NOT NULL,
     "completedAt" DATETIME,
     "errorCode" TEXT,
@@ -585,8 +589,12 @@ CREATE TABLE "WorkspaceAgentRun" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "WorkspaceAgentRun_status_check" CHECK ("status" IN ('RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')),
-    CONSTRAINT "WorkspaceAgentRun_completion_check" CHECK (("status" = 'RUNNING' AND "completedAt" IS NULL) OR ("status" <> 'RUNNING' AND "completedAt" IS NOT NULL)),
+    CONSTRAINT "WorkspaceAgentRun_completion_check" CHECK (
+      ("status" = 'RUNNING' AND "completedAt" IS NULL AND "runtimeOwnerId" IS NOT NULL AND "heartbeatAt" IS NOT NULL AND "leaseExpiresAt" IS NOT NULL) OR
+      ("status" <> 'RUNNING' AND "completedAt" IS NOT NULL AND "leaseExpiresAt" IS NULL)
+    ),
     CONSTRAINT "WorkspaceAgentRun_failure_check" CHECK ("status" <> 'FAILED' OR "errorCode" IS NOT NULL OR "errorMessage" IS NOT NULL),
+    CONSTRAINT "WorkspaceAgentRun_lease_check" CHECK ("heartbeatAt" IS NULL OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" > "heartbeatAt"),
     CONSTRAINT "WorkspaceAgentRun_time_check" CHECK ("completedAt" IS NULL OR "completedAt" >= "startedAt"),
     CONSTRAINT "WorkspaceAgentRun_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "WorkspaceSession" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -1231,6 +1239,13 @@ CREATE UNIQUE INDEX "EventSourceLink_current_rank_key"
 ON "EventSourceLink"("eventId", "role", "rank")
 WHERE "retiredRevision" IS NULL;
 
+CREATE UNIQUE INDEX "WorkspaceAgentRun_one_running_key"
+ON "WorkspaceAgentRun"("workspaceId")
+WHERE "status" = 'RUNNING';
+
+CREATE INDEX "WorkspaceAgentRun_status_leaseExpiresAt_idx"
+ON "WorkspaceAgentRun"("status", "leaseExpiresAt");
+
 -- Parent containment and active scope-local topology.
 CREATE TRIGGER "JourneyEvent_parent_insert_guard"
 BEFORE INSERT ON "JourneyEvent"
@@ -1332,6 +1347,12 @@ WHEN OLD."retiredRevision" IS NULL AND NEW."retiredRevision" IS NOT NULL AND EXI
   SELECT 1 FROM "JourneyBranchSelection" current
   WHERE current."journeyId" = OLD."journeyId"
     AND current."selectedLinkId" = OLD."id"
+    AND EXISTS (
+      SELECT 1 FROM "JourneyEvent" fork
+      WHERE fork."journeyId" = current."journeyId"
+        AND fork."id" = current."forkEventId"
+        AND fork."retiredRevision" IS NULL
+    )
     AND NOT EXISTS (
       SELECT 1 FROM "JourneyBranchSelection" newer
       WHERE newer."supersedesId" = current."id"

@@ -8,6 +8,7 @@ import {
   TARGET_MODEL_RELATIONS,
   WORKSPACE_ACTIVE_LEASE_DAYS,
   WORKSPACE_WEBSOCKET_TICKET_SECONDS,
+  targetCommandBodySchema,
   targetCommandEnvelopeSchema,
   targetCommandResultSchema,
   targetContentBundleSchema,
@@ -485,6 +486,204 @@ describe("breaking data-model target contracts", () => {
     ).toBe(false)
   })
 
+  it("matches canonical graph invariants enforced by database checks", () => {
+    const ready = cloneGraph(
+      scenario("03-transit-plan-choice", "select-low-cost").input.graph!
+    )
+    const emptyWithSelection = cloneGraph(ready)
+    const emptyTransit = emptyWithSelection.events.find(
+      (event) => event.type === "TRANSIT"
+    )!
+    if (emptyTransit.type !== "TRANSIT") throw new Error("fixture invariant")
+    emptyTransit.detail.routeState = "EMPTY"
+
+    const readyWithoutSelection = cloneGraph(ready)
+    const unselectedTransit = readyWithoutSelection.events.find(
+      (event) => event.type === "TRANSIT"
+    )!
+    if (unselectedTransit.type !== "TRANSIT") {
+      throw new Error("fixture invariant")
+    }
+    delete unselectedTransit.detail.activePlanningRunId
+    delete unselectedTransit.detail.selectedPlanId
+
+    const reversedTime = cloneGraph(ready)
+    const reversedEvent = reversedTime.events.find(
+      (event) => event.type === "VISIT"
+    )!
+    if (reversedEvent.type !== "VISIT") throw new Error("fixture invariant")
+    reversedEvent.plannedStartAt = "2026-08-02T00:00:00.000Z"
+    reversedEvent.plannedEndAt = "2026-08-01T00:00:00.000Z"
+
+    const partialActualCoordinate = cloneGraph(ready)
+    const partialCoordinateEvent = partialActualCoordinate.events.find(
+      (event) => event.type === "VISIT"
+    )!
+    if (partialCoordinateEvent.type !== "VISIT") {
+      throw new Error("fixture invariant")
+    }
+    partialCoordinateEvent.detail.actualLat = 30.2
+
+    for (const invalid of [
+      emptyWithSelection,
+      readyWithoutSelection,
+      reversedTime,
+      partialActualCoordinate,
+    ]) {
+      expect(targetJourneyGraphSnapshotSchema.safeParse(invalid).success).toBe(
+        false
+      )
+    }
+
+    for (const type of ["VISIT", "STAY", "MEAL", "ACTIVITY"] as const) {
+      expect(
+        targetCommandBodySchema.safeParse({
+          name: "journey.update_event",
+          payload: {
+            eventId: "event",
+            patch: { type, detail: { actualLat: 30.2 } },
+          },
+        }).success
+      ).toBe(false)
+      expect(
+        targetCommandBodySchema.safeParse({
+          name: "journey.confirm_actual",
+          payload: {
+            eventId: "event",
+            actual: { type, detail: { actualLat: 30.2 } },
+          },
+        }).success
+      ).toBe(false)
+    }
+    expect(
+      targetCommandBodySchema.safeParse({
+        name: "journey.update_event",
+        payload: {
+          eventId: "transit",
+          patch: { type: "TRANSIT", detail: { routeState: "READY" } },
+        },
+      }).success
+    ).toBe(false)
+    expect(
+      targetCommandBodySchema.safeParse({
+        name: "journey.add_event",
+        payload: {
+          event: {
+            type: "NOTE",
+            title: "note",
+            detail: { body: "   " },
+          },
+          position: { placement: "UNSCHEDULED" },
+        },
+      }).success
+    ).toBe(false)
+
+    const readyRun = structuredClone(ready.transitPlanningRuns[0]!)
+    const invalidRunValidity = structuredClone(readyRun)
+    invalidRunValidity.validUntil = "2025-08-01T00:00:00.000Z"
+    const invalidPlanValidity = structuredClone(readyRun)
+    invalidPlanValidity.plans[0]!.validUntil = "2025-08-01T00:00:00.000Z"
+    const invalidSegmentTime = structuredClone(readyRun)
+    invalidSegmentTime.plans[0]!.segments[0]!.departAt =
+      "2026-08-02T00:00:00.000Z"
+    invalidSegmentTime.plans[0]!.segments[0]!.arriveAt =
+      "2026-08-01T00:00:00.000Z"
+    const failedWithoutError = structuredClone(readyRun)
+    failedWithoutError.status = "FAILED"
+    failedWithoutError.plans = []
+    for (const invalid of [
+      invalidRunValidity,
+      invalidPlanValidity,
+      invalidSegmentTime,
+      failedWithoutError,
+    ]) {
+      expect(targetTransitPlanningRunSchema.safeParse(invalid).success).toBe(
+        false
+      )
+    }
+
+    const content = structuredClone(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).input.content!
+    )
+    content.eventSourceLinks[0]!.approvedForJourneySharing = true
+    content.eventSourceLinks[0]!.excerpt = "   "
+    expect(targetContentBundleSchema.safeParse(content).success).toBe(false)
+  })
+
+  it("keeps provenance and execution facts under dedicated command authority", () => {
+    const baseEvent = {
+      type: "VISIT" as const,
+      title: "visit",
+      detail: {
+        plannedLat: 30.2,
+        plannedLng: 120.1,
+        coordinateSystem: "GCJ02" as const,
+      },
+    }
+    for (const origin of [
+      "ORIGINAL",
+      "USER_INSERTED",
+      "AGENT_INSERTED",
+      "FORKED",
+      "SOURCE_DERIVED",
+    ] as const) {
+      expect(
+        targetCommandBodySchema.safeParse({
+          name: "journey.add_event",
+          payload: {
+            event: { ...baseEvent, origin },
+            position: { placement: "UNSCHEDULED" },
+          },
+        }).success
+      ).toBe(false)
+    }
+    for (const forbidden of [
+      { executionStatus: "CONFIRMED" },
+      { actualStartAt: "2026-08-01T00:00:00.000Z" },
+    ]) {
+      expect(
+        targetCommandBodySchema.safeParse({
+          name: "journey.add_event",
+          payload: {
+            event: { ...baseEvent, ...forbidden },
+            position: { placement: "UNSCHEDULED" },
+          },
+        }).success
+      ).toBe(false)
+    }
+    for (const patch of [
+      { type: "VISIT", executionStatus: "SKIPPED" },
+      {
+        type: "VISIT",
+        actualStartAt: "2026-08-01T00:00:00.000Z",
+      },
+      { type: "VISIT", detail: { actualLat: 30.2, actualLng: 120.1 } },
+    ]) {
+      expect(
+        targetCommandBodySchema.safeParse({
+          name: "journey.update_event",
+          payload: { eventId: "event", patch },
+        }).success
+      ).toBe(false)
+    }
+    for (const name of [
+      "journey.confirm_actual",
+      "journey.skip_event",
+      "journey.cancel_event",
+    ] as const) {
+      const payload =
+        name === "journey.confirm_actual"
+          ? { eventId: "event", actual: { type: "VISIT", detail: {} } }
+          : { eventId: "event" }
+      expect(targetCommandBodySchema.safeParse({ name, payload }).success).toBe(
+        true
+      )
+    }
+  })
+
   it("preserves old branch selection snapshots after current correction", () => {
     const state = scenario(
       "05-current-branch-correction",
@@ -565,10 +764,24 @@ describe("breaking data-model target contracts", () => {
       "idempotent-replay",
       "restart-recovery",
     ])
+    const replayResult = scenario("10-workspace-lifecycle", "idempotent-replay")
+      .expected.commandResult!
+    expect(replayResult).toMatchObject({
+      replayedFromIdempotencyKey: true,
+      outcome: { type: "workspace.replayed" },
+    })
     expect(
-      scenario("10-workspace-lifecycle", "idempotent-replay").expected
-        .commandResult
-    ).toMatchObject({ replayedFromIdempotencyKey: true })
+      targetCommandResultSchema.safeParse({
+        ...replayResult,
+        outcome: undefined,
+      }).success
+    ).toBe(false)
+    expect(
+      targetCommandResultSchema.safeParse({
+        ...replayResult,
+        commandName: "journey.update_event",
+      }).success
+    ).toBe(false)
     const restart = scenario("10-workspace-lifecycle", "restart-recovery")
     expect(JSON.stringify(restart.input)).toBe(
       JSON.stringify(restart.expected.state)
@@ -602,6 +815,109 @@ describe("breaking data-model target contracts", () => {
       confidence: 0.98,
       rank: 1024,
     })
+  })
+
+  it("mirrors database natural and partial unique constraints in graph contracts", () => {
+    const transit = cloneGraph(
+      scenario("03-transit-plan-choice", "select-low-cost").input.graph!
+    )
+    const run = transit.transitPlanningRuns[0]!
+    const duplicateRankPlan = structuredClone(run.plans[0]!)
+    duplicateRankPlan.id = "duplicate-plan-rank"
+    for (const segment of duplicateRankPlan.segments) {
+      segment.id = `${segment.id}-duplicate-rank`
+    }
+    run.plans.push(duplicateRankPlan)
+    expect(targetTransitPlanningRunSchema.safeParse(run).success).toBe(false)
+    expect(targetJourneyGraphSnapshotSchema.safeParse(transit).success).toBe(
+      false
+    )
+
+    const topology = cloneGraph(
+      scenario("05-current-branch-correction", "correct-current-selection")
+        .input.graph!
+    )
+    topology.links.push({
+      ...structuredClone(topology.links[0]!),
+      id: "duplicate-link-natural-key",
+    })
+    expect(targetJourneyGraphSnapshotSchema.safeParse(topology).success).toBe(
+      false
+    )
+
+    const content = cloneGraph(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).expected.state!.graph!
+    )
+    const duplicateAssetRank = cloneGraph(content)
+    duplicateAssetRank.eventAssetLinks.push({
+      ...structuredClone(duplicateAssetRank.eventAssetLinks[0]!),
+      id: "duplicate-active-asset-rank",
+      assetId: "another-asset",
+      assetChecksum: "another-asset-checksum",
+    })
+    expect(
+      targetJourneyGraphSnapshotSchema.safeParse(duplicateAssetRank).success
+    ).toBe(false)
+
+    const duplicateSourceRank = cloneGraph(content)
+    duplicateSourceRank.eventSourceLinks.push({
+      ...structuredClone(duplicateSourceRank.eventSourceLinks[0]!),
+      id: "duplicate-active-source-rank",
+      sourceItemId: "another-source-item",
+    })
+    expect(
+      targetJourneyGraphSnapshotSchema.safeParse(duplicateSourceRank).success
+    ).toBe(false)
+  })
+
+  it("requires Observation supersession to be a single same-domain chain", () => {
+    const source = structuredClone(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).expected.state!.graph!
+    )
+
+    const branched = structuredClone(source)
+    branched.observations.push({
+      ...structuredClone(branched.observations[1]!),
+      id: "observation-branch",
+      supersedesId: "observation-1",
+      createdAt: "2026-08-01T02:00:00.000Z",
+    })
+
+    const cycle = structuredClone(source)
+    cycle.observations[0]!.supersedesId = "observation-2"
+
+    const crossEvent = structuredClone(source)
+    crossEvent.events.push({
+      ...structuredClone(crossEvent.events[0]!),
+      id: "content-event-other",
+      placementStatus: "UNSCHEDULED",
+      parentSectionEventId: null,
+    })
+    crossEvent.observations[1]!.eventId = "content-event-other"
+
+    const crossKind = structuredClone(source)
+    ;(crossKind.observations[1] as { kind: string }).kind = "FACT"
+
+    const crossPhase = structuredClone(source)
+    crossPhase.observations[1]!.phase = "PLANNED"
+
+    for (const invalid of [
+      branched,
+      cycle,
+      crossEvent,
+      crossKind,
+      crossPhase,
+    ]) {
+      expect(targetJourneyGraphSnapshotSchema.safeParse(invalid).success).toBe(
+        false
+      )
+    }
   })
 
   it("does not let an EventAssetLink broaden Asset visibility", () => {

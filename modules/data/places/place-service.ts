@@ -2,6 +2,8 @@ import { decideProviderMatch } from "@/lib/places/matching"
 import { normalizePlaceSearchInput } from "@/lib/places/normalize"
 import { planPlaceProviderSearch } from "@/lib/places/policy"
 import { rankPlaceCandidates } from "@/lib/places/ranker"
+import { targetCommandBodySchema } from "@/modules/data-model/contracts"
+import { prisma } from "@/modules/data/db/prisma"
 import type {
   PlaceEnrichInput,
   PlaceEnrichResult,
@@ -14,6 +16,22 @@ import type {
 } from "@/lib/places/types"
 import { PlaceCatalogRepository } from "./place-catalog-repository"
 import { AMapPlaceProvider } from "./providers/amap-place-provider"
+
+export interface PlaceProviderUsageContext {
+  userId?: string
+  workspaceId?: string
+  agentRunId?: string
+  requestId?: string
+}
+
+type LocationEventType = "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
+type PlaceProviderPurpose = "place_search" | "place_enrich"
+type PlaceProviderUsageLogger = (
+  purpose: PlaceProviderPurpose,
+  status: "success" | "error",
+  code: string | undefined,
+  context: PlaceProviderUsageContext
+) => Promise<void>
 
 export class PlaceIntelligenceService {
   constructor(
@@ -28,10 +46,14 @@ export class PlaceIntelligenceService {
     private readonly amapProvider: Pick<
       AMapPlaceProvider,
       "search"
-    > = new AMapPlaceProvider()
+    > = new AMapPlaceProvider(),
+    private readonly logUsage: PlaceProviderUsageLogger = logPlaceProviderUsage
   ) {}
 
-  async searchPlaces(input: PlaceSearchInput): Promise<PlaceSearchResponse> {
+  async searchPlaces(
+    input: PlaceSearchInput,
+    usageContext?: PlaceProviderUsageContext
+  ): Promise<PlaceSearchResponse> {
     const query = normalizePlaceSearchInput(input)
     const warnings: PlaceSearchResponse["warnings"] = []
     const local = await this.repository.search(query).catch((error) => {
@@ -47,7 +69,7 @@ export class PlaceIntelligenceService {
     })
     const plan = planPlaceProviderSearch(query, local)
     const live = plan.useAmap
-      ? await this.amapProvider.search(query)
+      ? await this.callProvider("place_search", query, usageContext)
       : { candidates: [], warnings: [] }
 
     const results = rankPlaceCandidates(query, [
@@ -76,14 +98,20 @@ export class PlaceIntelligenceService {
     }
   }
 
-  async resolvePlace(input: PlaceResolveInput): Promise<PlaceResolveResult> {
-    const response = await this.searchPlaces({
-      query: input.text,
-      city: input.city ?? input.journeyContext?.currentCity,
-      limit: 5,
-      includeLiveProvider: true,
-      coordinatePreference: "auto",
-    })
+  async resolvePlace(
+    input: PlaceResolveInput,
+    usageContext?: PlaceProviderUsageContext
+  ): Promise<PlaceResolveResult> {
+    const response = await this.searchPlaces(
+      {
+        query: input.text,
+        city: input.city ?? input.journeyContext?.currentCity,
+        limit: 5,
+        includeLiveProvider: true,
+        coordinatePreference: "auto",
+      },
+      usageContext
+    )
 
     const [first, second] = response.results
     if (!first) {
@@ -117,41 +145,55 @@ export class PlaceIntelligenceService {
   }
 
   async resolvePlaceForJourneyEvent(
-    input: PlaceResolveForJourneyEventInput
+    input: PlaceResolveForJourneyEventInput,
+    eventType: LocationEventType,
+    usageContext?: PlaceProviderUsageContext
   ): Promise<PlaceResolveForJourneyEventResult> {
-    const resolved = await this.resolvePlace(input)
+    const resolved = await this.resolvePlace(input, usageContext)
     if (resolved.status !== "resolved") return resolved
 
-    const externalSource =
-      resolved.place.sources.find(
-        (source) =>
-          source.provider === resolved.place.bestCoordinate.provider &&
-          source.providerId
-      ) ??
-      resolved.place.sources.find(
-        (source) => source.provider !== "periplus" && source.providerId
-      )
-    return {
-      status: "ready",
-      place: resolved.place,
-      linkToolCall: {
-        tool: "journey.link_place",
-        input: {
-          eventId: input.eventId,
-          place: {
-            placeId: resolved.place.placeId,
-            name: resolved.place.name,
-            address: resolved.place.address,
-            providerPlaceId: externalSource?.providerId,
-            coordinate: resolved.place.bestCoordinate,
+    const externalSource = resolved.place.sources.find(
+      (source) =>
+        source.provider === resolved.place.bestCoordinate.provider &&
+        source.providerId
+    )
+    const command: Extract<
+      PlaceResolveForJourneyEventResult,
+      { status: "ready" }
+    >["command"] = {
+      name: "journey.update_event",
+      payload: {
+        eventId: input.eventId,
+        patch: {
+          type: eventType,
+          detail: {
+            ...(resolved.place.placeId
+              ? { plannedPlaceId: resolved.place.placeId }
+              : {}),
+            plannedLat: resolved.place.bestCoordinate.lat,
+            plannedLng: resolved.place.bestCoordinate.lng,
+            coordinateSystem: resolved.place.bestCoordinate.coordinateSystem,
+            coordinateProvider: resolved.place.bestCoordinate.provider,
+            ...(externalSource?.providerId
+              ? { providerPlaceId: externalSource.providerId }
+              : {}),
           },
         },
       },
+    }
+    targetCommandBodySchema.parse(command)
+    return {
+      status: "ready",
+      place: resolved.place,
+      command,
       warnings: resolved.warnings,
     }
   }
 
-  async enrichPlace(input: PlaceEnrichInput): Promise<PlaceEnrichResult> {
+  async enrichPlace(
+    input: PlaceEnrichInput,
+    usageContext?: PlaceProviderUsageContext
+  ): Promise<PlaceEnrichResult> {
     if (!input.placeId) {
       return {
         results: [],
@@ -190,7 +232,7 @@ export class PlaceIntelligenceService {
       limit: 5,
       coordinatePreference: "auto",
     })
-    const live = await this.amapProvider.search(query)
+    const live = await this.callProvider("place_enrich", query, usageContext)
     const results = rankPlaceCandidates(query, live.candidates)
     const decision = decideProviderMatch(results)
     if (decision.status === "NO_MATCH") {
@@ -228,8 +270,60 @@ export class PlaceIntelligenceService {
       reason: decision.reason,
     }
   }
+
+  private async callProvider(
+    purpose: PlaceProviderPurpose,
+    query: ReturnType<typeof normalizePlaceSearchInput>,
+    usageContext?: PlaceProviderUsageContext
+  ) {
+    try {
+      const result = await this.amapProvider.search(query)
+      if (usageContext) {
+        const providerFailure = result.warnings.find(
+          (warning) => warning.code !== "low_confidence"
+        )
+        await this.logUsage(
+          purpose,
+          providerFailure ? "error" : "success",
+          providerFailure?.code,
+          usageContext
+        )
+      }
+      return result
+    } catch (error) {
+      if (usageContext) {
+        await this.logUsage(
+          purpose,
+          "error",
+          error instanceof Error ? error.name : "provider_error",
+          usageContext
+        )
+      }
+      throw error
+    }
+  }
 }
 
 export function createPlaceIntelligenceService() {
   return new PlaceIntelligenceService()
+}
+
+async function logPlaceProviderUsage(
+  purpose: PlaceProviderPurpose,
+  status: "success" | "error",
+  code: string | undefined,
+  context: PlaceProviderUsageContext
+) {
+  await prisma.providerUsageLog.create({
+    data: {
+      provider: "amap",
+      purpose,
+      status,
+      code,
+      userId: context.userId,
+      workspaceId: context.workspaceId,
+      agentRunId: context.agentRunId,
+      requestId: context.requestId,
+    },
+  })
 }

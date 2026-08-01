@@ -1,7 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ZodError, type z, type ZodObject, type ZodRawShape } from "zod"
-import { createPlaceIntelligenceService } from "@/modules/data/places/place-service"
 import { mcpErrorResult, mcpJsonResult } from "../errors"
 import {
   eventSearchInputSchema,
@@ -10,11 +9,10 @@ import {
   placeResolveForJourneyEventInputSchema,
   placeSearchInputSchema,
 } from "../schemas/place"
+import { callWorkspaceBackend } from "../workspace-client"
 
 type ToolInput = Record<string, unknown>
 type McpResult = ReturnType<typeof mcpJsonResult>
-
-const service = createPlaceIntelligenceService()
 
 function asCallToolResult(result: McpResult): CallToolResult {
   return result as CallToolResult
@@ -50,6 +48,19 @@ function placeHandler<TSchema extends ZodObject<ZodRawShape>>(
   }
 }
 
+function workspacePlaceHandler<TSchema extends ZodObject<ZodRawShape>>(
+  schema: TSchema,
+  handler: (input: z.infer<TSchema>) => Promise<CallToolResult>
+) {
+  return async (input: ToolInput) => {
+    try {
+      return await handler(schema.parse(input))
+    } catch (error) {
+      return toolErrorResult(error)
+    }
+  }
+}
+
 function registerPlaceTool(
   server: McpServer,
   name: string,
@@ -74,18 +85,26 @@ export function registerPlaceTools(server: McpServer): void {
     server,
     "periplus.place.search",
     "Search places",
-    "Search the Periplus place catalog with optional live map-provider fallback.",
+    "Search the Periplus place catalog through the current Workspace Agent capability, with optional attributed live-provider fallback.",
     placeSearchInputSchema,
-    placeHandler(placeSearchInputSchema, (input) => service.searchPlaces(input))
+    workspacePlaceHandler(placeSearchInputSchema, ({ requestId, ...input }) =>
+      callWorkspaceBackend({ type: "place.search", requestId, input })
+    )
   )
   registerPlaceTool(
     server,
     "periplus.place.resolve_for_journey_event",
     "Resolve place for journey event",
-    "Resolve a place and return a ready-to-call journey.link_place payload.",
+    "Resolve a place for a Workspace event and return a canonical journey.update_event command.",
     placeResolveForJourneyEventInputSchema,
-    placeHandler(placeResolveForJourneyEventInputSchema, (input) =>
-      service.resolvePlaceForJourneyEvent(input)
+    workspacePlaceHandler(
+      placeResolveForJourneyEventInputSchema,
+      ({ requestId, ...input }) =>
+        callWorkspaceBackend({
+          type: "place.resolve_for_journey_event",
+          requestId,
+          input,
+        })
     )
   )
   registerPlaceTool(
@@ -94,8 +113,8 @@ export function registerPlaceTools(server: McpServer): void {
     "Resolve place",
     "Resolve a user place phrase into one high-confidence place or an ambiguity set.",
     placeResolveInputSchema,
-    placeHandler(placeResolveInputSchema, (input) =>
-      service.resolvePlace(input)
+    workspacePlaceHandler(placeResolveInputSchema, ({ requestId, ...input }) =>
+      callWorkspaceBackend({ type: "place.resolve", requestId, input })
     )
   )
   registerPlaceTool(
@@ -104,7 +123,9 @@ export function registerPlaceTools(server: McpServer): void {
     "Enrich place",
     "Return currently known enrichment details for a catalog place.",
     placeEnrichInputSchema,
-    placeHandler(placeEnrichInputSchema, (input) => service.enrichPlace(input))
+    workspacePlaceHandler(placeEnrichInputSchema, ({ requestId, ...input }) =>
+      callWorkspaceBackend({ type: "place.enrich", requestId, input })
+    )
   )
   registerPlaceTool(
     server,

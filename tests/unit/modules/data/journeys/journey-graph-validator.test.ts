@@ -18,7 +18,7 @@ function fixtureGraph(fixtureId: string, caseId: string) {
 }
 
 describe("P2A Journey graph validator", () => {
-  it("accepts every P0 graph state before P3 branch-resolution checks", () => {
+  it("accepts every contract graph that is not an expected error input", () => {
     for (const fixture of TARGET_CONTRACT_FIXTURES) {
       for (const scenario of fixture.cases) {
         for (const candidate of [
@@ -26,6 +26,9 @@ describe("P2A Journey graph validator", () => {
           scenario.expected.state?.graph,
         ]) {
           if (!candidate) continue
+          if (candidate === scenario.input.graph && scenario.expected.error) {
+            continue
+          }
           expect(
             () => validateJourneyGraph(candidate),
             `${fixture.id}/${scenario.id}`

@@ -206,23 +206,33 @@ export const targetSourceItemSchema = z.object({
   updatedAt: dateTimeSchema,
 })
 
-export const targetEventSourceLinkSchema = z.object({
-  id: idSchema,
-  journeyId: idSchema,
-  eventId: idSchema,
-  sourceItemId: idSchema,
-  sourceDocumentId: idSchema,
-  sourceDocumentChecksum: z.string().trim().min(1),
-  role: z.enum(TARGET_EVENT_SOURCE_ROLES),
-  excerpt: z.string().max(500).optional(),
-  page: z.string().optional(),
-  confidence: z.number().min(0).max(1),
-  rank: z.number().int().nonnegative(),
-  approvedForJourneySharing: z.boolean(),
-  introducedRevision: z.number().int().positive(),
-  createdAt: dateTimeSchema,
-  retiredRevision: z.number().int().positive().optional(),
-})
+export const targetEventSourceLinkSchema = z
+  .object({
+    id: idSchema,
+    journeyId: idSchema,
+    eventId: idSchema,
+    sourceItemId: idSchema,
+    sourceDocumentId: idSchema,
+    sourceDocumentChecksum: z.string().trim().min(1),
+    role: z.enum(TARGET_EVENT_SOURCE_ROLES),
+    excerpt: z.string().trim().max(500).optional(),
+    page: z.string().optional(),
+    confidence: z.number().min(0).max(1),
+    rank: z.number().int().nonnegative(),
+    approvedForJourneySharing: z.boolean(),
+    introducedRevision: z.number().int().positive(),
+    createdAt: dateTimeSchema,
+    retiredRevision: z.number().int().positive().optional(),
+  })
+  .superRefine((link, context) => {
+    if (link.approvedForJourneySharing && !link.excerpt?.trim()) {
+      context.addIssue({
+        code: "custom",
+        path: ["excerpt"],
+        message: "approved source links require a nonblank excerpt",
+      })
+    }
+  })
 
 export const targetContentBundleSchema = z
   .object({

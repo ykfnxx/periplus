@@ -15,6 +15,7 @@ import { targetJourneyGraphSnapshotSchema } from "./journey"
 
 export const WORKSPACE_ACTIVE_LEASE_DAYS = 30
 export const WORKSPACE_WEBSOCKET_TICKET_SECONDS = 300
+export const WORKSPACE_AGENT_RUN_LEASE_SECONDS = 60
 
 export const targetWorkspaceSessionSchema = z
   .object({
@@ -122,17 +123,44 @@ export const targetWorkspaceSuggestionSchema = z.object({
   updatedAt: dateTimeSchema,
 })
 
-export const targetWorkspaceAgentRunSchema = z.object({
-  id: idSchema,
-  workspaceId: idSchema,
-  status: z.enum(TARGET_AGENT_RUN_STATUSES),
-  startedAt: dateTimeSchema,
-  completedAt: dateTimeSchema.optional(),
-  errorCode: z.string().optional(),
-  errorMessage: z.string().optional(),
-  createdAt: dateTimeSchema,
-  updatedAt: dateTimeSchema,
-})
+export const targetWorkspaceAgentRunSchema = z
+  .object({
+    id: idSchema,
+    workspaceId: idSchema,
+    status: z.enum(TARGET_AGENT_RUN_STATUSES),
+    runtimeOwnerId: idSchema.optional(),
+    heartbeatAt: dateTimeSchema.optional(),
+    leaseExpiresAt: dateTimeSchema.optional(),
+    startedAt: dateTimeSchema,
+    completedAt: dateTimeSchema.optional(),
+    errorCode: z.string().optional(),
+    errorMessage: z.string().optional(),
+    createdAt: dateTimeSchema,
+    updatedAt: dateTimeSchema,
+  })
+  .superRefine((run, context) => {
+    if (
+      run.status === "RUNNING" &&
+      (!run.runtimeOwnerId || !run.heartbeatAt || !run.leaseExpiresAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["leaseExpiresAt"],
+        message: "RUNNING Agent run requires runtime ownership and a lease",
+      })
+    }
+    if (
+      run.heartbeatAt &&
+      run.leaseExpiresAt &&
+      run.heartbeatAt >= run.leaseExpiresAt
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["leaseExpiresAt"],
+        message: "Agent run lease must expire after its heartbeat",
+      })
+    }
+  })
 
 export const targetWorkspaceDocumentSchema = z.object({
   session: targetWorkspaceSessionSchema,

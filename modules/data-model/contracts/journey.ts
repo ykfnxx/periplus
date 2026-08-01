@@ -164,7 +164,7 @@ const targetTransitEventSchema = targetEventIdentitySchema.extend({
 
 const targetNoteEventSchema = targetEventIdentitySchema.extend({
   type: z.literal("NOTE"),
-  detail: z.object({ body: z.string() }),
+  detail: z.object({ body: z.string().trim().min(1) }),
 })
 
 export const targetJourneyEventSchema = z.discriminatedUnion("type", [
@@ -179,69 +179,93 @@ export const targetJourneyEventSchema = z.discriminatedUnion("type", [
 
 const targetEventCreateBase = {
   id: idSchema.optional(),
-  origin: z.enum(TARGET_EVENT_ORIGINS).default("USER_INSERTED"),
   title: z.string().trim().min(1),
   description: z.string().optional(),
 }
 
 const targetExecutableEventCreateFields = {
-  executionStatus: z.enum(TARGET_EVENT_EXECUTION_STATUSES).default("PLANNED"),
   plannedStartAt: dateTimeSchema.optional(),
   plannedEndAt: dateTimeSchema.optional(),
-  actualStartAt: dateTimeSchema.optional(),
-  actualEndAt: dateTimeSchema.optional(),
 }
 
+const targetPlannedLocationDetailSchema = targetLocationDetailSchema.omit({
+  actualPlaceId: true,
+  actualLat: true,
+  actualLng: true,
+  actualDurationMinutes: true,
+})
+
 export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
-  z.object({
-    ...targetEventCreateBase,
-    type: z.literal("SECTION"),
-    detail: targetSectionDetailSchema,
-  }),
-  z.object({
-    ...targetEventCreateBase,
-    ...targetExecutableEventCreateFields,
-    type: z.literal("VISIT"),
-    detail: targetLocationDetailSchema,
-  }),
-  z.object({
-    ...targetEventCreateBase,
-    ...targetExecutableEventCreateFields,
-    type: z.literal("TRANSIT"),
-    detail: targetTransitEventDetailSchema.omit({
-      activePlanningRunId: true,
-      selectedPlanId: true,
-    }),
-  }),
-  z.object({
-    ...targetEventCreateBase,
-    ...targetExecutableEventCreateFields,
-    type: z.literal("STAY"),
-    detail: targetLocationDetailSchema.extend({
-      checkInNote: z.string().optional(),
-    }),
-  }),
-  z.object({
-    ...targetEventCreateBase,
-    ...targetExecutableEventCreateFields,
-    type: z.literal("MEAL"),
-    detail: targetLocationDetailSchema.extend({
-      cuisine: z.string().optional(),
-    }),
-  }),
-  z.object({
-    ...targetEventCreateBase,
-    ...targetExecutableEventCreateFields,
-    type: z.literal("ACTIVITY"),
-    detail: targetLocationDetailSchema.extend({
-      bookingReference: z.string().optional(),
-    }),
-  }),
-  z.object({
-    ...targetEventCreateBase,
-    type: z.literal("NOTE"),
-    detail: z.object({ body: z.string() }),
-  }),
+  z
+    .object({
+      ...targetEventCreateBase,
+      type: z.literal("SECTION"),
+      detail: targetSectionDetailSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetEventCreateBase,
+      ...targetExecutableEventCreateFields,
+      type: z.literal("VISIT"),
+      detail: targetPlannedLocationDetailSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetEventCreateBase,
+      ...targetExecutableEventCreateFields,
+      type: z.literal("TRANSIT"),
+      detail: targetTransitEventDetailSchema.omit({
+        actualFromEventId: true,
+        actualToEventId: true,
+        actualDepartAt: true,
+        actualDurationMinutes: true,
+        actualDistanceKm: true,
+        actualCost: true,
+        activePlanningRunId: true,
+        selectedPlanId: true,
+        routeState: true,
+      }),
+    })
+    .strict(),
+  z
+    .object({
+      ...targetEventCreateBase,
+      ...targetExecutableEventCreateFields,
+      type: z.literal("STAY"),
+      detail: targetPlannedLocationDetailSchema.extend({
+        checkInNote: z.string().optional(),
+      }),
+    })
+    .strict(),
+  z
+    .object({
+      ...targetEventCreateBase,
+      ...targetExecutableEventCreateFields,
+      type: z.literal("MEAL"),
+      detail: targetPlannedLocationDetailSchema.extend({
+        cuisine: z.string().optional(),
+      }),
+    })
+    .strict(),
+  z
+    .object({
+      ...targetEventCreateBase,
+      ...targetExecutableEventCreateFields,
+      type: z.literal("ACTIVITY"),
+      detail: targetPlannedLocationDetailSchema.extend({
+        bookingReference: z.string().optional(),
+      }),
+    })
+    .strict(),
+  z
+    .object({
+      ...targetEventCreateBase,
+      type: z.literal("NOTE"),
+      detail: z.object({ body: z.string().trim().min(1) }),
+    })
+    .strict(),
 ])
 
 const targetEventUpdateBase = {
@@ -250,12 +274,41 @@ const targetEventUpdateBase = {
 }
 
 const targetExecutableEventUpdateFields = {
-  executionStatus: z.enum(TARGET_EVENT_EXECUTION_STATUSES).optional(),
   plannedStartAt: dateTimeSchema.nullable().optional(),
   plannedEndAt: dateTimeSchema.nullable().optional(),
-  actualStartAt: dateTimeSchema.nullable().optional(),
-  actualEndAt: dateTimeSchema.nullable().optional(),
 }
+
+function requireActualCoordinatePair(
+  detail: { actualLat?: number | null; actualLng?: number | null },
+  context: z.RefinementCtx
+) {
+  if ((detail.actualLat == null) !== (detail.actualLng == null)) {
+    context.addIssue({
+      code: "custom",
+      path: ["actualLng"],
+      message: "actual coordinates must be provided together",
+    })
+  }
+}
+
+const targetLocationDetailUpdateSchema = targetPlannedLocationDetailSchema
+  .partial()
+  .strict()
+
+const targetStayDetailUpdateSchema = targetPlannedLocationDetailSchema
+  .extend({ checkInNote: z.string().optional() })
+  .partial()
+  .strict()
+
+const targetMealDetailUpdateSchema = targetPlannedLocationDetailSchema
+  .extend({ cuisine: z.string().optional() })
+  .partial()
+  .strict()
+
+const targetActivityDetailUpdateSchema = targetPlannedLocationDetailSchema
+  .extend({ bookingReference: z.string().optional() })
+  .partial()
+  .strict()
 
 export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
   "type",
@@ -272,7 +325,7 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         type: z.literal("VISIT"),
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
-        detail: targetLocationDetailSchema.partial().strict().optional(),
+        detail: targetLocationDetailUpdateSchema.optional(),
       })
       .strict(),
     z
@@ -281,7 +334,17 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
         detail: targetTransitEventDetailSchema
-          .omit({ activePlanningRunId: true, selectedPlanId: true })
+          .omit({
+            actualFromEventId: true,
+            actualToEventId: true,
+            actualDepartAt: true,
+            actualDurationMinutes: true,
+            actualDistanceKm: true,
+            actualCost: true,
+            activePlanningRunId: true,
+            selectedPlanId: true,
+            routeState: true,
+          })
           .partial()
           .strict()
           .optional(),
@@ -292,11 +355,7 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         type: z.literal("STAY"),
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
-        detail: targetLocationDetailSchema
-          .extend({ checkInNote: z.string().optional() })
-          .partial()
-          .strict()
-          .optional(),
+        detail: targetStayDetailUpdateSchema.optional(),
       })
       .strict(),
     z
@@ -304,11 +363,7 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         type: z.literal("MEAL"),
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
-        detail: targetLocationDetailSchema
-          .extend({ cuisine: z.string().optional() })
-          .partial()
-          .strict()
-          .optional(),
+        detail: targetMealDetailUpdateSchema.optional(),
       })
       .strict(),
     z
@@ -316,18 +371,18 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         type: z.literal("ACTIVITY"),
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
-        detail: targetLocationDetailSchema
-          .extend({ bookingReference: z.string().optional() })
-          .partial()
-          .strict()
-          .optional(),
+        detail: targetActivityDetailUpdateSchema.optional(),
       })
       .strict(),
     z
       .object({
         type: z.literal("NOTE"),
         ...targetEventUpdateBase,
-        detail: z.object({ body: z.string() }).partial().strict().optional(),
+        detail: z
+          .object({ body: z.string().trim().min(1) })
+          .partial()
+          .strict()
+          .optional(),
       })
       .strict(),
   ]
@@ -345,33 +400,38 @@ const targetActualLocationFields = {
   actualDurationMinutes: z.number().int().nonnegative().optional(),
 }
 
+const targetActualLocationDetailSchema = z
+  .object(targetActualLocationFields)
+  .strict()
+  .superRefine(requireActualCoordinatePair)
+
 export const targetConfirmActualSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("VISIT"),
       ...targetActualTimeFields,
-      detail: z.object(targetActualLocationFields).strict(),
+      detail: targetActualLocationDetailSchema,
     })
     .strict(),
   z
     .object({
       type: z.literal("STAY"),
       ...targetActualTimeFields,
-      detail: z.object(targetActualLocationFields).strict(),
+      detail: targetActualLocationDetailSchema,
     })
     .strict(),
   z
     .object({
       type: z.literal("MEAL"),
       ...targetActualTimeFields,
-      detail: z.object(targetActualLocationFields).strict(),
+      detail: targetActualLocationDetailSchema,
     })
     .strict(),
   z
     .object({
       type: z.literal("ACTIVITY"),
       ...targetActualTimeFields,
-      detail: z.object(targetActualLocationFields).strict(),
+      detail: targetActualLocationDetailSchema,
     })
     .strict(),
   z
@@ -441,40 +501,64 @@ const targetTransitTrafficSectionSchema = z.object({
   positions: z.array(z.tuple([z.number(), z.number()])),
 })
 
-export const targetTransitSegmentSchema = z.object({
-  id: idSchema,
-  order: z.number().int().nonnegative(),
-  mode: z.enum(TARGET_TRANSIT_SEGMENT_MODES),
-  fromName: z.string().optional(),
-  toName: z.string().optional(),
-  lineName: z.string().optional(),
-  distanceMeters: z.number().nonnegative().optional(),
-  durationSeconds: z.number().int().nonnegative().optional(),
-  fareAmount: z.number().nonnegative().optional(),
-  departAt: dateTimeSchema.optional(),
-  arriveAt: dateTimeSchema.optional(),
-  coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS),
-  geometryKind: z.enum(TARGET_GEOMETRY_KINDS),
-  positions: z.array(z.tuple([z.number(), z.number()])),
-  trafficSections: z.array(targetTransitTrafficSectionSchema).optional(),
-})
+export const targetTransitSegmentSchema = z
+  .object({
+    id: idSchema,
+    order: z.number().int().nonnegative(),
+    mode: z.enum(TARGET_TRANSIT_SEGMENT_MODES),
+    fromName: z.string().optional(),
+    toName: z.string().optional(),
+    lineName: z.string().optional(),
+    distanceMeters: z.number().nonnegative().optional(),
+    durationSeconds: z.number().int().nonnegative().optional(),
+    fareAmount: z.number().nonnegative().optional(),
+    departAt: dateTimeSchema.optional(),
+    arriveAt: dateTimeSchema.optional(),
+    coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS),
+    geometryKind: z.enum(TARGET_GEOMETRY_KINDS),
+    positions: z.array(z.tuple([z.number(), z.number()])),
+    trafficSections: z.array(targetTransitTrafficSectionSchema).optional(),
+  })
+  .superRefine((segment, context) => {
+    if (
+      segment.departAt &&
+      segment.arriveAt &&
+      segment.arriveAt < segment.departAt
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["arriveAt"],
+        message: "segment arrival cannot precede departure",
+      })
+    }
+  })
 
-export const targetTransitPlanSchema = z.object({
-  id: idSchema,
-  planningRunId: idSchema,
-  transitEventId: idSchema,
-  provider: z.string().trim().min(1),
-  rank: z.number().int().nonnegative(),
-  label: z.string().trim().min(1),
-  strategy: z.string().trim().min(1),
-  distanceMeters: z.number().nonnegative(),
-  durationSeconds: z.number().int().nonnegative(),
-  fareAmount: z.number().nonnegative().optional(),
-  trafficBasis: z.enum(TARGET_TRAFFIC_BASES),
-  calculatedAt: dateTimeSchema,
-  validUntil: dateTimeSchema.optional(),
-  segments: z.array(targetTransitSegmentSchema),
-})
+export const targetTransitPlanSchema = z
+  .object({
+    id: idSchema,
+    planningRunId: idSchema,
+    transitEventId: idSchema,
+    provider: z.string().trim().min(1),
+    rank: z.number().int().nonnegative(),
+    label: z.string().trim().min(1),
+    strategy: z.string().trim().min(1),
+    distanceMeters: z.number().nonnegative(),
+    durationSeconds: z.number().int().nonnegative(),
+    fareAmount: z.number().nonnegative().optional(),
+    trafficBasis: z.enum(TARGET_TRAFFIC_BASES),
+    calculatedAt: dateTimeSchema,
+    validUntil: dateTimeSchema.optional(),
+    segments: z.array(targetTransitSegmentSchema),
+  })
+  .superRefine((plan, context) => {
+    if (plan.validUntil && plan.validUntil < plan.calculatedAt) {
+      context.addIssue({
+        code: "custom",
+        path: ["validUntil"],
+        message: "plan validity cannot precede calculation",
+      })
+    }
+  })
 
 export const targetTransitPlanningRunSchema = z
   .object({
@@ -498,6 +582,13 @@ export const targetTransitPlanningRunSchema = z
         message: "plan ids must be unique within a planning run",
       })
     }
+    if (new Set(run.plans.map((plan) => plan.rank)).size !== run.plans.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["plans"],
+        message: "plan rank must be unique within a planning run",
+      })
+    }
     const segments = run.plans.flatMap((plan) => plan.segments)
     if (
       new Set(segments.map((segment) => segment.id)).size !== segments.length
@@ -513,6 +604,20 @@ export const targetTransitPlanningRunSchema = z
         code: "custom",
         path: ["plans"],
         message: "FAILED planning run cannot contain plans",
+      })
+    }
+    if (run.status === "FAILED" && !run.errorCode && !run.errorMessage) {
+      context.addIssue({
+        code: "custom",
+        path: ["errorCode"],
+        message: "FAILED planning run requires an error",
+      })
+    }
+    if (run.validUntil && run.validUntil < run.calculatedAt) {
+      context.addIssue({
+        code: "custom",
+        path: ["validUntil"],
+        message: "run validity cannot precede calculation",
       })
     }
     if (run.status === "READY" && run.plans.length === 0) {
@@ -608,6 +713,16 @@ export const targetJourneyGraphSnapshotSchema = z
         addIssue([path], `${path} ${id} has invalid revision bounds`)
       }
     }
+    const assertUniqueKeys = <T>(
+      path: string,
+      values: readonly T[],
+      key: (value: T) => string,
+      message: string
+    ) => {
+      if (new Set(values.map(key)).size !== values.length) {
+        addIssue([path], message)
+      }
+    }
 
     assertUniqueIds("events", graph.events)
     assertUniqueIds("links", graph.links)
@@ -627,6 +742,62 @@ export const targetJourneyGraphSnapshotSchema = z
     assertUniqueIds("eventAssetLinks", graph.eventAssetLinks)
     assertUniqueIds("observations", graph.observations)
     assertUniqueIds("eventSourceLinks", graph.eventSourceLinks)
+    assertUniqueKeys(
+      "links",
+      graph.links,
+      (link) =>
+        JSON.stringify([
+          link.fromEventId,
+          link.toEventId,
+          link.kind,
+          link.introducedRevision,
+        ]),
+      "link endpoint, kind, and introduced revision tuple must be unique"
+    )
+    assertUniqueKeys(
+      "branchSelections",
+      graph.branchSelections.filter(
+        (selection) => selection.supersedesId !== undefined
+      ),
+      (selection) => selection.supersedesId!,
+      "a BranchSelection may be superseded by at most one successor"
+    )
+    assertUniqueKeys(
+      "eventAssetLinks",
+      graph.eventAssetLinks,
+      (link) =>
+        JSON.stringify([
+          link.eventId,
+          link.assetId,
+          link.role,
+          link.introducedRevision,
+        ]),
+      "asset link event, asset, role, and introduced revision tuple must be unique"
+    )
+    assertUniqueKeys(
+      "eventAssetLinks",
+      graph.eventAssetLinks.filter((link) => !link.retiredRevision),
+      (link) => JSON.stringify([link.eventId, link.role, link.rank]),
+      "active asset link rank must be unique within an Event role"
+    )
+    assertUniqueKeys(
+      "eventSourceLinks",
+      graph.eventSourceLinks,
+      (link) =>
+        JSON.stringify([
+          link.eventId,
+          link.sourceItemId,
+          link.role,
+          link.introducedRevision,
+        ]),
+      "source link event, item, role, and introduced revision tuple must be unique"
+    )
+    assertUniqueKeys(
+      "eventSourceLinks",
+      graph.eventSourceLinks.filter((link) => !link.retiredRevision),
+      (link) => JSON.stringify([link.eventId, link.role, link.rank]),
+      "active source link rank must be unique within an Event role"
+    )
 
     const events = new Map(graph.events.map((event) => [event.id, event]))
     const activeLinks = graph.links.filter((link) => !link.retiredRevision)
@@ -641,6 +812,47 @@ export const targetJourneyGraphSnapshotSchema = z
       )
       if (event.journeyId !== graph.id) {
         addIssue(["events"], `event ${event.id} must belong to graph journey`)
+      }
+      if (event.type !== "SECTION" && event.type !== "NOTE") {
+        if (event.executionStatus === "STARTED" && !event.actualStartAt) {
+          addIssue(
+            ["events"],
+            `event ${event.id} STARTED status requires an actual start fact`
+          )
+        }
+        if (
+          event.plannedStartAt &&
+          event.plannedEndAt &&
+          event.plannedEndAt < event.plannedStartAt
+        ) {
+          addIssue(
+            ["events"],
+            `event ${event.id} planned end cannot precede start`
+          )
+        }
+        if (
+          event.actualStartAt &&
+          event.actualEndAt &&
+          event.actualEndAt < event.actualStartAt
+        ) {
+          addIssue(
+            ["events"],
+            `event ${event.id} actual end cannot precede start`
+          )
+        }
+      }
+      if (
+        (event.type === "VISIT" ||
+          event.type === "STAY" ||
+          event.type === "MEAL" ||
+          event.type === "ACTIVITY") &&
+        (event.detail.actualLat === undefined) !==
+          (event.detail.actualLng === undefined)
+      ) {
+        addIssue(
+          ["events"],
+          `event ${event.id} actual coordinates must be provided together`
+        )
       }
       if (event.parentSectionEventId) {
         const parent = events.get(event.parentSectionEventId)
@@ -846,6 +1058,8 @@ export const targetJourneyGraphSnapshotSchema = z
     )
     const selectedForks = new Set<string>()
     for (const selection of currentSelections) {
+      const fork = events.get(selection.forkEventId)
+      if (fork?.retiredRevision) continue
       if (selectedForks.has(selection.forkEventId)) {
         addIssue(
           ["branchSelections"],
@@ -875,6 +1089,15 @@ export const targetJourneyGraphSnapshotSchema = z
       ]) {
         if (!endpointId) continue
         const endpoint = events.get(endpointId)
+        if (event.retiredRevision) {
+          if (!endpoint) {
+            addIssue(
+              ["events"],
+              `retired transit event ${event.id} references missing endpoint ${endpointId}`
+            )
+          }
+          continue
+        }
         if (
           !endpoint ||
           endpoint.retiredRevision ||
@@ -886,6 +1109,19 @@ export const targetJourneyGraphSnapshotSchema = z
             `transit event ${event.id} has an invalid endpoint ${endpointId}`
           )
         }
+      }
+      const hasActiveRun = event.detail.activePlanningRunId !== undefined
+      const hasSelectedPlan = event.detail.selectedPlanId !== undefined
+      if (
+        (event.detail.routeState === "EMPTY" &&
+          (hasActiveRun || hasSelectedPlan)) ||
+        (event.detail.routeState !== "EMPTY" &&
+          (!hasActiveRun || !hasSelectedPlan))
+      ) {
+        addIssue(
+          ["events"],
+          `transit event ${event.id} route state must match its active run and selected plan`
+        )
       }
       if (event.detail.selectedPlanId && !event.detail.activePlanningRunId) {
         addIssue(
@@ -931,6 +1167,18 @@ export const targetJourneyGraphSnapshotSchema = z
     const observationById = new Map(
       graph.observations.map((observation) => [observation.id, observation])
     )
+    const observationSupersedesIds = graph.observations.flatMap(
+      (observation) =>
+        observation.supersedesId ? [observation.supersedesId] : []
+    )
+    if (
+      new Set(observationSupersedesIds).size !== observationSupersedesIds.length
+    ) {
+      addIssue(
+        ["observations"],
+        "an Observation may be superseded by at most one successor"
+      )
+    }
     for (const observation of graph.observations) {
       if (!events.has(observation.eventId)) {
         addIssue(
@@ -953,6 +1201,21 @@ export const targetJourneyGraphSnapshotSchema = z
         )
       }
     }
+    for (const observation of graph.observations) {
+      const seen = new Set<string>()
+      let cursor: typeof observation | undefined = observation
+      while (cursor?.supersedesId) {
+        if (seen.has(cursor.id)) {
+          addIssue(
+            ["observations"],
+            `observation supersession contains a cycle at ${cursor.id}`
+          )
+          break
+        }
+        seen.add(cursor.id)
+        cursor = observationById.get(cursor.supersedesId)
+      }
+    }
     for (const link of graph.eventAssetLinks) {
       assertRevisionBounds(
         "eventAssetLinks",
@@ -966,10 +1229,16 @@ export const targetJourneyGraphSnapshotSchema = z
           `asset link ${link.id} must belong to graph journey`
         )
       }
-      if (!events.has(link.eventId)) {
+      const event = events.get(link.eventId)
+      if (!event) {
         addIssue(
           ["eventAssetLinks"],
           `asset link ${link.id} requires a known event`
+        )
+      } else if (!link.retiredRevision && event.retiredRevision) {
+        addIssue(
+          ["eventAssetLinks"],
+          `active asset link ${link.id} cannot reference retired event ${event.id}`
         )
       }
     }
@@ -986,10 +1255,16 @@ export const targetJourneyGraphSnapshotSchema = z
           `source link ${link.id} must belong to graph journey`
         )
       }
-      if (!events.has(link.eventId)) {
+      const event = events.get(link.eventId)
+      if (!event) {
         addIssue(
           ["eventSourceLinks"],
           `source link ${link.id} requires a known event`
+        )
+      } else if (!link.retiredRevision && event.retiredRevision) {
+        addIssue(
+          ["eventSourceLinks"],
+          `active source link ${link.id} cannot reference retired event ${event.id}`
         )
       }
     }
@@ -1073,6 +1348,7 @@ export type TargetJourneyGraphSnapshot = z.infer<
   typeof targetJourneyGraphSnapshotSchema
 >
 export type TargetJourneyRevision = z.infer<typeof targetJourneyRevisionSchema>
+export type TargetResolvedEvent = z.infer<typeof targetResolvedEventSchema>
 export type TargetResolvedJourneyProjection = z.infer<
   typeof targetResolvedJourneyProjectionSchema
 >

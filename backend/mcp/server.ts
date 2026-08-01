@@ -10,7 +10,7 @@ const [{ registerDraftTools }, { registerPlaceTools }] = await Promise.all([
 ])
 
 const server = new McpServer({
-  name: "periplus-draft",
+  name: "periplus-workspace",
   version: "0.0.1",
 })
 

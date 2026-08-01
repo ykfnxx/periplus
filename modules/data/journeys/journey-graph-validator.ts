@@ -36,6 +36,200 @@ function assertAppendOnly<T extends { id: string }>(
   }
 }
 
+export type StructuredBranchIssue = {
+  code: "INVALID_BRANCH_KEY" | "NON_CONVERGENT_BRANCH" | "CROSSING_BRANCH"
+  message: string
+}
+
+function structuredBranchIssueForScope(
+  events: readonly TargetJourneyGraphSnapshot["events"][number][],
+  links: readonly TargetJourneyGraphSnapshot["links"][number][]
+): StructuredBranchIssue | null {
+  const incoming = new Map(events.map((event) => [event.id, 0]))
+  const outgoing = new Map(
+    events.map((event) => [event.id, [] as (typeof links)[number][]])
+  )
+  for (const link of links) {
+    incoming.set(link.toEventId, (incoming.get(link.toEventId) ?? 0) + 1)
+    outgoing.get(link.fromEventId)?.push(link)
+  }
+  for (const values of outgoing.values()) {
+    values.sort(
+      (left, right) => left.rank - right.rank || left.id.localeCompare(right.id)
+    )
+  }
+
+  const branchGroups = new Map<string, (typeof links)[number][]>()
+  for (const link of links) {
+    if (link.kind !== "ALTERNATIVE" || !link.branchKey) continue
+    const group = branchGroups.get(link.branchKey) ?? []
+    group.push(link)
+    branchGroups.set(link.branchKey, group)
+  }
+  for (const [branchKey, group] of branchGroups) {
+    const groupIncoming = new Map<string, number>()
+    const groupOutgoing = new Map<string, (typeof links)[number][]>()
+    for (const link of group) {
+      groupIncoming.set(
+        link.toEventId,
+        (groupIncoming.get(link.toEventId) ?? 0) + 1
+      )
+      const values = groupOutgoing.get(link.fromEventId) ?? []
+      values.push(link)
+      groupOutgoing.set(link.fromEventId, values)
+    }
+    const starts = group
+      .map((link) => link.fromEventId)
+      .filter((eventId) => !groupIncoming.has(eventId))
+    const ends = group
+      .map((link) => link.toEventId)
+      .filter((eventId) => !groupOutgoing.has(eventId))
+    if (
+      [...groupIncoming.values()].some((count) => count > 1) ||
+      [...groupOutgoing.values()].some((values) => values.length > 1) ||
+      new Set(starts).size !== 1 ||
+      new Set(ends).size !== 1 ||
+      (outgoing.get(starts[0]!)?.length ?? 0) < 2 ||
+      (incoming.get(ends[0]!) ?? 0) < 2
+    ) {
+      return {
+        code: "INVALID_BRANCH_KEY",
+        message: `alternative branch ${branchKey} must form one continuous path between one fork and one join`,
+      }
+    }
+    const visited = new Set<string>()
+    let cursor: string | undefined = starts[0]
+    while (cursor) {
+      const next: (typeof links)[number] | undefined =
+        groupOutgoing.get(cursor)?.[0]
+      if (!next || visited.has(next.id)) break
+      visited.add(next.id)
+      cursor = next.toEventId
+    }
+    if (visited.size !== group.length || cursor !== ends[0]) {
+      return {
+        code: "INVALID_BRANCH_KEY",
+        message: `alternative branch ${branchKey} must keep one continuous key from fork to join`,
+      }
+    }
+  }
+
+  const indegree = new Map(incoming)
+  const ready = events
+    .filter((event) => indegree.get(event.id) === 0)
+    .map((event) => event.id)
+    .sort()
+  const ordered: string[] = []
+  while (ready.length) {
+    const eventId = ready.shift()!
+    ordered.push(eventId)
+    for (const link of outgoing.get(eventId) ?? []) {
+      const next = (indegree.get(link.toEventId) ?? 0) - 1
+      indegree.set(link.toEventId, next)
+      if (next === 0) {
+        ready.push(link.toEventId)
+        ready.sort()
+      }
+    }
+  }
+  if (ordered.length !== events.length) return null
+  const position = new Map(ordered.map((eventId, index) => [eventId, index]))
+  const reachableFrom = (startEventId: string) => {
+    const reached = new Set<string>()
+    const stack = [startEventId]
+    while (stack.length) {
+      const eventId = stack.pop()!
+      if (reached.has(eventId)) continue
+      reached.add(eventId)
+      for (const link of outgoing.get(eventId) ?? []) stack.push(link.toEventId)
+    }
+    return reached
+  }
+  const intervals: Array<{
+    forkEventId: string
+    joinEventId: string
+    start: number
+    end: number
+  }> = []
+  for (const event of events) {
+    const branches = outgoing.get(event.id) ?? []
+    if (branches.length < 2) continue
+    const reachable = branches.map((link) => reachableFrom(link.toEventId))
+    const common = [...reachable[0]!]
+      .filter((eventId) => reachable.every((values) => values.has(eventId)))
+      .sort(
+        (left, right) =>
+          (position.get(left) ?? Number.MAX_SAFE_INTEGER) -
+            (position.get(right) ?? Number.MAX_SAFE_INTEGER) ||
+          left.localeCompare(right)
+      )
+    const joinEventId = common[0]
+    if (!joinEventId) {
+      return {
+        code: "NON_CONVERGENT_BRANCH",
+        message: `fork ${event.id} has no common downstream join`,
+      }
+    }
+    intervals.push({
+      forkEventId: event.id,
+      joinEventId,
+      start: position.get(event.id)!,
+      end: position.get(joinEventId)!,
+    })
+  }
+  for (let leftIndex = 0; leftIndex < intervals.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < intervals.length;
+      rightIndex += 1
+    ) {
+      const left = intervals[leftIndex]!
+      const right = intervals[rightIndex]!
+      if (
+        (left.start < right.start &&
+          right.start < left.end &&
+          left.end < right.end) ||
+        (right.start < left.start &&
+          left.start < right.end &&
+          right.end < left.end)
+      ) {
+        return {
+          code: "CROSSING_BRANCH",
+          message: `branch intervals ${left.forkEventId}→${left.joinEventId} and ${right.forkEventId}→${right.joinEventId} cross`,
+        }
+      }
+    }
+  }
+  return null
+}
+
+export function findStructuredBranchIssue(
+  graph: TargetJourneyGraphSnapshot
+): StructuredBranchIssue | null {
+  const activeEvents = graph.events.filter(
+    (event) => !event.retiredRevision && event.placementStatus === "SCHEDULED"
+  )
+  const activeLinks = graph.links.filter((link) => !link.retiredRevision)
+  const scopes = new Set(
+    activeEvents.map((event) => event.parentSectionEventId)
+  )
+  for (const scope of scopes) {
+    const scopedEvents = activeEvents.filter(
+      (event) => event.parentSectionEventId === scope
+    )
+    const scopedIds = new Set(scopedEvents.map((event) => event.id))
+    const issue = structuredBranchIssueForScope(
+      scopedEvents,
+      activeLinks.filter(
+        (link) =>
+          scopedIds.has(link.fromEventId) && scopedIds.has(link.toEventId)
+      )
+    )
+    if (issue) return issue
+  }
+  return null
+}
+
 function assertActiveTopology(graph: TargetJourneyGraphSnapshot) {
   const activeEvents = graph.events.filter(
     (event) => !event.retiredRevision && event.placementStatus === "SCHEDULED"
@@ -116,6 +310,8 @@ function assertActiveTopology(graph: TargetJourneyGraphSnapshot) {
       )
     }
   }
+  const branchIssue = findStructuredBranchIssue(graph)
+  if (branchIssue) fail(branchIssue.message)
 }
 
 export function validateJourneyGraph(

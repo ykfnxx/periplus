@@ -499,6 +499,15 @@ describe("P1 SQLite schema baseline", () => {
       VALUES ('selection-2', 'j1', 'a', 'branch-b', 2, 'selection-1', 'USER', 'owner', '2026-08-02T00:01:00.000Z');
       UPDATE "JourneyEventLink" SET "retiredRevision" = 2 WHERE "id" = 'branch-a';
     `)
+    sqlite(`
+      INSERT INTO "JourneyRevision" ("id", "journeyId", "revision", "operation", "snapshotJson", "patchJson", "inversePatchJson", "actorKind", "idempotencyKey", "parentRevisionId", "createdAt")
+      VALUES ('j1-r3', 'j1', 3, 'retire fork', '${graph("j1", "owner", 3)}', '[]', '[]', 'SYSTEM', 'j1-r3-key', 'j1-r2', '2026-08-02T00:02:00.000Z');
+      INSERT INTO "JourneyEvent" ("id", "journeyId", "parentSectionEventId", "type", "executionStatus", "placementStatus", "origin", "title", "introducedRevision", "createdAt", "updatedAt")
+      VALUES ('selection-parking', 'j1', 'section', 'VISIT', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Selection parking', 3, '${NOW}', '${NOW}');
+      UPDATE "JourneyEventLink" SET "fromEventId" = 'selection-parking' WHERE "id" = 'branch-b';
+      UPDATE "JourneyEvent" SET "retiredRevision" = 3 WHERE "id" = 'a';
+      UPDATE "JourneyEventLink" SET "retiredRevision" = 3 WHERE "id" = 'branch-b';
+    `)
     expectSqlFailure(
       `UPDATE "JourneyBranchSelection" SET "reason" = 'rewrite' WHERE "id" = 'selection-1';`,
       /append-only/
@@ -607,8 +616,8 @@ describe("P1 SQLite schema baseline", () => {
       INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
       VALUES ('workspace-r1', 'workspace-1', 1, 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'workspace-r1-key', '${NOW}');
       UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 1 WHERE "id" = 'workspace-1';
-      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "startedAt", "createdAt", "updatedAt")
-      VALUES ('agent-run-1', 'workspace-1', 'RUNNING', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "runtimeOwnerId", "heartbeatAt", "leaseExpiresAt", "startedAt", "createdAt", "updatedAt")
+      VALUES ('agent-run-1', 'workspace-1', 'RUNNING', 'runtime-1', '${NOW}', '2026-08-02T00:01:00.000Z', '${NOW}', '${NOW}', '${NOW}');
     `)
     expectSqlFailure(
       `INSERT INTO "EventObservation" ("id", "eventId", "kind", "phase", "body", "observedAt", "actorKind", "actorUserId", "supersedesId", "visibility", "createdAt")
@@ -675,8 +684,8 @@ describe("P1 SQLite schema baseline", () => {
       INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
       VALUES ('gc-workspace-r1', 'gc-workspace', 1, 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'gc-workspace-r1-key', '${NOW}');
       UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 1 WHERE "id" = 'gc-workspace';
-      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "startedAt", "createdAt", "updatedAt")
-      VALUES ('gc-agent-run', 'gc-workspace', 'RUNNING', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "runtimeOwnerId", "heartbeatAt", "leaseExpiresAt", "startedAt", "createdAt", "updatedAt")
+      VALUES ('gc-agent-run', 'gc-workspace', 'RUNNING', 'runtime-gc', '${NOW}', '2026-08-02T00:01:00.000Z', '${NOW}', '${NOW}', '${NOW}');
       INSERT INTO "WorkspaceMessage" ("id", "workspaceId", "role", "content", "agentRunId", "createdAt", "updatedAt")
       VALUES ('gc-message', 'gc-workspace', 'ASSISTANT', 'GC', 'gc-agent-run', '${NOW}', '${NOW}');
       INSERT INTO "ProviderUsageLog" ("id", "provider", "purpose", "status", "workspaceId", "agentRunId", "createdAt")
