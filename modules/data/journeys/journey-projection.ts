@@ -306,17 +306,13 @@ export function resolveJourneyProjection({
   asOfRevision,
 }: ResolveJourneyProjectionInput): TargetResolvedJourneyProjection {
   const graph = validateJourneyGraph(input)
-  const revision = asOfRevision ?? graph.revision
-  if (
-    !Number.isInteger(revision) ||
-    revision < 1 ||
-    revision > graph.revision
-  ) {
+  if (asOfRevision !== undefined && asOfRevision !== graph.revision) {
     fail(
       "INVALID_REVISION",
-      `projection revision ${revision} must be within 1..${graph.revision}`
+      `projection requires the exact revision snapshot: requested ${asOfRevision}, received graph revision ${graph.revision}`
     )
   }
+  const revision = graph.revision
   if (scopeSectionEventId !== null) {
     const scope = graph.events.find((event) => event.id === scopeSectionEventId)
     if (!scope || scope.type !== "SECTION") {

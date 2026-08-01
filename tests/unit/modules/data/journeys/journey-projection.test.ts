@@ -91,11 +91,17 @@ describe("P3 Journey projection resolver", () => {
     )
   })
 
-  it("uses the current selection while retaining an as-of revision view", () => {
-    const current = scenario(
+  it("requires an exact revision snapshot for historical projection", () => {
+    const fixture = scenario(
       "05-current-branch-correction",
       "correct-current-selection"
-    ).expected.state!.graph!
+    )
+    const current = structuredClone(fixture.expected.state!.graph!)
+    const revision1 = structuredClone(
+      fixture.input.journeyRevisions![0]!.snapshot
+    )
+    const currentFork = current.events.find((event) => event.id === "fork")!
+    currentFork.title = "当前版本的新标题"
 
     expect(
       resolveJourneyProjection({
@@ -107,12 +113,29 @@ describe("P3 Journey projection resolver", () => {
 
     expect(
       resolveJourneyProjection({
+        graph: revision1,
+        scopeSectionEventId: null,
+        mode: "PLANNER",
+        asOfRevision: 1,
+      }).events.map((event) => [event.eventId, event.title])
+    ).toEqual([
+      ["fork", "西湖"],
+      ["branch-a", "灵隐寺"],
+      ["join", "酒店"],
+    ])
+
+    expect(() =>
+      resolveJourneyProjection({
         graph: current,
         scopeSectionEventId: null,
         mode: "PLANNER",
         asOfRevision: 1,
-      }).events.map((event) => event.eventId)
-    ).toEqual(["fork", "branch-a", "join"])
+      })
+    ).toThrowError(
+      expect.objectContaining<Partial<JourneyProjectionError>>({
+        code: "INVALID_REVISION",
+      })
+    )
   })
 
   it("reads the exact Travelogue projection from soft-deleted history", () => {
