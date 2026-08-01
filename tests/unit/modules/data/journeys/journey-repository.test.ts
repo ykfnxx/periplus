@@ -1,100 +1,600 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { randomUUID } from "node:crypto"
+import { beforeAll, describe, expect, it } from "vitest"
+import type {
+  TargetJourneyEvent,
+  TargetJourneyGraphSnapshot,
+} from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import {
+  commitJourneyGraph,
   createJourney,
+  deleteJourney,
+  getJourney,
+  getJourneyRevision,
+  JourneyIdempotencyConflictError,
+  JourneyInputError,
   JourneyRevisionConflictError,
-  updateJourney,
 } from "@/modules/data/journeys/journey-repository"
 
-const userId = "test-journey-repository-user"
-const journeyId = "test-journey-repository-journey"
-const eventId = "test-journey-repository-event"
-const context = { userId, role: "user" as const }
+const ownerId = `journey-core-owner-${randomUUID()}`
+const context = { userId: ownerId, role: "user" as const }
+const now = "2026-08-01T00:00:00.000Z"
+const later = "2026-08-01T01:00:00.000Z"
 
 beforeAll(async () => {
-  await prisma.journey.deleteMany({ where: { id: journeyId } })
-  await prisma.user.deleteMany({ where: { id: userId } })
   await prisma.user.create({
     data: {
-      id: userId,
-      name: "Repository Test",
-      email: `${userId}@periplus.local`,
+      id: ownerId,
+      name: "Journey Core Test",
+      email: `${ownerId}@periplus.local`,
       emailVerified: true,
     },
   })
 })
 
-afterAll(async () => {
-  await prisma.journey.deleteMany({ where: { id: journeyId } })
-  await prisma.user.deleteMany({ where: { id: userId } })
-})
+function visit(
+  id: string,
+  journeyId: string,
+  title: string,
+  introducedRevision = 1
+): Extract<TargetJourneyEvent, { type: "VISIT" }> {
+  return {
+    id,
+    journeyId,
+    parentSectionEventId: null,
+    placementStatus: "SCHEDULED" as const,
+    origin: "ORIGINAL" as const,
+    title,
+    introducedRevision,
+    createdAt: introducedRevision === 1 ? now : later,
+    updatedAt: introducedRevision === 1 ? now : later,
+    type: "VISIT" as const,
+    executionStatus: "PLANNED" as const,
+    detail: {
+      plannedLat: 30.25,
+      plannedLng: 120.15,
+      coordinateSystem: "GCJ02" as const,
+    },
+  }
+}
 
-describe("journey repository graph synchronization", () => {
-  it("updates stable events without deleting their attachments", async () => {
-    const created = await createJourney(context, {
-      id: journeyId,
-      title: "Repository Journey",
-      status: "DRAFT",
-      events: [
-        {
-          id: eventId,
-          type: "VISIT",
-          executionStatus: "PLANNED",
-          origin: "ORIGINAL",
-          title: "Original title",
-          detail: { plannedLat: 30, plannedLng: 120 },
-        },
-      ],
-      links: [],
-    })
-    await prisma.journeyEventAttachment.create({
-      data: {
-        id: "test-journey-repository-attachment",
-        eventId,
-        type: "photo",
-        url: "https://example.test/photo.jpg",
-      },
-    })
+function section(
+  id: string,
+  journeyId: string,
+  title: string
+): Extract<TargetJourneyEvent, { type: "SECTION" }> {
+  return {
+    id,
+    journeyId,
+    parentSectionEventId: null,
+    placementStatus: "SCHEDULED",
+    origin: "ORIGINAL",
+    title,
+    introducedRevision: 1,
+    createdAt: now,
+    updatedAt: now,
+    type: "SECTION",
+    detail: { kind: "CITY", coordinateSystem: "GCJ02" },
+  }
+}
 
-    const updated = await updateJourney(
+function graph(
+  id: string,
+  eventIds: readonly string[]
+): TargetJourneyGraphSnapshot {
+  const events = eventIds.map((eventId) =>
+    visit(`${id}-${eventId}`, id, eventId)
+  )
+  return {
+    id,
+    ownerId,
+    revision: 1,
+    status: "DRAFT",
+    visibility: "PRIVATE",
+    title: id,
+    events,
+    links: events.slice(1).map((event, index) => ({
+      id: `${id}-link-${index + 1}`,
+      journeyId: id,
+      fromEventId: events[index]!.id,
+      toEventId: event.id,
+      kind: "MAIN",
+      rank: (index + 1) * 1024,
+      introducedRevision: 1,
+    })),
+    replacements: [],
+    branchSelections: [],
+    transitPlanningRuns: [],
+    eventAssetLinks: [],
+    observations: [],
+    eventSourceLinks: [],
+  }
+}
+
+function write(
+  value: TargetJourneyGraphSnapshot,
+  operation: string,
+  idempotencyKey: string
+) {
+  return {
+    graph: value,
+    operation,
+    patch: [{ operation }],
+    inversePatch: [{ operation: `undo:${operation}` }],
+    idempotencyKey,
+  }
+}
+
+describe("P2A Journey core repository", () => {
+  it("persists one immutable revision per atomic graph write and replays idempotently", async () => {
+    const initial = graph(`journey-revision-${randomUUID()}`, ["visit"])
+    const created = await createJourney(
       context,
-      journeyId,
-      {
-        title: created.title,
-        description: created.description,
-        status: created.status,
-        events: created.events.map((event) => ({
-          ...event,
-          title: "Updated title",
-        })),
-        links: created.links,
-      },
-      created.revision
+      write(initial, "create journey", "create")
     )
+    expect(created).toEqual(initial)
 
-    expect(updated?.revision).toBe(2)
-    expect(updated?.events[0]?.id).toBe(eventId)
-    expect(updated?.events[0]?.title).toBe("Updated title")
+    const next = structuredClone(created)
+    next.revision = 2
+    next.title = "Updated journey"
+    next.events[0]!.title = "Updated visit"
+    next.events[0]!.updatedAt = later
+    const updateWrite = write(next, "update journey", "update-title")
+    const updated = await commitJourneyGraph(
+      context,
+      initial.id,
+      updateWrite,
+      1
+    )
+    expect(updated).toEqual(next)
+
+    const replay = await commitJourneyGraph(context, initial.id, updateWrite, 1)
+    expect(replay).toEqual(next)
     expect(
-      await prisma.journeyEventAttachment.count({ where: { eventId } })
-    ).toBe(1)
-    expect(
-      await prisma.journeyEventRevision.count({ where: { journeyId } })
+      await prisma.journeyRevision.count({
+        where: { journeyId: initial.id },
+      })
     ).toBe(2)
 
     await expect(
-      updateJourney(
+      commitJourneyGraph(
         context,
-        journeyId,
-        {
-          title: created.title,
-          description: created.description,
-          status: created.status,
-          events: created.events,
-          links: created.links,
-        },
-        created.revision
+        initial.id,
+        { ...updateWrite, operation: "different payload" },
+        2
+      )
+    ).rejects.toBeInstanceOf(JourneyIdempotencyConflictError)
+
+    const stale = structuredClone(next)
+    stale.revision = 3
+    await expect(
+      commitJourneyGraph(
+        context,
+        initial.id,
+        write(stale, "stale update", "stale-update"),
+        1
       )
     ).rejects.toBeInstanceOf(JourneyRevisionConflictError)
+
+    const revision1 = await getJourneyRevision(context, initial.id, 1)
+    const revision2 = await getJourneyRevision(context, initial.id, 2)
+    expect(revision1?.snapshot).toEqual(initial)
+    expect(revision2?.snapshot).toEqual(next)
+    expect(revision2?.parentRevisionId).toBe(revision1?.id)
+  })
+
+  it("allows only one concurrent writer to advance the same head revision", async () => {
+    const initial = graph(`journey-concurrency-${randomUUID()}`, ["visit"])
+    const created = await createJourney(
+      context,
+      write(initial, "create journey", "create")
+    )
+    const left = structuredClone(created)
+    left.revision = 2
+    left.title = "left"
+    const right = structuredClone(created)
+    right.revision = 2
+    right.title = "right"
+
+    const results = await Promise.allSettled([
+      commitJourneyGraph(
+        context,
+        initial.id,
+        write(left, "left update", "left-update"),
+        1
+      ),
+      commitJourneyGraph(
+        context,
+        initial.id,
+        write(right, "right update", "right-update"),
+        1
+      ),
+    ])
+    expect(
+      results.filter((result) => result.status === "fulfilled")
+    ).toHaveLength(1)
+    expect(
+      results.filter((result) => result.status === "rejected")
+    ).toHaveLength(1)
+    expect(
+      await prisma.journeyRevision.count({ where: { journeyId: initial.id } })
+    ).toBe(2)
+    expect((await getJourney(context, initial.id))?.revision).toBe(2)
+  })
+
+  it("rolls back the revision and graph together when a relation write fails", async () => {
+    const initial = graph(`journey-rollback-${randomUUID()}`, ["visit"])
+    const created = await createJourney(
+      context,
+      write(initial, "create journey", "create")
+    )
+    const invalid = structuredClone(created)
+    invalid.revision = 2
+    const added = visit(`${initial.id}-new`, initial.id, "new", 2)
+    added.detail.plannedPlaceId = "missing-place"
+    invalid.events.push(added)
+    invalid.links.push({
+      id: `${initial.id}-new-link`,
+      journeyId: initial.id,
+      fromEventId: invalid.events[0]!.id,
+      toEventId: added.id,
+      kind: "MAIN",
+      rank: 1024,
+      introducedRevision: 2,
+    })
+
+    await expect(
+      commitJourneyGraph(
+        context,
+        initial.id,
+        write(invalid, "invalid relation", "invalid-relation"),
+        1
+      )
+    ).rejects.toBeDefined()
+    expect(
+      await prisma.journeyRevision.count({ where: { journeyId: initial.id } })
+    ).toBe(1)
+    expect(
+      await prisma.journeyEvent.count({ where: { journeyId: initial.id } })
+    ).toBe(1)
+    expect((await getJourney(context, initial.id))?.revision).toBe(1)
+  })
+
+  it("moves Events by updating stable Link identities without delete-all rebuilds", async () => {
+    const initial = graph(`journey-move-${randomUUID()}`, ["a", "b", "c"])
+    const created = await createJourney(
+      context,
+      write(initial, "create journey", "create")
+    )
+    const moved = structuredClone(created)
+    moved.revision = 2
+    const [a, b, c] = moved.events.map((event) => event.id)
+    moved.links[0]!.toEventId = c!
+    moved.links[1]!.fromEventId = c!
+    moved.links[1]!.toEventId = b!
+
+    const result = await commitJourneyGraph(
+      context,
+      initial.id,
+      write(moved, "move c before b", "move-c"),
+      1
+    )
+    expect(result?.events.map((event) => event.id)).toEqual([a, b, c])
+    expect(result?.links.map((link) => link.id)).toEqual(
+      initial.links.map((link) => link.id)
+    )
+    expect(
+      await prisma.journeyEventLink.count({
+        where: { journeyId: initial.id },
+      })
+    ).toBe(2)
+  })
+
+  it("moves a stable linked subgraph across SECTION scopes atomically", async () => {
+    const journeyId = `journey-scope-move-${randomUUID()}`
+    const sectionA = section(`${journeyId}-section-a`, journeyId, "A")
+    const sectionB = section(`${journeyId}-section-b`, journeyId, "B")
+    const first = visit(`${journeyId}-first`, journeyId, "first")
+    const second = visit(`${journeyId}-second`, journeyId, "second")
+    first.parentSectionEventId = sectionA.id
+    second.parentSectionEventId = sectionA.id
+    const initial: TargetJourneyGraphSnapshot = {
+      ...graph(journeyId, []),
+      events: [sectionA, sectionB, first, second],
+      links: [
+        {
+          id: `${journeyId}-root-link`,
+          journeyId,
+          fromEventId: sectionA.id,
+          toEventId: sectionB.id,
+          kind: "MAIN",
+          rank: 1024,
+          introducedRevision: 1,
+        },
+        {
+          id: `${journeyId}-child-link`,
+          journeyId,
+          fromEventId: first.id,
+          toEventId: second.id,
+          kind: "MAIN",
+          rank: 1024,
+          introducedRevision: 1,
+        },
+      ],
+    }
+    const created = await createJourney(
+      context,
+      write(initial, "create scoped graph", "create")
+    )
+    const moved = structuredClone(created)
+    moved.revision = 2
+    for (const event of moved.events.filter(
+      (event) => event.id === first.id || event.id === second.id
+    )) {
+      event.parentSectionEventId = sectionB.id
+      event.updatedAt = later
+    }
+
+    const result = await commitJourneyGraph(
+      context,
+      journeyId,
+      write(moved, "move linked scope", "move-scope"),
+      1
+    )
+    expect(
+      result?.events
+        .filter((event) => event.id === first.id || event.id === second.id)
+        .map((event) => event.parentSectionEventId)
+    ).toEqual([sectionB.id, sectionB.id])
+    expect(
+      result?.links.find((link) => link.id.endsWith("child-link"))
+    ).toEqual(initial.links[1])
+  })
+
+  it("retires, undoes, and replaces without deleting Event history", async () => {
+    const initial = graph(`journey-lineage-${randomUUID()}`, ["a"])
+    const created = await createJourney(
+      context,
+      write(initial, "create journey", "create")
+    )
+
+    const retired = structuredClone(created)
+    retired.revision = 2
+    retired.events[0]!.retiredRevision = 2
+    const retiredResult = await commitJourneyGraph(
+      context,
+      initial.id,
+      write(retired, "retire a", "retire-a"),
+      1
+    )
+    expect(retiredResult?.events[0]?.retiredRevision).toBe(2)
+
+    const restored = structuredClone(retiredResult!)
+    restored.revision = 3
+    delete restored.events[0]!.retiredRevision
+    const restoredResult = await commitJourneyGraph(
+      context,
+      initial.id,
+      write(restored, "undo retire a", "undo-retire-a"),
+      2
+    )
+    expect(restoredResult?.events[0]?.retiredRevision).toBeUndefined()
+
+    const replaced = structuredClone(restoredResult!)
+    replaced.revision = 4
+    replaced.events[0]!.retiredRevision = 4
+    const predecessorId = replaced.events[0]!.id
+    const successorId = `${initial.id}-b`
+    replaced.events.push(visit(successorId, initial.id, "replacement b", 4))
+    replaced.replacements.push({
+      id: `${initial.id}-replacement`,
+      journeyId: initial.id,
+      predecessorEventId: predecessorId,
+      successorEventId: successorId,
+      revision: 4,
+      reason: "a is unavailable",
+    })
+    const replacedResult = await commitJourneyGraph(
+      context,
+      initial.id,
+      write(replaced, "replace a with b", "replace-a"),
+      3
+    )
+    expect(replacedResult?.events).toHaveLength(2)
+    expect(replacedResult?.replacements).toEqual(replaced.replacements)
+    expect(
+      await prisma.journeyEvent.count({
+        where: { journeyId: initial.id },
+      })
+    ).toBe(2)
+  })
+
+  it("appends BranchSelections and rejects mutation of prior decisions", async () => {
+    const initial = graph(`journey-branch-${randomUUID()}`, [
+      "fork",
+      "branch-a",
+      "branch-b",
+      "join",
+    ])
+    const [fork, branchA, branchB, join] = initial.events.map(
+      (event) => event.id
+    )
+    initial.links = [
+      {
+        id: `${initial.id}-fork-a`,
+        journeyId: initial.id,
+        fromEventId: fork!,
+        toEventId: branchA!,
+        kind: "MAIN",
+        rank: 1024,
+        introducedRevision: 1,
+      },
+      {
+        id: `${initial.id}-a-join`,
+        journeyId: initial.id,
+        fromEventId: branchA!,
+        toEventId: join!,
+        kind: "MAIN",
+        rank: 1024,
+        introducedRevision: 1,
+      },
+      {
+        id: `${initial.id}-fork-b`,
+        journeyId: initial.id,
+        fromEventId: fork!,
+        toEventId: branchB!,
+        kind: "ALTERNATIVE",
+        branchKey: "rain",
+        rank: 2048,
+        introducedRevision: 1,
+      },
+      {
+        id: `${initial.id}-b-join`,
+        journeyId: initial.id,
+        fromEventId: branchB!,
+        toEventId: join!,
+        kind: "ALTERNATIVE",
+        branchKey: "rain",
+        rank: 1024,
+        introducedRevision: 1,
+      },
+    ]
+    initial.branchSelections = [
+      {
+        id: `${initial.id}-selection-a`,
+        journeyId: initial.id,
+        forkEventId: fork!,
+        selectedLinkId: initial.links[0]!.id,
+        journeyRevision: 1,
+        actor: { kind: "USER", userId: ownerId },
+        createdAt: now,
+      },
+    ]
+    const created = await createJourney(
+      context,
+      write(initial, "create branch", "create")
+    )
+
+    const selectedB = structuredClone(created)
+    selectedB.revision = 2
+    selectedB.branchSelections.push({
+      id: `${initial.id}-selection-b`,
+      journeyId: initial.id,
+      forkEventId: fork!,
+      selectedLinkId: initial.links[2]!.id,
+      journeyRevision: 2,
+      supersedesId: initial.branchSelections[0]!.id,
+      actor: { kind: "USER", userId: ownerId },
+      reason: "rain",
+      createdAt: later,
+    })
+    const result = await commitJourneyGraph(
+      context,
+      initial.id,
+      write(selectedB, "select branch b", "select-b"),
+      1
+    )
+    expect(result?.branchSelections).toHaveLength(2)
+
+    const mutated = structuredClone(result!)
+    mutated.revision = 3
+    mutated.branchSelections[0]!.reason = "rewritten history"
+    await expect(
+      commitJourneyGraph(
+        context,
+        initial.id,
+        write(mutated, "mutate selection", "mutate-selection"),
+        2
+      )
+    ).rejects.toBeInstanceOf(JourneyInputError)
+    expect(
+      await prisma.journeyRevision.count({ where: { journeyId: initial.id } })
+    ).toBe(2)
+  })
+
+  it("rejects Transit/Content side effects before creating a revision", async () => {
+    const initial = graph(`journey-readonly-${randomUUID()}`, ["visit"])
+    const created = await createJourney(
+      context,
+      write(initial, "create journey", "create")
+    )
+    const changed = structuredClone(created)
+    changed.revision = 2
+    changed.eventAssetLinks.push({
+      id: `${initial.id}-asset-link`,
+      journeyId: initial.id,
+      eventId: changed.events[0]!.id,
+      assetId: "asset",
+      assetChecksum: "checksum",
+      role: "GALLERY",
+      rank: 0,
+      visibility: "PRIVATE",
+      introducedRevision: 2,
+      createdAt: later,
+    })
+
+    await expect(
+      commitJourneyGraph(
+        context,
+        initial.id,
+        write(changed, "forbidden content mutation", "content-mutation"),
+        1
+      )
+    ).rejects.toBeInstanceOf(JourneyInputError)
+    expect(
+      await prisma.journeyRevision.count({ where: { journeyId: initial.id } })
+    ).toBe(1)
+  })
+
+  it("soft-deletes the current Journey while preserving readable revisions", async () => {
+    const initial = graph(`journey-delete-${randomUUID()}`, ["visit"])
+    await createJourney(context, write(initial, "create journey", "create"))
+
+    expect(await deleteJourney(context, initial.id)).toBe(true)
+    expect(await getJourney(context, initial.id)).toBeNull()
+    const deleted = await getJourney(context, initial.id, {
+      includeDeleted: true,
+    })
+    expect(deleted?.revision).toBe(2)
+    expect(deleted?.deletedAt).toBeDefined()
+    expect(
+      (await getJourneyRevision(context, initial.id, 1))?.snapshot
+    ).toEqual(initial)
+    expect(
+      (await getJourneyRevision(context, initial.id, 2))?.snapshot.deletedAt
+    ).toBe(deleted?.deletedAt)
+  })
+
+  it("round-trips seeded Transit and Content fields without lossy defaults", async () => {
+    const seeded = await getJourney(
+      { userId: "dev-admin", role: "admin" },
+      "dev-user-1-sample-journey",
+      { includeDeleted: true }
+    )
+    expect(seeded).not.toBeNull()
+    const transit = seeded!.events.find((event) => event.type === "TRANSIT")
+    expect(transit).toMatchObject({
+      type: "TRANSIT",
+      detail: {
+        activePlanningRunId: "dev-user-1-sample-transit-run",
+        selectedPlanId: "dev-user-1-sample-transit-plan",
+        routeState: "READY",
+      },
+    })
+    expect(
+      seeded!.transitPlanningRuns[0]?.plans[0]?.segments[0]?.coordinateSystem
+    ).toBe("WGS84")
+    expect(seeded!.eventAssetLinks[0]).toMatchObject({
+      assetChecksum: "seed-photo-checksum",
+      visibility: "JOURNEY",
+    })
+    expect(seeded!.observations[0]?.actor).toEqual({
+      kind: "USER",
+      userId: "dev-user-1",
+    })
+    expect(seeded!.eventSourceLinks[0]).toMatchObject({
+      sourceDocumentChecksum: "seed-source-checksum",
+      approvedForJourneySharing: true,
+    })
   })
 })
