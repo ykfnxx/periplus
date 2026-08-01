@@ -1336,6 +1336,12 @@ WHEN OLD."retiredRevision" IS NULL AND NEW."retiredRevision" IS NOT NULL AND EXI
   SELECT 1 FROM "JourneyBranchSelection" current
   WHERE current."journeyId" = OLD."journeyId"
     AND current."selectedLinkId" = OLD."id"
+    AND EXISTS (
+      SELECT 1 FROM "JourneyEvent" fork
+      WHERE fork."journeyId" = current."journeyId"
+        AND fork."id" = current."forkEventId"
+        AND fork."retiredRevision" IS NULL
+    )
     AND NOT EXISTS (
       SELECT 1 FROM "JourneyBranchSelection" newer
       WHERE newer."supersedesId" = current."id"

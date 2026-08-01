@@ -846,6 +846,8 @@ export const targetJourneyGraphSnapshotSchema = z
     )
     const selectedForks = new Set<string>()
     for (const selection of currentSelections) {
+      const fork = events.get(selection.forkEventId)
+      if (fork?.retiredRevision) continue
       if (selectedForks.has(selection.forkEventId)) {
         addIssue(
           ["branchSelections"],

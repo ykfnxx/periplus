@@ -186,6 +186,60 @@ function transitGraph(id: string): TargetJourneyGraphSnapshot {
   return result
 }
 
+function sectionGraph(
+  id: string,
+  topology: "LINEAR" | "BRANCH"
+): TargetJourneyGraphSnapshot {
+  const result = graph(id)
+  const sectionId = `${id}-section`
+  const section = {
+    id: sectionId,
+    journeyId: id,
+    parentSectionEventId: null,
+    placementStatus: "SCHEDULED" as const,
+    origin: "ORIGINAL" as const,
+    title: "Day 1",
+    introducedRevision: 1,
+    createdAt: now,
+    updatedAt: now,
+    type: "SECTION" as const,
+    detail: {
+      kind: "DAY" as const,
+      localDate: "2026-08-01",
+      timezone: "Asia/Shanghai",
+    },
+  }
+  for (const event of result.events) {
+    event.parentSectionEventId = sectionId
+  }
+  if (topology === "LINEAR") {
+    result.events = [section, result.events[1]!, result.events[2]!]
+    result.links = [
+      {
+        id: `${id}-linear`,
+        journeyId: id,
+        fromEventId: `${id}-a`,
+        toEventId: `${id}-b`,
+        kind: "MAIN",
+        rank: 1024,
+        introducedRevision: 1,
+      },
+    ]
+    return result
+  }
+  result.events.unshift(section)
+  result.branchSelections.push({
+    id: `${id}-selection-a`,
+    journeyId: id,
+    forkEventId: `${id}-fork`,
+    selectedLinkId: `${id}-fork-a`,
+    journeyRevision: 1,
+    actor: { kind: "USER", userId: ownerId },
+    createdAt: now,
+  })
+  return result
+}
+
 describe.sequential("P3 persistent Workspace command bus", () => {
   it("persists one revision, replays idempotently, and recovers after restart", async () => {
     const workspace = await createWorkspace(context, {
@@ -285,6 +339,73 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         where: { workspaceId: workspace.id },
       })
     ).toBe(1)
+  })
+
+  it("recursively retires every internal Link in linear and selected-branch SECTIONs", async () => {
+    const service = new WorkspaceCommandService()
+    for (const topology of ["LINEAR", "BRANCH"] as const) {
+      const workspace = await createWorkspace(context, {
+        graph: sectionGraph(
+          `workspace-retire-${topology.toLowerCase()}-${randomUUID()}`,
+          topology
+        ),
+        now: new Date(now),
+      })
+      await expect(
+        service.execute(
+          context,
+          command(workspace.id, 0, `retire-${topology.toLowerCase()}`, {
+            name: "journey.retire_event",
+            payload: {
+              eventId: `${workspace.headGraph.id}-section`,
+              sectionChildren: "RECURSIVE_RETIRE",
+            },
+          })
+        )
+      ).resolves.toMatchObject({ newRevision: 1 })
+
+      const recovered = await service.getDocument(context, workspace.id)
+      expect(
+        recovered?.session.headGraph.events.every(
+          (event) => event.retiredRevision === 2
+        )
+      ).toBe(true)
+      expect(
+        recovered?.session.headGraph.links.every(
+          (link) => link.retiredRevision === 2
+        )
+      ).toBe(true)
+      if (topology === "BRANCH") {
+        expect(recovered?.session.headGraph.branchSelections).toEqual(
+          workspace.headGraph.branchSelections
+        )
+      }
+    }
+  })
+
+  it("rejects retiring an endpoint still referenced by an active external Transit", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: transitGraph(`workspace-retire-transit-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 0, "retire-transit-endpoint", {
+          name: "journey.retire_event",
+          payload: { eventId: `${workspace.headGraph.id}-a` },
+        })
+      )
+    ).rejects.toThrow(
+      `active Transit ${workspace.headGraph.id}-transit references endpoint ${workspace.headGraph.id}-a`
+    )
+    expect(
+      await prisma.workspaceRevision.count({
+        where: { workspaceId: workspace.id },
+      })
+    ).toBe(0)
   })
 
   it("accepts only a running same-Workspace Agent actor", async () => {

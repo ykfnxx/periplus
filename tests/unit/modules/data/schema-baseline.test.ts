@@ -499,6 +499,15 @@ describe("P1 SQLite schema baseline", () => {
       VALUES ('selection-2', 'j1', 'a', 'branch-b', 2, 'selection-1', 'USER', 'owner', '2026-08-02T00:01:00.000Z');
       UPDATE "JourneyEventLink" SET "retiredRevision" = 2 WHERE "id" = 'branch-a';
     `)
+    sqlite(`
+      INSERT INTO "JourneyRevision" ("id", "journeyId", "revision", "operation", "snapshotJson", "patchJson", "inversePatchJson", "actorKind", "idempotencyKey", "parentRevisionId", "createdAt")
+      VALUES ('j1-r3', 'j1', 3, 'retire fork', '${graph("j1", "owner", 3)}', '[]', '[]', 'SYSTEM', 'j1-r3-key', 'j1-r2', '2026-08-02T00:02:00.000Z');
+      INSERT INTO "JourneyEvent" ("id", "journeyId", "parentSectionEventId", "type", "executionStatus", "placementStatus", "origin", "title", "introducedRevision", "createdAt", "updatedAt")
+      VALUES ('selection-parking', 'j1', 'section', 'VISIT', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Selection parking', 3, '${NOW}', '${NOW}');
+      UPDATE "JourneyEventLink" SET "fromEventId" = 'selection-parking' WHERE "id" = 'branch-b';
+      UPDATE "JourneyEvent" SET "retiredRevision" = 3 WHERE "id" = 'a';
+      UPDATE "JourneyEventLink" SET "retiredRevision" = 3 WHERE "id" = 'branch-b';
+    `)
     expectSqlFailure(
       `UPDATE "JourneyBranchSelection" SET "reason" = 'rewrite' WHERE "id" = 'selection-1';`,
       /append-only/

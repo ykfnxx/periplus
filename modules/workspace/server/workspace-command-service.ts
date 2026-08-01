@@ -1006,24 +1006,98 @@ function applyJourneyCommand(
           }
         }
       }
+      for (const transit of activeEvents(graph)) {
+        if (targets.has(transit.id) || transit.type !== "TRANSIT") continue
+        const endpoints = [
+          transit.detail.plannedFromEventId,
+          transit.detail.plannedToEventId,
+          transit.detail.actualFromEventId,
+          transit.detail.actualToEventId,
+        ].filter((eventId): eventId is string => eventId !== undefined)
+        const retiredEndpointId = endpoints.find((eventId) =>
+          targets.has(eventId)
+        )
+        if (retiredEndpointId) {
+          throw new WorkspaceInputError(
+            `Cannot retire Event subtree: active Transit ${transit.id} references endpoint ${retiredEndpointId}`
+          )
+        }
+      }
+
+      const incident = activeLinks(graph).filter(
+        (link) =>
+          targets.has(link.fromEventId) || targets.has(link.toEventId)
+      )
+      const boundaryIncoming = incident.filter(
+        (link) =>
+          targets.has(link.toEventId) && !targets.has(link.fromEventId)
+      )
+      const boundaryOutgoing = incident.filter(
+        (link) =>
+          targets.has(link.fromEventId) && !targets.has(link.toEventId)
+      )
+      let retainedBoundaryLinkId: string | undefined
+      if (boundaryIncoming.length === 1 && boundaryOutgoing.length === 1) {
+        const incoming = boundaryIncoming[0]!
+        const outgoing = boundaryOutgoing[0]!
+        const source = requireEvent(graph, incoming.fromEventId)
+        const destination = requireEvent(graph, outgoing.toEventId)
+        if (source.parentSectionEventId === destination.parentSectionEventId) {
+          incoming.toEventId = destination.id
+          retainedBoundaryLinkId = incoming.id
+        }
+      }
+      for (const link of incident) {
+        if (link.id !== retainedBoundaryLinkId) {
+          link.retiredRevision = graph.revision
+        }
+      }
+
+      const currentSelections = graph.branchSelections.filter(
+        (selection) =>
+          !graph.branchSelections.some(
+            (candidate) => candidate.supersedesId === selection.id
+          )
+      )
+      for (const selection of currentSelections) {
+        if (targets.has(selection.forkEventId)) continue
+        const selectedLink = graph.links.find(
+          (link) => link.id === selection.selectedLinkId
+        )
+        if (selectedLink && activeAtRevision(selectedLink, graph.revision)) {
+          continue
+        }
+        const fallback = activeLinks(graph)
+          .filter((link) => link.fromEventId === selection.forkEventId)
+          .sort(
+            (left, right) =>
+              (left.kind === right.kind ? 0 : left.kind === "MAIN" ? -1 : 1) ||
+              left.rank - right.rank ||
+              left.id.localeCompare(right.id)
+          )[0]
+        if (!fallback) {
+          throw new WorkspaceInputError(
+            `Cannot retire Event subtree while fork ${selection.forkEventId} has no surviving branch choice`
+          )
+        }
+        graph.branchSelections.push({
+          id: deterministicId(
+            envelope,
+            `retire-branch-${selection.forkEventId}`
+          ),
+          journeyId: graph.id,
+          forkEventId: selection.forkEventId,
+          selectedLinkId: fallback.id,
+          journeyRevision: graph.revision,
+          supersedesId: selection.id,
+          actor: envelope.actor,
+          reason: `retire Event subtree containing selected Link ${selection.selectedLinkId}`,
+          createdAt: timestampAfter(now, selection.createdAt),
+        })
+      }
+
       for (const targetId of targets) {
         const target = requireEvent(graph, targetId)
-        const incoming = activeLinks(graph).filter(
-          (link) =>
-            link.toEventId === targetId && !targets.has(link.fromEventId)
-        )
-        const outgoing = activeLinks(graph).filter(
-          (link) =>
-            link.fromEventId === targetId && !targets.has(link.toEventId)
-        )
-        if (incoming.length === 1 && outgoing.length === 1) {
-          incoming[0]!.toEventId = outgoing[0]!.toEventId
-          outgoing[0]!.retiredRevision = graph.revision
-        } else {
-          for (const link of [...incoming, ...outgoing]) {
-            link.retiredRevision = graph.revision
-          }
-        }
         target.retiredRevision = graph.revision
         target.updatedAt = now
       }
