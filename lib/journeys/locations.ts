@@ -1,8 +1,10 @@
-import type {
-  JourneyEvent,
-  JourneyLngLat,
-  LocationJourneyEvent,
-} from "@/types/journey"
+import type { TargetJourneyEvent } from "@/modules/data-model/contracts"
+
+export type JourneyLngLat = [number, number]
+export type LocationJourneyEvent = Extract<
+  TargetJourneyEvent,
+  { type: "SECTION" | "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
+>
 
 export interface JourneyLocation {
   eventId: string
@@ -16,18 +18,27 @@ export interface JourneyLocation {
 }
 
 export function isLocationEvent(
-  event: JourneyEvent
+  event: TargetJourneyEvent
 ): event is LocationJourneyEvent {
-  return ["SECTION", "VISIT", "STAY", "MEAL", "ACTIVITY"].includes(event.type)
+  return (
+    event.type === "SECTION" ||
+    event.type === "VISIT" ||
+    event.type === "STAY" ||
+    event.type === "MEAL" ||
+    event.type === "ACTIVITY"
+  )
 }
 
 export function plannedLocationOf(
-  event: JourneyEvent | undefined
+  event: TargetJourneyEvent | undefined
 ): JourneyLocation | null {
   if (!event || !isLocationEvent(event)) return null
-
   if (event.type === "SECTION") {
-    if (event.detail.lat === undefined || event.detail.lng === undefined) {
+    if (
+      event.detail.kind !== "CITY" ||
+      event.detail.lat === undefined ||
+      event.detail.lng === undefined
+    ) {
       return null
     }
     return {
@@ -37,11 +48,8 @@ export function plannedLocationOf(
       lng: event.detail.lng,
       placeId: event.detail.placeId,
       coordinateSystem: event.detail.coordinateSystem,
-      coordinateProvider: event.detail.coordinateProvider,
-      providerPlaceId: event.detail.providerPlaceId,
     }
   }
-
   return {
     eventId: event.id,
     name: event.title,
@@ -55,12 +63,11 @@ export function plannedLocationOf(
 }
 
 export function effectiveLocationOf(
-  event: JourneyEvent | undefined
+  event: TargetJourneyEvent | undefined
 ): JourneyLocation | null {
   const planned = plannedLocationOf(event)
   if (!planned || !event || event.type === "SECTION") return planned
   if (!isLocationEvent(event)) return null
-
   return {
     ...planned,
     lat: event.detail.actualLat ?? planned.lat,

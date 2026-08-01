@@ -19,6 +19,10 @@ import {
   measuredWorkspaceViewportInsets,
 } from "@/modules/workspace/viewport"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import {
+  selectWorkspaceGraph,
+  selectWorkspaceLocked,
+} from "@/modules/workspace/state/selectors"
 import type {
   MobileSheetSnap,
   WorkbenchTab,
@@ -39,8 +43,8 @@ export default function WorkbenchShell() {
     () => new Set()
   )
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
-  const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const workbenchTab = useWorkspaceStore((state) => state.workbenchTab)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
   const mobileSheetSnap = useWorkspaceStore((state) => state.mobileSheetSnap)
@@ -55,7 +59,7 @@ export default function WorkbenchShell() {
       state.isSelectingLocation &&
       state.locationSelectionMode === "upload-photo"
   )
-  const showInitialState = chatMessages.length === 0 && !isDraftLocked
+  const showInitialState = chatMessages.length === 0 && !isWorkspaceLocked
 
   useEffect(() => {
     if (isPickingUploadPhotoLocation) {
@@ -159,7 +163,7 @@ export default function WorkbenchShell() {
       >
         <MobileSheetHandle
           snap={mobileSheetSnap}
-          routeName={draftJourney?.title ?? "行程工作台"}
+          routeName={graph?.title ?? "行程工作台"}
           onSnapChange={setMobileSheetSnap}
         />
         {mobileSheetSnap === "collapsed" ? null : (
@@ -219,7 +223,7 @@ function AIWorkbenchPanel({
   onCollapse?: () => void
   framed?: boolean
 }) {
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
 
   return (
     <div
@@ -230,7 +234,7 @@ function AIWorkbenchPanel({
       }`}
     >
       <PanelHeader label="AI 旅行助手" onCollapse={onCollapse} />
-      {draftJourney ? (
+      {graph ? (
         <div className="shrink-0">
           <p className="px-5 pb-2 text-[11px] font-black text-teak">
             当前上下文

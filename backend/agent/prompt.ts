@@ -1,4 +1,4 @@
-import { type AgentConversationMessage } from "@/modules/workspace/server/contracts"
+import type { AgentConversationMessage } from "@/backend/types"
 import type { AgentMode } from "../types"
 
 function formatConversationMessage(message: AgentConversationMessage) {
@@ -29,7 +29,7 @@ export function buildPrompt(
       ...basePrompt(messages),
       "",
       "当前模式：Suggest。",
-      "禁止调用 MCP 工具，禁止修改草稿。",
+      "禁止调用 MCP 工具，禁止修改 Workspace。",
       "你只能输出一个 JSON 对象，不能输出 Markdown 代码块以外的解释文字。",
       "JSON 格式：",
       JSON.stringify(
@@ -57,13 +57,13 @@ export function buildPrompt(
       "",
       "commands.command 必须符合 TargetCommandBody（例如 journey.update_event / journey.select_branch / journey.undo）。",
       "",
-      "当前草稿快照：",
+      "当前 Workspace 快照：",
       draftJson,
     ].join("\n")
   }
 
   return [
     ...basePrompt(messages),
-    "只能通过 MCP 工具读取和修改当前草稿，不要读写项目文件，不要直接连接数据库。",
+    "只能通过 MCP 工具读取和修改当前 Workspace，不要读写项目文件，不要直接连接数据库。",
   ].join("\n")
 }

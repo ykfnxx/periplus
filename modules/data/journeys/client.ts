@@ -1,13 +1,4 @@
-import type {
-  CreateJourneyInput,
-  JourneyDto,
-  UpdateJourneyInput,
-} from "@/types/journey"
-import type {
-  TransitPlanBundle,
-  TransitPlanFailure,
-  TransitPlanRequest,
-} from "@/lib/journeys/planning"
+import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
 
 export class JourneyApiError extends Error {
   constructor(
@@ -34,49 +25,12 @@ async function parseJourneyResponse<T>(response: Response): Promise<T> {
   return body as T
 }
 
-export async function listJourneys(): Promise<JourneyDto[]> {
+export async function listJourneys() {
   const response = await fetch("/api/journeys", { cache: "no-store" })
-  return parseJourneyResponse<JourneyDto[]>(response)
+  return parseJourneyResponse<TargetJourneyGraphSnapshot[]>(response)
 }
 
-export async function getJourney(id: string): Promise<JourneyDto> {
+export async function getJourney(id: string) {
   const response = await fetch(`/api/journeys/${id}`, { cache: "no-store" })
-  return parseJourneyResponse<JourneyDto>(response)
-}
-
-export async function createJourney(input: CreateJourneyInput) {
-  const response = await fetch("/api/journeys", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  })
-  return parseJourneyResponse<JourneyDto>(response)
-}
-
-export async function updateJourney(
-  id: string,
-  input: UpdateJourneyInput,
-  expectedRevision: number
-) {
-  const response = await fetch(`/api/journeys/${id}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "If-Match": String(expectedRevision),
-    },
-    body: JSON.stringify(input),
-  })
-  return parseJourneyResponse<JourneyDto>(response)
-}
-
-export async function resolveTransitPlans(requests: TransitPlanRequest[]) {
-  const response = await fetch("/api/transit/plans", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ requests }),
-  })
-  return parseJourneyResponse<{
-    bundles: TransitPlanBundle[]
-    failures: TransitPlanFailure[]
-  }>(response)
+  return parseJourneyResponse<TargetJourneyGraphSnapshot>(response)
 }

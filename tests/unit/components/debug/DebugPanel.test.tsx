@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { fireEvent, render, screen } from "@testing-library/react"
 import DebugPanel from "@/components/debug/DebugPanel"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
@@ -8,19 +8,15 @@ vi.mock("@/modules/workspace/state/workspace-store", () => ({
 }))
 
 describe("DebugPanel", () => {
-  const mockApplyDraftSnapshot = vi.fn()
+  const applyWorkspaceDocument = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
     ;(
       useWorkspaceStore as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation((selector: (s: unknown) => unknown) => {
-      const state = {
-        applyDraftSnapshot: mockApplyDraftSnapshot,
-        draftRevision: 0,
-      }
-      return selector(state)
-    })
+    ).mockImplementation((selector: (state: unknown) => unknown) =>
+      selector({ applyWorkspaceDocument })
+    )
   })
 
   it("renders with example JSON data", () => {
@@ -35,103 +31,49 @@ describe("DebugPanel", () => {
     expect(textarea.value).toContain("成都")
   })
 
-  it("draws route with valid JSON", () => {
+  it("draws a target Workspace document from valid JSON", () => {
     render(<DebugPanel />)
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockApplyDraftSnapshot).toHaveBeenCalledOnce()
-    const journey = mockApplyDraftSnapshot.mock.calls[0][0]
-    expect(mockApplyDraftSnapshot.mock.calls[0][1]).toBe(1)
-    expect(journey.title).toBe("调试路线")
-    expect(journey.description).toBe("通过坐标调试工具创建")
-    expect(journey.events).toHaveLength(3)
-    expect(journey.events[0].title).toBe("北京")
-    expect(journey.events[0].detail.plannedLat).toBe(39.9042)
-    expect(journey.events[0].detail.plannedLng).toBe(116.4074)
-    expect(journey.links).toHaveLength(2)
+    expect(applyWorkspaceDocument).toHaveBeenCalledOnce()
+    const document = applyWorkspaceDocument.mock.calls[0][0]
+    const graph = document.session.headGraph
+    expect(graph.title).toBe("调试路线")
+    expect(graph.description).toBe("通过坐标调试工具创建")
+    expect(graph.events).toHaveLength(3)
+    expect(graph.events[0].title).toBe("北京")
+    expect(graph.events[0].detail.plannedLat).toBe(39.9042)
+    expect(graph.events[0].detail.plannedLng).toBe(116.4074)
+    expect(graph.links).toHaveLength(2)
+    expect(document.session.headWorkspaceRevision).toBe(0)
   })
 
-  it("shows error for invalid JSON", () => {
+  it.each([
+    ["not json", /JSON 解析错误/],
+    ['{"name": "test"}', /输入必须是非空 JSON 数组/],
+    ["[]", /输入必须是非空 JSON 数组/],
+    ['[{"lat": 39, "lng": 116}]', /缺少 name 字段/],
+    ['[{"name": "A", "lat": 100, "lng": 116}]', /纬度无效/],
+    ['[{"name": "A", "lat": 39, "lng": 200}]', /经度无效/],
+  ])("rejects invalid coordinate JSON %s", (input, expected) => {
     render(<DebugPanel />)
-    const textarea = screen.getByRole("textbox")
-    fireEvent.change(textarea, { target: { value: "not json" } })
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: input } })
     fireEvent.click(screen.getByText("绘制轨迹"))
 
-    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
-    expect(screen.getByText(/JSON 解析错误/)).toBeInTheDocument()
+    expect(applyWorkspaceDocument).not.toHaveBeenCalled()
+    expect(screen.getByText(expected)).toBeInTheDocument()
   })
 
-  it("shows error for non-array JSON", () => {
+  it("clears the target Workspace document and visible errors", () => {
     render(<DebugPanel />)
-    const textarea = screen.getByRole("textbox")
-    fireEvent.change(textarea, { target: { value: '{"name": "test"}' } })
-    fireEvent.click(screen.getByText("绘制轨迹"))
-
-    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
-    expect(screen.getByText("输入必须是非空 JSON 数组")).toBeInTheDocument()
-  })
-
-  it("shows error for empty array", () => {
-    render(<DebugPanel />)
-    const textarea = screen.getByRole("textbox")
-    fireEvent.change(textarea, { target: { value: "[]" } })
-    fireEvent.click(screen.getByText("绘制轨迹"))
-
-    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
-    expect(screen.getByText("输入必须是非空 JSON 数组")).toBeInTheDocument()
-  })
-
-  it("shows error for missing name field", () => {
-    render(<DebugPanel />)
-    const textarea = screen.getByRole("textbox")
-    fireEvent.change(textarea, {
-      target: { value: '[{"lat": 39, "lng": 116}]' },
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "bad json" },
     })
-    fireEvent.click(screen.getByText("绘制轨迹"))
-
-    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
-    expect(screen.getByText(/缺少 name 字段/)).toBeInTheDocument()
-  })
-
-  it("shows error for invalid latitude", () => {
-    render(<DebugPanel />)
-    const textarea = screen.getByRole("textbox")
-    fireEvent.change(textarea, {
-      target: { value: '[{"name": "A", "lat": 100, "lng": 116}]' },
-    })
-    fireEvent.click(screen.getByText("绘制轨迹"))
-
-    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
-    expect(screen.getByText(/纬度无效/)).toBeInTheDocument()
-  })
-
-  it("shows error for invalid longitude", () => {
-    render(<DebugPanel />)
-    const textarea = screen.getByRole("textbox")
-    fireEvent.change(textarea, {
-      target: { value: '[{"name": "A", "lat": 39, "lng": 200}]' },
-    })
-    fireEvent.click(screen.getByText("绘制轨迹"))
-
-    expect(mockApplyDraftSnapshot).not.toHaveBeenCalled()
-    expect(screen.getByText(/经度无效/)).toBeInTheDocument()
-  })
-
-  it("clears route when clear button clicked", () => {
-    render(<DebugPanel />)
-    fireEvent.click(screen.getByText("清空"))
-
-    expect(mockApplyDraftSnapshot).toHaveBeenCalledWith(null, 1)
-  })
-
-  it("clears error when clear button clicked", () => {
-    render(<DebugPanel />)
-    const textarea = screen.getByRole("textbox")
-    fireEvent.change(textarea, { target: { value: "bad json" } })
     fireEvent.click(screen.getByText("绘制轨迹"))
     expect(screen.getByText(/JSON 解析错误/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByText("清空"))
+    expect(applyWorkspaceDocument).toHaveBeenCalledWith(null)
     expect(screen.queryByText(/JSON 解析错误/)).not.toBeInTheDocument()
   })
 })

@@ -7,8 +7,6 @@ import type {
 export const createAgentSlice: WorkspaceSlice<AgentSlice> = (set) => ({
   agentMode: "auto",
   setAgentMode: (agentMode) => set({ agentMode }),
-  pendingSuggestions: [],
-  setPendingSuggestions: (pendingSuggestions) => set({ pendingSuggestions }),
   chatMessages: [],
   addUserMessage: (content) =>
     set((state) => ({

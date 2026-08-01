@@ -38,7 +38,7 @@ function errorResult(error: unknown): CallToolResult {
   )
 }
 
-export function registerDraftTools(server: McpServer): void {
+export function registerWorkspaceTools(server: McpServer): void {
   server.registerTool(
     "periplus.workspace.get",
     {

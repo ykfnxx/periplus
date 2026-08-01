@@ -4,6 +4,7 @@ import {
   transitPlanFingerprint,
   type TransitPlanRequest,
 } from "@/lib/journeys/planning"
+import { createSilkRoadJourney } from "@/lib/mock-journeys"
 import type {
   TargetCommandEnvelope,
   TargetJourneyGraphSnapshot,
@@ -1945,6 +1946,72 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     ).toBe(0)
   })
 
+  it("plans between CITY sections using their canonical coordinates", async () => {
+    const graph = createSilkRoadJourney({
+      id: `workspace-city-transit-${randomUUID()}`,
+      ownerId,
+    })
+    const workspace = await createWorkspace(context, {
+      graph,
+      now: new Date(now),
+    })
+    const plan = vi.fn(async (request: TransitPlanRequest) => ({
+      transitEventId: request.transitEventId,
+      requestFingerprint: transitPlanFingerprint(request),
+      plans: [
+        {
+          id: "city-section-plan",
+          provider: "mock" as const,
+          rank: 0,
+          label: "推荐",
+          strategy: "recommended",
+          distanceMeters: 650_000,
+          durationSeconds: 21_600,
+          trafficBasis: "TYPICAL" as const,
+          calculatedAt: now,
+          requestFingerprint: transitPlanFingerprint(request),
+          segments: [],
+        },
+      ],
+    }))
+    const service = new WorkspaceCommandService({
+      transitPlanning: { plan },
+    })
+
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 0, "plan-city-sections", {
+          name: "journey.plan_transit",
+          payload: {
+            eventId: "transit-xian-lanzhou",
+            forceRefresh: false,
+          },
+        })
+      )
+    ).resolves.toMatchObject({ newRevision: 1 })
+    expect(plan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: {
+          name: "西安",
+          lat: 34.3416,
+          lng: 108.9398,
+          coordinateSystem: "GCJ02",
+        },
+        destination: {
+          name: "兰州",
+          lat: 36.0611,
+          lng: 103.8343,
+          coordinateSystem: "GCJ02",
+        },
+      }),
+      expect.objectContaining({
+        workspaceId: workspace.id,
+        requestId: "plan-city-sections",
+      })
+    )
+  })
+
   it("persists malformed provider bundles as failed Transit facts", async () => {
     const workspace = await createWorkspace(context, {
       graph: readyTransitFixtureGraph(),
@@ -1986,7 +2053,10 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     ).toMatchObject({ detail: { routeState: "ROUTE_STALE" } })
     await expect(
       prisma.providerUsageLog.findFirstOrThrow({
-        where: { requestId: "malformed-provider-bundle" },
+        where: {
+          requestId: "malformed-provider-bundle",
+          workspaceId: workspace.id,
+        },
       })
     ).resolves.toMatchObject({
       workspaceId: workspace.id,
@@ -2050,7 +2120,10 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     })
     await expect(
       prisma.providerUsageLog.findFirstOrThrow({
-        where: { requestId: "duplicate-provider-rank" },
+        where: {
+          requestId: "duplicate-provider-rank",
+          workspaceId: duplicateRankWorkspace.id,
+        },
       })
     ).resolves.toMatchObject({
       workspaceId: duplicateRankWorkspace.id,
@@ -2119,7 +2192,10 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     })
     await expect(
       prisma.providerUsageLog.findFirstOrThrow({
-        where: { requestId: "invalid-provider-time" },
+        where: {
+          requestId: "invalid-provider-time",
+          workspaceId: invalidTimeWorkspace.id,
+        },
       })
     ).resolves.toMatchObject({
       workspaceId: invalidTimeWorkspace.id,

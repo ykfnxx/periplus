@@ -8,9 +8,10 @@ import {
   totalTransitDistanceMeters,
 } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 
 export default function AIContextCard() {
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -18,20 +19,16 @@ export default function AIContextCard() {
   const selectedLocationEvent = useWorkspaceStore(
     (state) => state.selectedLocationEvent
   )
-  const view = getJourneyScopeProjection(
-    draftJourney,
-    viewLevel,
-    activeSectionEventId
-  )
+  const view = getJourneyScopeProjection(graph, viewLevel, activeSectionEventId)
 
-  if (!draftJourney) return null
+  if (!graph) return null
 
-  const contextEvents =
-    view.level === "overview"
-      ? draftJourney.events.filter((event) => !event.replacedByEventId)
-      : view.events
+  const contextEvents = view.events
   const days = totalDurationDays(contextEvents)
-  const distance = totalTransitDistanceMeters(contextEvents)
+  const distance = totalTransitDistanceMeters(
+    contextEvents,
+    graph.transitPlanningRuns
+  )
   const details = selectedLocationEvent
     ? `当前选中：${selectedLocationEvent.title}`
     : [
@@ -52,7 +49,7 @@ export default function AIContextCard() {
         />
         <p className="min-w-0 truncate text-[13px] font-black text-ink">
           {view.level === "overview"
-            ? `${draftJourney.title} · 全程总览`
+            ? `${graph.title} · 全程总览`
             : `${view.title} · 分段详情`}
         </p>
       </div>

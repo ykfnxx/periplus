@@ -3,16 +3,16 @@
 import { useEffect, useState } from "react"
 import { listJourneys } from "@/modules/data/journeys/client"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import type { Journey } from "@/types/journey"
+import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
+import { selectWorkspaceLocked } from "@/modules/workspace/state/selectors"
 import RouteListItem from "@/modules/workbench/ui/RouteListItem"
 
 export default function SavedRoutesPanel() {
-  const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
-  const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const setActiveMapPanel = useWorkspaceStore(
     (state) => state.setActiveMapPanel
   )
-  const [journeys, setJourneys] = useState<Journey[]>([])
+  const [journeys, setJourneys] = useState<TargetJourneyGraphSnapshot[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
 
@@ -34,10 +34,12 @@ export default function SavedRoutesPanel() {
     }
   }, [])
 
-  const selectJourney = (journey: Journey) => {
-    if (isDraftLocked || !sendAgentEvent) return
-    sendAgentEvent("draft.load_saved_journey", { journeyId: journey.id })
+  const selectJourney = (journey: TargetJourneyGraphSnapshot) => {
+    if (isWorkspaceLocked) return
     setActiveMapPanel("none")
+    window.location.assign(
+      `/workspace?journey=${encodeURIComponent(journey.id)}`
+    )
   }
 
   if (isLoading) return <div className="text-sm text-walnut">正在加载...</div>

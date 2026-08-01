@@ -271,6 +271,35 @@ describe("P3 Journey projection resolver", () => {
     ])
   })
 
+  it("assigns authoritative ordinals to mappable CITY sections", () => {
+    const input = graph("01-root-city-and-local-scope", "nested-scopes")
+    const cities = input.events.filter(
+      (event) => event.type === "SECTION" && event.detail.kind === "CITY"
+    )
+    for (const [index, city] of cities.entries()) {
+      if (city.type !== "SECTION" || city.detail.kind !== "CITY") continue
+      city.detail.lat = 30 + index
+      city.detail.lng = 120 + index
+    }
+
+    const projection = resolveJourneyProjection({
+      graph: input,
+      scopeSectionEventId: null,
+      mode: "PLANNER",
+    })
+
+    expect(projection.events).toMatchObject([
+      { eventId: "city-a", resolvedPosition: 0, locationOrdinal: 1 },
+      {
+        eventId: "root-transit",
+        resolvedPosition: 1,
+        fromLocationOrdinal: 1,
+        toLocationOrdinal: 2,
+      },
+      { eventId: "city-b", resolvedPosition: 2, locationOrdinal: 2 },
+    ])
+  })
+
   it("marks EXECUTION time source from selected fields, not lifecycle status", () => {
     const plannedFallback = graph(
       "09-exact-projection-modes",

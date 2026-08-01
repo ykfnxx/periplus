@@ -1560,11 +1560,25 @@ async function undoGraph(
 
 function locationEndpoint(graph: TargetJourneyGraphSnapshot, eventId: string) {
   const event = requireEvent(graph, eventId)
-  if (
-    event.type === "SECTION" ||
-    event.type === "TRANSIT" ||
-    event.type === "NOTE"
-  ) {
+  if (event.type === "SECTION") {
+    if (
+      event.detail.kind !== "CITY" ||
+      event.detail.lat === undefined ||
+      event.detail.lng === undefined ||
+      event.detail.coordinateSystem === undefined
+    ) {
+      throw new WorkspaceInputError(
+        `Transit endpoint ${eventId} has no location`
+      )
+    }
+    return {
+      name: event.title,
+      lat: event.detail.lat,
+      lng: event.detail.lng,
+      coordinateSystem: event.detail.coordinateSystem,
+    }
+  }
+  if (event.type === "TRANSIT" || event.type === "NOTE") {
     throw new WorkspaceInputError(`Transit endpoint ${eventId} has no location`)
   }
   return {

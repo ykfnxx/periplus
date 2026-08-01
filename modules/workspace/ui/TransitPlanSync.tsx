@@ -5,14 +5,23 @@ import {
   buildTransitPlanRequest,
   transitPlanFingerprint,
 } from "@/lib/journeys/planning"
+import {
+  selectWorkspaceGraph,
+  selectWorkspaceCanMutate,
+  selectWorkspaceLocked,
+  selectWorkspaceRevision,
+} from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 const DEBOUNCE_MS = 750
 const MAX_COMMAND_RETRIES = 2
+
 export default function TransitPlanSync() {
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
-  const draftRevision = useWorkspaceStore((state) => state.draftRevision)
-  const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
+  const document = useWorkspaceStore((state) => state.workspaceDocument)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const revision = useWorkspaceStore(selectWorkspaceRevision)
+  const isLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const failedCommandId = useWorkspaceStore(
     (state) => state.failedTransitPlanCommandId
@@ -20,7 +29,7 @@ export default function TransitPlanSync() {
   const setFailedCommandId = useWorkspaceStore(
     (state) => state.setFailedTransitPlanCommandId
   )
-  const attempted = useRef(new Map<string, number>())
+  const attempted = useRef(new Set<string>())
   const attemptsByCommandId = useRef(new Map<string, string>())
   const retryCounts = useRef(new Map<string, number>())
 
@@ -37,61 +46,52 @@ export default function TransitPlanSync() {
       }
       setFailedCommandId(null)
     }
-    if (!draftJourney || !sendAgentEvent || isDraftLocked) return
+    if (!document || !graph || !sendAgentEvent || isLocked || !canMutate) return
 
-    for (const event of draftJourney.events) {
+    for (const event of graph.events) {
       if (event.type !== "TRANSIT") continue
-      const request = buildTransitPlanRequest(event, draftJourney.events)
+      const request = buildTransitPlanRequest(event, graph.events)
       if (!request) continue
       const fingerprint = transitPlanFingerprint(request)
-      if (
-        event.detail.planningFingerprint === fingerprint &&
-        (event.detail.planningStatus === "READY" ||
-          event.detail.planningStatus === "FAILED")
-      ) {
-        const completedAttemptKey = `${event.id}:${fingerprint}`
-        attempted.current.delete(completedAttemptKey)
-        retryCounts.current.delete(completedAttemptKey)
-        for (const [commandId, attemptKey] of attemptsByCommandId.current) {
-          if (attemptKey === completedAttemptKey) {
-            attemptsByCommandId.current.delete(commandId)
-          }
-        }
+      const completed = graph.transitPlanningRuns.some(
+        (run) =>
+          run.transitEventId === event.id &&
+          run.requestFingerprint === fingerprint &&
+          (run.status === "READY" || run.status === "FAILED")
+      )
+      const attemptKey = `${event.id}:${fingerprint}`
+      if (completed) {
+        attempted.current.delete(attemptKey)
+        retryCounts.current.delete(attemptKey)
         continue
       }
-      const attemptKey = `${event.id}:${fingerprint}`
-      const attemptedAtRevision = attempted.current.get(attemptKey)
-      if (
-        attemptedAtRevision !== undefined &&
-        attemptedAtRevision !== draftRevision &&
-        event.detail.planningFingerprint !== fingerprint
-      ) {
-        attempted.current.delete(attemptKey)
-      }
       if (attempted.current.has(attemptKey)) continue
+
       const delayMs =
         DEBOUNCE_MS * 2 ** (retryCounts.current.get(attemptKey) ?? 0)
       const timer = window.setTimeout(() => {
-        const commandId = `browser-plan:${draftJourney.id}:${event.id}:${fingerprint}:${draftRevision}`
-        attempted.current.set(attemptKey, draftRevision)
+        const commandId = `browser-plan:${document.session.id}:${event.id}:${fingerprint}:${revision}`
+        attempted.current.add(attemptKey)
         attemptsByCommandId.current.set(commandId, attemptKey)
-        sendAgentEvent("draft.command", {
+        sendAgentEvent("workspace.command", {
           commandId,
-          tool: "journey.plan_transit",
-          input: {
-            eventId: event.id,
-            expectedRevision: draftRevision,
-            idempotencyKey: commandId,
+          expectedRevision: revision,
+          idempotencyKey: commandId,
+          command: {
+            name: "journey.plan_transit",
+            payload: { eventId: event.id, forceRefresh: false },
           },
         })
       }, delayMs)
       return () => window.clearTimeout(timer)
     }
   }, [
-    draftJourney,
-    draftRevision,
+    document,
+    canMutate,
     failedCommandId,
-    isDraftLocked,
+    graph,
+    isLocked,
+    revision,
     sendAgentEvent,
     setFailedCommandId,
   ])

@@ -23,6 +23,11 @@ const { exifMocks, photoClientMocks, storeState } = vi.hoisted(() => ({
     uploadPhoto: vi.fn(),
   },
   storeState: {
+    workspaceDocument: {
+      accessState: "OWNER",
+      draftState: "DIRTY",
+      session: { status: "ACTIVE" },
+    },
     mapReady: true,
     uploadModalOpen: true,
     uploadPhotos: [] as TestUploadPhoto[],
@@ -63,6 +68,9 @@ describe("PhotoUploadModal", () => {
     storeState.mapReady = true
     storeState.uploadModalOpen = true
     storeState.uploadPhotos = []
+    storeState.workspaceDocument.accessState = "OWNER"
+    storeState.workspaceDocument.draftState = "DIRTY"
+    storeState.workspaceDocument.session.status = "ACTIVE"
   })
 
   it("renders the single upload composer", () => {
@@ -143,5 +151,20 @@ describe("PhotoUploadModal", () => {
     storeState.uploadModalOpen = false
     const { container } = render(<PhotoUploadModal />)
     expect(container.firstChild).toBeNull()
+  })
+
+  it("keeps upload mutations disabled for an expired Workspace", () => {
+    storeState.workspaceDocument.accessState = "EXPIRED"
+    storeState.uploadPhotos = [
+      photoFixture({ lat: 39.9042, lng: 116.4074, caption: "北京" }),
+    ]
+
+    render(<PhotoUploadModal />)
+
+    expect(screen.getByRole("button", { name: "上传" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "重新选择" })).toBeDisabled()
+    expect(screen.getByPlaceholderText("添加描述...")).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "上传" }))
+    expect(photoClientMocks.uploadPhoto).not.toHaveBeenCalled()
   })
 })

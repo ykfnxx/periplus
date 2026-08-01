@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { expect, userEvent, within } from "storybook/test"
 import { silkRoadJourneyWithPlans } from "@/tests/storybook/route-fixtures"
-import { withWorkspaceState } from "@/tests/storybook/workspace-story"
+import {
+  withWorkspaceState,
+  workspaceDocumentForStory,
+} from "@/tests/storybook/workspace-story"
 import WorkbenchShell from "./WorkbenchShell"
 
 const meta = {
@@ -25,7 +28,7 @@ type Story = StoryObj<typeof meta>
 export const CompactTabs: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourneyWithPlans,
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans),
       workbenchTab: "preview",
       composerInput: "保留行程调整要求",
     }),

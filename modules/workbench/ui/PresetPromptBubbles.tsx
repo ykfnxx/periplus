@@ -2,6 +2,10 @@
 
 import { type WheelEvent, useLayoutEffect, useRef } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import {
+  selectWorkspaceCanMutate,
+  selectWorkspaceLocked,
+} from "@/modules/workspace/state/selectors"
 
 const presetPrompts = [
   "规划一条丝绸之路路线",
@@ -19,7 +23,8 @@ export default function PresetPromptBubbles({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const addUserMessage = useWorkspaceStore((state) => state.addUserMessage)
   const setComposerInput = useWorkspaceStore((state) => state.setComposerInput)
@@ -35,7 +40,7 @@ export default function PresetPromptBubbles({
   if (chatMessages.length > 0) return null
 
   const sendPrompt = (prompt: string) => {
-    if (!sendAgentEvent || isDraftLocked) return
+    if (!sendAgentEvent || isWorkspaceLocked || !canMutate) return
     addUserMessage(prompt)
     setWorkbenchTab("chat")
     sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
@@ -67,7 +72,7 @@ export default function PresetPromptBubbles({
           key={prompt}
           type="button"
           onClick={() => sendPrompt(prompt)}
-          disabled={!sendAgentEvent || isDraftLocked}
+          disabled={!sendAgentEvent || isWorkspaceLocked || !canMutate}
           className={`shrink-0 rounded-full px-4 py-2 text-left text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-55 ${
             stacked && index === 0
               ? "bg-russet text-soft-white hover:bg-ink"

@@ -1,8 +1,6 @@
 "use client"
 
-import { Suspense } from "react"
 import MapSurface from "@/modules/map-renderer/ui/MapSurface"
-import MapRouteLoader from "@/modules/workspace/ui/MapRouteLoader"
 import WorkspaceController, {
   useWorkspaceController,
 } from "@/modules/workspace/ui/WorkspaceController"
@@ -14,9 +12,6 @@ export default function MapWorkspace() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-cream text-ink">
       <WorkspaceController />
-      <Suspense fallback={null}>
-        <MapRouteLoader />
-      </Suspense>
       <MapSurface onIntent={handleMapIntent} />
       <WorkspaceInteractionLayer />
     </div>

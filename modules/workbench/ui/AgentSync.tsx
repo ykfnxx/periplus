@@ -2,17 +2,48 @@
 
 import { useEffect } from "react"
 import {
-  bootstrapAgentSession,
+  bootstrapWorkspace,
   connectAgentSocket,
   sendAgentEvent,
-  type AgentConversationMessage,
+  WorkspaceBootstrapError,
   type AgentEvent,
-  type DraftSnapshot,
 } from "@/lib/agent/client"
+import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
-function asDraftSnapshot(payload: unknown) {
-  return payload as DraftSnapshot
+const RECONNECT_DELAY_MS = 1_000
+
+function workspaceFromPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null
+  const record = payload as Record<string, unknown>
+  return (
+    "workspace" in record ? record.workspace : payload
+  ) as TargetWorkspaceDocument | null
+}
+
+function commandNameFromPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null
+  const result = (payload as Record<string, unknown>).result
+  if (!result || typeof result !== "object") return null
+  const commandName = (result as Record<string, unknown>).commandName
+  return typeof commandName === "string" ? commandName : null
+}
+
+function outcomeFromPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null
+  const result = (payload as Record<string, unknown>).result
+  if (!result || typeof result !== "object") return null
+  const outcome = (result as Record<string, unknown>).outcome
+  return outcome && typeof outcome === "object"
+    ? (outcome as Record<string, unknown>)
+    : null
+}
+
+function retryableBootstrapError(error: unknown) {
+  return !(
+    error instanceof WorkspaceBootstrapError &&
+    [401, 403, 410].includes(error.status)
+  )
 }
 
 function asDelta(payload: unknown) {
@@ -24,27 +55,31 @@ function asDelta(payload: unknown) {
   }
 }
 
-function asConversationMessages(
-  messages: AgentConversationMessage[] | undefined
-) {
-  return messages ?? []
+function conversationMessages(document: TargetWorkspaceDocument) {
+  return document.messages
+    .filter((message) => message.role !== "SYSTEM")
+    .map((message) => ({
+      id: message.id,
+      role:
+        message.role === "USER" ? ("user" as const) : ("assistant" as const),
+      content: message.content,
+      runId: message.agentRunId ?? null,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+    }))
 }
 
 export default function AgentSync() {
-  const applyDraftSnapshot = useWorkspaceStore(
-    (state) => state.applyDraftSnapshot
+  const applyWorkspaceDocument = useWorkspaceStore(
+    (state) => state.applyWorkspaceDocument
   )
-  const setDraftLocked = useWorkspaceStore((state) => state.setDraftLocked)
   const setAgentSender = useWorkspaceStore((state) => state.setAgentSender)
   const setChatMessages = useWorkspaceStore((state) => state.setChatMessages)
-  const setPendingSuggestions = useWorkspaceStore(
-    (state) => state.setPendingSuggestions
-  )
   const appendAssistantMessage = useWorkspaceStore(
     (state) => state.appendAssistantMessage
   )
-  const setDraftSaveState = useWorkspaceStore(
-    (state) => state.setDraftSaveState
+  const setWorkspaceCommitState = useWorkspaceStore(
+    (state) => state.setWorkspaceCommitState
   )
   const setFailedTransitPlanCommandId = useWorkspaceStore(
     (state) => state.setFailedTransitPlanCommandId
@@ -52,56 +87,91 @@ export default function AgentSync() {
 
   useEffect(() => {
     let socket: WebSocket | null = null
+    let reconnectTimer: number | null = null
+    let reconnectAttempt = 0
+    let connectionGeneration = 0
     let disposed = false
 
-    const applySnapshot = (snapshot: DraftSnapshot) => {
-      applyDraftSnapshot(snapshot.document, snapshot.revision)
-      setDraftLocked(snapshot.isLocked)
-      setPendingSuggestions(snapshot.pendingSuggestions ?? [])
+    const applyDocument = (document: TargetWorkspaceDocument | null) => {
+      if (!document) return false
+      if (!applyWorkspaceDocument(document)) return false
+      setChatMessages(conversationMessages(document))
+      return true
     }
 
-    bootstrapAgentSession()
-      .then(({ sessionId, draft, messages }) => {
-        if (disposed) return
-        applySnapshot(draft)
-        setChatMessages(asConversationMessages(messages))
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer !== null) return
+      setAgentSender(null)
+      const delay = Math.min(RECONNECT_DELAY_MS * 2 ** reconnectAttempt, 10_000)
+      reconnectAttempt += 1
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null
+        void connect()
+      }, delay)
+    }
 
-        const activeSocket = connectAgentSocket(sessionId)
+    const connect = async () => {
+      const generation = ++connectionGeneration
+      try {
+        const { workspace, ticket } = await bootstrapWorkspace()
+        if (disposed || generation !== connectionGeneration) return
+        applyDocument(workspace)
+
+        const activeSocket = connectAgentSocket(ticket)
         socket = activeSocket
         activeSocket.addEventListener("open", () => {
-          if (disposed) return
-          // 只有 OPEN 后才发布发送器，依赖它的深链接加载事件不会在连接期丢失。
+          if (disposed || socket !== activeSocket) return
+          reconnectAttempt = 0
           setAgentSender((type, payload) => {
             sendAgentEvent(activeSocket, type, payload)
           })
         })
         activeSocket.addEventListener("close", () => {
-          if (!disposed) setAgentSender(null)
+          if (disposed || socket !== activeSocket) return
+          socket = null
+          scheduleReconnect()
         })
         activeSocket.addEventListener("error", () => {
-          if (!disposed) setAgentSender(null)
+          if (disposed || socket !== activeSocket) return
+          socket = null
+          activeSocket.close()
+          scheduleReconnect()
         })
 
         activeSocket.addEventListener("message", (event) => {
+          if (disposed || socket !== activeSocket) return
           const message = JSON.parse(event.data) as AgentEvent
 
           if (
-            message.type === "session.ready" ||
-            message.type === "draft.updated" ||
-            message.type === "draft.locked" ||
-            message.type === "draft.unlocked"
+            message.type === "workspace.ready" ||
+            message.type === "workspace.updated" ||
+            message.type === "workspace.locked" ||
+            message.type === "workspace.unlocked"
           ) {
-            applySnapshot(asDraftSnapshot(message.payload))
-            return
-          }
-
-          if (message.type === "draft.saved") {
-            setDraftSaveState("success")
+            const documentAccepted = applyDocument(
+              workspaceFromPayload(message.payload)
+            )
+            if (!documentAccepted) return
+            const commandName = commandNameFromPayload(message.payload)
+            const outcome = outcomeFromPayload(message.payload)
+            if (commandName) {
+              setWorkspaceCommitState(
+                commandName === "workspace.commit" ? "success" : "idle"
+              )
+            }
+            if (
+              commandName === "workspace.fork" &&
+              typeof outcome?.workspaceId === "string"
+            ) {
+              window.location.assign(
+                `/workspace?workspace=${encodeURIComponent(outcome.workspaceId)}`
+              )
+            }
             return
           }
 
           if (message.type === "agent.run.started") {
-            setDraftSaveState("idle")
+            setWorkspaceCommitState("idle")
             return
           }
 
@@ -113,10 +183,6 @@ export default function AgentSync() {
             return
           }
 
-          if (message.type === "agent.run.completed") {
-            return
-          }
-
           if (message.type === "agent.run.cancelled") {
             appendAssistantMessage("\n已停止。\n")
             return
@@ -124,35 +190,38 @@ export default function AgentSync() {
 
           if (message.type === "agent.run.failed" || message.type === "error") {
             const error = asDelta(message.payload)
-            if (
-              message.type === "error" &&
-              error.commandId?.startsWith("browser-plan:")
-            ) {
+            if (error.commandId?.startsWith("browser-plan:")) {
               setFailedTransitPlanCommandId(error.commandId)
+              return
+            }
+            if (error.commandId?.startsWith("browser-commit:")) {
+              setWorkspaceCommitState("error")
             }
             appendAssistantMessage(`\n${error.message ?? "Agent 运行失败"}\n`)
-            setDraftSaveState("error")
           }
         })
-      })
-      .catch(() => {
+      } catch (error) {
         setAgentSender(null)
-      })
+        if (retryableBootstrapError(error)) scheduleReconnect()
+      }
+    }
+
+    void connect()
 
     return () => {
       disposed = true
+      connectionGeneration += 1
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
       setAgentSender(null)
       socket?.close()
     }
   }, [
     appendAssistantMessage,
+    applyWorkspaceDocument,
     setAgentSender,
     setChatMessages,
-    applyDraftSnapshot,
-    setDraftLocked,
-    setDraftSaveState,
     setFailedTransitPlanCommandId,
-    setPendingSuggestions,
+    setWorkspaceCommitState,
   ])
 
   return null

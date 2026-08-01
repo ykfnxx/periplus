@@ -5,7 +5,10 @@ import { getEdgePathPositions } from "@/lib/journeys/transit-geometry"
 import { plannedLocationOf } from "@/lib/journeys/locations"
 import { selectedTransitPlan } from "@/lib/journeys/planning"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
-import { useWorkspaceViewportInsets } from "@/modules/workspace/state/selectors"
+import {
+  selectWorkspaceGraph,
+  useWorkspaceViewportInsets,
+} from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { toAMapAvoid } from "@/modules/workspace/viewport"
 
@@ -20,7 +23,7 @@ function offsetForInsets(
 
 export default function MapViewportController() {
   const map = useWorkspaceStore((state) => state.map)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -32,15 +35,13 @@ export default function MapViewportController() {
   const viewportInsets = useWorkspaceViewportInsets()
 
   useEffect(() => {
-    if (!map || !draftJourney || !focusRequest) return
+    if (!map || !graph || !focusRequest) return
     const view = getJourneyScopeProjection(
-      draftJourney,
+      graph,
       viewLevel,
       activeSectionEventId
     )
-    const eventById = new Map(
-      draftJourney.events.map((event) => [event.id, event])
-    )
+    const eventById = new Map(graph.events.map((event) => [event.id, event]))
     const { target } = focusRequest
 
     if (target.type === "event") {
@@ -68,7 +69,10 @@ export default function MapViewportController() {
           eventById.get(transit.detail.plannedToEventId ?? "")
         )
         if (from && to) {
-          const selected = selectedTransitPlan(transit)
+          const selected = selectedTransitPlan(
+            transit,
+            graph.transitPlanningRuns
+          )
           const positions =
             selected?.segments.flatMap((segment) => segment.positions) ??
             getEdgePathPositions(from, to, transit.detail.transportMode)
@@ -110,7 +114,7 @@ export default function MapViewportController() {
   }, [
     activeSectionEventId,
     clearMapFocusRequest,
-    draftJourney,
+    graph,
     focusRequest,
     map,
     viewLevel,
