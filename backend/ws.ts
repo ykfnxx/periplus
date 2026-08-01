@@ -5,6 +5,7 @@ import { verifyWorkspaceTicket } from "@/modules/data/workspaces/workspace-ticke
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { AgentGateway } from "./agent/gateway"
 import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
+import { domainErrorResponse } from "./domain-error"
 
 interface WireMessage {
   type: string
@@ -15,12 +16,15 @@ function send(socket: WebSocket, event: AgentEvent) {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event))
 }
 
-function errorEvent(error: unknown, commandId?: string): AgentEvent {
+export function errorEvent(error: unknown, commandId?: string): AgentEvent {
+  const response = domainErrorResponse(error)
   return {
     type: "error",
     payload: {
-      message: error instanceof Error ? error.message : "Unexpected error",
+      code: response.code,
+      message: response.message,
       commandId,
+      ...(response.issues ? { issues: response.issues } : {}),
     },
   }
 }

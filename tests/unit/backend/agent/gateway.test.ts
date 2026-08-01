@@ -262,8 +262,9 @@ describe.sequential("P3 persistent AgentGateway", () => {
         },
         headWorkspaceRevision: 0,
       })
+      const projection = result.projection!
       if (mode !== "TRAVELOGUE") {
-        expect(result.projection.events.map((event) => event.eventId)).toEqual([
+        expect(projection.events.map((event) => event.eventId)).toEqual([
           "outer-fork",
           "inner-fork",
           "inner-a",
@@ -272,7 +273,7 @@ describe.sequential("P3 persistent AgentGateway", () => {
           "end",
         ])
       } else {
-        expect(result.projection.events).toEqual([])
+        expect(projection.events).toEqual([])
       }
     }
     await expect(
@@ -336,7 +337,7 @@ describe.sequential("P3 persistent AgentGateway", () => {
         mode: "PLANNER",
       }
     )
-    expect(section.projection.events.map((event) => event.eventId)).toEqual([
+    expect(section.projection!.events.map((event) => event.eventId)).toEqual([
       "morning",
       "afternoon",
     ])

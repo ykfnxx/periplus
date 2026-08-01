@@ -1,11 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { ZodError } from "zod"
 import type { AgentGateway, AgentToolRequest } from "./agent/gateway"
-import {
-  WorkspaceIdempotencyConflictError,
-  WorkspaceInputError,
-  WorkspaceRevisionConflictError,
-} from "@/modules/data/workspaces/workspace-repository"
+import { domainErrorResponse } from "./domain-error"
+import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
 
 type JsonBody = Record<string, unknown>
 
@@ -21,39 +17,15 @@ async function readJson(req: IncomingMessage): Promise<JsonBody> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as JsonBody
 }
 
-function errorResponse(error: unknown) {
-  if (error instanceof ZodError || error instanceof WorkspaceInputError) {
-    return {
-      status: 400,
-      body: {
-        error: {
-          code: "invalid_input",
-          message:
-            error instanceof ZodError
-              ? error.issues.map((issue) => issue.message).join("; ")
-              : error.message,
-        },
-      },
-    }
-  }
-  if (error instanceof WorkspaceRevisionConflictError) {
-    return {
-      status: 409,
-      body: { error: { code: "revision_conflict", message: error.message } },
-    }
-  }
-  if (error instanceof WorkspaceIdempotencyConflictError) {
-    return {
-      status: 409,
-      body: { error: { code: "idempotency_conflict", message: error.message } },
-    }
-  }
+export function errorResponse(error: unknown) {
+  const response = domainErrorResponse(error)
   return {
-    status: 500,
+    status: response.status,
     body: {
       error: {
-        code: "internal_error",
-        message: error instanceof Error ? error.message : "Unexpected error",
+        code: response.code,
+        message: response.message,
+        ...(response.issues ? { issues: response.issues } : {}),
       },
     },
   }
