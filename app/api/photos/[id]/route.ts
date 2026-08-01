@@ -1,4 +1,3 @@
-import { unlink } from "node:fs/promises"
 import { NextRequest, NextResponse } from "next/server"
 import {
   AuthRequiredError,
@@ -67,10 +66,6 @@ export async function DELETE(
     const result = await deletePhoto(context, id)
     if (!result.deleted) {
       return NextResponse.json({ error: "Photo not found" }, { status: 404 })
-    }
-
-    if (result.filePath) {
-      await unlink(result.filePath).catch(() => undefined)
     }
 
     return NextResponse.json({ success: true })

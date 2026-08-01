@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto"
-import { mkdir, writeFile } from "node:fs/promises"
+import { createHash, randomUUID } from "node:crypto"
+import { mkdir, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { NextRequest, NextResponse } from "next/server"
 import {
@@ -64,22 +64,34 @@ export async function POST(request: NextRequest) {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return badRequest("请选择照片位置")
     }
+    if (caption?.trim()) {
+      return badRequest("照片说明请在关联行程事件后填写")
+    }
 
     const extension = extensionByMimeType[file.type] ?? "bin"
     const filename = `${randomUUID()}.${extension}`
     const filePath = path.join(uploadRoot, filename)
+    const bytes = Buffer.from(await file.arrayBuffer())
+    const checksum = createHash("sha256").update(bytes).digest("hex")
     await mkdir(uploadRoot, { recursive: true })
-    await writeFile(filePath, Buffer.from(await file.arrayBuffer()))
+    await writeFile(filePath, bytes)
 
-    const photo = await createPhoto(context, {
-      filePath,
-      url: `/uploads/photos/${filename}`,
-      lat,
-      lng,
-      caption,
-      mimeType: file.type,
-      size: file.size,
-    })
+    let photo
+    try {
+      photo = await createPhoto(context, {
+        url: `/uploads/photos/${filename}`,
+        lat,
+        lng,
+        caption,
+        mimeType: file.type,
+        size: file.size,
+        checksum,
+        originalName: file.name || undefined,
+      })
+    } catch (error) {
+      await unlink(filePath).catch(() => undefined)
+      throw error
+    }
 
     return NextResponse.json(photo, { status: 201 })
   } catch (error) {

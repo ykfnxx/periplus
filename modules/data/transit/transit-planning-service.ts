@@ -1,9 +1,18 @@
 import { prisma } from "@/modules/data/db/prisma"
-import type {
-  TransitPlanBundle,
-  TransitPlanFailure,
-  TransitPlanRequest,
+import {
+  transitPlanFingerprint,
+  type TransitPlanBundle,
+  type TransitPlanFailure,
+  type TransitPlanRequest,
 } from "@/lib/journeys/planning"
+import type { AuthContext } from "@/modules/auth/server/context"
+import type { TargetTransitPlanningRun } from "@/modules/data-model/contracts"
+import { getJourneyRevisionByIdempotencyKey } from "@/modules/data/journeys/journey-repository"
+import {
+  commitTransitPlanningRun,
+  TransitInputError,
+  transitRunId,
+} from "./transit-repository"
 import {
   AMapTransitProvider,
   TransitProviderError,
@@ -17,6 +26,19 @@ export interface TransitPlanBatchResult {
   bundles: TransitPlanBundle[]
   failures: TransitPlanFailure[]
 }
+
+export type PersistedTransitPlanningResult =
+  | {
+      status: "READY"
+      run: TargetTransitPlanningRun
+      graph: NonNullable<Awaited<ReturnType<typeof commitTransitPlanningRun>>>
+    }
+  | {
+      status: "FAILED"
+      run: TargetTransitPlanningRun
+      failure: TransitPlanFailure
+      graph: NonNullable<Awaited<ReturnType<typeof commitTransitPlanningRun>>>
+    }
 
 interface PlanningServiceOptions {
   provider?: TransitPlanProvider
@@ -99,6 +121,103 @@ export class TransitPlanningService {
     return { bundles, failures }
   }
 
+  async planAndPersist(
+    context: AuthContext,
+    journeyId: string,
+    request: TransitPlanRequest,
+    options: { expectedRevision: number; idempotencyKey: string }
+  ): Promise<PersistedTransitPlanningResult> {
+    const requestFingerprint = transitPlanFingerprint(request)
+    const runId = transitRunId(
+      journeyId,
+      request.transitEventId,
+      options.idempotencyKey
+    )
+    const replay = await getJourneyRevisionByIdempotencyKey(
+      context,
+      journeyId,
+      options.idempotencyKey
+    )
+    if (replay) {
+      const run = replay.snapshot.transitPlanningRuns.find(
+        (candidate) => candidate.id === runId
+      )
+      if (
+        !run ||
+        replay.operation !== "journey.plan_transit" ||
+        run.transitEventId !== request.transitEventId ||
+        run.requestFingerprint !== requestFingerprint
+      ) {
+        throw new TransitInputError(
+          "Transit planning idempotency key has another payload"
+        )
+      }
+      if (run.status === "READY") {
+        return { status: "READY", run, graph: replay.snapshot }
+      }
+      if (run.status === "FAILED") {
+        return {
+          status: "FAILED",
+          run,
+          failure: {
+            transitEventId: run.transitEventId,
+            code: transitFailureCode(run.errorCode),
+            message: run.errorMessage ?? "路线规划失败",
+          },
+          graph: replay.snapshot,
+        }
+      }
+      throw new TransitInputError(
+        "Persisted Transit planning replay is not terminal"
+      )
+    }
+    const calculatedAt = new Date().toISOString()
+
+    let bundle: TransitPlanBundle
+    try {
+      bundle = await this.plan(request)
+    } catch (error) {
+      const failure = normalizeFailure(request.transitEventId, error)
+      const run: TargetTransitPlanningRun = {
+        id: runId,
+        transitEventId: request.transitEventId,
+        requestFingerprint,
+        provider: "amap",
+        status: "FAILED",
+        errorCode: failure.code,
+        errorMessage: failure.message,
+        calculatedAt,
+        plans: [],
+      }
+      const graph = await commitTransitPlanningRun(context, journeyId, {
+        run,
+        expectedRevision: options.expectedRevision,
+        idempotencyKey: options.idempotencyKey,
+      })
+      if (!graph) throw new Error("Journey not found")
+      return { status: "FAILED", run, failure, graph }
+    }
+
+    if (bundle.transitEventId !== request.transitEventId) {
+      throw new TransitInputError(
+        "Transit provider returned a bundle for another Transit Event"
+      )
+    }
+    const run = planningRunFromBundle(
+      runId,
+      bundle,
+      calculatedAt,
+      requestFingerprint
+    )
+    const graph = await commitTransitPlanningRun(context, journeyId, {
+      run,
+      expectedRevision: options.expectedRevision,
+      idempotencyKey: options.idempotencyKey,
+    })
+    if (!graph) throw new Error("Journey not found")
+    return { status: "READY", run, graph }
+  }
+
   private async planWithRetry(request: TransitPlanRequest) {
     let lastError: unknown
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -160,6 +279,68 @@ function normalizeFailure(
     transitEventId,
     code: "MALFORMED_RESPONSE",
     message: error instanceof Error ? error.message : "路线规划失败",
+  }
+}
+
+function transitFailureCode(
+  value: string | undefined
+): TransitPlanFailure["code"] {
+  return value === "INVALID_ENDPOINT" ||
+    value === "NO_ROUTE" ||
+    value === "AUTH_OR_QUOTA" ||
+    value === "RATE_LIMIT" ||
+    value === "TIMEOUT" ||
+    value === "MALFORMED_RESPONSE"
+    ? value
+    : "MALFORMED_RESPONSE"
+}
+
+function planningRunFromBundle(
+  runId: string,
+  bundle: TransitPlanBundle,
+  calculatedAt: string,
+  requestFingerprint: string
+): TargetTransitPlanningRun {
+  return {
+    id: runId,
+    transitEventId: bundle.transitEventId,
+    requestFingerprint,
+    provider: bundle.plans[0]?.provider ?? "amap",
+    status: "READY",
+    warning: bundle.warning,
+    calculatedAt,
+    plans: bundle.plans.map((plan, planIndex) => ({
+      id: `${runId}-plan-${planIndex}`,
+      planningRunId: runId,
+      transitEventId: bundle.transitEventId,
+      provider: plan.provider,
+      rank: plan.rank,
+      label: plan.label,
+      strategy: plan.strategy,
+      distanceMeters: plan.distanceMeters,
+      durationSeconds: plan.durationSeconds,
+      fareAmount: plan.fareAmount,
+      trafficBasis: plan.trafficBasis,
+      calculatedAt: plan.calculatedAt,
+      validUntil: plan.validUntil,
+      segments: plan.segments.map((segment, segmentIndex) => ({
+        id: `${runId}-plan-${planIndex}-segment-${segmentIndex}`,
+        order: segment.order,
+        mode: segment.mode,
+        fromName: segment.fromName,
+        toName: segment.toName,
+        lineName: segment.lineName,
+        distanceMeters: segment.distanceMeters,
+        durationSeconds: segment.durationSeconds,
+        fareAmount: segment.fareAmount,
+        departAt: segment.departAt,
+        arriveAt: segment.arriveAt,
+        coordinateSystem: segment.coordinateSystem,
+        geometryKind: segment.geometryKind,
+        positions: segment.positions,
+        trafficSections: segment.trafficSections,
+      })),
+    })),
   }
 }
 
