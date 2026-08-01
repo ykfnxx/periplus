@@ -1,12 +1,16 @@
 import { z } from "zod"
-import { TARGET_COMMAND_NAMES, TARGET_EVENT_EXECUTION_STATUSES } from "./enums"
 import {
   targetActorReferenceSchema,
+  targetIdSchema as idSchema,
+} from "./common"
+import { targetEventObservationCreateSchema } from "./content"
+import { TARGET_COMMAND_NAMES } from "./enums"
+import {
+  targetConfirmActualSchema,
   targetJourneyEventCreateSchema,
   targetJourneyEventLinkCreateSchema,
+  targetJourneyEventUpdatePatchSchema,
 } from "./journey"
-
-const idSchema = z.string().trim().min(1)
 
 const targetPositionSchema = z.discriminatedUnion("placement", [
   z.object({ placement: z.literal("UNSCHEDULED") }),
@@ -40,16 +44,7 @@ const commandBodySchema = z.discriminatedUnion("name", [
     name: z.literal("journey.update_event"),
     payload: z.object({
       eventId: idSchema,
-      patch: z.object({
-        title: z.string().trim().min(1).optional(),
-        description: z.string().nullable().optional(),
-        executionStatus: z.enum(TARGET_EVENT_EXECUTION_STATUSES).optional(),
-        plannedStartAt: z.iso.datetime({ offset: true }).nullable().optional(),
-        plannedEndAt: z.iso.datetime({ offset: true }).nullable().optional(),
-        actualStartAt: z.iso.datetime({ offset: true }).nullable().optional(),
-        actualEndAt: z.iso.datetime({ offset: true }).nullable().optional(),
-        detail: z.record(z.string(), z.unknown()).optional(),
-      }),
+      patch: targetJourneyEventUpdatePatchSchema,
     }),
   }),
   z.object({
@@ -107,7 +102,7 @@ const commandBodySchema = z.discriminatedUnion("name", [
     name: z.literal("journey.confirm_actual"),
     payload: z.object({
       eventId: idSchema,
-      actual: z.record(z.string(), z.unknown()),
+      actual: targetConfirmActualSchema,
     }),
   }),
   z.object({
@@ -132,9 +127,7 @@ const commandBodySchema = z.discriminatedUnion("name", [
     name: z.literal("journey.add_observation"),
     payload: z.object({
       eventId: idSchema,
-      kind: z.enum(["NOTE", "RATING", "COST", "WEATHER", "FACT"]),
-      body: z.string().optional(),
-      value: z.unknown().optional(),
+      observation: targetEventObservationCreateSchema,
     }),
   }),
   z.object({

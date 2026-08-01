@@ -8,11 +8,10 @@ import {
 } from "./enums"
 import {
   targetActorReferenceSchema,
-  targetJourneyGraphSnapshotSchema,
-} from "./journey"
-
-const idSchema = z.string().trim().min(1)
-const dateTimeSchema = z.iso.datetime({ offset: true })
+  targetDateTimeSchema as dateTimeSchema,
+  targetIdSchema as idSchema,
+} from "./common"
+import { targetJourneyGraphSnapshotSchema } from "./journey"
 
 export const WORKSPACE_ACTIVE_LEASE_DAYS = 30
 export const WORKSPACE_WEBSOCKET_TICKET_SECONDS = 300
@@ -63,19 +62,43 @@ export const targetWorkspaceSessionSchema = z
     }
   })
 
-export const targetWorkspaceRevisionSchema = z.object({
-  id: idSchema,
-  workspaceId: idSchema,
-  revision: z.number().int().positive(),
-  commandName: z.enum(TARGET_COMMAND_NAMES),
-  before: targetJourneyGraphSnapshotSchema,
-  after: targetJourneyGraphSnapshotSchema,
-  patch: z.unknown(),
-  inversePatch: z.unknown(),
-  actor: targetActorReferenceSchema,
-  idempotencyKey: idSchema,
-  createdAt: dateTimeSchema,
-})
+export const targetWorkspaceRevisionSchema = z
+  .object({
+    id: idSchema,
+    workspaceId: idSchema,
+    revision: z.number().int().positive(),
+    parentRevisionId: idSchema.optional(),
+    commandName: z.enum(TARGET_COMMAND_NAMES),
+    before: targetJourneyGraphSnapshotSchema,
+    after: targetJourneyGraphSnapshotSchema,
+    patch: z.unknown(),
+    inversePatch: z.unknown(),
+    actor: targetActorReferenceSchema,
+    idempotencyKey: idSchema,
+    createdAt: dateTimeSchema,
+  })
+  .superRefine((revision, context) => {
+    if (
+      (revision.revision === 1 && revision.parentRevisionId) ||
+      (revision.revision > 1 && !revision.parentRevisionId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["parentRevisionId"],
+        message: "only the first workspace revision may omit its parent",
+      })
+    }
+    if (
+      revision.before.id !== revision.after.id ||
+      revision.before.ownerId !== revision.after.ownerId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["after"],
+        message: "workspace revision cannot change journey identity or owner",
+      })
+    }
+  })
 
 export const targetWorkspaceMessageSchema = z.object({
   id: idSchema,

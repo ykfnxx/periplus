@@ -8,15 +8,22 @@ import {
   WORKSPACE_ACTIVE_LEASE_DAYS,
   WORKSPACE_WEBSOCKET_TICKET_SECONDS,
   targetCommandEnvelopeSchema,
+  targetCommandResultSchema,
   targetContentBundleSchema,
   targetJourneyBranchSelectionSchema,
   targetJourneyGraphSnapshotSchema,
+  targetJourneyRevisionSchema,
   targetResolvedJourneyProjectionSchema,
   targetTransitPlanningRunSchema,
   targetWorkspaceDocumentSchema,
+  targetWorkspaceRevisionSchema,
+  type TargetContractFixture,
+  type TargetJourneyGraphSnapshot,
+  type TargetScenarioCase,
+  type TargetScenarioState,
 } from "@/modules/data-model/contracts"
 
-function fixture(id: string) {
+function fixture(id: string): TargetContractFixture {
   const value = TARGET_CONTRACT_FIXTURES.find(
     (candidate) => candidate.id === id
   )
@@ -24,53 +31,190 @@ function fixture(id: string) {
   return value
 }
 
+function scenario(fixtureId: string, caseId: string): TargetScenarioCase {
+  const value = fixture(fixtureId).cases.find(
+    (candidate) => candidate.id === caseId
+  )
+  if (!value) throw new Error(`missing scenario ${fixtureId}/${caseId}`)
+  return value
+}
+
+function expectStateToParse(state: TargetScenarioState, label: string) {
+  if (state.graph) {
+    expect(
+      targetJourneyGraphSnapshotSchema.safeParse(state.graph),
+      `${label} graph`
+    ).toMatchObject({ success: true })
+  }
+  if (state.workspace) {
+    expect(
+      targetWorkspaceDocumentSchema.safeParse(state.workspace),
+      `${label} workspace`
+    ).toMatchObject({ success: true })
+  }
+  if (state.content) {
+    expect(
+      targetContentBundleSchema.safeParse(state.content),
+      `${label} content`
+    ).toMatchObject({ success: true })
+  }
+  for (const revision of state.journeyRevisions ?? []) {
+    expect(
+      targetJourneyRevisionSchema.safeParse(revision),
+      `${label} journey revision ${revision.revision}`
+    ).toMatchObject({ success: true })
+  }
+  for (const revision of state.workspaceRevisions ?? []) {
+    expect(
+      targetWorkspaceRevisionSchema.safeParse(revision),
+      `${label} workspace revision ${revision.revision}`
+    ).toMatchObject({ success: true })
+  }
+}
+
+function cloneGraph(value: TargetJourneyGraphSnapshot) {
+  return structuredClone(value)
+}
+
 describe("breaking data-model target contracts", () => {
-  it("freezes twelve uniquely named cross-layer fixtures", () => {
+  it("freezes twelve uniquely named table-driven fixtures", () => {
     expect(TARGET_CONTRACT_FIXTURES).toHaveLength(12)
     expect(new Set(TARGET_CONTRACT_FIXTURES.map((item) => item.id)).size).toBe(
       12
     )
+    for (const item of TARGET_CONTRACT_FIXTURES) {
+      expect(item.cases.length, item.id).toBeGreaterThan(0)
+      expect(new Set(item.cases.map((entry) => entry.id)).size).toBe(
+        item.cases.length
+      )
+      for (const entry of item.cases) {
+        expect(entry.expected).toBeDefined()
+        expect(
+          entry.expected.state !== undefined ||
+            entry.expected.projections !== undefined ||
+            entry.expected.commandResult !== undefined ||
+            entry.expected.error !== undefined,
+          `${item.id}/${entry.id} must have an executable expectation`
+        ).toBe(true)
+      }
+    }
   })
 
-  it("parses every graph, workspace, content, command, and projection fixture", () => {
+  it("parses every table input, command, positive after state, and exact projection", () => {
     for (const item of TARGET_CONTRACT_FIXTURES) {
-      if (item.graph) {
-        expect(
-          targetJourneyGraphSnapshotSchema.safeParse(item.graph),
-          `${item.id} graph`
-        ).toMatchObject({ success: true })
+      for (const entry of item.cases) {
+        const label = `${item.id}/${entry.id}`
+        expectStateToParse(entry.input, `${label} input`)
+        if (entry.command) {
+          expect(
+            targetCommandEnvelopeSchema.safeParse(entry.command),
+            `${label} command`
+          ).toMatchObject({ success: true })
+        }
+        if (entry.expected.state) {
+          expectStateToParse(entry.expected.state, `${label} expected`)
+        }
+        for (const projection of entry.expected.projections ?? []) {
+          expect(
+            targetResolvedJourneyProjectionSchema.safeParse(projection),
+            `${label} projection`
+          ).toMatchObject({ success: true })
+        }
+        if (entry.expected.commandResult) {
+          expect(
+            targetCommandResultSchema.safeParse(entry.expected.commandResult),
+            `${label} command result`
+          ).toMatchObject({ success: true })
+        }
+        if (entry.expected.error) {
+          expect(entry.expected.error.code).toMatch(/^[A-Z][A-Z0-9_]+$/)
+        }
       }
-      if (item.invalidGraph) {
-        expect(
-          targetJourneyGraphSnapshotSchema.safeParse(item.invalidGraph),
-          `${item.id} invalid graph contract shape`
-        ).toMatchObject({ success: true })
-        expect(item.expectedValidationError).toBeTruthy()
-      }
-      if (item.workspace) {
-        expect(
-          targetWorkspaceDocumentSchema.safeParse(item.workspace),
-          `${item.id} workspace`
-        ).toMatchObject({ success: true })
-      }
-      if (item.content) {
-        expect(
-          targetContentBundleSchema.safeParse(item.content),
-          `${item.id} content`
-        ).toMatchObject({ success: true })
-      }
-      for (const command of item.commands ?? []) {
-        expect(
-          targetCommandEnvelopeSchema.safeParse(command),
-          `${item.id} command`
-        ).toMatchObject({ success: true })
-      }
-      for (const projection of item.expectedProjections ?? []) {
-        expect(
-          targetResolvedJourneyProjectionSchema.safeParse(projection),
-          `${item.id} projection`
-        ).toMatchObject({ success: true })
-      }
+    }
+  })
+
+  it("rejects all five invalid graph states from the independent parse probes", () => {
+    const activeLinkToRetiredEvent = cloneGraph(
+      scenario("01-root-city-and-local-scope", "nested-scopes").input.graph!
+    )
+    activeLinkToRetiredEvent.events.find(
+      (event) => event.id === "city-a"
+    )!.retiredRevision = 1
+
+    const danglingSupersedes = cloneGraph(
+      scenario("05-current-branch-correction", "correct-current-selection")
+        .expected.state!.graph!
+    )
+    danglingSupersedes.branchSelections[1]!.supersedesId = "missing-selection"
+
+    const replacementCycle = cloneGraph(
+      scenario("08-replacement-retire-undo", "replacement-chain").expected
+        .state!.graph!
+    )
+    replacementCycle.replacements.push({
+      id: "replacement-cycle",
+      journeyId: replacementCycle.id,
+      predecessorEventId: "replacement-c",
+      successorEventId: "replacement-a",
+      revision: 3,
+      reason: "invalid cycle",
+    })
+
+    const unknownTransitEndpoint = cloneGraph(
+      scenario("01-root-city-and-local-scope", "nested-scopes").input.graph!
+    )
+    const transit = unknownTransitEndpoint.events.find(
+      (event) => event.id === "root-transit"
+    )!
+    if (transit.type !== "TRANSIT") throw new Error("fixture invariant")
+    transit.detail.plannedToEventId = "missing-event"
+
+    const duplicateSelectionId = cloneGraph(
+      scenario("05-current-branch-correction", "correct-current-selection")
+        .expected.state!.graph!
+    )
+    duplicateSelectionId.branchSelections.push(
+      structuredClone(duplicateSelectionId.branchSelections[1]!)
+    )
+
+    for (const invalid of [
+      activeLinkToRetiredEvent,
+      danglingSupersedes,
+      replacementCycle,
+      unknownTransitEndpoint,
+      duplicateSelectionId,
+    ]) {
+      expect(targetJourneyGraphSnapshotSchema.safeParse(invalid).success).toBe(
+        false
+      )
+    }
+  })
+
+  it("enforces revision bounds and branch supersession causality", () => {
+    const introducedAfterHead = cloneGraph(
+      scenario("01-root-city-and-local-scope", "nested-scopes").input.graph!
+    )
+    introducedAfterHead.events[0]!.introducedRevision = 2
+
+    const retiredBeforeIntroduction = cloneGraph(introducedAfterHead)
+    retiredBeforeIntroduction.revision = 3
+    retiredBeforeIntroduction.events[0]!.introducedRevision = 2
+    retiredBeforeIntroduction.events[0]!.retiredRevision = 1
+
+    const sameRevisionSupersession = cloneGraph(
+      scenario("05-current-branch-correction", "correct-current-selection")
+        .expected.state!.graph!
+    )
+    sameRevisionSupersession.branchSelections[1]!.journeyRevision = 1
+
+    for (const invalid of [
+      introducedAfterHead,
+      retiredBeforeIntroduction,
+      sameRevisionSupersession,
+    ]) {
+      expect(targetJourneyGraphSnapshotSchema.safeParse(invalid).success).toBe(
+        false
+      )
     }
   })
 
@@ -91,13 +235,9 @@ describe("breaking data-model target contracts", () => {
         phase: "ACTUAL",
       }).success
     ).toBe(false)
-    expect(fixture("05-current-branch-correction").expectedHistory).toEqual({
-      revision1Selection: "fork-a",
-      revision2Selection: "fork-b",
-    })
   })
 
-  it("keeps command inputs free of persistence-managed fields", () => {
+  it("keeps typed command inputs free of persistence-managed fields", () => {
     const parsed = targetCommandEnvelopeSchema.parse({
       aggregateId: "workspace",
       expectedRevision: 0,
@@ -129,8 +269,73 @@ describe("breaking data-model target contracts", () => {
     expect(parsed.command.payload.event).not.toHaveProperty("createdAt")
   })
 
+  it("rejects cross-kind update and actual payloads", () => {
+    const base = {
+      aggregateId: "journey",
+      expectedRevision: 1,
+      idempotencyKey: "typed-command",
+      actor: { kind: "USER", userId: "user" },
+    }
+    const invalidCommands = [
+      {
+        ...base,
+        command: {
+          name: "journey.update_event",
+          payload: {
+            eventId: "visit",
+            patch: {
+              type: "VISIT",
+              detail: { transportMode: "CAR" },
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        command: {
+          name: "journey.confirm_actual",
+          payload: {
+            eventId: "visit",
+            actual: {
+              type: "VISIT",
+              detail: { actualFromEventId: "a" },
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        command: {
+          name: "journey.add_observation",
+          payload: {
+            eventId: "visit",
+            observation: {
+              kind: "RATING",
+              phase: "ACTUAL",
+              visibility: "JOURNEY",
+              value: "five",
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        actor: { kind: "SYSTEM", userId: "user" },
+        command: {
+          name: "journey.skip_event",
+          payload: { eventId: "visit" },
+        },
+      },
+    ]
+    for (const invalid of invalidCommands) {
+      expect(targetCommandEnvelopeSchema.safeParse(invalid).success).toBe(false)
+    }
+  })
+
   it("persists UNSCHEDULED events but rejects active links to them", () => {
-    const document = structuredClone(fixture("07-unscheduled-placement").graph!)
+    const document = cloneGraph(
+      scenario("07-unscheduled-placement", "place-inbox-event").input.graph!
+    )
     document.links.push({
       id: "invalid-unscheduled-link",
       journeyId: document.id,
@@ -143,14 +348,19 @@ describe("breaking data-model target contracts", () => {
     const parsed = targetJourneyGraphSnapshotSchema.safeParse(document)
     expect(parsed.success).toBe(false)
     if (!parsed.success) {
-      expect(parsed.error.issues[0]?.message).toContain("UNSCHEDULED")
+      expect(
+        parsed.error.issues.some((issue) =>
+          issue.message.includes("UNSCHEDULED")
+        )
+      ).toBe(true)
     }
   })
 
   it("keeps DAY date as input while SECTION time remains derived", () => {
-    const document = structuredClone(
-      fixture("02-city-day-event-drilldown").graph!
-    )
+    const document = scenario(
+      "02-city-day-event-drilldown",
+      "city-day-drilldown"
+    ).input.graph!
     const day = document.events.find((event) => event.id === "day")!
     expect(day.type).toBe("SECTION")
     if (day.type !== "SECTION" || day.detail.kind !== "DAY") return
@@ -162,47 +372,203 @@ describe("breaking data-model target contracts", () => {
     expect(day).not.toHaveProperty("actualStartAt")
   })
 
-  it("records failed transit runs without plans", () => {
-    expect(
-      fixture("04-failed-transit-run").graph?.transitPlanningRuns[0]
-    ).toMatchObject({
-      status: "FAILED",
+  it("retains the READY transit selection when a refresh run fails", () => {
+    const entry = scenario(
+      "04-failed-transit-run",
+      "failed-refresh-retains-active-run"
+    )
+    const result = entry.expected.state!.graph!
+    const transit = result.events.find((event) => event.id === "transit")!
+    if (transit.type !== "TRANSIT") throw new Error("fixture invariant")
+    expect(transit.detail).toMatchObject({
+      activePlanningRunId: "run-ready",
+      selectedPlanId: "plan-recommended",
+    })
+    expect(result.transitPlanningRuns.map((run) => run.status)).toEqual([
+      "READY",
+      "FAILED",
+    ])
+    expect(result.transitPlanningRuns[1]).toMatchObject({
       requestFingerprint: "fixture-failed-fingerprint",
-      errorCode: "PROVIDER_TIMEOUT",
       plans: [],
     })
     expect(
       targetTransitPlanningRunSchema.safeParse({
-        id: "run",
-        transitEventId: "transit",
-        requestFingerprint: "fingerprint",
-        provider: "mock",
-        status: "FAILED",
-        calculatedAt: "2026-08-01T00:00:00.000Z",
-        plans: [
-          {
-            id: "unexpected-plan",
-            planningRunId: "run",
-            transitEventId: "transit",
-            provider: "mock",
-            rank: 0,
-            label: "unexpected",
-            strategy: "unexpected",
-            distanceMeters: 0,
-            durationSeconds: 0,
-            trafficBasis: "UNKNOWN",
-            calculatedAt: "2026-08-01T00:00:00.000Z",
-            segments: [],
-          },
-        ],
+        ...result.transitPlanningRuns[1],
+        plans: result.transitPlanningRuns[0]!.plans,
       }).success
     ).toBe(false)
   })
 
+  it("preserves old branch selection snapshots after current correction", () => {
+    const state = scenario(
+      "05-current-branch-correction",
+      "correct-current-selection"
+    ).expected.state!
+    expect(state.journeyRevisions).toHaveLength(2)
+    expect(
+      state.journeyRevisions?.[0]?.snapshot.branchSelections.map(
+        (selection) => selection.selectedLinkId
+      )
+    ).toEqual(["fork-a"])
+    expect(
+      state.journeyRevisions?.[1]?.snapshot.branchSelections.find(
+        (selection) => selection.id === "selection-b"
+      )?.selectedLinkId
+    ).toBe("fork-b")
+    const missingParent = structuredClone(state.journeyRevisions?.[1])
+    if (!missingParent) throw new Error("fixture invariant")
+    delete missingParent.parentRevisionId
+    expect(targetJourneyRevisionSchema.safeParse(missingParent).success).toBe(
+      false
+    )
+  })
+
+  it("contains two real nested forks in the positive branch fixture", () => {
+    const graphValue = scenario(
+      "06-strict-nested-branch",
+      "two-level-nested-forks"
+    ).input.graph!
+    expect(
+      graphValue.branchSelections.map((selection) => selection.forkEventId)
+    ).toEqual(["outer-fork", "inner-fork"])
+    expect(
+      scenario("06-strict-nested-branch", "crossing-branch-error").expected
+        .error?.code
+    ).toBe("CROSSING_BRANCH")
+  })
+
+  it("pins exact move, replacement chain, retire, and append-only undo states", () => {
+    const item = fixture("08-replacement-retire-undo")
+    expect(item.cases.map((entry) => entry.id)).toEqual([
+      "move-keeps-identities",
+      "replacement-chain",
+      "retire-event",
+      "undo-appends-revision",
+    ])
+    const move = scenario("08-replacement-retire-undo", "move-keeps-identities")
+    expect(move.input.graph!.events.map((event) => event.id)).toEqual(
+      move.expected.state!.graph!.events.map((event) => event.id)
+    )
+    expect(move.input.graph!.links.map((item) => item.id)).toEqual(
+      move.expected.state!.graph!.links.map((item) => item.id)
+    )
+    const replacement = scenario(
+      "08-replacement-retire-undo",
+      "replacement-chain"
+    ).expected.state!.graph!
+    expect(replacement.replacements).toHaveLength(2)
+    const undo = scenario("08-replacement-retire-undo", "undo-appends-revision")
+      .expected.state!
+    expect(undo.graph!.revision).toBe(3)
+    expect(undo.graph!.events[0]!.retiredRevision).toBeUndefined()
+    expect(undo.journeyRevisions?.map((revision) => revision.revision)).toEqual(
+      [1, 2, 3]
+    )
+  })
+
+  it("covers every required workspace lifecycle outcome", () => {
+    const item = fixture("10-workspace-lifecycle")
+    expect(item.cases.map((entry) => entry.id)).toEqual([
+      "owner-dirty",
+      "no-access",
+      "expired",
+      "stale",
+      "conflict",
+      "refresh-after-reauth",
+      "fork-workspace",
+      "idempotent-replay",
+      "restart-recovery",
+    ])
+    expect(
+      scenario("10-workspace-lifecycle", "idempotent-replay").expected
+        .commandResult
+    ).toMatchObject({ replayedFromIdempotencyKey: true })
+    const restart = scenario("10-workspace-lifecycle", "restart-recovery")
+    expect(JSON.stringify(restart.input)).toBe(
+      JSON.stringify(restart.expected.state)
+    )
+  })
+
+  it("pins content display metadata and Observation supersession in snapshots", () => {
+    const state = scenario(
+      "11-content-provenance",
+      "observation-supersession-and-pinned-content"
+    ).expected.state!
+    const snapshot = state.journeyRevisions?.[0]?.snapshot
+    expect(snapshot?.eventAssetLinks[0]).toMatchObject({
+      caption: "清晨西湖",
+      role: "GALLERY",
+      rank: 1024,
+      visibility: "PRIVATE",
+      assetId: "asset-private",
+      assetChecksum: "asset-checksum",
+    })
+    expect(snapshot?.observations[1]).toMatchObject({
+      id: "observation-2",
+      supersedesId: "observation-1",
+      body: "清晨人少",
+    })
+    expect(snapshot?.eventSourceLinks[0]).toMatchObject({
+      sourceDocumentId: "source-document",
+      sourceDocumentChecksum: "document-checksum",
+      excerpt: "西湖旧称武林水。",
+      page: "12",
+      confidence: 0.98,
+      rank: 1024,
+    })
+  })
+
   it("does not let an EventAssetLink broaden Asset visibility", () => {
-    const bundle = structuredClone(fixture("11-content-provenance").content!)
+    const bundle = structuredClone(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).input.content!
+    )
     bundle.eventAssetLinks[0]!.visibility = "PUBLIC"
     expect(targetContentBundleSchema.safeParse(bundle).success).toBe(false)
+
+    const staleAssetReference = structuredClone(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).input.content!
+    )
+    staleAssetReference.eventAssetLinks[0]!.assetChecksum = "stale-checksum"
+    expect(
+      targetContentBundleSchema.safeParse(staleAssetReference).success
+    ).toBe(false)
+
+    const staleSourceReference = structuredClone(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).input.content!
+    )
+    staleSourceReference.eventSourceLinks[0]!.sourceDocumentChecksum =
+      "stale-checksum"
+    expect(
+      targetContentBundleSchema.safeParse(staleSourceReference).success
+    ).toBe(false)
+  })
+
+  it("retains WGS84 SECTION-derived history after Journey soft delete", () => {
+    const entry = scenario(
+      "12-coordinate-section-delete-history",
+      "read-soft-deleted-history"
+    )
+    expect(entry.input.graph?.deletedAt).toBeDefined()
+    expect(entry.input.journeyRevisions?.map((item) => item.revision)).toEqual([
+      1, 2,
+    ])
+    expect(entry.input.journeyRevisions?.[1]?.snapshot.deletedAt).toBeDefined()
+    expect(entry.expected.evidence).toMatchObject({
+      sectionEventId: "day",
+      coordinateSystem: "WGS84",
+      derivedStartAt: "2026-08-01T01:00:00.000Z",
+      derivedEndAt: "2026-08-02T00:00:00.000Z",
+    })
   })
 
   it("freezes workspace lease and scoped WebSocket ticket lifetimes", () => {
@@ -210,7 +576,7 @@ describe("breaking data-model target contracts", () => {
     expect(WORKSPACE_WEBSOCKET_TICKET_SECONDS).toBe(300)
   })
 
-  it("assigns each field one authority and covers current, target, and derived", () => {
+  it("assigns each field one authority and covers all authority classes", () => {
     const fields = TARGET_FIELD_AUTHORITY.map((rule) => rule.field)
     expect(new Set(fields).size).toBe(fields.length)
     expect(
@@ -240,47 +606,91 @@ describe("breaking data-model target contracts", () => {
     })
   })
 
-  it("publishes a machine-readable target ERD for the schema baseline", () => {
+  it("publishes an unambiguous physical-relation ERD for P1", () => {
+    expect(new Set(TARGET_MODEL_RELATIONS.map((item) => item.id)).size).toBe(
+      TARGET_MODEL_RELATIONS.length
+    )
+    for (const item of TARGET_MODEL_RELATIONS) {
+      expect(item.fromFields.length, item.id).toBeGreaterThan(0)
+      expect(item.fromFields.length, item.id).toBe(item.toFields.length)
+      expect(item.fromFields.some((field) => field.includes("/"))).toBe(false)
+      expect(item.toFields.some((field) => field.includes("/"))).toBe(false)
+      expect(item.relationName.length).toBeGreaterThan(0)
+    }
     expect(TARGET_MODEL_RELATIONS).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          from: "JourneyRevision",
-          to: "Journey",
-          foreignKey: "journeyId",
+          id: "journey-link-from-event",
+          fromFields: ["journeyId", "fromEventId"],
+          toFields: ["journeyId", "id"],
+          relationName: "OutgoingJourneyLinks",
         }),
         expect.objectContaining({
-          from: "WorkspaceRevision",
-          to: "WorkspaceSession",
-          foreignKey: "workspaceId",
+          id: "journey-link-to-event",
+          fromFields: ["journeyId", "toEventId"],
+          toFields: ["journeyId", "id"],
+          relationName: "IncomingJourneyLinks",
         }),
         expect.objectContaining({
-          from: "EventSourceLink",
-          to: "SourceItem",
-          foreignKey: "sourceItemId",
+          id: "branch-selection-supersedes",
+          optional: true,
+          unique: true,
+        }),
+        expect.objectContaining({
+          id: "transit-detail-active-run",
+          fromFields: ["eventId", "activePlanningRunId"],
+          toFields: ["transitEventId", "id"],
+        }),
+        expect.objectContaining({
+          id: "transit-detail-selected-plan",
+          fromFields: ["eventId", "activePlanningRunId", "selectedPlanId"],
+          toFields: ["transitEventId", "planningRunId", "id"],
+        }),
+        expect.objectContaining({
+          id: "workspace-base-revision",
+          fromFields: ["sourceJourneyId", "baseJourneyRevision"],
+          toFields: ["journeyId", "revision"],
+        }),
+        expect.objectContaining({
+          id: "journey-revision-workspace-revision",
+          unique: true,
         }),
       ])
     )
     expect(
-      new Set(TARGET_MODEL_RELATIONS.map((relation) => relation.from)).size
+      new Set(TARGET_MODEL_RELATIONS.map((item) => item.fromModel)).size
     ).toBeGreaterThan(20)
   })
 
-  it("pins exact projection facts for all three modes", () => {
-    const projections = fixture(
-      "09-exact-projection-modes"
-    ).expectedProjections!
-    expect(projections.map((projection) => projection.mode)).toEqual([
+  it("pins exact projection bytes and Transit location ordinals", () => {
+    const canonical = scenario(
+      "09-exact-projection-modes",
+      "canonical-input-order"
+    ).expected.projections!
+    const shuffled = scenario(
+      "09-exact-projection-modes",
+      "shuffled-input-order"
+    ).expected.projections!
+    expect(JSON.stringify(shuffled)).toBe(JSON.stringify(canonical))
+    expect(canonical.map((projection) => projection.mode)).toEqual([
       "PLANNER",
       "EXECUTION",
       "TRAVELOGUE",
     ])
-    expect(projections[2]?.events.map((event) => event.eventId)).toEqual([
-      "confirmed",
-    ])
-    expect(projections[1]?.events.map((event) => event.valueSource)).toEqual([
-      "ACTUAL",
-      "PLANNED",
-      "PLANNED",
+    for (const projection of canonical) {
+      const transit = projection.events.find(
+        (event) => event.eventId === "confirmed-transit"
+      )
+      expect(transit).toMatchObject({
+        fromLocationOrdinal: 1,
+        toLocationOrdinal: 2,
+      })
+      expect(transit).not.toHaveProperty("locationOrdinal")
+    }
+    expect(canonical[2]!.events.map((event) => event.eventId)).toEqual([
+      "confirmed-start",
+      "confirmed-transit",
+      "confirmed-end",
     ])
   })
 })

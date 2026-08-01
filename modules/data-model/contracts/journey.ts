@@ -1,6 +1,5 @@
 import { z } from "zod"
 import {
-  TARGET_ACTOR_KINDS,
   TARGET_COORDINATE_SYSTEMS,
   TARGET_EVENT_EXECUTION_STATUSES,
   TARGET_EVENT_ORIGINS,
@@ -18,51 +17,38 @@ import {
   TARGET_TRANSPORT_MODES,
   TARGET_VALUE_SOURCES,
 } from "./enums"
+import {
+  targetActorReferenceSchema,
+  targetDateTimeSchema as dateTimeSchema,
+  targetIdSchema as idSchema,
+} from "./common"
+import {
+  targetEventAssetLinkSchema,
+  targetEventObservationSchema,
+  targetEventSourceLinkSchema,
+} from "./content"
 
-const idSchema = z.string().trim().min(1)
-const dateTimeSchema = z.iso.datetime({ offset: true })
 const localDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "localDate must use YYYY-MM-DD")
 const revisionSchema = z.number().int().positive()
 const optionalRevisionSchema = revisionSchema.nullable().optional()
 
-export const targetActorReferenceSchema = z
+export const targetLocationDetailSchema = z
   .object({
-    kind: z.enum(TARGET_ACTOR_KINDS),
-    userId: idSchema.optional(),
-    agentRunId: idSchema.optional(),
+    plannedPlaceId: idSchema.optional(),
+    actualPlaceId: idSchema.optional(),
+    plannedLat: z.number().min(-90).max(90),
+    plannedLng: z.number().min(-180).max(180),
+    actualLat: z.number().min(-90).max(90).optional(),
+    actualLng: z.number().min(-180).max(180).optional(),
+    coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS),
+    coordinateProvider: z.string().trim().min(1).optional(),
+    providerPlaceId: idSchema.optional(),
+    plannedDurationMinutes: z.number().int().nonnegative().optional(),
+    actualDurationMinutes: z.number().int().nonnegative().optional(),
   })
-  .superRefine((actor, context) => {
-    if (actor.kind === "USER" && !actor.userId) {
-      context.addIssue({
-        code: "custom",
-        path: ["userId"],
-        message: "USER actor requires userId",
-      })
-    }
-    if (actor.kind === "AGENT" && !actor.agentRunId) {
-      context.addIssue({
-        code: "custom",
-        path: ["agentRunId"],
-        message: "AGENT actor requires agentRunId",
-      })
-    }
-  })
-
-export const targetLocationDetailSchema = z.object({
-  plannedPlaceId: idSchema.optional(),
-  actualPlaceId: idSchema.optional(),
-  plannedLat: z.number().min(-90).max(90),
-  plannedLng: z.number().min(-180).max(180),
-  actualLat: z.number().min(-90).max(90).optional(),
-  actualLng: z.number().min(-180).max(180).optional(),
-  coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS),
-  coordinateProvider: z.string().trim().min(1).optional(),
-  providerPlaceId: idSchema.optional(),
-  plannedDurationMinutes: z.number().int().nonnegative().optional(),
-  actualDurationMinutes: z.number().int().nonnegative().optional(),
-})
+  .strict()
 
 const targetEventIdentitySchema = z.object({
   id: idSchema,
@@ -87,22 +73,28 @@ const targetExecutableEventFields = {
 }
 
 export const targetSectionDetailSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("DAY"),
-    localDate: localDateSchema,
-    timezone: z.string().trim().min(1),
-  }),
-  z.object({
-    kind: z.literal("CITY"),
-    placeId: idSchema.optional(),
-    lat: z.number().min(-90).max(90).optional(),
-    lng: z.number().min(-180).max(180).optional(),
-    coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS).optional(),
-  }),
-  z.object({
-    kind: z.literal("THEME"),
-    sourcePackId: idSchema.optional(),
-  }),
+  z
+    .object({
+      kind: z.literal("DAY"),
+      localDate: localDateSchema,
+      timezone: z.string().trim().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("CITY"),
+      placeId: idSchema.optional(),
+      lat: z.number().min(-90).max(90).optional(),
+      lng: z.number().min(-180).max(180).optional(),
+      coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("THEME"),
+      sourcePackId: idSchema.optional(),
+    })
+    .strict(),
 ])
 
 const targetSectionEventSchema = targetEventIdentitySchema.extend({
@@ -140,27 +132,29 @@ const targetActivityEventSchema = targetEventIdentitySchema.extend({
   }),
 })
 
-export const targetTransitEventDetailSchema = z.object({
-  plannedFromEventId: idSchema.optional(),
-  plannedToEventId: idSchema.optional(),
-  actualFromEventId: idSchema.optional(),
-  actualToEventId: idSchema.optional(),
-  transportMode: z.enum(TARGET_TRANSPORT_MODES),
-  requestMode: z.enum(TARGET_TRANSIT_REQUEST_MODES).optional(),
-  preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
-  plannedDepartAt: dateTimeSchema.optional(),
-  actualDepartAt: dateTimeSchema.optional(),
-  plannedDurationMinutes: z.number().int().nonnegative().optional(),
-  actualDurationMinutes: z.number().int().nonnegative().optional(),
-  plannedDistanceKm: z.number().nonnegative().optional(),
-  actualDistanceKm: z.number().nonnegative().optional(),
-  plannedCostEstimate: z.number().nonnegative().optional(),
-  actualCost: z.number().nonnegative().optional(),
-  activePlanningRunId: idSchema.optional(),
-  selectedPlanId: idSchema.optional(),
-  routeState: z.enum(["EMPTY", "READY", "ROUTE_STALE"]),
-  notes: z.string().optional(),
-})
+export const targetTransitEventDetailSchema = z
+  .object({
+    plannedFromEventId: idSchema.optional(),
+    plannedToEventId: idSchema.optional(),
+    actualFromEventId: idSchema.optional(),
+    actualToEventId: idSchema.optional(),
+    transportMode: z.enum(TARGET_TRANSPORT_MODES),
+    requestMode: z.enum(TARGET_TRANSIT_REQUEST_MODES).optional(),
+    preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
+    plannedDepartAt: dateTimeSchema.optional(),
+    actualDepartAt: dateTimeSchema.optional(),
+    plannedDurationMinutes: z.number().int().nonnegative().optional(),
+    actualDurationMinutes: z.number().int().nonnegative().optional(),
+    plannedDistanceKm: z.number().nonnegative().optional(),
+    actualDistanceKm: z.number().nonnegative().optional(),
+    plannedCostEstimate: z.number().nonnegative().optional(),
+    actualCost: z.number().nonnegative().optional(),
+    activePlanningRunId: idSchema.optional(),
+    selectedPlanId: idSchema.optional(),
+    routeState: z.enum(["EMPTY", "READY", "ROUTE_STALE"]),
+    notes: z.string().optional(),
+  })
+  .strict()
 
 const targetTransitEventSchema = targetEventIdentitySchema.extend({
   ...targetExecutableEventFields,
@@ -248,6 +242,154 @@ export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
     type: z.literal("NOTE"),
     detail: z.object({ body: z.string() }),
   }),
+])
+
+const targetEventUpdateBase = {
+  title: z.string().trim().min(1).optional(),
+  description: z.string().nullable().optional(),
+}
+
+const targetExecutableEventUpdateFields = {
+  executionStatus: z.enum(TARGET_EVENT_EXECUTION_STATUSES).optional(),
+  plannedStartAt: dateTimeSchema.nullable().optional(),
+  plannedEndAt: dateTimeSchema.nullable().optional(),
+  actualStartAt: dateTimeSchema.nullable().optional(),
+  actualEndAt: dateTimeSchema.nullable().optional(),
+}
+
+export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
+  "type",
+  [
+    z
+      .object({
+        type: z.literal("SECTION"),
+        ...targetEventUpdateBase,
+        detail: targetSectionDetailSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("VISIT"),
+        ...targetEventUpdateBase,
+        ...targetExecutableEventUpdateFields,
+        detail: targetLocationDetailSchema.partial().strict().optional(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("TRANSIT"),
+        ...targetEventUpdateBase,
+        ...targetExecutableEventUpdateFields,
+        detail: targetTransitEventDetailSchema
+          .omit({ activePlanningRunId: true, selectedPlanId: true })
+          .partial()
+          .strict()
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("STAY"),
+        ...targetEventUpdateBase,
+        ...targetExecutableEventUpdateFields,
+        detail: targetLocationDetailSchema
+          .extend({ checkInNote: z.string().optional() })
+          .partial()
+          .strict()
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("MEAL"),
+        ...targetEventUpdateBase,
+        ...targetExecutableEventUpdateFields,
+        detail: targetLocationDetailSchema
+          .extend({ cuisine: z.string().optional() })
+          .partial()
+          .strict()
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("ACTIVITY"),
+        ...targetEventUpdateBase,
+        ...targetExecutableEventUpdateFields,
+        detail: targetLocationDetailSchema
+          .extend({ bookingReference: z.string().optional() })
+          .partial()
+          .strict()
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("NOTE"),
+        ...targetEventUpdateBase,
+        detail: z.object({ body: z.string() }).partial().strict().optional(),
+      })
+      .strict(),
+  ]
+)
+
+const targetActualTimeFields = {
+  actualStartAt: dateTimeSchema.optional(),
+  actualEndAt: dateTimeSchema.optional(),
+}
+
+const targetActualLocationFields = {
+  actualPlaceId: idSchema.optional(),
+  actualLat: z.number().min(-90).max(90).optional(),
+  actualLng: z.number().min(-180).max(180).optional(),
+  actualDurationMinutes: z.number().int().nonnegative().optional(),
+}
+
+export const targetConfirmActualSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("VISIT"),
+      ...targetActualTimeFields,
+      detail: z.object(targetActualLocationFields).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("STAY"),
+      ...targetActualTimeFields,
+      detail: z.object(targetActualLocationFields).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("MEAL"),
+      ...targetActualTimeFields,
+      detail: z.object(targetActualLocationFields).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("ACTIVITY"),
+      ...targetActualTimeFields,
+      detail: z.object(targetActualLocationFields).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("TRANSIT"),
+      ...targetActualTimeFields,
+      detail: z
+        .object({
+          actualFromEventId: idSchema.optional(),
+          actualToEventId: idSchema.optional(),
+          actualDepartAt: dateTimeSchema.optional(),
+          actualDurationMinutes: z.number().int().nonnegative().optional(),
+          actualDistanceKm: z.number().nonnegative().optional(),
+          actualCost: z.number().nonnegative().optional(),
+        })
+        .strict(),
+    })
+    .strict(),
 ])
 
 export const targetJourneyEventLinkSchema = z.object({
@@ -402,91 +544,136 @@ export const targetJourneyGraphSnapshotSchema = z
     replacements: z.array(targetJourneyEventReplacementSchema),
     branchSelections: z.array(targetJourneyBranchSelectionSchema),
     transitPlanningRuns: z.array(targetTransitPlanningRunSchema),
-    eventAssetLinks: z.array(idSchema),
-    observations: z.array(idSchema),
-    eventSourceLinks: z.array(idSchema),
+    eventAssetLinks: z.array(targetEventAssetLinkSchema),
+    observations: z.array(targetEventObservationSchema),
+    eventSourceLinks: z.array(targetEventSourceLinkSchema),
   })
   .superRefine((graph, context) => {
+    const addIssue = (path: (string | number)[], message: string) => {
+      context.addIssue({ code: "custom", path, message })
+    }
+    const assertUniqueIds = (
+      path: string,
+      values: readonly { id: string }[]
+    ) => {
+      if (new Set(values.map((value) => value.id)).size !== values.length) {
+        addIssue([path], `${path} ids must be unique`)
+      }
+    }
+    const assertRevisionBounds = (
+      path: string,
+      id: string,
+      introducedRevision: number,
+      retiredRevision?: number | null
+    ) => {
+      if (introducedRevision > graph.revision) {
+        addIssue(
+          [path],
+          `${path} ${id} cannot be introduced after graph revision`
+        )
+      }
+      if (
+        retiredRevision !== undefined &&
+        retiredRevision !== null &&
+        (retiredRevision < introducedRevision ||
+          retiredRevision > graph.revision)
+      ) {
+        addIssue([path], `${path} ${id} has invalid revision bounds`)
+      }
+    }
+
+    assertUniqueIds("events", graph.events)
+    assertUniqueIds("links", graph.links)
+    assertUniqueIds("replacements", graph.replacements)
+    assertUniqueIds("branchSelections", graph.branchSelections)
+    assertUniqueIds("transitPlanningRuns", graph.transitPlanningRuns)
+    assertUniqueIds("eventAssetLinks", graph.eventAssetLinks)
+    assertUniqueIds("observations", graph.observations)
+    assertUniqueIds("eventSourceLinks", graph.eventSourceLinks)
+
     const events = new Map(graph.events.map((event) => [event.id, event]))
     const activeLinks = graph.links.filter((link) => !link.retiredRevision)
     const activeLinkById = new Map(activeLinks.map((link) => [link.id, link]))
 
-    if (events.size !== graph.events.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["events"],
-        message: "event ids must be unique",
-      })
-    }
-    if (
-      new Set(graph.links.map((link) => link.id)).size !== graph.links.length
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["links"],
-        message: "link ids must be unique",
-      })
-    }
-
     for (const event of graph.events) {
+      assertRevisionBounds(
+        "events",
+        event.id,
+        event.introducedRevision,
+        event.retiredRevision
+      )
       if (event.journeyId !== graph.id) {
-        context.addIssue({
-          code: "custom",
-          path: ["events"],
-          message: `event ${event.id} must belong to graph journey`,
-        })
+        addIssue(["events"], `event ${event.id} must belong to graph journey`)
       }
       if (event.parentSectionEventId) {
         const parent = events.get(event.parentSectionEventId)
         if (!parent || parent.type !== "SECTION") {
-          context.addIssue({
-            code: "custom",
-            path: ["events"],
-            message: `event ${event.id} requires an existing SECTION parent`,
-          })
+          addIssue(
+            ["events"],
+            `event ${event.id} requires an existing SECTION parent`
+          )
+        } else if (!event.retiredRevision && parent.retiredRevision) {
+          addIssue(
+            ["events"],
+            `active event ${event.id} cannot use a retired SECTION parent`
+          )
         }
       }
     }
 
-    for (const link of activeLinks) {
+    for (const event of graph.events) {
+      const seen = new Set<string>()
+      let cursor: TargetJourneyEvent | undefined = event
+      while (cursor?.parentSectionEventId) {
+        if (seen.has(cursor.id)) {
+          addIssue(["events"], `parent cycle includes event ${cursor.id}`)
+          break
+        }
+        seen.add(cursor.id)
+        cursor = events.get(cursor.parentSectionEventId)
+      }
+    }
+
+    for (const link of graph.links) {
+      assertRevisionBounds(
+        "links",
+        link.id,
+        link.introducedRevision,
+        link.retiredRevision
+      )
       if (link.journeyId !== graph.id) {
-        context.addIssue({
-          code: "custom",
-          path: ["links"],
-          message: `link ${link.id} must belong to graph journey`,
-        })
+        addIssue(["links"], `link ${link.id} must belong to graph journey`)
       }
       const from = events.get(link.fromEventId)
       const to = events.get(link.toEventId)
       if (!from || !to) {
-        context.addIssue({
-          code: "custom",
-          path: ["links"],
-          message: `link ${link.id} requires existing endpoints`,
-        })
+        addIssue(["links"], `link ${link.id} requires existing endpoints`)
         continue
       }
+      if (link.retiredRevision) continue
       if (
         from.placementStatus !== "SCHEDULED" ||
         to.placementStatus !== "SCHEDULED"
       ) {
-        context.addIssue({
-          code: "custom",
-          path: ["links"],
-          message: `link ${link.id} cannot reference UNSCHEDULED events`,
-        })
+        addIssue(
+          ["links"],
+          `link ${link.id} cannot reference UNSCHEDULED events`
+        )
+      }
+      if (from.retiredRevision || to.retiredRevision) {
+        addIssue(
+          ["links"],
+          `active link ${link.id} cannot reference retired events`
+        )
       }
       if (from.parentSectionEventId !== to.parentSectionEventId) {
-        context.addIssue({
-          code: "custom",
-          path: ["links"],
-          message: `link ${link.id} endpoints must share scope`,
-        })
+        addIssue(["links"], `link ${link.id} endpoints must share scope`)
       }
     }
 
     const predecessorIds = new Set<string>()
     const successorIds = new Set<string>()
+    const successorByPredecessor = new Map<string, string>()
     for (const replacement of graph.replacements) {
       const predecessor = events.get(replacement.predecessorEventId)
       const successor = events.get(replacement.successorEventId)
@@ -497,26 +684,123 @@ export const targetJourneyGraphSnapshotSchema = z
         predecessor.id === successor.id ||
         predecessor.parentSectionEventId !== successor.parentSectionEventId
       ) {
-        context.addIssue({
-          code: "custom",
-          path: ["replacements"],
-          message: `replacement ${replacement.id} requires distinct same-scope events in the graph journey`,
-        })
+        addIssue(
+          ["replacements"],
+          `replacement ${replacement.id} requires distinct same-scope events in the graph journey`
+        )
+      }
+      if (
+        predecessor &&
+        successor &&
+        (predecessor.retiredRevision !== replacement.revision ||
+          successor.introducedRevision !== replacement.revision)
+      ) {
+        addIssue(
+          ["replacements"],
+          `replacement ${replacement.id} must retire its predecessor and introduce its successor at the replacement revision`
+        )
+      }
+      if (replacement.revision > graph.revision) {
+        addIssue(
+          ["replacements"],
+          `replacement ${replacement.id} cannot be newer than graph revision`
+        )
       }
       if (
         predecessorIds.has(replacement.predecessorEventId) ||
         successorIds.has(replacement.successorEventId)
       ) {
-        context.addIssue({
-          code: "custom",
-          path: ["replacements"],
-          message: "replacement lineage must be one-to-one",
-        })
+        addIssue(["replacements"], "replacement lineage must be one-to-one")
       }
       predecessorIds.add(replacement.predecessorEventId)
       successorIds.add(replacement.successorEventId)
+      successorByPredecessor.set(
+        replacement.predecessorEventId,
+        replacement.successorEventId
+      )
+    }
+    for (const startId of successorByPredecessor.keys()) {
+      const seen = new Set<string>()
+      let cursor: string | undefined = startId
+      while (cursor) {
+        if (seen.has(cursor)) {
+          addIssue(
+            ["replacements"],
+            `replacement lineage contains a cycle at ${cursor}`
+          )
+          break
+        }
+        seen.add(cursor)
+        cursor = successorByPredecessor.get(cursor)
+      }
     }
 
+    const selectionById = new Map(
+      graph.branchSelections.map((selection) => [selection.id, selection])
+    )
+    for (const selection of graph.branchSelections) {
+      if (selection.journeyId !== graph.id) {
+        addIssue(
+          ["branchSelections"],
+          `selection ${selection.id} must belong to graph journey`
+        )
+      }
+      if (selection.journeyRevision > graph.revision) {
+        addIssue(
+          ["branchSelections"],
+          `selection ${selection.id} cannot be newer than graph revision`
+        )
+      }
+      const fork = events.get(selection.forkEventId)
+      const link = graph.links.find(
+        (candidate) => candidate.id === selection.selectedLinkId
+      )
+      if (!fork || !link || link.fromEventId !== fork.id) {
+        addIssue(
+          ["branchSelections"],
+          `selection ${selection.id} must reference a known fork and outgoing link`
+        )
+      } else if (
+        link.introducedRevision > selection.journeyRevision ||
+        (link.retiredRevision !== undefined &&
+          link.retiredRevision !== null &&
+          link.retiredRevision <= selection.journeyRevision)
+      ) {
+        addIssue(
+          ["branchSelections"],
+          `selection ${selection.id} must reference a link active at its revision`
+        )
+      }
+      if (!selection.supersedesId) continue
+      const previous = selectionById.get(selection.supersedesId)
+      if (
+        !previous ||
+        previous.journeyId !== selection.journeyId ||
+        previous.forkEventId !== selection.forkEventId ||
+        previous.journeyRevision >= selection.journeyRevision ||
+        previous.createdAt >= selection.createdAt
+      ) {
+        addIssue(
+          ["branchSelections"],
+          `selection ${selection.id} has an invalid supersedes relation`
+        )
+      }
+    }
+    for (const selection of graph.branchSelections) {
+      const seen = new Set<string>()
+      let cursor: typeof selection | undefined = selection
+      while (cursor?.supersedesId) {
+        if (seen.has(cursor.id)) {
+          addIssue(
+            ["branchSelections"],
+            `selection supersession contains a cycle at ${cursor.id}`
+          )
+          break
+        }
+        seen.add(cursor.id)
+        cursor = selectionById.get(cursor.supersedesId)
+      }
+    }
     const currentSelections = graph.branchSelections.filter(
       (selection) =>
         !graph.branchSelections.some(
@@ -525,28 +809,19 @@ export const targetJourneyGraphSnapshotSchema = z
     )
     const selectedForks = new Set<string>()
     for (const selection of currentSelections) {
-      if (selection.journeyId !== graph.id) {
-        context.addIssue({
-          code: "custom",
-          path: ["branchSelections"],
-          message: `selection ${selection.id} must belong to graph journey`,
-        })
-      }
       if (selectedForks.has(selection.forkEventId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["branchSelections"],
-          message: `fork ${selection.forkEventId} has multiple current selections`,
-        })
+        addIssue(
+          ["branchSelections"],
+          `fork ${selection.forkEventId} has multiple current selections`
+        )
       }
       selectedForks.add(selection.forkEventId)
       const link = activeLinkById.get(selection.selectedLinkId)
       if (!link || link.fromEventId !== selection.forkEventId) {
-        context.addIssue({
-          code: "custom",
-          path: ["branchSelections"],
-          message: `selection ${selection.id} must reference an active outgoing link`,
-        })
+        addIssue(
+          ["branchSelections"],
+          `current selection ${selection.id} must reference an active outgoing link`
+        )
       }
     }
 
@@ -555,56 +830,159 @@ export const targetJourneyGraphSnapshotSchema = z
     )
     for (const event of graph.events) {
       if (event.type !== "TRANSIT") continue
+      for (const endpointId of [
+        event.detail.plannedFromEventId,
+        event.detail.plannedToEventId,
+        event.detail.actualFromEventId,
+        event.detail.actualToEventId,
+      ]) {
+        if (!endpointId) continue
+        const endpoint = events.get(endpointId)
+        if (
+          !endpoint ||
+          endpoint.retiredRevision ||
+          endpoint.placementStatus !== "SCHEDULED" ||
+          endpoint.parentSectionEventId !== event.parentSectionEventId
+        ) {
+          addIssue(
+            ["events"],
+            `transit event ${event.id} has an invalid endpoint ${endpointId}`
+          )
+        }
+      }
       if (event.detail.selectedPlanId && !event.detail.activePlanningRunId) {
-        context.addIssue({
-          code: "custom",
-          path: ["events"],
-          message: `transit event ${event.id} cannot select a plan without an active run`,
-        })
+        addIssue(
+          ["events"],
+          `transit event ${event.id} cannot select a plan without an active run`
+        )
         continue
       }
       if (!event.detail.activePlanningRunId) continue
       const run = runsById.get(event.detail.activePlanningRunId)
       if (!run || run.transitEventId !== event.id || run.status !== "READY") {
-        context.addIssue({
-          code: "custom",
-          path: ["transitPlanningRuns"],
-          message: `transit event ${event.id} requires a READY active planning run`,
-        })
+        addIssue(
+          ["transitPlanningRuns"],
+          `transit event ${event.id} requires a READY active planning run`
+        )
         continue
       }
       if (!event.detail.selectedPlanId) {
-        context.addIssue({
-          code: "custom",
-          path: ["events"],
-          message: `transit event ${event.id} active run requires a selected plan`,
-        })
+        addIssue(
+          ["events"],
+          `transit event ${event.id} active run requires a selected plan`
+        )
         continue
       }
       if (!run.plans.some((plan) => plan.id === event.detail.selectedPlanId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["events"],
-          message: `transit event ${event.id} selected plan must belong to active run`,
-        })
+        addIssue(
+          ["events"],
+          `transit event ${event.id} selected plan must belong to active run`
+        )
+      }
+    }
+
+    for (const run of graph.transitPlanningRuns) {
+      const event = events.get(run.transitEventId)
+      if (!event || event.type !== "TRANSIT") {
+        addIssue(
+          ["transitPlanningRuns"],
+          `planning run ${run.id} requires a known TRANSIT event`
+        )
+      }
+    }
+
+    const observationById = new Map(
+      graph.observations.map((observation) => [observation.id, observation])
+    )
+    for (const observation of graph.observations) {
+      if (!events.has(observation.eventId)) {
+        addIssue(
+          ["observations"],
+          `observation ${observation.id} requires a known event`
+        )
+      }
+      if (!observation.supersedesId) continue
+      const previous = observationById.get(observation.supersedesId)
+      if (
+        !previous ||
+        previous.eventId !== observation.eventId ||
+        previous.kind !== observation.kind ||
+        previous.phase !== observation.phase ||
+        previous.createdAt >= observation.createdAt
+      ) {
+        addIssue(
+          ["observations"],
+          `observation ${observation.id} has an invalid supersedes relation`
+        )
+      }
+    }
+    for (const link of graph.eventAssetLinks) {
+      assertRevisionBounds(
+        "eventAssetLinks",
+        link.id,
+        link.introducedRevision,
+        link.retiredRevision
+      )
+      if (!events.has(link.eventId)) {
+        addIssue(
+          ["eventAssetLinks"],
+          `asset link ${link.id} requires a known event`
+        )
+      }
+    }
+    for (const link of graph.eventSourceLinks) {
+      assertRevisionBounds(
+        "eventSourceLinks",
+        link.id,
+        link.introducedRevision,
+        link.retiredRevision
+      )
+      if (!events.has(link.eventId)) {
+        addIssue(
+          ["eventSourceLinks"],
+          `source link ${link.id} requires a known event`
+        )
       }
     }
   })
 
-export const targetJourneyRevisionSchema = z.object({
-  id: idSchema,
-  journeyId: idSchema,
-  revision: revisionSchema,
-  operation: z.string().trim().min(1),
-  snapshot: targetJourneyGraphSnapshotSchema,
-  patch: z.unknown(),
-  inversePatch: z.unknown(),
-  actor: targetActorReferenceSchema,
-  idempotencyKey: idSchema,
-  parentRevisionId: idSchema.optional(),
-  workspaceRevisionId: idSchema.optional(),
-  createdAt: dateTimeSchema,
-})
+export const targetJourneyRevisionSchema = z
+  .object({
+    id: idSchema,
+    journeyId: idSchema,
+    revision: revisionSchema,
+    operation: z.string().trim().min(1),
+    snapshot: targetJourneyGraphSnapshotSchema,
+    patch: z.unknown(),
+    inversePatch: z.unknown(),
+    actor: targetActorReferenceSchema,
+    idempotencyKey: idSchema,
+    parentRevisionId: idSchema.optional(),
+    workspaceRevisionId: idSchema.optional(),
+    createdAt: dateTimeSchema,
+  })
+  .superRefine((revision, context) => {
+    if (
+      (revision.revision === 1 && revision.parentRevisionId) ||
+      (revision.revision > 1 && !revision.parentRevisionId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["parentRevisionId"],
+        message: "only the first revision may omit its parent",
+      })
+    }
+    if (
+      revision.snapshot.id !== revision.journeyId ||
+      revision.snapshot.revision !== revision.revision
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["snapshot"],
+        message: "revision snapshot must match its journey and revision",
+      })
+    }
+  })
 
 export const targetResolvedEventSchema = z.object({
   eventId: idSchema,

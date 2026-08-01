@@ -4,16 +4,16 @@ import {
   TARGET_ASSET_VISIBILITIES,
   TARGET_EVENT_ASSET_ROLES,
   TARGET_EVENT_SOURCE_ROLES,
-  TARGET_OBSERVATION_KINDS,
   TARGET_OBSERVATION_PHASES,
   TARGET_SOURCE_ITEM_RESOLUTION_STATES,
   TARGET_SOURCE_PACK_STATUSES,
   TARGET_SOURCE_PACK_VISIBILITIES,
 } from "./enums"
-import { targetActorReferenceSchema } from "./journey"
-
-const idSchema = z.string().trim().min(1)
-const dateTimeSchema = z.iso.datetime({ offset: true })
+import {
+  targetActorReferenceSchema,
+  targetDateTimeSchema as dateTimeSchema,
+  targetIdSchema as idSchema,
+} from "./common"
 
 export const targetAssetSchema = z.object({
   id: idSchema,
@@ -36,27 +36,135 @@ export const targetEventAssetLinkSchema = z.object({
   id: idSchema,
   eventId: idSchema,
   assetId: idSchema,
+  assetChecksum: z.string().trim().min(1),
   role: z.enum(TARGET_EVENT_ASSET_ROLES),
   rank: z.number().int().nonnegative(),
   caption: z.string().optional(),
   visibility: z.enum(TARGET_ASSET_VISIBILITIES),
+  introducedRevision: z.number().int().positive(),
   createdAt: dateTimeSchema,
   retiredRevision: z.number().int().positive().optional(),
 })
 
-export const targetEventObservationSchema = z.object({
+const targetObservationIdentity = {
   id: idSchema,
   eventId: idSchema,
-  kind: z.enum(TARGET_OBSERVATION_KINDS),
   phase: z.enum(TARGET_OBSERVATION_PHASES),
-  body: z.string().optional(),
-  value: z.unknown().optional(),
   observedAt: dateTimeSchema,
   actor: targetActorReferenceSchema,
   supersedesId: idSchema.optional(),
   visibility: z.enum(TARGET_ASSET_VISIBILITIES),
   createdAt: dateTimeSchema,
-})
+}
+
+const targetObservationCreateIdentity = {
+  phase: z.enum(TARGET_OBSERVATION_PHASES),
+  observedAt: dateTimeSchema.optional(),
+  visibility: z.enum(TARGET_ASSET_VISIBILITIES),
+}
+
+const targetObservationVariants = {
+  NOTE: { body: z.string().trim().min(1) },
+  RATING: {
+    value: z.number().min(0).max(5),
+    body: z.string().optional(),
+  },
+  COST: {
+    value: z
+      .object({
+        amount: z.number().nonnegative(),
+        currency: z.string().regex(/^[A-Z]{3}$/),
+      })
+      .strict(),
+    body: z.string().optional(),
+  },
+  WEATHER: {
+    value: z
+      .object({
+        condition: z.string().trim().min(1),
+        temperatureCelsius: z.number(),
+      })
+      .strict(),
+    body: z.string().optional(),
+  },
+  FACT: { body: z.string().trim().min(1) },
+} as const
+
+export const targetEventObservationSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      ...targetObservationIdentity,
+      kind: z.literal("NOTE"),
+      ...targetObservationVariants.NOTE,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationIdentity,
+      kind: z.literal("RATING"),
+      ...targetObservationVariants.RATING,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationIdentity,
+      kind: z.literal("COST"),
+      ...targetObservationVariants.COST,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationIdentity,
+      kind: z.literal("WEATHER"),
+      ...targetObservationVariants.WEATHER,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationIdentity,
+      kind: z.literal("FACT"),
+      ...targetObservationVariants.FACT,
+    })
+    .strict(),
+])
+
+export const targetEventObservationCreateSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      ...targetObservationCreateIdentity,
+      kind: z.literal("NOTE"),
+      ...targetObservationVariants.NOTE,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationCreateIdentity,
+      kind: z.literal("RATING"),
+      ...targetObservationVariants.RATING,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationCreateIdentity,
+      kind: z.literal("COST"),
+      ...targetObservationVariants.COST,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationCreateIdentity,
+      kind: z.literal("WEATHER"),
+      ...targetObservationVariants.WEATHER,
+    })
+    .strict(),
+  z
+    .object({
+      ...targetObservationCreateIdentity,
+      kind: z.literal("FACT"),
+      ...targetObservationVariants.FACT,
+    })
+    .strict(),
+])
 
 export const targetSourcePackSchema = z.object({
   id: idSchema,
@@ -100,12 +208,15 @@ export const targetEventSourceLinkSchema = z.object({
   id: idSchema,
   eventId: idSchema,
   sourceItemId: idSchema,
+  sourceDocumentId: idSchema,
+  sourceDocumentChecksum: z.string().trim().min(1),
   role: z.enum(TARGET_EVENT_SOURCE_ROLES),
   excerpt: z.string().max(500).optional(),
   page: z.string().optional(),
   confidence: z.number().min(0).max(1),
   rank: z.number().int().nonnegative(),
   approvedForJourneySharing: z.boolean(),
+  introducedRevision: z.number().int().positive(),
   createdAt: dateTimeSchema,
   retiredRevision: z.number().int().positive().optional(),
 })
@@ -138,6 +249,13 @@ export const targetContentBundleSchema = z
           code: "custom",
           path: ["eventAssetLinks"],
           message: `link ${link.id} cannot broaden asset visibility`,
+        })
+      }
+      if (link.assetChecksum !== asset.checksum) {
+        context.addIssue({
+          code: "custom",
+          path: ["eventAssetLinks"],
+          message: `link ${link.id} must pin its asset checksum`,
         })
       }
     }
@@ -173,11 +291,25 @@ export const targetContentBundleSchema = z
       }
     }
     for (const link of bundle.eventSourceLinks) {
-      if (!itemById.has(link.sourceItemId)) {
+      const item = itemById.get(link.sourceItemId)
+      const document = item
+        ? documentById.get(item.sourceDocumentId)
+        : undefined
+      if (!item) {
         context.addIssue({
           code: "custom",
           path: ["eventSourceLinks"],
           message: `source link ${link.id} requires an existing source item`,
+        })
+      } else if (
+        link.sourceDocumentId !== item.sourceDocumentId ||
+        !document ||
+        link.sourceDocumentChecksum !== document.checksum
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["eventSourceLinks"],
+          message: `source link ${link.id} must pin its source document and checksum`,
         })
       }
       if (link.approvedForJourneySharing && !link.excerpt) {
