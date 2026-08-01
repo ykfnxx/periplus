@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto"
-import { mkdir, writeFile } from "node:fs/promises"
+import { createHash, randomUUID } from "node:crypto"
+import { mkdir, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { NextRequest, NextResponse } from "next/server"
 import {
@@ -11,16 +11,13 @@ import {
   listPhotos,
   PhotoInputError,
 } from "@/modules/data/photos/photo-repository"
+import {
+  createPrivatePhotoStorageKey,
+  privatePhotoExtension,
+  privatePhotoFilePath,
+} from "@/modules/data/photos/photo-storage"
 
 const maxPhotoSize = 5 * 1024 * 1024
-const uploadRoot = path.join(process.cwd(), "public", "uploads", "photos")
-
-const extensionByMimeType: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-}
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -59,27 +56,40 @@ export async function POST(request: NextRequest) {
         : undefined
 
     if (!(file instanceof File)) return badRequest("请选择图片文件")
-    if (!file.type.startsWith("image/")) return badRequest("请选择图片文件")
+    const extension = privatePhotoExtension(file.type)
+    if (!extension) return badRequest("仅支持 JPEG、PNG、WebP 或 GIF 图片")
     if (file.size > maxPhotoSize) return badRequest("图片大小不能超过 5MB")
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return badRequest("请选择照片位置")
     }
+    if (caption?.trim()) {
+      return badRequest("照片说明请在关联行程事件后填写")
+    }
 
-    const extension = extensionByMimeType[file.type] ?? "bin"
     const filename = `${randomUUID()}.${extension}`
-    const filePath = path.join(uploadRoot, filename)
-    await mkdir(uploadRoot, { recursive: true })
-    await writeFile(filePath, Buffer.from(await file.arrayBuffer()))
+    const storageKey = createPrivatePhotoStorageKey(filename)
+    const filePath = privatePhotoFilePath(storageKey)
+    const bytes = Buffer.from(await file.arrayBuffer())
+    const checksum = createHash("sha256").update(bytes).digest("hex")
+    await mkdir(path.dirname(filePath), { recursive: true })
+    await writeFile(filePath, bytes)
 
-    const photo = await createPhoto(context, {
-      filePath,
-      url: `/uploads/photos/${filename}`,
-      lat,
-      lng,
-      caption,
-      mimeType: file.type,
-      size: file.size,
-    })
+    let photo
+    try {
+      photo = await createPhoto(context, {
+        storageKey,
+        lat,
+        lng,
+        caption,
+        mimeType: file.type,
+        size: file.size,
+        checksum,
+        originalName: file.name || undefined,
+      })
+    } catch (error) {
+      await unlink(filePath).catch(() => undefined)
+      throw error
+    }
 
     return NextResponse.json(photo, { status: 201 })
   } catch (error) {

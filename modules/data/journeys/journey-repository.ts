@@ -368,6 +368,93 @@ function assertReadonlyDomainsUnchanged(
   }
 }
 
+export type JourneyWriteDomain = "CORE" | "TRANSIT" | "CONTENT"
+
+function coreStateWithoutTransitSelection(graph: TargetJourneyGraphSnapshot) {
+  return {
+    id: graph.id,
+    ownerId: graph.ownerId,
+    status: graph.status,
+    visibility: graph.visibility,
+    title: graph.title,
+    description: graph.description,
+    deletedAt: graph.deletedAt,
+    events: graph.events.map((event) =>
+      event.type === "TRANSIT"
+        ? {
+            ...event,
+            detail: {
+              ...event.detail,
+              activePlanningRunId: undefined,
+              selectedPlanId: undefined,
+              routeState: undefined,
+            },
+          }
+        : event
+    ),
+    links: graph.links,
+    replacements: graph.replacements,
+    branchSelections: graph.branchSelections,
+  }
+}
+
+function transitState(graph: TargetJourneyGraphSnapshot) {
+  return {
+    selections: graph.events.flatMap((event) =>
+      event.type === "TRANSIT"
+        ? [
+            {
+              eventId: event.id,
+              activePlanningRunId: event.detail.activePlanningRunId,
+              selectedPlanId: event.detail.selectedPlanId,
+              routeState: event.detail.routeState,
+            },
+          ]
+        : []
+    ),
+    runs: graph.transitPlanningRuns,
+  }
+}
+
+function contentState(graph: TargetJourneyGraphSnapshot) {
+  return {
+    eventAssetLinks: graph.eventAssetLinks,
+    observations: graph.observations,
+    eventSourceLinks: graph.eventSourceLinks,
+  }
+}
+
+function assertDomainChanges(
+  previous: TargetJourneyGraphSnapshot,
+  next: TargetJourneyGraphSnapshot,
+  domain: JourneyWriteDomain
+) {
+  if (domain === "CORE") {
+    assertReadonlyDomainsUnchanged(previous, next)
+    return
+  }
+
+  if (
+    !sameJson(
+      coreStateWithoutTransitSelection(previous),
+      coreStateWithoutTransitSelection(next)
+    )
+  ) {
+    throw new JourneyInputError(
+      `${domain} writes cannot mutate Journey core state`
+    )
+  }
+  if (domain === "TRANSIT") {
+    if (!sameJson(contentState(previous), contentState(next))) {
+      throw new JourneyInputError("Transit writes cannot mutate Content state")
+    }
+    return
+  }
+  if (!sameJson(transitState(previous), transitState(next))) {
+    throw new JourneyInputError("Content writes cannot mutate Transit state")
+  }
+}
+
 function assertCreateDomainsEmpty(graph: TargetJourneyGraphSnapshot) {
   const readonlyState = readonlyDomainState(graph)
   if (Object.values(readonlyState).some((values) => values.length > 0)) {
@@ -875,6 +962,364 @@ async function createSelections(
   }
 }
 
+async function persistTransitDomain(
+  tx: Prisma.TransactionClient,
+  previous: TargetJourneyGraphSnapshot,
+  next: TargetJourneyGraphSnapshot
+) {
+  const previousRuns = new Map(
+    previous.transitPlanningRuns.map((run) => [run.id, run])
+  )
+  const nextRunIds = new Set(next.transitPlanningRuns.map((run) => run.id))
+  for (const run of previous.transitPlanningRuns) {
+    if (!nextRunIds.has(run.id)) {
+      throw new JourneyInputError(
+        `TransitPlanningRun ${run.id} cannot be removed`
+      )
+    }
+  }
+  for (const run of next.transitPlanningRuns) {
+    const before = previousRuns.get(run.id)
+    if (before) {
+      if (!sameJson(before, run)) {
+        throw new JourneyInputError(`TransitPlanningRun ${run.id} is immutable`)
+      }
+      continue
+    }
+    await tx.transitPlanningRun.create({
+      data: {
+        id: run.id,
+        transitEventId: run.transitEventId,
+        requestFingerprint: run.requestFingerprint,
+        provider: run.provider,
+        status: "PLANNING",
+        errorCode: null,
+        errorMessage: null,
+        warning: run.warning ?? null,
+        calculatedAt: new Date(run.calculatedAt),
+        validUntil: run.validUntil ? new Date(run.validUntil) : null,
+      },
+    })
+    for (const plan of run.plans) {
+      await tx.transitPlan.create({
+        data: {
+          id: plan.id,
+          planningRunId: plan.planningRunId,
+          transitEventId: plan.transitEventId,
+          provider: plan.provider,
+          rank: plan.rank,
+          label: plan.label,
+          strategy: plan.strategy,
+          distanceMeters: plan.distanceMeters,
+          durationSeconds: plan.durationSeconds,
+          fareAmount: plan.fareAmount ?? null,
+          trafficBasis: plan.trafficBasis,
+          calculatedAt: new Date(plan.calculatedAt),
+          validUntil: plan.validUntil ? new Date(plan.validUntil) : null,
+        },
+      })
+      for (const segment of plan.segments) {
+        await tx.transitSegment.create({
+          data: {
+            id: segment.id,
+            transitPlanId: plan.id,
+            order: segment.order,
+            mode: segment.mode,
+            fromName: segment.fromName ?? null,
+            toName: segment.toName ?? null,
+            lineName: segment.lineName ?? null,
+            distanceMeters: segment.distanceMeters ?? null,
+            durationSeconds: segment.durationSeconds ?? null,
+            fareAmount: segment.fareAmount ?? null,
+            departAt: segment.departAt ? new Date(segment.departAt) : null,
+            arriveAt: segment.arriveAt ? new Date(segment.arriveAt) : null,
+            coordinateSystem: segment.coordinateSystem,
+            geometryKind: segment.geometryKind,
+            positionsJson: json(segment.positions),
+            trafficSectionsJson: segment.trafficSections
+              ? json(segment.trafficSections)
+              : null,
+          },
+        })
+      }
+    }
+    if (run.status !== "PLANNING") {
+      await tx.transitPlanningRun.update({
+        where: { id: run.id },
+        data: {
+          status: run.status,
+          errorCode: run.errorCode ?? null,
+          errorMessage: run.errorMessage ?? null,
+        },
+      })
+    }
+  }
+
+  const previousEvents = new Map(
+    previous.events.map((event) => [event.id, event])
+  )
+  for (const event of next.events) {
+    if (event.type !== "TRANSIT") continue
+    const before = previousEvents.get(event.id)
+    if (!before || before.type !== "TRANSIT") {
+      throw new JourneyInputError(
+        "Transit writes cannot introduce Transit Events"
+      )
+    }
+    const changed =
+      before.detail.activePlanningRunId !== event.detail.activePlanningRunId ||
+      before.detail.selectedPlanId !== event.detail.selectedPlanId ||
+      before.detail.routeState !== event.detail.routeState
+    if (!changed) continue
+    await tx.transitEventDetail.update({
+      where: { eventId: event.id },
+      data: {
+        activePlanningRunId: event.detail.activePlanningRunId ?? null,
+        selectedPlanId: event.detail.selectedPlanId ?? null,
+        routeState: event.detail.routeState,
+      },
+    })
+  }
+}
+
+function assertRetirableLinkTransition(
+  label: string,
+  previous: {
+    id: string
+    introducedRevision: number
+    retiredRevision?: number
+  }[],
+  next: { id: string; introducedRevision: number; retiredRevision?: number }[],
+  revision: number
+) {
+  const previousIds = new Set(previous.map((value) => value.id))
+  const nextById = new Map(next.map((value) => [value.id, value]))
+  for (const value of previous) {
+    const current = nextById.get(value.id)
+    if (!current)
+      throw new JourneyInputError(`${label} ${value.id} cannot be removed`)
+    if (
+      current.retiredRevision !== value.retiredRevision &&
+      (value.retiredRevision !== undefined ||
+        current.retiredRevision !== revision)
+    ) {
+      throw new JourneyInputError(
+        `${label} ${value.id} must retire exactly once at revision ${revision}`
+      )
+    }
+  }
+  for (const value of next) {
+    if (!previousIds.has(value.id) && value.introducedRevision !== revision) {
+      throw new JourneyInputError(
+        `new ${label} ${value.id} must be introduced at revision ${revision}`
+      )
+    }
+  }
+}
+
+async function persistContentDomain(
+  tx: Prisma.TransactionClient,
+  previous: TargetJourneyGraphSnapshot,
+  next: TargetJourneyGraphSnapshot
+) {
+  assertRetirableLinkTransition(
+    "EventAssetLink",
+    previous.eventAssetLinks,
+    next.eventAssetLinks,
+    next.revision
+  )
+  assertRetirableLinkTransition(
+    "EventSourceLink",
+    previous.eventSourceLinks,
+    next.eventSourceLinks,
+    next.revision
+  )
+
+  const previousAssetLinks = new Map(
+    previous.eventAssetLinks.map((link) => [link.id, link])
+  )
+  for (const link of next.eventAssetLinks) {
+    const before = previousAssetLinks.get(link.id)
+    if (before) {
+      const immutableBefore = { ...before, retiredRevision: undefined }
+      const immutableAfter = { ...link, retiredRevision: undefined }
+      if (!sameJson(immutableBefore, immutableAfter)) {
+        throw new JourneyInputError(
+          `EventAssetLink ${link.id} identity is immutable`
+        )
+      }
+      if (before.retiredRevision !== link.retiredRevision) {
+        await tx.eventAssetLink.update({
+          where: { id: link.id },
+          data: { retiredRevision: link.retiredRevision ?? null },
+        })
+      }
+      continue
+    }
+    const asset = await tx.asset.findUnique({ where: { id: link.assetId } })
+    if (!asset || asset.deletedAt || asset.checksum !== link.assetChecksum) {
+      throw new JourneyInputError(
+        `EventAssetLink ${link.id} must pin an active Asset checksum`
+      )
+    }
+    if (asset.ownerId !== next.ownerId && asset.visibility !== "PUBLIC") {
+      throw new JourneyInputError(
+        `EventAssetLink ${link.id} cannot expose another owner's Asset`
+      )
+    }
+    const visibilityRank = { PRIVATE: 0, JOURNEY: 1, PUBLIC: 2 } as const
+    if (visibilityRank[link.visibility] > visibilityRank[asset.visibility]) {
+      throw new JourneyInputError(
+        `EventAssetLink ${link.id} cannot broaden Asset visibility`
+      )
+    }
+    await tx.eventAssetLink.create({
+      data: {
+        id: link.id,
+        journeyId: link.journeyId,
+        eventId: link.eventId,
+        assetId: link.assetId,
+        assetChecksum: link.assetChecksum,
+        role: link.role,
+        rank: link.rank,
+        caption: link.caption ?? null,
+        visibility: link.visibility,
+        introducedRevision: link.introducedRevision,
+        retiredRevision: link.retiredRevision ?? null,
+        createdAt: new Date(link.createdAt),
+      },
+    })
+  }
+
+  const previousObservations = new Map(
+    previous.observations.map((observation) => [observation.id, observation])
+  )
+  const nextObservations = new Map(
+    next.observations.map((observation) => [observation.id, observation])
+  )
+  for (const observation of previous.observations) {
+    const current = nextObservations.get(observation.id)
+    if (!current || !sameJson(observation, current)) {
+      throw new JourneyInputError(
+        `EventObservation ${observation.id} is append-only`
+      )
+    }
+  }
+  for (const observation of next.observations) {
+    if (previousObservations.has(observation.id)) continue
+    const value = "value" in observation ? observation.value : undefined
+    await tx.eventObservation.create({
+      data: {
+        id: observation.id,
+        eventId: observation.eventId,
+        kind: observation.kind,
+        phase: observation.phase,
+        body: observation.body ?? null,
+        valueJson: value === undefined ? null : json(value),
+        observedAt: new Date(observation.observedAt),
+        ...actorColumns(observation.actor),
+        supersedesId: observation.supersedesId ?? null,
+        visibility: observation.visibility,
+        createdAt: new Date(observation.createdAt),
+      },
+    })
+  }
+
+  const previousSourceLinks = new Map(
+    previous.eventSourceLinks.map((link) => [link.id, link])
+  )
+  for (const link of next.eventSourceLinks) {
+    const before = previousSourceLinks.get(link.id)
+    if (before) {
+      const immutableBefore = { ...before, retiredRevision: undefined }
+      const immutableAfter = { ...link, retiredRevision: undefined }
+      if (!sameJson(immutableBefore, immutableAfter)) {
+        throw new JourneyInputError(
+          `EventSourceLink ${link.id} identity is immutable`
+        )
+      }
+      if (before.retiredRevision !== link.retiredRevision) {
+        await tx.eventSourceLink.update({
+          where: { id: link.id },
+          data: { retiredRevision: link.retiredRevision ?? null },
+        })
+      }
+      continue
+    }
+    const source = await tx.sourceItem.findUnique({
+      where: { id: link.sourceItemId },
+      include: { sourceDocument: { include: { sourcePack: true } } },
+    })
+    if (
+      !source ||
+      source.sourceDocument.id !== link.sourceDocumentId ||
+      source.sourceDocument.checksum !== link.sourceDocumentChecksum
+    ) {
+      throw new JourneyInputError(
+        `EventSourceLink ${link.id} must pin its SourceItem document`
+      )
+    }
+    if (source.sourceDocument.sourcePack.status === "ARCHIVED") {
+      throw new JourneyInputError(
+        `EventSourceLink ${link.id} cannot use an archived SourcePack`
+      )
+    }
+    if (
+      source.sourceDocument.sourcePack.ownerId !== next.ownerId &&
+      (source.sourceDocument.sourcePack.visibility !== "SHARED" ||
+        !link.approvedForJourneySharing ||
+        !link.excerpt)
+    ) {
+      throw new JourneyInputError(
+        `EventSourceLink ${link.id} cannot expose a private external SourcePack`
+      )
+    }
+    await tx.eventSourceLink.create({
+      data: {
+        id: link.id,
+        journeyId: link.journeyId,
+        eventId: link.eventId,
+        sourceItemId: link.sourceItemId,
+        sourceDocumentId: link.sourceDocumentId,
+        sourceDocumentChecksum: link.sourceDocumentChecksum,
+        role: link.role,
+        excerpt: link.excerpt ?? null,
+        page: link.page ?? null,
+        confidence: link.confidence,
+        rank: link.rank,
+        approvedForJourneySharing: link.approvedForJourneySharing,
+        introducedRevision: link.introducedRevision,
+        retiredRevision: link.retiredRevision ?? null,
+        createdAt: new Date(link.createdAt),
+      },
+    })
+  }
+}
+
+async function advanceJourneyHead(
+  tx: Prisma.TransactionClient,
+  ownerId: string,
+  previous: TargetJourneyGraphSnapshot,
+  next: TargetJourneyGraphSnapshot
+) {
+  const updated = await tx.journey.updateMany({
+    where: {
+      id: previous.id,
+      ownerId,
+      revision: previous.revision,
+    },
+    data: {
+      revision: next.revision,
+      status: next.status,
+      visibility: next.visibility,
+      title: next.title,
+      description: next.description ?? null,
+      deletedAt: next.deletedAt ? new Date(next.deletedAt) : null,
+    },
+  })
+  if (updated.count !== 1) throw new JourneyRevisionConflictError()
+}
+
 function hasPrismaCode(error: unknown, code: string) {
   return (
     typeof error === "object" &&
@@ -994,11 +1439,12 @@ export async function createJourney(
   }
 }
 
-export async function commitJourneyGraph(
+async function commitJourneyGraphInDomain(
   context: AuthContext,
   id: string,
   input: unknown,
-  expectedRevision?: number | null
+  expectedRevision: number | null | undefined,
+  domain: JourneyWriteDomain
 ): Promise<TargetJourneyGraphSnapshot | null> {
   const write = validatedWrite(input)
   const actor = write.actor ?? defaultActor(context)
@@ -1033,7 +1479,7 @@ export async function commitJourneyGraph(
       let next: TargetJourneyGraphSnapshot
       try {
         next = validateJourneyGraphTransition(previous, write.graph)
-        assertReadonlyDomainsUnchanged(previous, next)
+        assertDomainChanges(previous, next, domain)
       } catch (error) {
         inputError(error)
       }
@@ -1052,6 +1498,20 @@ export async function commitJourneyGraph(
           write.workspaceRevisionId
         )
       }
+      if (domain === "CONTENT") {
+        const previousObservationIds = new Set(
+          previous.observations.map((observation) => observation.id)
+        )
+        for (const observation of next.observations) {
+          if (previousObservationIds.has(observation.id)) continue
+          await assertActorAuthorized(
+            tx,
+            context,
+            observation.actor,
+            write.workspaceRevisionId
+          )
+        }
+      }
 
       const parentRevision = await tx.journeyRevision.findUnique({
         where: {
@@ -1068,6 +1528,17 @@ export async function commitJourneyGraph(
         )
       }
       await createRevision(tx, write, actor, parentRevision.id)
+
+      if (domain === "TRANSIT") {
+        await persistTransitDomain(tx, previous, next)
+      } else if (domain === "CONTENT") {
+        await persistContentDomain(tx, previous, next)
+      }
+
+      if (domain !== "CORE") {
+        await advanceJourneyHead(tx, record.ownerId, previous, next)
+        return graphFromRevisionJson(json(next))
+      }
 
       const previousEvents = new Map(
         previous.events.map((event) => [event.id, event])
@@ -1260,22 +1731,7 @@ export async function commitJourneyGraph(
         await tx.journeyEventReplacement.create({ data: replacement })
       }
 
-      const updated = await tx.journey.updateMany({
-        where: {
-          id,
-          ownerId: record.ownerId,
-          revision: previous.revision,
-        },
-        data: {
-          revision: next.revision,
-          status: next.status,
-          visibility: next.visibility,
-          title: next.title,
-          description: next.description ?? null,
-          deletedAt: next.deletedAt ? new Date(next.deletedAt) : null,
-        },
-      })
-      if (updated.count !== 1) throw new JourneyRevisionConflictError()
+      await advanceJourneyHead(tx, record.ownerId, previous, next)
 
       return graphFromRevisionJson(json(next))
     })
@@ -1292,6 +1748,37 @@ export async function commitJourneyGraph(
     }
     throw error
   }
+}
+
+export function commitJourneyGraph(
+  context: AuthContext,
+  id: string,
+  input: unknown,
+  expectedRevision?: number | null
+) {
+  return commitJourneyGraphInDomain(
+    context,
+    id,
+    input,
+    expectedRevision,
+    "CORE"
+  )
+}
+
+export function commitJourneyDomainGraph(
+  context: AuthContext,
+  id: string,
+  input: unknown,
+  expectedRevision: number,
+  domain: Exclude<JourneyWriteDomain, "CORE">
+) {
+  return commitJourneyGraphInDomain(
+    context,
+    id,
+    input,
+    expectedRevision,
+    domain
+  )
 }
 
 export async function updateJourney(
@@ -1339,6 +1826,43 @@ export async function getJourneyRevision(
   if (!journey) return null
   const record = await prisma.journeyRevision.findUnique({
     where: { journeyId_revision: { journeyId, revision } },
+  })
+  if (!record) return null
+  return targetJourneyRevisionSchema.parse({
+    id: record.id,
+    journeyId: record.journeyId,
+    revision: record.revision,
+    operation: record.operation,
+    snapshot: JSON.parse(record.snapshotJson),
+    patch: JSON.parse(record.patchJson),
+    inversePatch: JSON.parse(record.inversePatchJson),
+    actor:
+      record.actorKind === "USER"
+        ? { kind: "USER", userId: record.actorUserId }
+        : record.actorKind === "AGENT"
+          ? { kind: "AGENT", agentRunId: record.actorAgentRunId }
+          : { kind: "SYSTEM" },
+    idempotencyKey: record.idempotencyKey,
+    parentRevisionId: record.parentRevisionId ?? undefined,
+    workspaceRevisionId: record.workspaceRevisionId ?? undefined,
+    createdAt: record.createdAt.toISOString(),
+  })
+}
+
+export async function getJourneyRevisionByIdempotencyKey(
+  context: AuthContext,
+  journeyId: string,
+  idempotencyKey: string
+): Promise<TargetJourneyRevision | null> {
+  const journey = await prisma.journey.findFirst({
+    where: journeyScopeWhere(context, journeyId, true),
+    select: { id: true },
+  })
+  if (!journey) return null
+  const record = await prisma.journeyRevision.findUnique({
+    where: {
+      journeyId_idempotencyKey: { journeyId, idempotencyKey },
+    },
   })
   if (!record) return null
   return targetJourneyRevisionSchema.parse({

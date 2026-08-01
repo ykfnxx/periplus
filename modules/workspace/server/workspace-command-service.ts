@@ -1,4 +1,5 @@
 import type { AuthContext } from "@/modules/auth/server/context"
+import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
 import type { Journey, JourneyInput } from "@/types/journey"
 import type { JourneyToolName } from "./contracts"
 import { periplusServerConfig } from "@/config/periplus.server"
@@ -9,30 +10,47 @@ import {
 } from "@/modules/data/journeys/journey-repository"
 import { DraftInputError, DraftSessionService } from "./draft-session-service"
 
-interface JourneyRepositoryPort {
-  get(context: AuthContext, journeyId: string): Promise<Journey | null>
-  create(context: AuthContext, input: JourneyInput): Promise<Journey>
+interface JourneyGraphRepositoryPort {
+  get(
+    context: AuthContext,
+    journeyId: string
+  ): Promise<TargetJourneyGraphSnapshot | Journey | null>
+  create(
+    context: AuthContext,
+    input: JourneyInput
+  ): Promise<TargetJourneyGraphSnapshot | Journey>
   update(
     context: AuthContext,
     journeyId: string,
     input: JourneyInput,
     expectedRevision?: number | null
-  ): Promise<Journey | null>
+  ): Promise<TargetJourneyGraphSnapshot | Journey | null>
 }
 
 interface WorkspaceCommandDependencies {
-  journeys?: JourneyRepositoryPort
+  journeys?: JourneyGraphRepositoryPort
   persistTransitPlanning?: boolean
 }
 
-const defaultJourneyRepository: JourneyRepositoryPort = {
+const defaultJourneyRepository: JourneyGraphRepositoryPort = {
   get: getJourney,
   create: createJourney,
   update: updateJourney,
 }
 
+function requireLegacyJourney(
+  journey: TargetJourneyGraphSnapshot | Journey
+): Journey {
+  if ("replacements" in journey) {
+    throw new DraftInputError(
+      "Target Journey graphs require the persistent Workspace command path"
+    )
+  }
+  return journey
+}
+
 export class WorkspaceCommandService {
-  private readonly journeys: JourneyRepositoryPort
+  private readonly journeys: JourneyGraphRepositoryPort
   private readonly persistTransitPlanning: boolean
 
   constructor(
@@ -48,7 +66,10 @@ export class WorkspaceCommandService {
   loadSavedJourney(context: AuthContext, sessionId: string, journeyId: string) {
     return this.journeys.get(context, journeyId).then((journey) => {
       if (!journey) throw new DraftInputError("Journey not found")
-      return this.drafts.loadPersistedJourney(sessionId, journey)
+      return this.drafts.loadPersistedJourney(
+        sessionId,
+        requireLegacyJourney(journey)
+      )
     })
   }
 
@@ -77,7 +98,7 @@ export class WorkspaceCommandService {
     if (!savedJourney) throw new DraftInputError("Journey not found")
     return this.drafts.markDraftSaved(
       sessionId,
-      savedJourney,
+      requireLegacyJourney(savedJourney),
       !this.persistTransitPlanning
     )
   }
