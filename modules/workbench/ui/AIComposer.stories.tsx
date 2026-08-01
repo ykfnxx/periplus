@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { expect, fn, userEvent, within } from "storybook/test"
 import { silkRoadJourney } from "@/lib/mock-journeys"
-import { withWorkspaceState } from "@/tests/storybook/workspace-story"
+import {
+  withWorkspaceState,
+  workspaceDocumentForStory,
+} from "@/tests/storybook/workspace-story"
 import AIComposer from "./AIComposer"
 
 const meta = {
@@ -24,7 +27,7 @@ const sendReadyEvent = fn()
 export const Ready: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourney,
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
       sendAgentEvent: sendReadyEvent,
     }),
   ],
@@ -48,8 +51,9 @@ const sendLockedEvent = fn()
 export const Running: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourney,
-      isDraftLocked: true,
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney, {
+        locked: true,
+      }),
       sendAgentEvent: sendLockedEvent,
     }),
   ],
@@ -67,9 +71,34 @@ export const Running: Story = {
 export const SaveFailed: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourney,
-      draftSaveState: "error",
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
+      workspaceCommitState: "error",
       sendAgentEvent: fn(),
     }),
   ],
+}
+
+const expiredDocument = workspaceDocumentForStory(silkRoadJourney)
+expiredDocument.accessState = "EXPIRED"
+expiredDocument.session.status = "EXPIRED"
+
+export const ExpiredReadOnly: Story = {
+  decorators: [
+    withWorkspaceState({
+      workspaceDocument: expiredDocument,
+      composerInput: "尝试修改行程",
+      sendAgentEvent: fn(),
+    }),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByRole("textbox", { name: "AI 输入" })
+    ).toBeDisabled()
+    await expect(canvas.getByRole("button", { name: "保存" })).toBeDisabled()
+    await expect(canvas.getByRole("button", { name: "发送" })).toBeDisabled()
+    await expect(
+      canvas.getByText("Workspace 已过期或无写权限，当前为只读状态。")
+    ).toBeVisible()
+  },
 }

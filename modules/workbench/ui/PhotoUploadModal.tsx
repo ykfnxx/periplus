@@ -4,6 +4,7 @@ import type { ChangeEvent, DragEvent } from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Check, ImagePlus, MapPin, Trash2, UploadCloud, X } from "lucide-react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { selectWorkspaceCanMutate } from "@/modules/workspace/state/selectors"
 import type { UploadPhoto } from "@/modules/workspace/state/types"
 import { parseExifGps, readFileAsDataURL, wgs84ToGcj02 } from "@/lib/exif"
 import { photoDtoToShare, uploadPhoto } from "@/modules/data/photos/client"
@@ -29,6 +30,7 @@ export default function PhotoUploadModal() {
   const [isDragging, setIsDragging] = useState(false)
 
   const mapReady = useWorkspaceStore((s) => s.mapReady)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
   const uploadModalOpen = useWorkspaceStore((s) => s.uploadModalOpen)
   const uploadPhotos = useWorkspaceStore((s) => s.uploadPhotos)
   const setUploadPhotos = useWorkspaceStore((s) => s.setUploadPhotos)
@@ -54,6 +56,7 @@ export default function PhotoUploadModal() {
     (photo) => !hasCoordinates(photo)
   )
   const canSubmit =
+    canMutate &&
     uploadPhotos.length > 0 &&
     missingLocationPhotos.length === 0 &&
     !isUploading
@@ -66,7 +69,7 @@ export default function PhotoUploadModal() {
 
   const processFiles = useCallback(
     async (files: File[]) => {
-      if (files.length === 0) return
+      if (!canMutate || files.length === 0) return
 
       setValidationError("")
 
@@ -117,7 +120,7 @@ export default function PhotoUploadModal() {
       if (firstPhotoId) setActivePhotoId(firstPhotoId)
       clearInput()
     },
-    [addUploadPhoto, clearInput]
+    [addUploadPhoto, canMutate, clearInput]
   )
 
   const handleFileSelect = useCallback(
@@ -165,6 +168,7 @@ export default function PhotoUploadModal() {
 
   const handlePickLocation = useCallback(
     (photoId: string) => {
+      if (!canMutate) return
       if (!mapReady) {
         setValidationError("地图还在加载，请稍后再试")
         return
@@ -174,10 +178,14 @@ export default function PhotoUploadModal() {
       setActivePhotoId(photoId)
       startUploadPhotoLocationSelection(photoId)
     },
-    [mapReady, startUploadPhotoLocationSelection]
+    [canMutate, mapReady, startUploadPhotoLocationSelection]
   )
 
   const handleSubmit = useCallback(async () => {
+    if (!canMutate) {
+      setValidationError("当前 Workspace 为只读，无法上传照片")
+      return
+    }
     const photosWithoutCoords = uploadPhotos.filter(
       (photo) => !hasCoordinates(photo)
     )
@@ -208,7 +216,7 @@ export default function PhotoUploadModal() {
     } finally {
       setIsUploading(false)
     }
-  }, [uploadPhotos, addPhotoShare, clearUploadState])
+  }, [canMutate, uploadPhotos, addPhotoShare, clearUploadState])
 
   const handleClose = useCallback(() => {
     clearLocationSelection()
@@ -288,6 +296,7 @@ export default function PhotoUploadModal() {
               type="file"
               accept="image/*"
               multiple
+              disabled={!canMutate}
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -331,8 +340,9 @@ export default function PhotoUploadModal() {
                   })}
                   <button
                     type="button"
+                    disabled={!canMutate}
                     onClick={() => inputRef.current?.click()}
-                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-white/35 text-white/80 transition hover:border-white hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-white/35 text-white/80 transition hover:border-white hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-45"
                     aria-label="添加更多照片"
                     title="添加更多照片"
                   >
@@ -353,8 +363,9 @@ export default function PhotoUploadModal() {
                 </div>
                 <button
                   type="button"
+                  disabled={!canMutate}
                   onClick={() => inputRef.current?.click()}
-                  className="mt-6 rounded-full bg-[var(--color-russet)] px-5 py-2.5 text-sm font-black text-[var(--color-soft-white)] transition hover:bg-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-russet)]"
+                  className="mt-6 rounded-full bg-[var(--color-russet)] px-5 py-2.5 text-sm font-black text-[var(--color-soft-white)] transition hover:bg-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-russet)] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   选择照片
                 </button>
@@ -387,6 +398,7 @@ export default function PhotoUploadModal() {
                 <div className="space-y-5">
                   <textarea
                     value={activePhoto.caption ?? ""}
+                    disabled={!canMutate}
                     onChange={(event) =>
                       updateUploadPhoto(activePhoto.id, {
                         caption: event.target.value,
@@ -414,8 +426,9 @@ export default function PhotoUploadModal() {
                       </div>
                       <button
                         type="button"
+                        disabled={!canMutate}
                         onClick={() => handlePickLocation(activePhoto.id)}
-                        className="shrink-0 rounded-full border border-[rgb(44_36_22_/_12%)] bg-[var(--color-white)] px-3 py-1.5 text-xs font-black text-[var(--color-russet)] transition hover:border-[var(--color-russet)] hover:bg-[rgb(217_118_66_/_8%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-russet)]"
+                        className="shrink-0 rounded-full border border-[rgb(44_36_22_/_12%)] bg-[var(--color-white)] px-3 py-1.5 text-xs font-black text-[var(--color-russet)] transition hover:border-[var(--color-russet)] hover:bg-[rgb(217_118_66_/_8%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-russet)] disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         {hasCoordinates(activePhoto) ? "重新选择" : "选择坐标"}
                       </button>
@@ -480,10 +493,11 @@ export default function PhotoUploadModal() {
                             </button>
                             <button
                               type="button"
+                              disabled={!canMutate}
                               onClick={() => handleRemovePhoto(photo.id)}
                               aria-label={`移除 ${photo.file.name}`}
                               title="移除"
-                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--color-teak)] transition hover:bg-[rgb(44_36_22_/_7%)] hover:text-[var(--color-coral)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-russet)]"
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--color-teak)] transition hover:bg-[rgb(44_36_22_/_7%)] hover:text-[var(--color-coral)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-russet)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <Trash2 aria-hidden="true" className="h-4 w-4" />
                             </button>

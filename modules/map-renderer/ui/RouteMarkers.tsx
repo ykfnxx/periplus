@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { plannedLocationOf } from "@/lib/journeys/locations"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import type { MapIntent } from "@/modules/workspace/contracts"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
 
@@ -13,7 +14,7 @@ interface RouteMarkersProps {
 
 export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
   const map = useWorkspaceStore((state) => state.map)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -24,26 +25,34 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
   )
 
   useEffect(() => {
-    if (!map || !draftJourney) return
+    if (!map || !graph) return
     const view = getJourneyScopeProjection(
-      draftJourney,
+      graph,
       viewLevel,
       activeSectionEventId
     )
-    const points = view.locations
-      .map((event) => ({ event, location: plannedLocationOf(event) }))
+    const points = view.items
+      .map(({ event, resolved }) => ({
+        event,
+        resolved,
+        location: plannedLocationOf(event),
+      }))
       .filter(
         (
           item
         ): item is {
           event: (typeof view.locations)[number]
+          resolved: (typeof view.resolvedEvents)[number] & {
+            locationOrdinal: number
+          }
           location: NonNullable<ReturnType<typeof plannedLocationOf>>
-        } => Boolean(item.location)
+        } =>
+          Boolean(item.location) && item.resolved.locationOrdinal !== undefined
       )
     const markers: AMap.Marker[] = []
     const longPressTimers: Array<ReturnType<typeof setTimeout>> = []
 
-    points.forEach(({ event, location }, index) => {
+    points.forEach(({ event, resolved, location }) => {
       const content = document.createElement("div")
       content.className = [
         "periplus-map-marker",
@@ -57,7 +66,9 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
         .join(" ")
       content.setAttribute("role", "button")
       content.setAttribute("aria-label", `选择地点 ${event.title}`)
-      const colorIndex = index % routeMarkerColors.length
+      const markerPosition = resolved.locationOrdinal
+      const colorIndex =
+        (resolved.locationOrdinal - 1) % routeMarkerColors.length
       content.style.background =
         view.level === "overview"
           ? routeMarkerColors[colorIndex]
@@ -66,7 +77,7 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
         view.level === "overview" && colorIndex === 2
           ? periplusColors.ink
           : periplusColors.white
-      content.textContent = `${index + 1}`
+      content.textContent = `${markerPosition}`
 
       const marker = new AMap.Marker({
         content,
@@ -108,7 +119,7 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
     }
   }, [
     map,
-    draftJourney,
+    graph,
     viewLevel,
     activeSectionEventId,
     hoveredEventId,

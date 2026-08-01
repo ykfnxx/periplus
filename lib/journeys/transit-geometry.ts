@@ -1,5 +1,5 @@
 import { haversineKm } from "@/lib/geo"
-import type { TransportMode } from "@/types/journey"
+import type { TransportMode } from "@/lib/journeys/planning"
 
 /** [lng, lat] 坐标对，与 AMap.LngLat 构造参数顺序一致 */
 export type LngLatTuple = [number, number]

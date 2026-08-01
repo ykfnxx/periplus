@@ -1,10 +1,10 @@
-import { unlink } from "node:fs/promises"
 import { NextRequest, NextResponse } from "next/server"
 import {
   AuthRequiredError,
   PermissionDeniedError,
   requireCurrentUser,
 } from "@/modules/auth/server/context"
+import { AssetInUseError } from "@/modules/data/content/content-repository"
 import {
   deletePhoto,
   updatePhotoCaption,
@@ -69,10 +69,6 @@ export async function DELETE(
       return NextResponse.json({ error: "Photo not found" }, { status: 404 })
     }
 
-    if (result.filePath) {
-      await unlink(result.filePath).catch(() => undefined)
-    }
-
     return NextResponse.json({ success: true })
   } catch (error) {
     if (error instanceof AuthRequiredError) {
@@ -83,6 +79,9 @@ export async function DELETE(
     }
     if (error instanceof PermissionDeniedError) {
       return NextResponse.json({ error: error.message }, { status: 403 })
+    }
+    if (error instanceof AssetInUseError) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
     throw error
   }

@@ -3,7 +3,10 @@ import { expect, waitFor } from "storybook/test"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { dispatchMapIntent } from "@/modules/workspace/ui/WorkspaceController"
 import { silkRoadJourneyWithPlans } from "@/tests/storybook/route-fixtures"
-import { withWorkspaceState } from "@/tests/storybook/workspace-story"
+import {
+  withWorkspaceState,
+  workspaceDocumentForStory,
+} from "@/tests/storybook/workspace-story"
 import MapSurface from "./MapSurface"
 
 function RealMapStatus() {
@@ -32,7 +35,11 @@ const meta = {
     layout: "fullscreen",
     a11y: { test: "off" },
   },
-  decorators: [withWorkspaceState({ draftJourney: silkRoadJourneyWithPlans })],
+  decorators: [
+    withWorkspaceState({
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans),
+    }),
+  ],
   render: () => <RealMapStory />,
 } satisfies Meta<typeof MapSurface>
 

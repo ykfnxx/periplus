@@ -13,16 +13,25 @@ vi.mock("@/modules/workbench/ui/AgentModeToggle", () => ({
 
 function mockStore(overrides: Record<string, unknown> = {}) {
   const base = {
-    draftJourney: { id: "journey-1" },
+    workspaceDocument: {
+      accessState: "OWNER",
+      draftState: "DIRTY",
+      session: {
+        id: "workspace-1",
+        headWorkspaceRevision: 4,
+        baseJourneyRevision: 2,
+        status: "ACTIVE",
+      },
+      agentRuns: [],
+    },
     composerInput: "",
     agentMode: "auto",
     setWorkbenchTab: vi.fn(),
     setComposerInput: vi.fn(),
     sendAgentEvent: vi.fn(),
     addUserMessage: vi.fn(),
-    isDraftLocked: false,
-    draftSaveState: "idle",
-    setDraftSaveState: vi.fn(),
+    workspaceCommitState: "idle",
+    setWorkspaceCommitState: vi.fn(),
     lightboxPhotoShare: null,
   }
   ;(
@@ -43,8 +52,13 @@ describe("AIComposer", () => {
     expect(screen.getByLabelText("发送")).toBeInTheDocument()
   })
 
-  it("does not show save button when draft is locked", () => {
-    mockStore({ isDraftLocked: true })
+  it("does not show save button when the Workspace is locked", () => {
+    mockStore({
+      workspaceDocument: {
+        session: {},
+        agentRuns: [{ status: "RUNNING" }],
+      },
+    })
     render(<AIComposer />)
 
     expect(screen.queryByLabelText("保存")).not.toBeInTheDocument()
@@ -76,23 +90,109 @@ describe("AIComposer", () => {
     expect(setComposerInput).toHaveBeenCalledWith("")
   })
 
-  it("calls draft.save when save button is clicked", () => {
+  it("commits through the authoritative Workspace command", () => {
     const sendAgentEvent = vi.fn()
-    const setDraftSaveState = vi.fn()
-    mockStore({ sendAgentEvent, setDraftSaveState })
+    const setWorkspaceCommitState = vi.fn()
+    mockStore({ sendAgentEvent, setWorkspaceCommitState })
 
     render(<AIComposer />)
     fireEvent.click(screen.getByLabelText("保存"))
 
-    expect(setDraftSaveState).toHaveBeenCalledWith("saving")
-    expect(sendAgentEvent).toHaveBeenCalledWith("draft.save")
+    expect(setWorkspaceCommitState).toHaveBeenCalledWith("saving")
+    expect(sendAgentEvent).toHaveBeenCalledWith("workspace.command", {
+      commandId: "browser-commit:workspace-1:4",
+      expectedRevision: 4,
+      idempotencyKey: "browser-commit:workspace-1:4",
+      command: {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: 2 },
+      },
+    })
   })
 
   it("disables save button when no current journey", () => {
-    mockStore({ draftJourney: null })
+    mockStore({ workspaceDocument: null })
     render(<AIComposer />)
 
     expect(screen.getByLabelText("保存")).toBeDisabled()
+  })
+
+  it("disables save button when the Workspace is already clean", () => {
+    mockStore({
+      workspaceDocument: {
+        accessState: "OWNER",
+        draftState: "CLEAN",
+        session: {
+          id: "workspace-1",
+          headWorkspaceRevision: 4,
+          baseJourneyRevision: 2,
+          status: "ACTIVE",
+        },
+        agentRuns: [],
+      },
+    })
+    render(<AIComposer />)
+
+    expect(screen.getByLabelText("保存")).toBeDisabled()
+  })
+
+  it("blocks stale save and exposes only recovery actions that clear staleness", () => {
+    const sendAgentEvent = vi.fn()
+    mockStore({
+      sendAgentEvent,
+      workspaceDocument: {
+        accessState: "OWNER",
+        draftState: "STALE",
+        session: {
+          id: "workspace-1",
+          headWorkspaceRevision: 4,
+          baseJourneyRevision: 2,
+          status: "ACTIVE",
+        },
+        agentRuns: [],
+      },
+    })
+    render(<AIComposer />)
+
+    expect(screen.getByLabelText("保存")).toBeDisabled()
+    fireEvent.click(screen.getByLabelText("保存"))
+    expect(sendAgentEvent).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新并重放" }))
+    expect(sendAgentEvent).toHaveBeenCalledWith("workspace.command", {
+      commandId: "browser-recover:workspace.refresh:workspace-1:4",
+      expectedRevision: 4,
+      idempotencyKey: "browser-recover:workspace.refresh:workspace-1:4",
+      command: {
+        name: "workspace.refresh",
+        payload: { fromWorkspaceRevision: 0 },
+      },
+    })
+    expect(screen.queryByRole("button", { name: "仅重放" })).toBeNull()
+    expect(screen.getByRole("button", { name: "派生副本" })).toBeEnabled()
+  })
+
+  it("makes every Agent mutation control read-only when access is expired", () => {
+    mockStore({
+      composerInput: "should not send",
+      workspaceDocument: {
+        accessState: "EXPIRED",
+        draftState: "DIRTY",
+        session: {
+          id: "workspace-1",
+          headWorkspaceRevision: 4,
+          baseJourneyRevision: 2,
+          status: "EXPIRED",
+        },
+        agentRuns: [],
+      },
+    })
+    render(<AIComposer />)
+
+    expect(screen.getByLabelText("AI 输入")).toBeDisabled()
+    expect(screen.getByLabelText("保存")).toBeDisabled()
+    expect(screen.getByLabelText("发送")).toBeDisabled()
+    expect(screen.getByText(/只读状态/)).toBeVisible()
   })
 
   it("disables send button when input is empty", () => {
@@ -151,22 +251,27 @@ describe("AIComposer", () => {
     expect(sendAgentEvent).not.toHaveBeenCalled()
   })
 
-  it("disables textarea when draft is locked", () => {
-    mockStore({ isDraftLocked: true })
+  it("disables textarea when the Workspace is locked", () => {
+    mockStore({
+      workspaceDocument: {
+        session: {},
+        agentRuns: [{ status: "RUNNING" }],
+      },
+    })
     render(<AIComposer />)
 
     expect(screen.getByLabelText("AI 输入")).toBeDisabled()
   })
 
-  it("shows success feedback when draftSaveState is success", () => {
-    mockStore({ draftSaveState: "success" })
+  it("shows success feedback when the commit succeeds", () => {
+    mockStore({ workspaceCommitState: "success" })
     render(<AIComposer />)
 
     expect(screen.getByText("保存成功")).toBeInTheDocument()
   })
 
-  it("shows error feedback when draftSaveState is error", () => {
-    mockStore({ draftSaveState: "error" })
+  it("shows error feedback when the commit fails", () => {
+    mockStore({ workspaceCommitState: "error" })
     render(<AIComposer />)
 
     expect(screen.getByText("保存失败")).toBeInTheDocument()
@@ -175,7 +280,10 @@ describe("AIComposer", () => {
   it("does not trigger cancel on Escape when lightboxPhotoShare is set", () => {
     const sendAgentEvent = vi.fn()
     mockStore({
-      isDraftLocked: true,
+      workspaceDocument: {
+        session: {},
+        agentRuns: [{ status: "RUNNING" }],
+      },
       lightboxPhotoShare: { id: "photo-1" },
       sendAgentEvent,
     })

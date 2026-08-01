@@ -1,4 +1,4 @@
-import type { TransitSegmentMode, TransportMode } from "@/types/journey"
+import type { TransitSegmentMode, TransportMode } from "@/lib/journeys/planning"
 
 // 与 app/globals.css @theme 中的 --color-* token 一一对应，改色需双改
 export const periplusColors = {

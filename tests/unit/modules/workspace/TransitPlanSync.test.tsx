@@ -1,54 +1,58 @@
 import { act, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { transitPlanFingerprint } from "@/lib/journeys/planning"
+import { createSilkRoadJourney } from "@/lib/mock-journeys"
 import TransitPlanSync from "@/modules/workspace/ui/TransitPlanSync"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import type { DraftJourney } from "@/types/journey"
+import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
 
-function draftJourney(): DraftJourney {
-  return {
-    id: "journey",
-    title: "Browser planning",
-    status: "DRAFT",
-    events: [
-      {
-        id: "from",
-        type: "VISIT",
-        executionStatus: "PLANNED",
-        origin: "ORIGINAL",
-        title: "A",
-        detail: { plannedLat: 30, plannedLng: 120 },
-      },
-      {
-        id: "transit",
-        type: "TRANSIT",
-        executionStatus: "PLANNED",
-        origin: "ORIGINAL",
-        title: "前往 B",
-        detail: {
-          plannedFromEventId: "from",
-          plannedToEventId: "to",
-          transportMode: "CAR",
-          requestMode: "DRIVE",
-        },
-      },
-      {
-        id: "to",
-        type: "VISIT",
-        executionStatus: "PLANNED",
-        origin: "ORIGINAL",
-        title: "B",
-        detail: { plannedLat: 31, plannedLng: 121 },
-      },
-    ],
-    links: [
-      { id: "link-1", fromEventId: "from", toEventId: "transit", kind: "MAIN" },
-      { id: "link-2", fromEventId: "transit", toEventId: "to", kind: "MAIN" },
-    ],
-  }
+function workspaceDocument(revision = 7) {
+  const document = workspaceDocumentForStory(
+    createSilkRoadJourney({ id: "journey", ownerId: "owner" })
+  )
+  document.session.id = "workspace"
+  document.session.headWorkspaceRevision = revision
+  return document
 }
 
-describe("browser transit commands", () => {
+function firstTransitFingerprint() {
+  return transitPlanFingerprint({
+    transitEventId: "transit-xian-lanzhou",
+    origin: {
+      name: "西安",
+      lat: 34.3416,
+      lng: 108.9398,
+      coordinateSystem: "GCJ02",
+    },
+    destination: {
+      name: "兰州",
+      lat: 36.0611,
+      lng: 103.8343,
+      coordinateSystem: "GCJ02",
+    },
+    mode: "DRIVE",
+    transportMode: "CAR",
+    preference: "RECOMMENDED",
+    alternatives: 3,
+  })
+}
+
+function keepFirstTransit(document: ReturnType<typeof workspaceDocument>) {
+  document.session.headGraph.events = document.session.headGraph.events.filter(
+    (event) =>
+      event.id === "section-xian" ||
+      event.id === "transit-xian-lanzhou" ||
+      event.id === "section-lanzhou"
+  )
+  document.session.headGraph.links = document.session.headGraph.links.filter(
+    (link) =>
+      link.fromEventId === "section-xian" ||
+      link.toEventId === "section-lanzhou"
+  )
+  return document
+}
+
+describe("browser transit Workspace commands", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
@@ -58,44 +62,40 @@ describe("browser transit commands", () => {
     vi.useRealTimers()
   })
 
-  it("plans through the authoritative draft command with revision and idempotency", () => {
+  it("plans through the authoritative command with revision and idempotency", () => {
     const sender = vi.fn()
-    const journey = draftJourney()
     act(() => {
-      useWorkspaceStore.getState().applyDraftSnapshot(journey, 7)
+      useWorkspaceStore
+        .getState()
+        .applyWorkspaceDocument(keepFirstTransit(workspaceDocument()))
       useWorkspaceStore.getState().setAgentSender(sender)
     })
     render(<TransitPlanSync />)
 
     act(() => vi.advanceTimersByTime(750))
 
-    const transit = journey.events[1]
-    expect(transit?.type).toBe("TRANSIT")
-    if (transit?.type !== "TRANSIT") return
-    const fingerprint = transitPlanFingerprint({
-      transitEventId: "transit",
-      origin: { name: "A", lat: 30, lng: 120 },
-      destination: { name: "B", lat: 31, lng: 121 },
-      mode: "DRIVE",
-      transportMode: "CAR",
-      preference: "RECOMMENDED",
-      alternatives: 3,
-    })
-    expect(sender).toHaveBeenCalledWith("draft.command", {
-      commandId: `browser-plan:journey:transit:${fingerprint}:7`,
-      tool: "journey.plan_transit",
-      input: {
-        eventId: "transit",
-        expectedRevision: 7,
-        idempotencyKey: `browser-plan:journey:transit:${fingerprint}:7`,
+    const fingerprint = firstTransitFingerprint()
+    const commandId = `browser-plan:workspace:transit-xian-lanzhou:${fingerprint}:7`
+    expect(sender).toHaveBeenCalledWith("workspace.command", {
+      commandId,
+      expectedRevision: 7,
+      idempotencyKey: commandId,
+      command: {
+        name: "journey.plan_transit",
+        payload: {
+          eventId: "transit-xian-lanzhou",
+          forceRefresh: false,
+        },
       },
     })
   })
 
-  it("retries correlated command failures with bounded backoff", () => {
+  it("retries correlated wire failures with bounded backoff", () => {
     const sender = vi.fn()
     act(() => {
-      useWorkspaceStore.getState().applyDraftSnapshot(draftJourney(), 7)
+      useWorkspaceStore
+        .getState()
+        .applyWorkspaceDocument(keepFirstTransit(workspaceDocument()))
       useWorkspaceStore.getState().setAgentSender(sender)
     })
     render(<TransitPlanSync />)
@@ -107,9 +107,7 @@ describe("browser transit commands", () => {
     act(() =>
       useWorkspaceStore.getState().setFailedTransitPlanCommandId(commandId)
     )
-    act(() => vi.advanceTimersByTime(1_499))
-    expect(sender).toHaveBeenCalledTimes(1)
-    act(() => vi.advanceTimersByTime(1))
+    act(() => vi.advanceTimersByTime(1_500))
     expect(sender).toHaveBeenCalledTimes(2)
 
     act(() =>
@@ -125,42 +123,96 @@ describe("browser transit commands", () => {
     expect(sender).toHaveBeenCalledTimes(3)
   })
 
-  it("selects a plan through the same authoritative draft command", () => {
+  it("does not replan a completed fingerprint", () => {
     const sender = vi.fn()
-    const journey = draftJourney()
-    const transit = journey.events[1]
-    expect(transit?.type).toBe("TRANSIT")
-    if (transit?.type !== "TRANSIT") return
-    transit.detail.plans = [
-      {
-        id: "transit-plan-1",
-        provider: "mock",
-        rank: 0,
-        label: "推荐",
-        strategy: "recommended",
-        distanceMeters: 1_000,
-        durationSeconds: 600,
-        trafficBasis: "TYPICAL",
-        calculatedAt: "2026-08-01T00:00:00.000Z",
-        requestFingerprint: "fingerprint",
-        segments: [],
-      },
-    ]
+    const document = keepFirstTransit(workspaceDocument())
+    document.session.headGraph.transitPlanningRuns.push({
+      id: "failed-run",
+      transitEventId: "transit-xian-lanzhou",
+      requestFingerprint: firstTransitFingerprint(),
+      provider: "amap",
+      status: "FAILED",
+      errorCode: "NO_ROUTE",
+      calculatedAt: "2026-08-01T00:00:00.000Z",
+      plans: [],
+    })
     act(() => {
-      useWorkspaceStore.getState().applyDraftSnapshot(journey, 8)
+      useWorkspaceStore.getState().applyWorkspaceDocument(document)
       useWorkspaceStore.getState().setAgentSender(sender)
-      useWorkspaceStore
-        .getState()
-        .selectTransitPlan("transit", "transit-plan-1")
+    })
+    render(<TransitPlanSync />)
+
+    act(() => vi.advanceTimersByTime(750))
+    expect(sender).not.toHaveBeenCalled()
+  })
+
+  it("selects a plan through the same authoritative command", () => {
+    const sender = vi.fn()
+    const document = workspaceDocument(8)
+    const event = document.session.headGraph.events.find(
+      (candidate) => candidate.id === "transit-xian-lanzhou"
+    )
+    expect(event?.type).toBe("TRANSIT")
+    if (event?.type !== "TRANSIT") return
+    event.detail.activePlanningRunId = "run-1"
+    event.detail.selectedPlanId = "plan-current"
+    event.detail.routeState = "READY"
+    document.session.headGraph.transitPlanningRuns.push({
+      id: "run-1",
+      transitEventId: event.id,
+      requestFingerprint: "fingerprint",
+      provider: "mock",
+      status: "READY",
+      calculatedAt: "2026-08-01T00:00:00.000Z",
+      plans: [
+        {
+          id: "plan-current",
+          planningRunId: "run-1",
+          transitEventId: event.id,
+          provider: "mock",
+          rank: 0,
+          label: "当前",
+          strategy: "recommended",
+          distanceMeters: 1_000,
+          durationSeconds: 600,
+          trafficBasis: "TYPICAL",
+          calculatedAt: "2026-08-01T00:00:00.000Z",
+          segments: [],
+        },
+        {
+          id: "plan-next",
+          planningRunId: "run-1",
+          transitEventId: event.id,
+          provider: "mock",
+          rank: 1,
+          label: "备选",
+          strategy: "fastest",
+          distanceMeters: 900,
+          durationSeconds: 500,
+          trafficBasis: "TYPICAL",
+          calculatedAt: "2026-08-01T00:00:00.000Z",
+          segments: [],
+        },
+      ],
+    })
+    act(() => {
+      useWorkspaceStore.getState().applyWorkspaceDocument(document)
+      useWorkspaceStore.getState().setAgentSender(sender)
+      useWorkspaceStore.getState().selectTransitPlan(event.id, "plan-next")
     })
 
-    expect(sender).toHaveBeenCalledWith("draft.command", {
-      tool: "journey.select_transit_plan",
-      input: {
-        eventId: "transit",
-        planId: "transit-plan-1",
-        expectedRevision: 8,
-        idempotencyKey: "browser-select:journey:transit:transit-plan-1:8",
+    const commandId =
+      "browser-select:workspace:transit-xian-lanzhou:plan-next:8"
+    expect(sender).toHaveBeenCalledWith("workspace.command", {
+      commandId,
+      expectedRevision: 8,
+      idempotencyKey: commandId,
+      command: {
+        name: "journey.select_transit_plan",
+        payload: {
+          eventId: "transit-xian-lanzhou",
+          planId: "plan-next",
+        },
       },
     })
   })

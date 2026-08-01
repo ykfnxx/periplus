@@ -1,11 +1,14 @@
 import { z } from "zod"
 import { PLACE_CATEGORIES, PLACE_SEARCH_INTENTS } from "@/lib/places/types"
 
+const requestIdSchema = z.string().trim().min(1)
+
 export const placeCategorySchema = z.enum(PLACE_CATEGORIES)
 export const coordinateSystemSchema = z.enum(["WGS84", "GCJ02", "BD09LL"])
 export const placeSearchIntentSchema = z.enum(PLACE_SEARCH_INTENTS)
 
 export const placeSearchInputSchema = z.object({
+  requestId: requestIdSchema,
   query: z.string().min(1).optional(),
   city: z.string().optional(),
   adcode: z.string().optional(),
@@ -25,6 +28,7 @@ export const placeSearchInputSchema = z.object({
 })
 
 export const placeResolveInputSchema = z.object({
+  requestId: requestIdSchema,
   text: z.string().min(1),
   city: z.string().optional(),
   journeyContext: z
@@ -42,6 +46,7 @@ export const placeResolveForJourneyEventInputSchema =
   })
 
 export const placeEnrichInputSchema = z.object({
+  requestId: requestIdSchema,
   placeId: z.string().min(1).optional(),
   provider: z
     .enum(["periplus", "amap", "fsq", "wikidata", "mct", "osm", "opentripmap"])

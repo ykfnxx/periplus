@@ -1,24 +1,49 @@
 "use client"
 
 import { useRef } from "react"
-import { projectMainSequence } from "@/lib/journeys/graph"
+import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import type { TargetJourneyEvent } from "@/modules/data-model/contracts"
+
+type SectionEvent = Extract<TargetJourneyEvent, { type: "SECTION" }>
 
 export default function RouteScopeTabs() {
   const railRef = useRef<HTMLDivElement>(null)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
   )
   const enterSectionView = useWorkspaceStore((state) => state.enterSectionView)
+  const returnToParentScope = useWorkspaceStore(
+    (state) => state.returnToParentScope
+  )
   const returnToOverview = useWorkspaceStore((state) => state.returnToOverview)
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
-  if (!draftJourney) return null
-  const sections = projectMainSequence(draftJourney).filter(
-    (event) => event.type === "SECTION"
-  )
+  if (!graph) return null
+  const rootSections = getJourneyScopeProjection(
+    graph,
+    "overview",
+    null
+  ).events.filter((event) => event.type === "SECTION")
+  const activeSection = activeSectionEventId
+    ? graph.events.find(
+        (event): event is SectionEvent =>
+          event.id === activeSectionEventId && event.type === "SECTION"
+      )
+    : null
+  const nestedPath: SectionEvent[] = []
+  let cursor = activeSection
+  while (cursor?.parentSectionEventId) {
+    nestedPath.unshift(cursor)
+    const parentId = cursor.parentSectionEventId
+    cursor = graph.events.find(
+      (event): event is SectionEvent =>
+        event.id === parentId && event.type === "SECTION"
+    )
+  }
 
   const selectOverview = () => {
     if (viewLevel === "overview") return
@@ -35,25 +60,49 @@ export default function RouteScopeTabs() {
   return (
     <div
       ref={railRef}
-      role="tablist"
-      aria-label="行程范围"
       className="scrollbar-hidden flex gap-2 overflow-x-auto pt-4 pb-0.5"
     >
-      <ScopeTab
-        label="总览"
-        selected={viewLevel === "overview"}
-        onSelect={selectOverview}
-      />
-      {sections.map((section) => (
+      {viewLevel === "section" ? (
+        <button
+          type="button"
+          aria-label="返回上一级"
+          onClick={() => {
+            returnToParentScope()
+            requestMapFocus({
+              type: "active-journey",
+              maxZoom: activeSection?.parentSectionEventId ? 15 : 12,
+            })
+          }}
+          className="h-[30px] shrink-0 rounded-full bg-cream px-3 text-[11px] font-black text-teak transition hover:bg-ink hover:text-soft-white"
+        >
+          ← 上一级
+        </button>
+      ) : null}
+      <div role="tablist" aria-label="行程范围" className="contents">
         <ScopeTab
-          key={section.id}
-          label={section.title}
-          selected={
-            viewLevel === "section" && activeSectionEventId === section.id
-          }
-          onSelect={() => selectSection(section.id)}
+          label="总览"
+          selected={viewLevel === "overview"}
+          onSelect={selectOverview}
         />
-      ))}
+        {rootSections.map((section) => (
+          <ScopeTab
+            key={section.id}
+            label={section.title}
+            selected={
+              viewLevel === "section" && activeSectionEventId === section.id
+            }
+            onSelect={() => selectSection(section.id)}
+          />
+        ))}
+        {nestedPath.map((section) => (
+          <ScopeTab
+            key={section.id}
+            label={section.title}
+            selected={activeSectionEventId === section.id}
+            onSelect={() => selectSection(section.id)}
+          />
+        ))}
+      </div>
     </div>
   )
 }

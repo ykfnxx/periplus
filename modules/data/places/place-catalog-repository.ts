@@ -29,6 +29,13 @@ const sourceQualityConfidence: Record<Uppercase<PlaceQuality>, number> = {
   NEEDS_REVIEW: 0.4,
 }
 
+const sourceQualityPriority = [
+  "VERIFIED",
+  "PROBABLE",
+  "CANDIDATE",
+  "NEEDS_REVIEW",
+] as const
+
 function providerFromString(value: string): PlaceProvider {
   if (
     value === "amap" ||
@@ -41,6 +48,19 @@ function providerFromString(value: string): PlaceProvider {
     return value
   }
   return "periplus"
+}
+
+function toDatabaseCoordinateSystem(
+  value: PlaceCoordinate["coordinateSystem"]
+): "WGS84" | "GCJ02" | "BD09" {
+  return value === "BD09LL" ? "BD09" : value
+}
+
+function fromDatabaseCoordinateSystem(
+  value: "WGS84" | "GCJ02" | "BD09" | "LOCAL"
+): PlaceCoordinate["coordinateSystem"] | null {
+  if (value === "LOCAL") return null
+  return value === "BD09" ? "BD09LL" : value
 }
 
 function coordinateFromPlace(place: PlaceWithRelations): PlaceCoordinate[] {
@@ -66,13 +86,13 @@ function coordinateFromPlace(place: PlaceWithRelations): PlaceCoordinate[] {
     })
   }
   for (const match of place.providerMatches) {
+    const coordinateSystem = fromDatabaseCoordinateSystem(
+      match.coordinateSystem
+    )
+    if (!coordinateSystem) continue
     coordinates.push({
       provider: providerFromString(match.provider),
-      coordinateSystem:
-        match.coordinateSystem === "WGS84" ||
-        match.coordinateSystem === "BD09LL"
-          ? match.coordinateSystem
-          : "GCJ02",
+      coordinateSystem,
       lat: match.lat,
       lng: match.lng,
       accuracy: "provider_poi",
@@ -157,16 +177,25 @@ export class PlaceCatalogRepository {
       ],
     }
 
-    const places = await prisma.place.findMany({
-      where,
-      include: {
-        aliases: true,
-        sources: true,
-        providerMatches: true,
-      },
-      take: query.limit * 3,
-      orderBy: [{ sourceQuality: "asc" }, { updatedAt: "desc" }],
-    })
+    const prefetchLimit = query.limit * 3
+    const places = (
+      await Promise.all(
+        sourceQualityPriority.map((sourceQuality) =>
+          prisma.place.findMany({
+            where: { AND: [where, { sourceQuality }] },
+            include: {
+              aliases: true,
+              sources: true,
+              providerMatches: true,
+            },
+            take: prefetchLimit,
+            orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+          })
+        )
+      )
+    )
+      .flat()
+      .slice(0, prefetchLimit)
     const candidates = places.map(placeToCandidate)
     return {
       candidates,
@@ -206,7 +235,11 @@ export class PlaceCatalogRepository {
           category: candidate.category,
           lat: candidate.coordinates[0]?.lat,
           lng: candidate.coordinates[0]?.lng,
-          coordinateSystem: candidate.coordinates[0]?.coordinateSystem,
+          coordinateSystem: candidate.coordinates[0]
+            ? toDatabaseCoordinateSystem(
+                candidate.coordinates[0].coordinateSystem
+              )
+            : undefined,
           rawPayload: JSON.stringify({
             address: candidate.address,
             city: candidate.city,
@@ -235,7 +268,9 @@ export class PlaceCatalogRepository {
       update: {
         placeId,
         confidence: result.confidence,
-        coordinateSystem: result.bestCoordinate.coordinateSystem,
+        coordinateSystem: toDatabaseCoordinateSystem(
+          result.bestCoordinate.coordinateSystem
+        ),
         lat: result.bestCoordinate.lat,
         lng: result.bestCoordinate.lng,
         address: result.address,
@@ -246,7 +281,9 @@ export class PlaceCatalogRepository {
         provider: source.provider,
         providerId: source.providerId,
         confidence: result.confidence,
-        coordinateSystem: result.bestCoordinate.coordinateSystem,
+        coordinateSystem: toDatabaseCoordinateSystem(
+          result.bestCoordinate.coordinateSystem
+        ),
         lat: result.bestCoordinate.lat,
         lng: result.bestCoordinate.lng,
         address: result.address,
@@ -305,7 +342,9 @@ export class PlaceCatalogRepository {
       category: result.category,
       lat: result.bestCoordinate.lat,
       lng: result.bestCoordinate.lng,
-      coordinateSystem: result.bestCoordinate.coordinateSystem,
+      coordinateSystem: toDatabaseCoordinateSystem(
+        result.bestCoordinate.coordinateSystem
+      ),
       confidence: result.confidence,
       status: "PENDING_REVIEW",
       rawPayload: JSON.stringify({ placeId, result, reason }),

@@ -1,6 +1,9 @@
 import type { StateCreator } from "zustand"
 import type { JourneyViewLevel } from "@/lib/journeys/projections"
-import type { DraftJourney, LocationJourneyEvent } from "@/types/journey"
+import type {
+  TargetJourneyEvent,
+  TargetWorkspaceDocument,
+} from "@/modules/data-model/contracts"
 import type { PhotoShare } from "@/types/photo"
 import type {
   MapFocusRequest,
@@ -10,7 +13,7 @@ import type {
 
 export type MapType = "standard" | "satellite" | "terrain"
 export type LocationSelectionMode = "none" | "photo" | "point" | "upload-photo"
-export type DraftSaveState = "idle" | "saving" | "success" | "error"
+export type WorkspaceCommitState = "idle" | "saving" | "success" | "error"
 export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
 export type ChatMessageRole = "user" | "assistant"
 export type AgentMode = "auto" | "suggest"
@@ -46,16 +49,6 @@ export interface ChatMessage {
   updatedAt?: string
 }
 
-export interface PendingSuggestion {
-  id: string
-  title: string
-  summary: string
-  toolCallCount: number
-  draftRevision: number
-  createdAt: string
-  updatedAt: string
-}
-
 export interface PendingPhotoUpload {
   file: File
   imageDataUrl: string
@@ -89,24 +82,19 @@ export interface MapRuntimeSlice {
   setMapType: (type: MapType) => void
 }
 
-export interface DraftSlice {
-  draftJourney: DraftJourney | null
-  draftRevision: number
-  applyDraftSnapshot: (journey: DraftJourney | null, revision: number) => void
+export interface WorkspaceDocumentSlice {
+  workspaceDocument: TargetWorkspaceDocument | null
+  applyWorkspaceDocument: (document: TargetWorkspaceDocument | null) => boolean
   failedTransitPlanCommandId: string | null
   setFailedTransitPlanCommandId: (commandId: string | null) => void
   selectTransitPlan: (eventId: string, planId: string) => void
-  isDraftLocked: boolean
-  setDraftLocked: (isDraftLocked: boolean) => void
-  draftSaveState: DraftSaveState
-  setDraftSaveState: (draftSaveState: DraftSaveState) => void
+  workspaceCommitState: WorkspaceCommitState
+  setWorkspaceCommitState: (state: WorkspaceCommitState) => void
 }
 
 export interface AgentSlice {
   agentMode: AgentMode
   setAgentMode: (agentMode: AgentMode) => void
-  pendingSuggestions: PendingSuggestion[]
-  setPendingSuggestions: (pendingSuggestions: PendingSuggestion[]) => void
   chatMessages: ChatMessage[]
   addUserMessage: (content: string) => void
   appendAssistantMessage: (content: string) => void
@@ -120,6 +108,7 @@ export interface WorkspaceUiSlice {
   viewLevel: JourneyViewLevel
   activeSectionEventId: string | null
   enterSectionView: (sectionEventId: string) => void
+  returnToParentScope: () => void
   returnToOverview: () => void
   hoveredEventId: string | null
   setHoveredEventId: (eventId: string | null) => void
@@ -127,10 +116,16 @@ export interface WorkspaceUiSlice {
   setMapViewportInsets: (insets: ViewportInsets) => void
   selectedTransitEventId: string | null
   setSelectedTransitEventId: (eventId: string | null) => void
-  selectedLocationEvent: LocationJourneyEvent | null
+  selectedLocationEvent: Extract<
+    TargetJourneyEvent,
+    { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
+  > | null
   selectedLocationAnchor: MapAnchor | null
   setSelectedLocationEvent: (
-    event: LocationJourneyEvent | null,
+    event: Extract<
+      TargetJourneyEvent,
+      { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
+    > | null,
     anchor?: MapAnchor
   ) => void
   activeMapPanel: ActiveMapPanel
@@ -189,7 +184,7 @@ export interface PhotoSlice {
 export interface WorkspaceState
   extends
     MapRuntimeSlice,
-    DraftSlice,
+    WorkspaceDocumentSlice,
     AgentSlice,
     WorkspaceUiSlice,
     PhotoSlice {}
