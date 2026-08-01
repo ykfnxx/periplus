@@ -1,20 +1,11 @@
 import type { Prisma } from "@prisma/client"
 import type {
-  ActivityEvent,
-  JourneyDto,
-  JourneyEvent,
-  JourneyEventLink,
-  MealEvent,
-  NoteEvent,
-  SectionEvent,
-  StayEvent,
-  TransitEvent,
-  TransitGeometryKind,
-  TransitPlan,
-  TransitSegmentMode,
-  TransitTrafficBasis,
-  VisitEvent,
-} from "@/types/journey"
+  TargetActorReference,
+  TargetJourneyEvent,
+  TargetJourneyGraphSnapshot,
+  TargetTransitPlanningRun,
+} from "@/modules/data-model/contracts"
+import { validateJourneyGraph } from "./journey-graph-validator"
 
 export const journeyInclude = {
   events: {
@@ -27,50 +18,100 @@ export const journeyInclude = {
       noteDetail: true,
       transitDetail: {
         include: {
-          plans: {
-            include: { segments: { orderBy: { order: "asc" as const } } },
-            orderBy: { rank: "asc" as const },
+          planningRuns: {
+            include: {
+              plans: {
+                include: {
+                  segments: { orderBy: [{ order: "asc" }, { id: "asc" }] },
+                },
+                orderBy: [{ rank: "asc" }, { id: "asc" }],
+              },
+            },
+            orderBy: [{ calculatedAt: "asc" }, { id: "asc" }],
           },
         },
       },
+      observations: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
     },
-    orderBy: { createdAt: "asc" as const },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   },
-  links: { orderBy: { createdAt: "asc" as const } },
+  links: {
+    orderBy: [{ introducedRevision: "asc" }, { rank: "asc" }, { id: "asc" }],
+  },
+  replacements: { orderBy: [{ revision: "asc" }, { id: "asc" }] },
+  branchSelections: {
+    orderBy: [{ journeyRevision: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+  },
+  assetLinks: {
+    orderBy: [{ introducedRevision: "asc" }, { rank: "asc" }, { id: "asc" }],
+  },
+  sourceLinks: {
+    orderBy: [{ introducedRevision: "asc" }, { rank: "asc" }, { id: "asc" }],
+  },
 } satisfies Prisma.JourneyInclude
 
 export type JourneyRecord = Prisma.JourneyGetPayload<{
   include: typeof journeyInclude
 }>
 
-function iso(date: Date | null | undefined) {
-  return date?.toISOString()
+function iso(value: Date | null | undefined) {
+  return value?.toISOString()
 }
 
-function parseJson<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) return fallback
+function parseJson<T>(value: string | null, label: string): T {
+  if (value === null) {
+    throw new Error(`${label} is missing persisted JSON`)
+  }
   try {
     return JSON.parse(value) as T
   } catch {
-    return fallback
+    throw new Error(`${label} contains invalid persisted JSON`)
   }
+}
+
+function actor(
+  kind: "USER" | "AGENT" | "SYSTEM",
+  userId: string | null,
+  agentRunId: string | null,
+  label: string
+): TargetActorReference {
+  if (kind === "USER" && userId && !agentRunId) {
+    return { kind, userId }
+  }
+  if (kind === "AGENT" && agentRunId && !userId) {
+    return { kind, agentRunId }
+  }
+  if (kind === "SYSTEM" && !userId && !agentRunId) return { kind }
+  throw new Error(`${label} has an invalid actor reference`)
 }
 
 function eventBase(event: JourneyRecord["events"][number]) {
   return {
     id: event.id,
     journeyId: event.journeyId,
-    parentEventId: event.parentEventId ?? undefined,
-    replacedByEventId: event.replacedByEventId ?? undefined,
+    parentSectionEventId: event.parentSectionEventId,
+    placementStatus: event.placementStatus,
     origin: event.origin,
     title: event.title,
     description: event.description ?? undefined,
+    introducedRevision: event.introducedRevision,
+    retiredRevision: event.retiredRevision ?? undefined,
+    createdAt: event.createdAt.toISOString(),
+    updatedAt: event.updatedAt.toISOString(),
+  }
+}
+
+function executableEventBase(event: JourneyRecord["events"][number]) {
+  if (!event.executionStatus) {
+    throw new Error(`executable Journey Event ${event.id} has no status`)
+  }
+  return {
+    ...eventBase(event),
+    executionStatus: event.executionStatus,
     plannedStartAt: iso(event.plannedStartAt),
     plannedEndAt: iso(event.plannedEndAt),
     actualStartAt: iso(event.actualStartAt),
     actualEndAt: iso(event.actualEndAt),
-    createdAt: event.createdAt.toISOString(),
-    updatedAt: event.updatedAt.toISOString(),
   }
 }
 
@@ -88,7 +129,7 @@ function locationDetail(
     plannedLng: detail.plannedLng,
     actualLat: detail.actualLat ?? undefined,
     actualLng: detail.actualLng ?? undefined,
-    coordinateSystem: detail.coordinateSystem ?? undefined,
+    coordinateSystem: detail.coordinateSystem,
     coordinateProvider: detail.coordinateProvider ?? undefined,
     providerPlaceId: detail.providerPlaceId ?? undefined,
     plannedDurationMinutes: detail.plannedDurationMinutes ?? undefined,
@@ -96,110 +137,144 @@ function locationDetail(
   }
 }
 
-function mapTransitPlan(
-  plan: NonNullable<
+function mapTransitRun(
+  run: NonNullable<
     JourneyRecord["events"][number]["transitDetail"]
-  >["plans"][number]
-): TransitPlan {
+  >["planningRuns"][number]
+): TargetTransitPlanningRun {
   return {
-    id: plan.id,
-    provider: plan.provider as TransitPlan["provider"],
-    rank: plan.rank,
-    label: plan.label,
-    strategy: plan.strategy,
-    distanceMeters: plan.distanceMeters,
-    durationSeconds: plan.durationSeconds,
-    fareAmount: plan.fareAmount ?? undefined,
-    trafficBasis: plan.trafficBasis as TransitTrafficBasis,
-    calculatedAt: plan.calculatedAt.toISOString(),
-    validUntil: iso(plan.validUntil),
-    requestFingerprint: plan.requestFingerprint,
-    segments: plan.segments.map((segment) => ({
-      id: segment.id,
-      order: segment.order,
-      mode: segment.mode as TransitSegmentMode,
-      fromName: segment.fromName ?? undefined,
-      toName: segment.toName ?? undefined,
-      lineName: segment.lineName ?? undefined,
-      distanceMeters: segment.distanceMeters ?? undefined,
-      durationSeconds: segment.durationSeconds ?? undefined,
-      fareAmount: segment.fareAmount ?? undefined,
-      departAt: iso(segment.departAt),
-      arriveAt: iso(segment.arriveAt),
-      coordinateSystem: "GCJ02",
-      geometryKind: segment.geometryKind as TransitGeometryKind,
-      positions: parseJson(segment.positionsJson, []),
-      trafficSections: parseJson(segment.trafficSectionsJson, undefined),
+    id: run.id,
+    transitEventId: run.transitEventId,
+    requestFingerprint: run.requestFingerprint,
+    provider: run.provider,
+    status: run.status,
+    errorCode: run.errorCode ?? undefined,
+    errorMessage: run.errorMessage ?? undefined,
+    warning: run.warning ?? undefined,
+    calculatedAt: run.calculatedAt.toISOString(),
+    validUntil: iso(run.validUntil),
+    plans: run.plans.map((plan) => ({
+      id: plan.id,
+      planningRunId: plan.planningRunId,
+      transitEventId: plan.transitEventId,
+      provider: plan.provider,
+      rank: plan.rank,
+      label: plan.label,
+      strategy: plan.strategy,
+      distanceMeters: plan.distanceMeters,
+      durationSeconds: plan.durationSeconds,
+      fareAmount: plan.fareAmount ?? undefined,
+      trafficBasis: plan.trafficBasis,
+      calculatedAt: plan.calculatedAt.toISOString(),
+      validUntil: iso(plan.validUntil),
+      segments: plan.segments.map((segment) => ({
+        id: segment.id,
+        order: segment.order,
+        mode: segment.mode,
+        fromName: segment.fromName ?? undefined,
+        toName: segment.toName ?? undefined,
+        lineName: segment.lineName ?? undefined,
+        distanceMeters: segment.distanceMeters ?? undefined,
+        durationSeconds: segment.durationSeconds ?? undefined,
+        fareAmount: segment.fareAmount ?? undefined,
+        departAt: iso(segment.departAt),
+        arriveAt: iso(segment.arriveAt),
+        coordinateSystem: segment.coordinateSystem,
+        geometryKind: segment.geometryKind,
+        positions: parseJson<[number, number][]>(
+          segment.positionsJson,
+          `TransitSegment ${segment.id} positions`
+        ),
+        trafficSections: segment.trafficSectionsJson
+          ? parseJson(
+              segment.trafficSectionsJson,
+              `TransitSegment ${segment.id} traffic sections`
+            )
+          : undefined,
+      })),
     })),
   }
 }
 
-function mapEvent(event: JourneyRecord["events"][number]): JourneyEvent {
-  const base = eventBase(event)
-
+function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
   if (event.type === "SECTION" && event.sectionDetail) {
-    return {
-      ...base,
-      type: "SECTION",
-      detail: {
-        kind: event.sectionDetail.kind,
-        placeId: event.sectionDetail.placeId ?? undefined,
-        lat: event.sectionDetail.lat ?? undefined,
-        lng: event.sectionDetail.lng ?? undefined,
-        coordinateSystem: event.sectionDetail.coordinateSystem ?? undefined,
-        coordinateProvider: event.sectionDetail.coordinateProvider ?? undefined,
-        providerPlaceId: event.sectionDetail.providerPlaceId ?? undefined,
-      },
-    } satisfies SectionEvent
+    const detail = event.sectionDetail
+    if (detail.kind === "DAY" && detail.localDate && detail.timezone) {
+      return {
+        ...eventBase(event),
+        type: "SECTION",
+        detail: {
+          kind: "DAY",
+          localDate: detail.localDate,
+          timezone: detail.timezone,
+        },
+      }
+    }
+    if (detail.kind === "CITY") {
+      return {
+        ...eventBase(event),
+        type: "SECTION",
+        detail: {
+          kind: "CITY",
+          placeId: detail.placeId ?? undefined,
+          lat: detail.lat ?? undefined,
+          lng: detail.lng ?? undefined,
+          coordinateSystem: detail.coordinateSystem ?? undefined,
+        },
+      }
+    }
+    if (detail.kind === "THEME") {
+      return {
+        ...eventBase(event),
+        type: "SECTION",
+        detail: {
+          kind: "THEME",
+          sourcePackId: detail.sourcePackId ?? undefined,
+        },
+      }
+    }
   }
-
-  const executionStatus = event.executionStatus ?? "PLANNED"
   if (event.type === "VISIT" && event.visitDetail) {
     return {
-      ...base,
+      ...executableEventBase(event),
       type: "VISIT",
-      executionStatus,
       detail: locationDetail(event.visitDetail),
-    } satisfies VisitEvent
+    }
   }
   if (event.type === "STAY" && event.stayDetail) {
     return {
-      ...base,
+      ...executableEventBase(event),
       type: "STAY",
-      executionStatus,
       detail: {
         ...locationDetail(event.stayDetail),
         checkInNote: event.stayDetail.checkInNote ?? undefined,
       },
-    } satisfies StayEvent
+    }
   }
   if (event.type === "MEAL" && event.mealDetail) {
     return {
-      ...base,
+      ...executableEventBase(event),
       type: "MEAL",
-      executionStatus,
       detail: {
         ...locationDetail(event.mealDetail),
         cuisine: event.mealDetail.cuisine ?? undefined,
       },
-    } satisfies MealEvent
+    }
   }
   if (event.type === "ACTIVITY" && event.activityDetail) {
     return {
-      ...base,
+      ...executableEventBase(event),
       type: "ACTIVITY",
-      executionStatus,
       detail: {
         ...locationDetail(event.activityDetail),
         bookingReference: event.activityDetail.bookingReference ?? undefined,
       },
-    } satisfies ActivityEvent
+    }
   }
   if (event.type === "TRANSIT" && event.transitDetail) {
     return {
-      ...base,
+      ...executableEventBase(event),
       type: "TRANSIT",
-      executionStatus,
       detail: {
         plannedFromEventId: event.transitDetail.plannedFromEventId ?? undefined,
         plannedToEventId: event.transitDetail.plannedToEventId ?? undefined,
@@ -219,56 +294,147 @@ function mapEvent(event: JourneyRecord["events"][number]): JourneyEvent {
         plannedCostEstimate:
           event.transitDetail.plannedCostEstimate ?? undefined,
         actualCost: event.transitDetail.actualCost ?? undefined,
+        activePlanningRunId:
+          event.transitDetail.activePlanningRunId ?? undefined,
         selectedPlanId: event.transitDetail.selectedPlanId ?? undefined,
-        planningStatus: (event.transitDetail.planningStatus ??
-          "EMPTY") as TransitEvent["detail"]["planningStatus"],
-        planningFingerprint: event.transitDetail.plans[0]?.requestFingerprint,
-        planningWarning: event.transitDetail.planningWarning ?? undefined,
+        routeState: event.transitDetail.routeState,
         notes: event.transitDetail.notes ?? undefined,
-        plans: event.transitDetail.plans.map(mapTransitPlan),
       },
-    } satisfies TransitEvent
+    }
   }
   if (event.type === "NOTE" && event.noteDetail) {
     return {
-      ...base,
+      ...eventBase(event),
       type: "NOTE",
       detail: { body: event.noteDetail.body },
-    } satisfies NoteEvent
+    }
   }
-
-  throw new Error(`Journey event ${event.id} has no matching detail`)
+  throw new Error(`Journey Event ${event.id} has no matching typed detail`)
 }
 
-function mapLink(link: JourneyRecord["links"][number]): JourneyEventLink {
+function mapObservation(
+  observation: JourneyRecord["events"][number]["observations"][number]
+) {
+  const identity = {
+    id: observation.id,
+    eventId: observation.eventId,
+    phase: observation.phase,
+    observedAt: observation.observedAt.toISOString(),
+    actor: actor(
+      observation.actorKind,
+      observation.actorUserId,
+      observation.actorAgentRunId,
+      `EventObservation ${observation.id}`
+    ),
+    supersedesId: observation.supersedesId ?? undefined,
+    visibility: observation.visibility,
+    createdAt: observation.createdAt.toISOString(),
+  }
+  const value = observation.valueJson
+    ? parseJson<unknown>(
+        observation.valueJson,
+        `EventObservation ${observation.id} value`
+      )
+    : undefined
+  if (observation.kind === "NOTE" || observation.kind === "FACT") {
+    if (!observation.body) {
+      throw new Error(`EventObservation ${observation.id} requires body`)
+    }
+    return { ...identity, kind: observation.kind, body: observation.body }
+  }
   return {
-    id: link.id,
-    journeyId: link.journeyId,
-    fromEventId: link.fromEventId,
-    toEventId: link.toEventId,
-    kind: link.kind,
-    branchKey: link.branchKey ?? undefined,
-    rank: link.rank ?? undefined,
-    createdAt: link.createdAt.toISOString(),
-    updatedAt: link.updatedAt.toISOString(),
+    ...identity,
+    kind: observation.kind,
+    value,
+    body: observation.body ?? undefined,
   }
 }
 
-export function mapJourneyToDto(journey: JourneyRecord): JourneyDto {
-  return {
+export function mapJourneyToGraph(
+  journey: JourneyRecord
+): TargetJourneyGraphSnapshot {
+  const graph = {
     id: journey.id,
     ownerId: journey.ownerId,
     revision: journey.revision,
     status: journey.status,
-    visibility:
-      journey.visibility === "unlisted" || journey.visibility === "public"
-        ? journey.visibility
-        : "private",
+    visibility: journey.visibility,
     title: journey.title,
     description: journey.description ?? undefined,
-    createdAt: journey.createdAt.toISOString(),
-    updatedAt: journey.updatedAt.toISOString(),
+    deletedAt: iso(journey.deletedAt),
     events: journey.events.map(mapEvent),
-    links: journey.links.map(mapLink),
+    links: journey.links.map((link) => ({
+      id: link.id,
+      journeyId: link.journeyId,
+      fromEventId: link.fromEventId,
+      toEventId: link.toEventId,
+      kind: link.kind,
+      branchKey: link.branchKey ?? undefined,
+      rank: link.rank,
+      introducedRevision: link.introducedRevision,
+      retiredRevision: link.retiredRevision ?? undefined,
+    })),
+    replacements: journey.replacements.map((replacement) => ({
+      id: replacement.id,
+      journeyId: replacement.journeyId,
+      predecessorEventId: replacement.predecessorEventId,
+      successorEventId: replacement.successorEventId,
+      revision: replacement.revision,
+      reason: replacement.reason,
+    })),
+    branchSelections: journey.branchSelections.map((selection) => ({
+      id: selection.id,
+      journeyId: selection.journeyId,
+      forkEventId: selection.forkEventId,
+      selectedLinkId: selection.selectedLinkId,
+      journeyRevision: selection.journeyRevision,
+      supersedesId: selection.supersedesId ?? undefined,
+      actor: actor(
+        selection.actorKind,
+        selection.actorUserId,
+        selection.actorAgentRunId,
+        `JourneyBranchSelection ${selection.id}`
+      ),
+      reason: selection.reason ?? undefined,
+      createdAt: selection.createdAt.toISOString(),
+    })),
+    transitPlanningRuns: journey.events.flatMap(
+      (event) => event.transitDetail?.planningRuns.map(mapTransitRun) ?? []
+    ),
+    eventAssetLinks: journey.assetLinks.map((link) => ({
+      id: link.id,
+      journeyId: link.journeyId,
+      eventId: link.eventId,
+      assetId: link.assetId,
+      assetChecksum: link.assetChecksum,
+      role: link.role,
+      rank: link.rank,
+      caption: link.caption ?? undefined,
+      visibility: link.visibility,
+      introducedRevision: link.introducedRevision,
+      createdAt: link.createdAt.toISOString(),
+      retiredRevision: link.retiredRevision ?? undefined,
+    })),
+    observations: journey.events.flatMap((event) =>
+      event.observations.map(mapObservation)
+    ),
+    eventSourceLinks: journey.sourceLinks.map((link) => ({
+      id: link.id,
+      journeyId: link.journeyId,
+      eventId: link.eventId,
+      sourceItemId: link.sourceItemId,
+      sourceDocumentId: link.sourceDocumentId,
+      sourceDocumentChecksum: link.sourceDocumentChecksum,
+      role: link.role,
+      excerpt: link.excerpt ?? undefined,
+      page: link.page ?? undefined,
+      confidence: link.confidence,
+      rank: link.rank,
+      approvedForJourneySharing: link.approvedForJourneySharing,
+      introducedRevision: link.introducedRevision,
+      createdAt: link.createdAt.toISOString(),
+      retiredRevision: link.retiredRevision ?? undefined,
+    })),
   }
+  return validateJourneyGraph(graph)
 }
