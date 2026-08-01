@@ -5,6 +5,7 @@ import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import { photoDtoToShare, uploadPhoto } from "@/modules/data/photos/client"
 import type { MapIntent } from "@/modules/workspace/contracts"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { workspaceCanMutate } from "@/modules/workspace/state/slices/workspace-document-slice"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import AgentSync from "@/modules/workbench/ui/AgentSync"
 import PhotoSync from "./PhotoSync"
@@ -24,6 +25,10 @@ export function dispatchMapIntent(intent: MapIntent) {
   }
 
   if (intent.type === "map.location-picked") {
+    if (!workspaceCanMutate(state.workspaceDocument)) {
+      state.clearLocationSelection()
+      return
+    }
     const { lat, lng } = intent.coordinate
     if (state.locationSelectionMode === "photo" && state.pendingPhotoUpload) {
       void uploadPhoto({ file: state.pendingPhotoUpload.file, lat, lng })
@@ -79,11 +84,9 @@ export function dispatchMapIntent(intent: MapIntent) {
       return
     }
     if (event.type === "SECTION") {
-      if (view.level === "overview") {
-        state.setWorkbenchTab("preview")
-        state.enterSectionView(event.id)
-        state.requestMapFocus({ type: "active-journey", maxZoom: 15 })
-      }
+      state.setWorkbenchTab("preview")
+      state.enterSectionView(event.id)
+      state.requestMapFocus({ type: "active-journey", maxZoom: 15 })
       return
     }
     if (state.selectedLocationEvent?.id === event.id) {

@@ -14,6 +14,14 @@ vi.mock("@/lib/agent/client", () => ({
   bootstrapWorkspace: vi.fn(),
   connectAgentSocket: vi.fn(),
   sendAgentEvent: vi.fn(),
+  WorkspaceBootstrapError: class WorkspaceBootstrapError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number
+    ) {
+      super(message)
+    }
+  },
 }))
 
 class FakeWebSocket extends EventTarget {
@@ -30,6 +38,7 @@ function bootstrap() {
 
 describe("AgentSync", () => {
   beforeEach(() => {
+    vi.useRealTimers()
     vi.clearAllMocks()
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
   })
@@ -84,6 +93,33 @@ describe("AgentSync", () => {
     expect(useWorkspaceStore.getState().sendAgentEvent).toBeNull()
   })
 
+  it("re-bootstraps with a fresh ticket after the socket closes", async () => {
+    vi.useFakeTimers()
+    const firstSocket = new FakeWebSocket()
+    const secondSocket = new FakeWebSocket()
+    const first = bootstrap()
+    const second = bootstrap()
+    second.ticket = "ticket-2"
+    vi.mocked(bootstrapWorkspace)
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+    vi.mocked(connectAgentSocket)
+      .mockReturnValueOnce(firstSocket as unknown as WebSocket)
+      .mockReturnValueOnce(secondSocket as unknown as WebSocket)
+
+    render(<AgentSync />)
+    await act(async () => undefined)
+    expect(connectAgentSocket).toHaveBeenCalledWith("ticket-1")
+
+    act(() => firstSocket.dispatchEvent(new Event("close")))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(bootstrapWorkspace).toHaveBeenCalledTimes(2)
+    expect(connectAgentSocket).toHaveBeenLastCalledWith("ticket-2")
+  })
+
   it("applies workspace.updated envelopes and commit outcomes", async () => {
     const socket = new FakeWebSocket()
     const response = bootstrap()
@@ -136,6 +172,46 @@ describe("AgentSync", () => {
     expect(useWorkspaceStore.getState().workspaceCommitState).toBe("idle")
   })
 
+  it("never rolls the same Workspace document back to an older revision", async () => {
+    const socket = new FakeWebSocket()
+    const response = bootstrap()
+    vi.mocked(bootstrapWorkspace).mockResolvedValue(response)
+    vi.mocked(connectAgentSocket).mockReturnValue(
+      socket as unknown as WebSocket
+    )
+    render(<AgentSync />)
+    await waitFor(() => expect(connectAgentSocket).toHaveBeenCalledOnce())
+
+    const revisionThree = structuredClone(response.workspace)
+    revisionThree.session.headWorkspaceRevision = 3
+    const revisionTwo = structuredClone(response.workspace)
+    revisionTwo.session.headWorkspaceRevision = 2
+
+    act(() => {
+      socket.dispatchEvent(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "workspace.updated",
+            payload: revisionThree,
+          }),
+        })
+      )
+      socket.dispatchEvent(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "workspace.updated",
+            payload: revisionTwo,
+          }),
+        })
+      )
+    })
+
+    expect(
+      useWorkspaceStore.getState().workspaceDocument?.session
+        .headWorkspaceRevision
+    ).toBe(3)
+  })
+
   it("correlates a browser planning error back to retry state", async () => {
     const socket = new FakeWebSocket()
     vi.mocked(bootstrapWorkspace).mockResolvedValue(bootstrap())
@@ -160,5 +236,6 @@ describe("AgentSync", () => {
     expect(useWorkspaceStore.getState().failedTransitPlanCommandId).toBe(
       commandId
     )
+    expect(useWorkspaceStore.getState().chatMessages).toHaveLength(0)
   })
 })

@@ -25,6 +25,7 @@ const sendAgentEvent = fn()
 export const Ready: Story = {
   decorators: [
     withWorkspaceState({
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
       sendAgentEvent,
     }),
   ],

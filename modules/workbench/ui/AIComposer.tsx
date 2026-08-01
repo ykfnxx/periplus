@@ -8,7 +8,12 @@ import {
   useRef,
 } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { selectWorkspaceLocked } from "@/modules/workspace/state/selectors"
+import {
+  selectWorkspaceCanMutate,
+  selectWorkspaceCanRecover,
+  selectWorkspaceLocked,
+} from "@/modules/workspace/state/selectors"
+import type { TargetCommandEnvelope } from "@/modules/data-model/contracts"
 import AgentModeToggle from "./AgentModeToggle"
 
 export default function AIComposer() {
@@ -20,6 +25,8 @@ export default function AIComposer() {
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const addUserMessage = useWorkspaceStore((state) => state.addUserMessage)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
+  const canRecover = useWorkspaceStore(selectWorkspaceCanRecover)
   const workspaceCommitState = useWorkspaceStore(
     (state) => state.workspaceCommitState
   )
@@ -29,11 +36,19 @@ export default function AIComposer() {
   const lightboxPhotoShare = useWorkspaceStore(
     (state) => state.lightboxPhotoShare
   )
+  const canControlAgent = Boolean(
+    document?.accessState === "OWNER" && document.session.status === "ACTIVE"
+  )
   const escTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !isWorkspaceLocked || lightboxPhotoShare) {
+      if (
+        event.key !== "Escape" ||
+        !isWorkspaceLocked ||
+        !canControlAgent ||
+        lightboxPhotoShare
+      ) {
         return
       }
 
@@ -57,11 +72,11 @@ export default function AIComposer() {
         escTimerRef.current = null
       }
     }
-  }, [isWorkspaceLocked, lightboxPhotoShare, sendAgentEvent])
+  }, [canControlAgent, isWorkspaceLocked, lightboxPhotoShare, sendAgentEvent])
 
   const sendPrompt = () => {
     const prompt = composerInput.trim()
-    if (!prompt || !sendAgentEvent || isWorkspaceLocked) return
+    if (!prompt || !sendAgentEvent || isWorkspaceLocked || !canMutate) return
 
     addUserMessage(prompt)
     setWorkbenchTab("chat")
@@ -86,6 +101,7 @@ export default function AIComposer() {
       !document ||
       document.draftState === "CLEAN" ||
       !sendAgentEvent ||
+      !canMutate ||
       isWorkspaceLocked
     ) {
       return
@@ -106,8 +122,32 @@ export default function AIComposer() {
     })
   }
 
+  const recoverWorkspace = (
+    name: Extract<
+      TargetCommandEnvelope["command"]["name"],
+      "workspace.refresh" | "workspace.replay" | "workspace.fork"
+    >
+  ) => {
+    if (!document || !sendAgentEvent || !canRecover || isWorkspaceLocked) {
+      return
+    }
+    const revision = document.session.headWorkspaceRevision
+    const commandId = `browser-recover:${name}:${document.session.id}:${revision}`
+    sendAgentEvent("workspace.command", {
+      commandId,
+      expectedRevision: revision,
+      idempotencyKey: commandId,
+      command: {
+        name,
+        payload: {
+          fromWorkspaceRevision: name === "workspace.fork" ? revision : 0,
+        },
+      },
+    })
+  }
+
   const cancelAgentRun = () => {
-    sendAgentEvent?.("agent.run.cancel")
+    if (canControlAgent) sendAgentEvent?.("agent.run.cancel")
   }
 
   return (
@@ -124,7 +164,7 @@ export default function AIComposer() {
             rows={1}
             aria-label="AI 输入"
             placeholder="告诉我你想怎么改路线..."
-            disabled={isWorkspaceLocked}
+            disabled={isWorkspaceLocked || !canMutate}
             className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent py-1 text-[13px] leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
@@ -141,6 +181,7 @@ export default function AIComposer() {
                   !document ||
                   document.draftState === "CLEAN" ||
                   !sendAgentEvent ||
+                  !canMutate ||
                   workspaceCommitState === "saving"
                 }
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-ink-15 bg-cream text-walnut transition hover:border-russet hover:text-russet disabled:cursor-default disabled:opacity-45"
@@ -154,7 +195,9 @@ export default function AIComposer() {
               aria-label={isWorkspaceLocked ? "停止" : "发送"}
               title={isWorkspaceLocked ? "停止" : "发送"}
               disabled={
-                !isWorkspaceLocked && (!composerInput.trim() || !sendAgentEvent)
+                isWorkspaceLocked
+                  ? !sendAgentEvent || !canControlAgent
+                  : !composerInput.trim() || !sendAgentEvent || !canMutate
               }
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-soft-white transition disabled:cursor-default disabled:opacity-55 ${
                 isWorkspaceLocked
@@ -171,6 +214,35 @@ export default function AIComposer() {
           </div>
         </div>
       </form>
+      {canRecover ? (
+        <div className="mt-2 rounded-xl border border-mustard/40 bg-cream p-3">
+          <p className="text-[11px] font-black text-ink">源行程已更新</p>
+          <p className="mt-1 text-[10px] leading-4 text-teak">
+            先选择如何恢复 Workspace，再继续编辑或保存。
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <RecoveryButton
+              label="刷新并重放"
+              disabled={!sendAgentEvent || isWorkspaceLocked}
+              onClick={() => recoverWorkspace("workspace.refresh")}
+            />
+            <RecoveryButton
+              label="仅重放"
+              disabled={!sendAgentEvent || isWorkspaceLocked}
+              onClick={() => recoverWorkspace("workspace.replay")}
+            />
+            <RecoveryButton
+              label="派生副本"
+              disabled={!sendAgentEvent || isWorkspaceLocked}
+              onClick={() => recoverWorkspace("workspace.fork")}
+            />
+          </div>
+        </div>
+      ) : document && document.accessState !== "OWNER" ? (
+        <p className="mt-2 rounded-xl border border-ink-10 bg-cream px-3 py-2 text-[11px] font-black text-teak">
+          Workspace 已过期或无写权限，当前为只读状态。
+        </p>
+      ) : null}
       <div className="flex items-center justify-end px-2 text-[11px] font-bold text-teak">
         {workspaceCommitState === "success" && <span>保存成功</span>}
         {workspaceCommitState === "error" && (
@@ -178,5 +250,26 @@ export default function AIComposer() {
         )}
       </div>
     </div>
+  )
+}
+
+function RecoveryButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="rounded-full border border-ink-15 bg-white px-3 py-1.5 text-[10px] font-black text-walnut transition hover:border-russet hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {label}
+    </button>
   )
 }

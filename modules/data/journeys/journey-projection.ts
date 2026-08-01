@@ -40,6 +40,15 @@ export interface ResolveJourneyProjectionInput {
 
 const LOCATION_EVENT_TYPES = new Set(["VISIT", "STAY", "MEAL", "ACTIVITY"])
 
+function hasProjectedLocation(event: TargetJourneyEvent) {
+  if (event.type !== "SECTION") return LOCATION_EVENT_TYPES.has(event.type)
+  return (
+    event.detail.kind === "CITY" &&
+    event.detail.lat !== undefined &&
+    event.detail.lng !== undefined
+  )
+}
+
 type ResolvedTimes = {
   startAt?: string
   endAt?: string
@@ -350,7 +359,7 @@ export function resolveJourneyProjection({
   const locationOrdinalByEventId = new Map<string, number>()
   let locationOrdinal = 0
   for (const event of ordered) {
-    if (!LOCATION_EVENT_TYPES.has(event.type)) continue
+    if (!hasProjectedLocation(event)) continue
     locationOrdinal += 1
     locationOrdinalByEventId.set(event.id, locationOrdinal)
   }

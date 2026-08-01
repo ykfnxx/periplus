@@ -96,7 +96,7 @@ export default function RoutePreview({
           这个城市还没有安排地点，可以在 AI 面板中继续规划。
         </div>
       ) : (
-        <RouteTimeline events={view.events} />
+        <RouteTimeline items={view.items} />
       )}
     </div>
   )

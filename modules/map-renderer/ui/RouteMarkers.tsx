@@ -31,20 +31,28 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       viewLevel,
       activeSectionEventId
     )
-    const points = view.locations
-      .map((event) => ({ event, location: plannedLocationOf(event) }))
+    const points = view.items
+      .map(({ event, resolved }) => ({
+        event,
+        resolved,
+        location: plannedLocationOf(event),
+      }))
       .filter(
         (
           item
         ): item is {
           event: (typeof view.locations)[number]
+          resolved: (typeof view.resolvedEvents)[number] & {
+            locationOrdinal: number
+          }
           location: NonNullable<ReturnType<typeof plannedLocationOf>>
-        } => Boolean(item.location)
+        } =>
+          Boolean(item.location) && item.resolved.locationOrdinal !== undefined
       )
     const markers: AMap.Marker[] = []
     const longPressTimers: Array<ReturnType<typeof setTimeout>> = []
 
-    points.forEach(({ event, location }, index) => {
+    points.forEach(({ event, resolved, location }) => {
       const content = document.createElement("div")
       content.className = [
         "periplus-map-marker",
@@ -58,7 +66,9 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
         .join(" ")
       content.setAttribute("role", "button")
       content.setAttribute("aria-label", `选择地点 ${event.title}`)
-      const colorIndex = index % routeMarkerColors.length
+      const markerPosition = resolved.locationOrdinal
+      const colorIndex =
+        (resolved.locationOrdinal - 1) % routeMarkerColors.length
       content.style.background =
         view.level === "overview"
           ? routeMarkerColors[colorIndex]
@@ -67,7 +77,7 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
         view.level === "overview" && colorIndex === 2
           ? periplusColors.ink
           : periplusColors.white
-      content.textContent = `${index + 1}`
+      content.textContent = `${markerPosition}`
 
       const marker = new AMap.Marker({
         content,

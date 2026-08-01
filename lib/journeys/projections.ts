@@ -14,10 +14,16 @@ export type LocationEvent = Extract<
   { type: "SECTION" | "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
 >
 
+export interface JourneyScopeItem {
+  event: TargetJourneyEvent
+  resolved: TargetResolvedEvent
+}
+
 export interface JourneyScopeProjection {
   level: JourneyViewLevel
   title: string
   section: SectionEvent | null
+  items: JourneyScopeItem[]
   events: TargetJourneyEvent[]
   resolvedEvents: TargetResolvedEvent[]
   locations: LocationEvent[]
@@ -50,6 +56,7 @@ export function getJourneyScopeProjection(
       level: "overview",
       title: "行程预览",
       section: null,
+      items: [],
       events: [],
       resolvedEvents: [],
       locations: [],
@@ -72,14 +79,16 @@ export function getJourneyScopeProjection(
     mode: "PLANNER",
   })
   const eventById = new Map(graph.events.map((event) => [event.id, event]))
-  const events = projection.events.flatMap((resolved) => {
+  const items = projection.events.flatMap((resolved) => {
     const event = eventById.get(resolved.eventId)
-    return event ? [event] : []
+    return event ? [{ event, resolved }] : []
   })
+  const events = items.map((item) => item.event)
   const view: JourneyScopeProjection = {
     level: section ? "section" : "overview",
     title: section?.title ?? graph.title,
     section,
+    items,
     events,
     resolvedEvents: projection.events,
     locations: events.filter(isLocationEvent),

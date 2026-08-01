@@ -14,11 +14,13 @@ vi.mock("@/modules/workbench/ui/AgentModeToggle", () => ({
 function mockStore(overrides: Record<string, unknown> = {}) {
   const base = {
     workspaceDocument: {
+      accessState: "OWNER",
       draftState: "DIRTY",
       session: {
         id: "workspace-1",
         headWorkspaceRevision: 4,
         baseJourneyRevision: 2,
+        status: "ACTIVE",
       },
       agentRuns: [],
     },
@@ -118,11 +120,13 @@ describe("AIComposer", () => {
   it("disables save button when the Workspace is already clean", () => {
     mockStore({
       workspaceDocument: {
+        accessState: "OWNER",
         draftState: "CLEAN",
         session: {
           id: "workspace-1",
           headWorkspaceRevision: 4,
           baseJourneyRevision: 2,
+          status: "ACTIVE",
         },
         agentRuns: [],
       },
@@ -130,6 +134,65 @@ describe("AIComposer", () => {
     render(<AIComposer />)
 
     expect(screen.getByLabelText("保存")).toBeDisabled()
+  })
+
+  it("blocks stale save and exposes refresh, replay, and fork recovery", () => {
+    const sendAgentEvent = vi.fn()
+    mockStore({
+      sendAgentEvent,
+      workspaceDocument: {
+        accessState: "OWNER",
+        draftState: "STALE",
+        session: {
+          id: "workspace-1",
+          headWorkspaceRevision: 4,
+          baseJourneyRevision: 2,
+          status: "ACTIVE",
+        },
+        agentRuns: [],
+      },
+    })
+    render(<AIComposer />)
+
+    expect(screen.getByLabelText("保存")).toBeDisabled()
+    fireEvent.click(screen.getByLabelText("保存"))
+    expect(sendAgentEvent).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新并重放" }))
+    expect(sendAgentEvent).toHaveBeenCalledWith("workspace.command", {
+      commandId: "browser-recover:workspace.refresh:workspace-1:4",
+      expectedRevision: 4,
+      idempotencyKey: "browser-recover:workspace.refresh:workspace-1:4",
+      command: {
+        name: "workspace.refresh",
+        payload: { fromWorkspaceRevision: 0 },
+      },
+    })
+    expect(screen.getByRole("button", { name: "仅重放" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "派生副本" })).toBeEnabled()
+  })
+
+  it("makes every Agent mutation control read-only when access is expired", () => {
+    mockStore({
+      composerInput: "should not send",
+      workspaceDocument: {
+        accessState: "EXPIRED",
+        draftState: "DIRTY",
+        session: {
+          id: "workspace-1",
+          headWorkspaceRevision: 4,
+          baseJourneyRevision: 2,
+          status: "EXPIRED",
+        },
+        agentRuns: [],
+      },
+    })
+    render(<AIComposer />)
+
+    expect(screen.getByLabelText("AI 输入")).toBeDisabled()
+    expect(screen.getByLabelText("保存")).toBeDisabled()
+    expect(screen.getByLabelText("发送")).toBeDisabled()
+    expect(screen.getByText(/只读状态/)).toBeVisible()
   })
 
   it("disables send button when input is empty", () => {

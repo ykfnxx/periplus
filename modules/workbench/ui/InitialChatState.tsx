@@ -5,6 +5,7 @@ import { type FormEvent, type KeyboardEvent } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
   selectWorkspaceGraph,
+  selectWorkspaceCanMutate,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
 import AIComposer from "./AIComposer"
@@ -18,12 +19,13 @@ export default function InitialChatState() {
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const addUserMessage = useWorkspaceStore((state) => state.addUserMessage)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
   const agentMode = useWorkspaceStore((state) => state.agentMode)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
 
   const sendPrompt = () => {
     const prompt = composerInput.trim()
-    if (!prompt || !sendAgentEvent || isWorkspaceLocked) return
+    if (!prompt || !sendAgentEvent || isWorkspaceLocked || !canMutate) return
 
     addUserMessage(prompt)
     setWorkbenchTab("chat")
@@ -86,7 +88,7 @@ export default function InitialChatState() {
             rows={1}
             aria-label="AI 初始输入"
             placeholder="告诉我你想怎么改路线..."
-            disabled={isWorkspaceLocked}
+            disabled={isWorkspaceLocked || !canMutate}
             className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent text-sm leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
           <div className="mt-2 flex items-center justify-between gap-3">
@@ -96,7 +98,10 @@ export default function InitialChatState() {
               aria-label="发送"
               title="发送"
               disabled={
-                !composerInput.trim() || !sendAgentEvent || isWorkspaceLocked
+                !composerInput.trim() ||
+                !sendAgentEvent ||
+                isWorkspaceLocked ||
+                !canMutate
               }
               className="flex h-9 w-9 items-center justify-center rounded-full bg-russet text-soft-white transition hover:bg-ink disabled:cursor-default disabled:bg-mustard disabled:text-ink disabled:opacity-55"
             >

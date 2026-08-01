@@ -84,7 +84,7 @@ export interface MapRuntimeSlice {
 
 export interface WorkspaceDocumentSlice {
   workspaceDocument: TargetWorkspaceDocument | null
-  applyWorkspaceDocument: (document: TargetWorkspaceDocument | null) => void
+  applyWorkspaceDocument: (document: TargetWorkspaceDocument | null) => boolean
   failedTransitPlanCommandId: string | null
   setFailedTransitPlanCommandId: (commandId: string | null) => void
   selectTransitPlan: (eventId: string, planId: string) => void
@@ -108,6 +108,7 @@ export interface WorkspaceUiSlice {
   viewLevel: JourneyViewLevel
   activeSectionEventId: string | null
   enterSectionView: (sectionEventId: string) => void
+  returnToParentScope: () => void
   returnToOverview: () => void
   hoveredEventId: string | null
   setHoveredEventId: (eventId: string | null) => void

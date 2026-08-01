@@ -77,3 +77,28 @@ export const SaveFailed: Story = {
     }),
   ],
 }
+
+const expiredDocument = workspaceDocumentForStory(silkRoadJourney)
+expiredDocument.accessState = "EXPIRED"
+expiredDocument.session.status = "EXPIRED"
+
+export const ExpiredReadOnly: Story = {
+  decorators: [
+    withWorkspaceState({
+      workspaceDocument: expiredDocument,
+      composerInput: "尝试修改行程",
+      sendAgentEvent: fn(),
+    }),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByRole("textbox", { name: "AI 输入" })
+    ).toBeDisabled()
+    await expect(canvas.getByRole("button", { name: "保存" })).toBeDisabled()
+    await expect(canvas.getByRole("button", { name: "发送" })).toBeDisabled()
+    await expect(
+      canvas.getByText("Workspace 已过期或无写权限，当前为只读状态。")
+    ).toBeVisible()
+  },
+}

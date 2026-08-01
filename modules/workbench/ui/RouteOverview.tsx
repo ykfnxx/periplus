@@ -59,15 +59,17 @@ export default function RouteOverview() {
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
   if (!graph) return null
-  const sequence = getJourneyScopeProjection(graph, "overview", null).events
-  const sections = sequence.filter(
-    (event): event is SectionEvent => event.type === "SECTION"
+  const sequence = getJourneyScopeProjection(graph, "overview", null)
+  const sections = sequence.items.filter(
+    (item): item is typeof item & { event: SectionEvent } =>
+      item.event.type === "SECTION"
   )
-  const transits = sequence.filter(
-    (event): event is TransitEvent => event.type === "TRANSIT"
+  const transits = sequence.items.filter(
+    (item): item is typeof item & { event: TransitEvent } =>
+      item.event.type === "TRANSIT"
   )
   const childEvents = sections.flatMap(
-    (section) => getJourneyScopeProjection(graph, "section", section.id).events
+    ({ event }) => getJourneyScopeProjection(graph, "section", event.id).events
   )
 
   const openSection = (eventId: string) => {
@@ -89,31 +91,37 @@ export default function RouteOverview() {
           {totalDurationDays(childEvents) ? (
             <span>· {totalDurationDays(childEvents)} 天</span>
           ) : null}
-          {totalTransitDistanceMeters(sequence, graph.transitPlanningRuns) ? (
+          {totalTransitDistanceMeters(
+            sequence.events,
+            graph.transitPlanningRuns
+          ) ? (
             <span>
               ·{" "}
               {formatTransitDistance(
-                totalTransitDistanceMeters(sequence, graph.transitPlanningRuns)
+                totalTransitDistanceMeters(
+                  sequence.events,
+                  graph.transitPlanningRuns
+                )
               )}
             </span>
           ) : null}
         </p>
         <p className="mt-1 text-[10px] font-bold text-teak">
-          {locationCount(childEvents)} 个地点 · {readyTransitCount(sequence)}/
-          {transits.length} 段真实路线
+          {locationCount(childEvents)} 个地点 ·
+          {readyTransitCount(sequence.events)}/{transits.length} 段真实路线
         </p>
       </div>
 
       <div className="space-y-2.5">
-        {sequence.map((event) =>
+        {sequence.items.map(({ event, resolved }) =>
           event.type === "SECTION" ? (
             <SectionSummaryCard
               key={event.id}
               section={event}
-              index={sections.findIndex((section) => section.id === event.id)}
+              resolvedPosition={resolved.resolvedPosition}
               childTitles={getJourneyScopeProjection(graph, "section", event.id)
-                .events.filter((child) => child.type !== "TRANSIT")
-                .map((child) => child.title)}
+                .items.filter((child) => child.event.type !== "TRANSIT")
+                .map((child) => child.resolved.title)}
               onSelect={() => openSection(event.id)}
             />
           ) : event.type === "TRANSIT" ? (
@@ -133,12 +141,12 @@ export default function RouteOverview() {
 
 function SectionSummaryCard({
   section,
-  index,
+  resolvedPosition,
   childTitles,
   onSelect,
 }: {
   section: SectionEvent
-  index: number
+  resolvedPosition: number
   childTitles: string[]
   onSelect: () => void
 }) {
@@ -151,7 +159,7 @@ function SectionSummaryCard({
     >
       <span
         className={`absolute top-[19px] -left-[7px] h-[18px] w-[26px] rounded-[3px] ${
-          markerClasses[index % markerClasses.length]
+          markerClasses[resolvedPosition % markerClasses.length]
         }`}
       />
       <span className="flex items-center justify-between gap-3 pl-3">

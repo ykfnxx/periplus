@@ -8,12 +8,13 @@ import { selectWorkspaceLocked } from "@/modules/workspace/state/selectors"
 export default function ChatHistory() {
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
-  const suggestions = useWorkspaceStore(
-    (state) =>
-      state.workspaceDocument?.suggestions.filter(
-        (suggestion) => suggestion.status === "PENDING"
-      ) ?? []
+  const workspaceSuggestions = useWorkspaceStore(
+    (state) => state.workspaceDocument?.suggestions
   )
+  const suggestions =
+    workspaceSuggestions?.filter(
+      (suggestion) => suggestion.status === "PENDING"
+    ) ?? []
 
   if (!chatMessages.length && !suggestions.length && !isWorkspaceLocked) {
     return null

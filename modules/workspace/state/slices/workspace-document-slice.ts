@@ -9,12 +9,42 @@ export function workspaceIsLocked(document: TargetWorkspaceDocument | null) {
   return Boolean(document?.agentRuns.some((run) => run.status === "RUNNING"))
 }
 
+export function workspaceCanMutate(document: TargetWorkspaceDocument | null) {
+  return Boolean(
+    document &&
+    document.accessState === "OWNER" &&
+    document.session.status === "ACTIVE" &&
+    document.draftState !== "STALE" &&
+    document.draftState !== "CONFLICT"
+  )
+}
+
+export function shouldAcceptWorkspaceDocument(
+  current: TargetWorkspaceDocument | null,
+  incoming: TargetWorkspaceDocument | null
+) {
+  if (!current || !incoming) return true
+  if (current.session.id !== incoming.session.id) return true
+  return (
+    incoming.session.headWorkspaceRevision >=
+    current.session.headWorkspaceRevision
+  )
+}
+
 export const createWorkspaceDocumentSlice: WorkspaceSlice<
   WorkspaceDocumentSlice
 > = (set, get) => ({
   workspaceDocument: null,
-  applyWorkspaceDocument: (workspaceDocument) =>
-    set((state) => workspaceDocumentPatch(state, workspaceDocument)),
+  applyWorkspaceDocument: (workspaceDocument) => {
+    const state = get()
+    if (
+      !shouldAcceptWorkspaceDocument(state.workspaceDocument, workspaceDocument)
+    ) {
+      return false
+    }
+    set(workspaceDocumentPatch(state, workspaceDocument))
+    return true
+  },
   failedTransitPlanCommandId: null,
   setFailedTransitPlanCommandId: (failedTransitPlanCommandId) =>
     set({ failedTransitPlanCommandId }),
@@ -36,6 +66,7 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
       event.type !== "TRANSIT" ||
       !planningRun?.plans.some((plan) => plan.id === planId) ||
       event.detail.selectedPlanId === planId ||
+      !workspaceCanMutate(document) ||
       workspaceIsLocked(document)
     ) {
       return

@@ -11,7 +11,10 @@ import {
   Star,
 } from "lucide-react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import {
+  selectWorkspaceCanMutate,
+  selectWorkspaceGraph,
+} from "@/modules/workspace/state/selectors"
 import type { ActiveMapPanel } from "@/modules/workspace/state/types"
 import PhotoUploadPanel from "./PhotoUploadPanel"
 import SavedRoutesPanel from "./SavedRoutesPanel"
@@ -31,6 +34,7 @@ export default function WorkspaceCornerControls() {
   const [menuOpen, setMenuOpen] = useState(false)
   const map = useWorkspaceStore((state) => state.map)
   const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
   const activeMapPanel = useWorkspaceStore((state) => state.activeMapPanel)
   const setActiveMapPanel = useWorkspaceStore(
     (state) => state.setActiveMapPanel
@@ -38,6 +42,7 @@ export default function WorkspaceCornerControls() {
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
   const openPanel = (panel: Exclude<ActiveMapPanel, "none">) => {
+    if (panel === "photo" && !canMutate) return
     setActiveMapPanel(activeMapPanel === panel ? "none" : panel)
     setMenuOpen(false)
   }
@@ -85,8 +90,9 @@ export default function WorkspaceCornerControls() {
               <button
                 key={control.panel}
                 type="button"
+                disabled={control.panel === "photo" && !canMutate}
                 onClick={() => openPanel(control.panel)}
-                className="flex h-10 items-center gap-2 rounded-lg bg-cream px-3 text-[11px] font-black text-teak transition hover:bg-ink hover:text-soft-white"
+                className="flex h-10 items-center gap-2 rounded-lg bg-cream px-3 text-[11px] font-black text-teak transition hover:bg-ink hover:text-soft-white disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {control.label}

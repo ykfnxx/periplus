@@ -7,6 +7,7 @@ import {
 } from "@/lib/journeys/planning"
 import {
   selectWorkspaceGraph,
+  selectWorkspaceCanMutate,
   selectWorkspaceLocked,
   selectWorkspaceRevision,
 } from "@/modules/workspace/state/selectors"
@@ -20,6 +21,7 @@ export default function TransitPlanSync() {
   const graph = useWorkspaceStore(selectWorkspaceGraph)
   const revision = useWorkspaceStore(selectWorkspaceRevision)
   const isLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const failedCommandId = useWorkspaceStore(
     (state) => state.failedTransitPlanCommandId
@@ -44,7 +46,7 @@ export default function TransitPlanSync() {
       }
       setFailedCommandId(null)
     }
-    if (!document || !graph || !sendAgentEvent || isLocked) return
+    if (!document || !graph || !sendAgentEvent || isLocked || !canMutate) return
 
     for (const event of graph.events) {
       if (event.type !== "TRANSIT") continue
@@ -85,6 +87,7 @@ export default function TransitPlanSync() {
     }
   }, [
     document,
+    canMutate,
     failedCommandId,
     graph,
     isLocked,

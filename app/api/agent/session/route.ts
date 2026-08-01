@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
 import {
   AuthRequiredError,
+  PermissionDeniedError,
   requireCurrentUser,
 } from "@/modules/auth/server/context"
 import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
@@ -105,6 +106,32 @@ export async function GET(request: Request) {
       )
     }
 
+    if (
+      workspace.accessState === "EXPIRED" ||
+      workspace.session.status !== "ACTIVE"
+    ) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "workspace_expired",
+            message: "Workspace is no longer active",
+          },
+        },
+        { status: 410 }
+      )
+    }
+    if (workspace.accessState !== "OWNER") {
+      return NextResponse.json(
+        {
+          error: {
+            code: "permission_denied",
+            message: "Workspace is not accessible",
+          },
+        },
+        { status: 403 }
+      )
+    }
+
     return NextResponse.json({
       workspace,
       ticket: issueWorkspaceTicket(context.userId, workspace.session.id),
@@ -116,6 +143,14 @@ export async function GET(request: Request) {
           error: { code: "auth_required", message: "Authentication required" },
         },
         { status: 401 }
+      )
+    }
+    if (error instanceof PermissionDeniedError) {
+      return NextResponse.json(
+        {
+          error: { code: "permission_denied", message: "Permission denied" },
+        },
+        { status: 403 }
       )
     }
     throw error

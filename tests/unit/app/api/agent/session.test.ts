@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createSilkRoadJourney } from "@/lib/mock-journeys"
-import { AuthRequiredError } from "@/modules/auth/server/context"
+import {
+  AuthRequiredError,
+  PermissionDeniedError,
+} from "@/modules/auth/server/context"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
 
 vi.mock("@/modules/auth/server/context", async (importOriginal) => {
@@ -123,5 +126,45 @@ describe("GET /api/agent/session", () => {
       new Request("http://periplus.local/api/agent/session")
     )
     expect(unauthenticated.status).toBe(401)
+  })
+
+  it("maps cross-owner access to a stable 403", async () => {
+    vi.mocked(getWorkspaceDocument).mockRejectedValue(
+      new PermissionDeniedError()
+    )
+
+    const response = await GET(
+      new Request(
+        "http://periplus.local/api/agent/session?workspace=other-owner"
+      )
+    )
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      error: { code: "permission_denied", message: "Permission denied" },
+    })
+    expect(issueWorkspaceTicket).not.toHaveBeenCalled()
+  })
+
+  it("returns 410 without a ticket for an expired Workspace", async () => {
+    const workspace = document()
+    workspace.accessState = "EXPIRED"
+    workspace.session.status = "EXPIRED"
+    vi.mocked(getWorkspaceDocument).mockResolvedValue(workspace)
+
+    const response = await GET(
+      new Request(
+        "http://periplus.local/api/agent/session?workspace=workspace-1"
+      )
+    )
+
+    expect(response.status).toBe(410)
+    expect(await response.json()).toEqual({
+      error: {
+        code: "workspace_expired",
+        message: "Workspace is no longer active",
+      },
+    })
+    expect(issueWorkspaceTicket).not.toHaveBeenCalled()
   })
 })

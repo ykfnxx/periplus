@@ -12,7 +12,18 @@ interface WorkspaceBootstrapResponse {
 }
 
 interface BootstrapErrorResponse {
-  error?: { message?: string }
+  error?: { code?: string; message?: string }
+}
+
+export class WorkspaceBootstrapError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string
+  ) {
+    super(message)
+    this.name = "WorkspaceBootstrapError"
+  }
 }
 
 export const agentBackendUrl = periplusPublicConfig.agentBackend.url
@@ -39,10 +50,12 @@ export function bootstrapWorkspace() {
       | WorkspaceBootstrapResponse
       | BootstrapErrorResponse
     if (!response.ok || !("workspace" in body) || !("ticket" in body)) {
-      throw new Error(
+      throw new WorkspaceBootstrapError(
         "error" in body
           ? (body.error?.message ?? "Workspace bootstrap failed")
-          : "Workspace bootstrap failed"
+          : "Workspace bootstrap failed",
+        response.status,
+        "error" in body ? body.error?.code : undefined
       )
     }
     currentUrl.searchParams.delete("journey")
@@ -51,6 +64,10 @@ export function bootstrapWorkspace() {
     return body
   })
   activeBootstrap = { key, promise }
+  const clear = () => {
+    if (activeBootstrap?.promise === promise) activeBootstrap = undefined
+  }
+  void promise.then(clear, clear)
   return promise
 }
 
