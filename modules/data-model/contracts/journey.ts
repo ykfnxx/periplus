@@ -582,6 +582,13 @@ export const targetTransitPlanningRunSchema = z
         message: "plan ids must be unique within a planning run",
       })
     }
+    if (new Set(run.plans.map((plan) => plan.rank)).size !== run.plans.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["plans"],
+        message: "plan rank must be unique within a planning run",
+      })
+    }
     const segments = run.plans.flatMap((plan) => plan.segments)
     if (
       new Set(segments.map((segment) => segment.id)).size !== segments.length
@@ -706,6 +713,16 @@ export const targetJourneyGraphSnapshotSchema = z
         addIssue([path], `${path} ${id} has invalid revision bounds`)
       }
     }
+    const assertUniqueKeys = <T>(
+      path: string,
+      values: readonly T[],
+      key: (value: T) => string,
+      message: string
+    ) => {
+      if (new Set(values.map(key)).size !== values.length) {
+        addIssue([path], message)
+      }
+    }
 
     assertUniqueIds("events", graph.events)
     assertUniqueIds("links", graph.links)
@@ -725,6 +742,62 @@ export const targetJourneyGraphSnapshotSchema = z
     assertUniqueIds("eventAssetLinks", graph.eventAssetLinks)
     assertUniqueIds("observations", graph.observations)
     assertUniqueIds("eventSourceLinks", graph.eventSourceLinks)
+    assertUniqueKeys(
+      "links",
+      graph.links,
+      (link) =>
+        JSON.stringify([
+          link.fromEventId,
+          link.toEventId,
+          link.kind,
+          link.introducedRevision,
+        ]),
+      "link endpoint, kind, and introduced revision tuple must be unique"
+    )
+    assertUniqueKeys(
+      "branchSelections",
+      graph.branchSelections.filter(
+        (selection) => selection.supersedesId !== undefined
+      ),
+      (selection) => selection.supersedesId!,
+      "a BranchSelection may be superseded by at most one successor"
+    )
+    assertUniqueKeys(
+      "eventAssetLinks",
+      graph.eventAssetLinks,
+      (link) =>
+        JSON.stringify([
+          link.eventId,
+          link.assetId,
+          link.role,
+          link.introducedRevision,
+        ]),
+      "asset link event, asset, role, and introduced revision tuple must be unique"
+    )
+    assertUniqueKeys(
+      "eventAssetLinks",
+      graph.eventAssetLinks.filter((link) => !link.retiredRevision),
+      (link) => JSON.stringify([link.eventId, link.role, link.rank]),
+      "active asset link rank must be unique within an Event role"
+    )
+    assertUniqueKeys(
+      "eventSourceLinks",
+      graph.eventSourceLinks,
+      (link) =>
+        JSON.stringify([
+          link.eventId,
+          link.sourceItemId,
+          link.role,
+          link.introducedRevision,
+        ]),
+      "source link event, item, role, and introduced revision tuple must be unique"
+    )
+    assertUniqueKeys(
+      "eventSourceLinks",
+      graph.eventSourceLinks.filter((link) => !link.retiredRevision),
+      (link) => JSON.stringify([link.eventId, link.role, link.rank]),
+      "active source link rank must be unique within an Event role"
+    )
 
     const events = new Map(graph.events.map((event) => [event.id, event]))
     const activeLinks = graph.links.filter((link) => !link.retiredRevision)
@@ -1016,6 +1089,15 @@ export const targetJourneyGraphSnapshotSchema = z
       ]) {
         if (!endpointId) continue
         const endpoint = events.get(endpointId)
+        if (event.retiredRevision) {
+          if (!endpoint) {
+            addIssue(
+              ["events"],
+              `retired transit event ${event.id} references missing endpoint ${endpointId}`
+            )
+          }
+          continue
+        }
         if (
           !endpoint ||
           endpoint.retiredRevision ||

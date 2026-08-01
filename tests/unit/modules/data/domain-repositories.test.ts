@@ -239,7 +239,9 @@ describe.sequential("P2B-P2D repositories", () => {
       workspace.id,
       revisionInput
     )
-    expect(replay?.id).toBe(first?.id)
+    expect(replay?.revision.id).toBe(first?.revision.id)
+    expect(first?.replayedFromIdempotencyKey).toBe(false)
+    expect(replay?.replayedFromIdempotencyKey).toBe(true)
     expect(
       (await getWorkspaceDocument(context, workspace.id))?.draftState
     ).toBe("DIRTY")

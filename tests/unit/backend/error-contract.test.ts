@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest"
+import type { IncomingMessage, ServerResponse } from "node:http"
+import { Readable } from "node:stream"
+import { describe, expect, it, vi } from "vitest"
 import { z } from "zod"
+import type { AgentGateway } from "@/backend/agent/gateway"
 import { domainErrorResponse } from "@/backend/domain-error"
-import { errorResponse } from "@/backend/internal-api"
-import { errorEvent } from "@/backend/ws"
+import { errorResponse, handleInternalRequest } from "@/backend/internal-api"
+import { errorEvent, parseWireMessage } from "@/backend/ws"
 import { PermissionDeniedError } from "@/modules/auth/server/context"
 import { JourneyGraphValidationError } from "@/modules/data/journeys/journey-graph-validator"
 import {
@@ -105,5 +108,48 @@ describe("Agent HTTP and WebSocket domain error contract", () => {
         ...(entry.issues ? { issues: entry.issues } : {}),
       },
     })
+  })
+
+  it("maps malformed Agent HTTP JSON and unsupported WebSocket envelopes to stable invalid_input", async () => {
+    const request = Readable.from(["{"]) as IncomingMessage
+    request.method = "POST"
+    request.url = "/internal/agent-tool"
+    let status: number | undefined
+    let responseBody = ""
+    const response = {
+      writeHead(value: number) {
+        status = value
+        return this
+      },
+      end(value?: string) {
+        responseBody = value ?? ""
+        return this
+      },
+    } as unknown as ServerResponse
+    const executeTool = vi.fn()
+    await handleInternalRequest(request, response, {
+      executeTool,
+    } as unknown as AgentGateway)
+    expect(status).toBe(400)
+    expect(JSON.parse(responseBody)).toEqual({
+      error: {
+        code: "invalid_input",
+        message: "Request body must be valid JSON",
+      },
+    })
+    expect(executeTool).not.toHaveBeenCalled()
+
+    for (const raw of ["{", JSON.stringify({ type: "unsupported" })]) {
+      let error: unknown
+      try {
+        parseWireMessage(raw)
+      } catch (caught) {
+        error = caught
+      }
+      expect(errorEvent(error)).toMatchObject({
+        type: "error",
+        payload: { code: "invalid_input" },
+      })
+    }
   })
 })

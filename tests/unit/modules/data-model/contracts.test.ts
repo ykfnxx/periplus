@@ -817,6 +817,62 @@ describe("breaking data-model target contracts", () => {
     })
   })
 
+  it("mirrors database natural and partial unique constraints in graph contracts", () => {
+    const transit = cloneGraph(
+      scenario("03-transit-plan-choice", "select-low-cost").input.graph!
+    )
+    const run = transit.transitPlanningRuns[0]!
+    const duplicateRankPlan = structuredClone(run.plans[0]!)
+    duplicateRankPlan.id = "duplicate-plan-rank"
+    for (const segment of duplicateRankPlan.segments) {
+      segment.id = `${segment.id}-duplicate-rank`
+    }
+    run.plans.push(duplicateRankPlan)
+    expect(targetTransitPlanningRunSchema.safeParse(run).success).toBe(false)
+    expect(targetJourneyGraphSnapshotSchema.safeParse(transit).success).toBe(
+      false
+    )
+
+    const topology = cloneGraph(
+      scenario("05-current-branch-correction", "correct-current-selection")
+        .input.graph!
+    )
+    topology.links.push({
+      ...structuredClone(topology.links[0]!),
+      id: "duplicate-link-natural-key",
+    })
+    expect(targetJourneyGraphSnapshotSchema.safeParse(topology).success).toBe(
+      false
+    )
+
+    const content = cloneGraph(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).expected.state!.graph!
+    )
+    const duplicateAssetRank = cloneGraph(content)
+    duplicateAssetRank.eventAssetLinks.push({
+      ...structuredClone(duplicateAssetRank.eventAssetLinks[0]!),
+      id: "duplicate-active-asset-rank",
+      assetId: "another-asset",
+      assetChecksum: "another-asset-checksum",
+    })
+    expect(
+      targetJourneyGraphSnapshotSchema.safeParse(duplicateAssetRank).success
+    ).toBe(false)
+
+    const duplicateSourceRank = cloneGraph(content)
+    duplicateSourceRank.eventSourceLinks.push({
+      ...structuredClone(duplicateSourceRank.eventSourceLinks[0]!),
+      id: "duplicate-active-source-rank",
+      sourceItemId: "another-source-item",
+    })
+    expect(
+      targetJourneyGraphSnapshotSchema.safeParse(duplicateSourceRank).success
+    ).toBe(false)
+  })
+
   it("requires Observation supersession to be a single same-domain chain", () => {
     const source = structuredClone(
       scenario(

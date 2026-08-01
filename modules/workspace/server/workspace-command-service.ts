@@ -10,6 +10,7 @@ import {
 import {
   targetCommandEnvelopeSchema,
   targetCommandResultSchema,
+  targetTransitPlanningRunSchema,
   type TargetCommandEnvelope,
   type TargetCommandResult,
   type TargetLifecycleCommandOutcome,
@@ -524,20 +525,22 @@ function selectedFields(
   return Object.fromEntries(fields.map((field) => [field, detail[field]]))
 }
 
+function markTransitPlanningStale(
+  transit: Extract<TargetJourneyEvent, { type: "TRANSIT" }>,
+  now: string
+) {
+  if (transit.detail.activePlanningRunId && transit.detail.selectedPlanId) {
+    transit.detail.routeState = "ROUTE_STALE"
+  }
+  transit.updatedAt = now
+}
+
 function staleTransitPlanningAfterEventUpdate(
   graph: TargetJourneyGraphSnapshot,
   previous: TargetJourneyEvent,
   current: TargetJourneyEvent,
   now: string
 ) {
-  const stale = (transit: Extract<TargetJourneyEvent, { type: "TRANSIT" }>) => {
-    if (!transit.detail.activePlanningRunId || !transit.detail.selectedPlanId) {
-      return
-    }
-    transit.detail.routeState = "ROUTE_STALE"
-    transit.updatedAt = now
-  }
-
   if (previous.type === "TRANSIT" && current.type === "TRANSIT") {
     const previousRequest = selectedFields(
       previous.detail,
@@ -547,7 +550,9 @@ function staleTransitPlanningAfterEventUpdate(
       current.detail,
       TRANSIT_REQUEST_DETAIL_FIELDS
     )
-    if (json(previousRequest) !== json(currentRequest)) stale(current)
+    if (json(previousRequest) !== json(currentRequest)) {
+      markTransitPlanningStale(current, now)
+    }
     return
   }
   if (
@@ -581,7 +586,7 @@ function staleTransitPlanningAfterEventUpdate(
       (transit.detail.plannedFromEventId === current.id ||
         transit.detail.plannedToEventId === current.id)
     ) {
-      stale(transit)
+      markTransitPlanningStale(transit, now)
     }
   }
 }
@@ -609,6 +614,78 @@ function diffEventIds(
         json(beforeById.get(eventId)) !== json(afterById.get(eventId))
     )
     .sort()
+}
+
+function projectionDiffEventIds(
+  before: TargetJourneyGraphSnapshot,
+  after: TargetJourneyGraphSnapshot
+) {
+  const eventIds = new Set(diffEventIds(before, after))
+  const changedRecords = <T extends { id: string }>(
+    previous: readonly T[],
+    current: readonly T[]
+  ) => {
+    const previousById = new Map(previous.map((value) => [value.id, value]))
+    const currentById = new Map(current.map((value) => [value.id, value]))
+    return [...new Set([...previousById.keys(), ...currentById.keys()])]
+      .filter((id) => json(previousById.get(id)) !== json(currentById.get(id)))
+      .flatMap((id) =>
+        [previousById.get(id), currentById.get(id)].filter(
+          (value): value is T => value !== undefined
+        )
+      )
+  }
+  for (const link of changedRecords(before.links, after.links)) {
+    eventIds.add(link.fromEventId)
+    eventIds.add(link.toEventId)
+  }
+  for (const selection of changedRecords(
+    before.branchSelections,
+    after.branchSelections
+  )) {
+    eventIds.add(selection.forkEventId)
+    for (const graph of [before, after]) {
+      const selected = graph.links.find(
+        (link) => link.id === selection.selectedLinkId
+      )
+      if (selected) {
+        eventIds.add(selected.fromEventId)
+        eventIds.add(selected.toEventId)
+      }
+    }
+  }
+  for (const replacement of changedRecords(
+    before.replacements,
+    after.replacements
+  )) {
+    eventIds.add(replacement.predecessorEventId)
+    eventIds.add(replacement.successorEventId)
+  }
+  for (const run of changedRecords(
+    before.transitPlanningRuns,
+    after.transitPlanningRuns
+  )) {
+    eventIds.add(run.transitEventId)
+  }
+  for (const link of changedRecords(
+    before.eventAssetLinks,
+    after.eventAssetLinks
+  )) {
+    eventIds.add(link.eventId)
+  }
+  for (const observation of changedRecords(
+    before.observations,
+    after.observations
+  )) {
+    eventIds.add(observation.eventId)
+  }
+  for (const link of changedRecords(
+    before.eventSourceLinks,
+    after.eventSourceLinks
+  )) {
+    eventIds.add(link.eventId)
+  }
+  return [...eventIds].sort()
 }
 
 function invalidationScopes(
@@ -678,6 +755,23 @@ function commandResult(
     replayedFromIdempotencyKey,
     outcome: patch[0].outcome,
   })
+}
+
+async function replayedCommandResult(
+  context: AuthContext,
+  envelope: TargetCommandEnvelope
+) {
+  const existing = await getWorkspaceRevisionByIdempotencyKey(
+    context,
+    envelope.aggregateId,
+    envelope.idempotencyKey
+  )
+  if (!existing) return null
+  const patch = storedPatch(existing)
+  if (json(patch[0].commandEnvelope) !== json(envelope)) {
+    throw new WorkspaceIdempotencyConflictError()
+  }
+  return commandResult(existing, true)
 }
 
 async function verifiedWorkspaceHistory(
@@ -954,7 +1048,10 @@ async function appendLifecycleRevision(
   outcome: TargetLifecycleCommandOutcome,
   options: ExecuteOptions & { baseJourneyRevision?: number } = {}
 ) {
-  const changedEventIds = diffEventIds(document.session.headGraph, after)
+  const changedEventIds = projectionDiffEventIds(
+    document.session.headGraph,
+    after
+  )
   const projectionInvalidationScopes = invalidationScopes(
     document.session.headGraph,
     after,
@@ -977,7 +1074,7 @@ async function appendLifecycleRevision(
     },
   ]
   try {
-    const revision = await appendWorkspaceRevision(
+    const result = await appendWorkspaceRevision(
       context,
       envelope.aggregateId,
       {
@@ -992,8 +1089,8 @@ async function appendLifecycleRevision(
         now: options.now,
       }
     )
-    if (!revision) throw new WorkspaceInputError("Workspace was not found")
-    return commandResult(revision, false)
+    if (!result) throw new WorkspaceInputError("Workspace was not found")
+    return commandResult(result.revision, result.replayedFromIdempotencyKey)
   } catch (error) {
     if (
       !(error instanceof WorkspaceRevisionConflictError) &&
@@ -1079,15 +1176,27 @@ async function executeLifecycleCommand(
             revision.after.revision !== revision.before.revision
         )
         let rebasedHead = source
-        const replays = material.map((revision) => {
+        const replays: Array<{
+          commandName: TargetWorkspaceRevision["commandName"]
+          before: TargetJourneyGraphSnapshot
+          after: TargetJourneyGraphSnapshot
+          patch: unknown
+          inversePatch: unknown
+          actor: TargetWorkspaceRevision["actor"]
+          sourceRevisionId: string
+        }> = []
+        for (const revision of material) {
           const before = rebasedHead
           const rebased = rebaseWorkspaceGraph(
             revision.before,
             revision.after,
             before
           )
+          const comparable = clone(rebased)
+          comparable.revision = before.revision
+          if (json(comparable) === json(before)) continue
           rebasedHead = rebased
-          return {
+          replays.push({
             commandName: revision.commandName,
             before,
             after: rebased,
@@ -1095,8 +1204,8 @@ async function executeLifecycleCommand(
             inversePatch: revision.inversePatch,
             actor: revision.actor,
             sourceRevisionId: revision.id,
-          }
-        })
+          })
+        }
         const outcome: TargetLifecycleCommandOutcome = {
           type: "workspace.refreshed",
           sourceJourneyId,
@@ -1105,7 +1214,7 @@ async function executeLifecycleCommand(
           throughWorkspaceRevision: envelope.expectedRevision,
           headWorkspaceRevision: envelope.expectedRevision + replays.length + 2,
         }
-        const changedEventIds = diffEventIds(
+        const changedEventIds = projectionDiffEventIds(
           document.session.headGraph,
           rebasedHead
         )
@@ -1122,7 +1231,7 @@ async function executeLifecycleCommand(
             outcome,
           },
         ]
-        const revision = await refreshWorkspaceRevisionChain(
+        const result = await refreshWorkspaceRevisionChain(
           context,
           envelope.aggregateId,
           {
@@ -1142,10 +1251,10 @@ async function executeLifecycleCommand(
             now: options.now,
           }
         )
-        if (!revision) {
+        if (!result) {
           throw new WorkspaceInputError("Workspace was not found")
         }
-        return commandResult(revision, false)
+        return commandResult(result.revision, result.replayedFromIdempotencyKey)
       }
       after = source
     }
@@ -1213,7 +1322,7 @@ async function executeLifecycleCommand(
       }
     )
     if (!result) throw new WorkspaceInputError("Workspace was not found")
-    return commandResult(result.revision, false)
+    return commandResult(result.revision, result.replayedFromIdempotencyKey)
   }
   if (command.name === "workspace.commit") {
     const revisions = await verifiedWorkspaceHistory(
@@ -1250,7 +1359,7 @@ async function executeLifecycleCommand(
         outcome,
       },
     ]
-    const revision = await commitWorkspaceRevisionChain(
+    const result = await commitWorkspaceRevisionChain(
       context,
       envelope.aggregateId,
       {
@@ -1263,8 +1372,8 @@ async function executeLifecycleCommand(
         now: options.now,
       }
     )
-    if (!revision) throw new WorkspaceInputError("Workspace was not found")
-    return commandResult(revision, false)
+    if (!result) throw new WorkspaceInputError("Workspace was not found")
+    return commandResult(result.revision, result.replayedFromIdempotencyKey)
   }
   throw new WorkspaceCommandUnsupportedError(command.name)
 }
@@ -1306,6 +1415,9 @@ async function undoGraph(
         "journey.plan_transit",
         "journey.add_observation",
         "journey.replace_event",
+        "journey.confirm_actual",
+        "journey.skip_event",
+        "journey.cancel_event",
       ].includes(revision.commandName)
   )
   if (irreversible) {
@@ -1501,7 +1613,7 @@ function targetPlanningRun(
   calculatedAt: string
 ): TargetTransitPlanningRun {
   const runId = deterministicId(envelope, "transit-run")
-  return {
+  return targetTransitPlanningRunSchema.parse({
     id: runId,
     transitEventId: bundle.transitEventId,
     requestFingerprint,
@@ -1541,7 +1653,7 @@ function targetPlanningRun(
         trafficSections: segment.trafficSections,
       })),
     })),
-  }
+  })
 }
 
 function transitFailure(error: unknown) {
@@ -1586,8 +1698,9 @@ async function planTransit(
       bundle.transitEventId !== event.id ||
       bundle.requestFingerprint !== requestFingerprint
     ) {
-      throw new WorkspaceInputError(
-        "Transit provider returned a stale or mismatched response"
+      throw Object.assign(
+        new Error("Transit provider returned a stale or mismatched response"),
+        { code: "MALFORMED_RESPONSE" }
       )
     }
     run = targetPlanningRun(envelope, bundle, requestFingerprint, now)
@@ -1595,7 +1708,6 @@ async function planTransit(
     event.detail.selectedPlanId = run.plans[0]?.id
     event.detail.routeState = "READY"
   } catch (error) {
-    if (error instanceof WorkspaceInputError) throw error
     const failure = transitFailure(error)
     run = {
       id: deterministicId(envelope, "transit-run"),
@@ -2003,6 +2115,7 @@ function applyJourneyCommand(
       const transitDependents = graph.events.filter(
         (candidate) =>
           candidate.type === "TRANSIT" &&
+          activeAtRevision(candidate, graph.revision) &&
           [
             candidate.detail.plannedFromEventId,
             candidate.detail.plannedToEventId,
@@ -2040,7 +2153,7 @@ function applyJourneyCommand(
             transit.detail[endpoint] = successor.id
           }
         }
-        transit.updatedAt = now
+        markTransitPlanningStale(transit, now)
       }
 
       const predecessorSelections = graph.branchSelections.filter(
@@ -2284,18 +2397,8 @@ export class WorkspaceCommandService {
     envelope: TargetCommandEnvelope,
     options: ExecuteOptions
   ): Promise<TargetCommandResult> {
-    const existing = await getWorkspaceRevisionByIdempotencyKey(
-      context,
-      envelope.aggregateId,
-      envelope.idempotencyKey
-    )
-    if (existing) {
-      const patch = storedPatch(existing)
-      if (json(patch[0].commandEnvelope) !== json(envelope)) {
-        throw new WorkspaceIdempotencyConflictError()
-      }
-      return commandResult(existing, true)
-    }
+    const replay = await replayedCommandResult(context, envelope)
+    if (replay) return replay
 
     const document = await getWorkspaceDocument(
       context,
@@ -2304,10 +2407,24 @@ export class WorkspaceCommandService {
     )
     if (!document) throw new WorkspaceInputError("Workspace was not found")
     if (document.session.headWorkspaceRevision !== envelope.expectedRevision) {
+      const raced = await replayedCommandResult(context, envelope)
+      if (raced) return raced
       throw new WorkspaceRevisionConflictError()
     }
     if (document.session.status !== "ACTIVE") {
       throw new WorkspaceInputError("Workspace is not active")
+    }
+    if (
+      document.draftState === "STALE" &&
+      !["workspace.refresh", "workspace.fork", "workspace.replay"].includes(
+        envelope.command.name
+      )
+    ) {
+      const raced = await replayedCommandResult(context, envelope)
+      if (raced) return raced
+      throw new WorkspaceRevisionConflictError(
+        "Workspace source Journey is stale; refresh, fork, or replay"
+      )
     }
     if (
       envelope.actor.kind === "USER" &&
@@ -2392,9 +2509,9 @@ export class WorkspaceCommandService {
         graph: before,
       },
     ]
-    let revision: TargetWorkspaceRevision | null
+    let result: Awaited<ReturnType<typeof appendWorkspaceRevision>>
     try {
-      revision = await appendWorkspaceRevision(context, envelope.aggregateId, {
+      result = await appendWorkspaceRevision(context, envelope.aggregateId, {
         expectedRevision: envelope.expectedRevision,
         commandName: envelope.command.name,
         after,
@@ -2423,8 +2540,8 @@ export class WorkspaceCommandService {
       }
       return commandResult(raced, true)
     }
-    if (!revision) throw new WorkspaceInputError("Workspace was not found")
-    return commandResult(revision, false)
+    if (!result) throw new WorkspaceInputError("Workspace was not found")
+    return commandResult(result.revision, result.replayedFromIdempotencyKey)
   }
 
   getDocument(context: AuthContext, workspaceId: string, now?: Date) {

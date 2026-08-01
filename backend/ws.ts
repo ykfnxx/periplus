@@ -1,15 +1,55 @@
 import type { Server } from "node:http"
 import { WebSocket, WebSocketServer } from "ws"
+import { z } from "zod"
 import { targetCommandEnvelopeSchema } from "@/modules/data-model/contracts"
+import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
 import { verifyWorkspaceTicket } from "@/modules/data/workspaces/workspace-ticket"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { AgentGateway } from "./agent/gateway"
 import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
 import { domainErrorResponse } from "./domain-error"
 
-interface WireMessage {
-  type: string
-  payload?: Record<string, unknown>
+const commandIdSchema = z.object({ commandId: z.string().optional() })
+const wireMessageSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("workspace.get"),
+      payload: commandIdSchema.strict().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.command"),
+      payload: z.record(z.string(), z.unknown()),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("agent.run.start"),
+      payload: commandIdSchema
+        .extend({
+          prompt: z.string(),
+          mode: z.enum(["auto", "suggest"]).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("agent.run.cancel"),
+      payload: commandIdSchema.strict().optional(),
+    })
+    .strict(),
+])
+
+export function parseWireMessage(rawMessage: string) {
+  let value: unknown
+  try {
+    value = JSON.parse(rawMessage)
+  } catch {
+    throw new WorkspaceInputError("WebSocket message must be valid JSON")
+  }
+  return wireMessageSchema.parse(value)
 }
 
 function send(socket: WebSocket, event: AgentEvent) {
@@ -82,13 +122,10 @@ export function createAgentWebSocketServer(
         void (async () => {
           let commandId: string | undefined
           try {
-            const message = JSON.parse(
-              rawMessage.toString("utf8")
-            ) as WireMessage
-            const payload = message.payload ?? {}
+            const message = parseWireMessage(rawMessage.toString("utf8"))
             commandId =
-              typeof payload.commandId === "string"
-                ? payload.commandId
+              typeof message.payload?.commandId === "string"
+                ? message.payload.commandId
                 : undefined
 
             if (message.type === "workspace.get") {
@@ -99,6 +136,7 @@ export function createAgentWebSocketServer(
               return
             }
             if (message.type === "workspace.command") {
+              const payload = message.payload
               const supplied =
                 payload.envelope && typeof payload.envelope === "object"
                   ? (payload.envelope as Record<string, unknown>)
@@ -117,12 +155,13 @@ export function createAgentWebSocketServer(
               return
             }
             if (message.type === "agent.run.start") {
+              const payload = message.payload
               const mode: AgentMode =
                 payload.mode === "suggest" ? "suggest" : "auto"
               await agentGateway.start(
                 context,
                 workspaceId,
-                String(payload.prompt ?? ""),
+                payload.prompt,
                 mode,
                 broadcast
               )
@@ -132,7 +171,6 @@ export function createAgentWebSocketServer(
               agentGateway.cancel(workspaceId)
               return
             }
-            throw new Error(`Unsupported WebSocket message ${message.type}`)
           } catch (error) {
             send(socket, errorEvent(error, commandId))
           }

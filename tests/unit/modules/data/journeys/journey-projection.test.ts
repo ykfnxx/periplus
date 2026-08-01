@@ -314,6 +314,30 @@ describe("P3 Journey projection resolver", () => {
     })
   })
 
+  it("marks Transit as PLANNED when EXECUTION falls back to planned endpoints", () => {
+    const input = graph("09-exact-projection-modes", "canonical-input-order")
+    const transit = input.events.find(
+      (event) => event.id === "confirmed-transit"
+    )
+    if (transit?.type !== "TRANSIT") throw new Error("fixture invariant")
+    delete transit.detail.actualFromEventId
+    delete transit.detail.actualToEventId
+
+    expect(
+      resolveJourneyProjection({
+        graph: input,
+        scopeSectionEventId: null,
+        mode: "EXECUTION",
+      }).events.find((event) => event.eventId === transit.id)
+    ).toMatchObject({
+      startAt: "2026-08-01T01:00:00.000Z",
+      endAt: "2026-08-02T00:00:00.000Z",
+      fromLocationOrdinal: 1,
+      toLocationOrdinal: 2,
+      valueSource: "PLANNED",
+    })
+  })
+
   it("uses actual-to-planned field fallback for exact TRAVELOGUE times", () => {
     const actual = graph("09-exact-projection-modes", "canonical-input-order")
     expect(

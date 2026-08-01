@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
+import { z } from "zod"
 import type { AuthContext } from "@/modules/auth/server/context"
 import {
   placeEnrichInputSchema,
@@ -11,7 +12,6 @@ import {
   targetCommandBodySchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type TargetCommandEnvelope,
-  type TargetProjectionMode,
 } from "@/modules/data-model/contracts"
 import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import {
@@ -72,28 +72,55 @@ interface RunningAgent {
   heartbeatTimer: ReturnType<typeof setInterval> | null
 }
 
-export type AgentToolRequest =
-  | { type: "workspace.get" }
-  | {
-      type: "workspace.project"
-      scopeSectionEventId: string | null
-      mode: TargetProjectionMode
-      asOfRevision?: number
-    }
-  | {
-      type: "workspace.command"
-      expectedRevision: number
-      idempotencyKey: string
-      command: unknown
-    }
-  | { type: "place.search"; requestId: string; input: unknown }
-  | { type: "place.resolve"; requestId: string; input: unknown }
-  | {
-      type: "place.resolve_for_journey_event"
-      requestId: string
-      input: unknown
-    }
-  | { type: "place.enrich"; requestId: string; input: unknown }
+export const agentToolRequestSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("workspace.get") }).strict(),
+  z
+    .object({
+      type: z.literal("workspace.project"),
+      scopeSectionEventId: z.string().nullable(),
+      mode: z.enum(["PLANNER", "EXECUTION", "TRAVELOGUE"]),
+      asOfRevision: z.number().int().positive().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.command"),
+      expectedRevision: z.number().int().nonnegative(),
+      idempotencyKey: z.string().trim().min(1),
+      command: z.unknown(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("place.search"),
+      requestId: z.string().trim().min(1),
+      input: z.unknown(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("place.resolve"),
+      requestId: z.string().trim().min(1),
+      input: z.unknown(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("place.resolve_for_journey_event"),
+      requestId: z.string().trim().min(1),
+      input: z.unknown(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("place.enrich"),
+      requestId: z.string().trim().min(1),
+      input: z.unknown(),
+    })
+    .strict(),
+])
+
+export type AgentToolRequest = z.infer<typeof agentToolRequestSchema>
 
 type PlaceAgentToolRequest = Extract<
   AgentToolRequest,

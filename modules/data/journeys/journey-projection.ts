@@ -245,24 +245,6 @@ function selectedEventsForScope(
   )
 }
 
-function hasActualValue(event: TargetJourneyEvent) {
-  if (!executableEvent(event)) return false
-  if (event.actualStartAt || event.actualEndAt) return true
-  if (
-    event.executionStatus === "STARTED" ||
-    event.executionStatus === "CONFIRMED"
-  )
-    return true
-  if (event.type === "TRANSIT") {
-    return Object.entries(event.detail).some(
-      ([key, value]) => key.startsWith("actual") && value !== undefined
-    )
-  }
-  return Object.entries(event.detail).some(
-    ([key, value]) => key.startsWith("actual") && value !== undefined
-  )
-}
-
 function resolveTimes(
   event: TargetJourneyEvent,
   mode: TargetProjectionMode
@@ -389,11 +371,11 @@ export function resolveJourneyProjection({
     const ordinal = locationOrdinalByEventId.get(event.id)
     if (ordinal !== undefined) resolved.locationOrdinal = ordinal
     if (event.type === "TRANSIT") {
-      const useActualEndpoints = mode !== "PLANNER" && hasActualValue(event)
-      const fromEventId = useActualEndpoints
+      const resolveActualEndpoints = mode !== "PLANNER"
+      const fromEventId = resolveActualEndpoints
         ? (event.detail.actualFromEventId ?? event.detail.plannedFromEventId)
         : event.detail.plannedFromEventId
-      const toEventId = useActualEndpoints
+      const toEventId = resolveActualEndpoints
         ? (event.detail.actualToEventId ?? event.detail.plannedToEventId)
         : event.detail.plannedToEventId
       const fromOrdinal = fromEventId
@@ -404,6 +386,15 @@ export function resolveJourneyProjection({
         : undefined
       if (fromOrdinal !== undefined) resolved.fromLocationOrdinal = fromOrdinal
       if (toOrdinal !== undefined) resolved.toLocationOrdinal = toOrdinal
+      if (
+        resolveActualEndpoints &&
+        ((event.detail.actualFromEventId === undefined &&
+          event.detail.plannedFromEventId !== undefined) ||
+          (event.detail.actualToEventId === undefined &&
+            event.detail.plannedToEventId !== undefined))
+      ) {
+        resolved.valueSource = "PLANNED"
+      }
     }
     return resolved
   })

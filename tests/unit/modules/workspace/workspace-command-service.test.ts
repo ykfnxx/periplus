@@ -229,6 +229,30 @@ function transitGraph(id: string): TargetJourneyGraphSnapshot {
   return result
 }
 
+function transitSectionGraph(id: string): TargetJourneyGraphSnapshot {
+  const result = transitGraph(id)
+  const sectionId = `${id}-section`
+  for (const event of result.events) event.parentSectionEventId = sectionId
+  result.events.unshift({
+    id: sectionId,
+    journeyId: id,
+    parentSectionEventId: null,
+    placementStatus: "SCHEDULED",
+    origin: "ORIGINAL",
+    title: "Transit day",
+    introducedRevision: 1,
+    createdAt: now,
+    updatedAt: now,
+    type: "SECTION",
+    detail: {
+      kind: "DAY",
+      localDate: "2026-08-01",
+      timezone: "Asia/Shanghai",
+    },
+  })
+  return result
+}
+
 function sectionGraph(
   id: string,
   topology: "LINEAR" | "BRANCH"
@@ -495,6 +519,47 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     }
   })
 
+  it("recursively retires a SECTION containing Transit without invalidating history", async () => {
+    const input = transitSectionGraph(
+      `workspace-retire-transit-section-${randomUUID()}`
+    )
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    await new WorkspaceCommandService().execute(
+      context,
+      command(workspace.id, 0, "retire-transit-section", {
+        name: "journey.retire_event",
+        payload: {
+          eventId: `${input.id}-section`,
+          sectionChildren: "RECURSIVE_RETIRE",
+        },
+      })
+    )
+    const retired = await new WorkspaceCommandService().getDocument(
+      context,
+      workspace.id
+    )
+    expect(
+      retired?.session.headGraph.events
+        .filter((event) =>
+          [
+            `${input.id}-section`,
+            `${input.id}-a`,
+            `${input.id}-transit`,
+            `${input.id}-b`,
+          ].includes(event.id)
+        )
+        .every((event) => event.retiredRevision === 2)
+    ).toBe(true)
+    expect(
+      retired?.session.headGraph.links.every(
+        (link) => link.retiredRevision === 2
+      )
+    ).toBe(true)
+  })
+
   it("rejects retiring an endpoint still referenced by an active external Transit", async () => {
     const workspace = await createWorkspace(context, {
       graph: transitGraph(`workspace-retire-transit-${randomUUID()}`),
@@ -531,6 +596,12 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     )!
     if (transit.type !== "TRANSIT") throw new Error("fixture invariant")
     transit.detail.actualFromEventId = `${transitInput.id}-a`
+    transitInput.events.push({
+      ...structuredClone(transit),
+      id: `${transitInput.id}-retired-transit`,
+      title: "Historical transit",
+      retiredRevision: 1,
+    })
     const transitWorkspace = await createWorkspace(context, {
       graph: transitInput,
       now: new Date(now),
@@ -567,11 +638,59 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       plannedFromEventId: `${transitInput.id}-a2`,
       actualFromEventId: `${transitInput.id}-a2`,
     })
+    const historicalTransit = replacedTransit?.session.headGraph.events.find(
+      (event) => event.id === `${transitInput.id}-retired-transit`
+    )
+    if (historicalTransit?.type !== "TRANSIT") {
+      throw new Error("fixture invariant")
+    }
+    expect(historicalTransit).toMatchObject({
+      retiredRevision: 1,
+      detail: {
+        plannedFromEventId: `${transitInput.id}-a`,
+        actualFromEventId: `${transitInput.id}-a`,
+      },
+    })
     expect(
       replacedTransit?.session.headGraph.links.find(
         (link) => link.id === `${transitInput.id}-to-transit`
       )
     ).toMatchObject({ fromEventId: `${transitInput.id}-a2` })
+
+    const readyTransitWorkspace = await createWorkspace(context, {
+      graph: readyTransitFixtureGraph(),
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(readyTransitWorkspace.id, 0, "replace-ready-endpoint", {
+        name: "journey.replace_event",
+        payload: {
+          predecessorEventId: "start",
+          successor: {
+            id: "start-replacement",
+            type: "VISIT",
+            title: "Start replacement",
+            detail: {
+              plannedLat: 30.3,
+              plannedLng: 120.2,
+              coordinateSystem: "GCJ02",
+            },
+          },
+          reason: "replace READY route endpoint",
+        },
+      })
+    )
+    expect(
+      (
+        await service.getDocument(context, readyTransitWorkspace.id)
+      )?.session.headGraph.events.find((event) => event.id === "transit")
+    ).toMatchObject({
+      detail: {
+        plannedFromEventId: "start-replacement",
+        routeState: "ROUTE_STALE",
+      },
+    })
 
     const sectionInput = sectionGraph(
       `workspace-replace-section-${randomUUID()}`,
@@ -1199,6 +1318,92 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     ).toBe(1)
   })
 
+  it("never undoes confirmed, skipped, or cancelled execution facts", async () => {
+    const input = graph(`workspace-undo-terminal-${randomUUID()}`)
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    const terminalCommands = [
+      {
+        eventId: `${input.id}-a`,
+        idempotencyKey: "terminal-confirm",
+        command: {
+          name: "journey.confirm_actual" as const,
+          payload: {
+            eventId: `${input.id}-a`,
+            actual: {
+              type: "VISIT" as const,
+              actualStartAt: "2026-08-01T01:00:00.000Z",
+              actualEndAt: "2026-08-01T02:00:00.000Z",
+              detail: { actualLat: 30.251, actualLng: 120.151 },
+            },
+          },
+        },
+      },
+      {
+        eventId: `${input.id}-b`,
+        idempotencyKey: "terminal-skip",
+        command: {
+          name: "journey.skip_event" as const,
+          payload: { eventId: `${input.id}-b` },
+        },
+      },
+      {
+        eventId: `${input.id}-fork`,
+        idempotencyKey: "terminal-cancel",
+        command: {
+          name: "journey.cancel_event" as const,
+          payload: { eventId: `${input.id}-fork` },
+        },
+      },
+    ]
+
+    for (const [index, terminal] of terminalCommands.entries()) {
+      await service.execute(
+        context,
+        command(workspace.id, index, terminal.idempotencyKey, terminal.command)
+      )
+      await expect(
+        service.execute(
+          context,
+          command(workspace.id, index + 1, `undo-${terminal.idempotencyKey}`, {
+            name: "journey.undo",
+            payload: { steps: 1 },
+          })
+        )
+      ).rejects.toThrow(`irreversible ${terminal.command.name}`)
+    }
+
+    const recovered = await service.getDocument(context, workspace.id)
+    expect(recovered?.session.headWorkspaceRevision).toBe(3)
+    expect(
+      recovered?.session.headGraph.events
+        .filter((event) =>
+          terminalCommands.some((terminal) => terminal.eventId === event.id)
+        )
+        .map((event) => [
+          event.id,
+          event.type === "SECTION" || event.type === "NOTE"
+            ? undefined
+            : event.executionStatus,
+        ])
+    ).toEqual([
+      [`${input.id}-fork`, "CANCELLED"],
+      [`${input.id}-a`, "CONFIRMED"],
+      [`${input.id}-b`, "SKIPPED"],
+    ])
+    expect(
+      recovered?.session.headGraph.events.find(
+        (event) => event.id === `${input.id}-a`
+      )
+    ).toMatchObject({
+      actualStartAt: "2026-08-01T01:00:00.000Z",
+      actualEndAt: "2026-08-01T02:00:00.000Z",
+    })
+  })
+
   it("commits retire-then-undo with append-only content relinks", async () => {
     const journeyId = `workspace-undo-commit-${randomUUID()}`
     const base = await createJourney(context, {
@@ -1324,6 +1529,521 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       { introducedRevision: 4 },
     ])
     expect(committed?.eventSourceLinks[1]?.retiredRevision).toBeUndefined()
+  })
+
+  it("blocks stale source writes while allowing lifecycle recovery commands", async () => {
+    const journeyId = `workspace-stale-write-${randomUUID()}`
+    const base = await createJourney(context, {
+      graph: graph(journeyId),
+      operation: "create stale-write Journey",
+      patch: [],
+      inversePatch: [],
+      idempotencyKey: `${journeyId}-create`,
+    })
+    const workspace = await createWorkspace(context, {
+      graph: base,
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 1,
+      now: new Date(now),
+    })
+    const canonical = structuredClone(base)
+    canonical.revision = 2
+    canonical.title = "Canonical revision 2"
+    await commitJourneyGraph(
+      context,
+      journeyId,
+      {
+        graph: canonical,
+        operation: "advance canonical Journey",
+        patch: [],
+        inversePatch: [],
+        idempotencyKey: `${journeyId}-advance`,
+      },
+      1
+    )
+    const service = new WorkspaceCommandService()
+    expect((await service.getDocument(context, workspace.id))?.draftState).toBe(
+      "STALE"
+    )
+
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 0, "stale-update", {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${journeyId}-a`,
+            patch: { type: "VISIT", title: "must not persist" },
+          },
+        })
+      )
+    ).rejects.toThrow("refresh, fork, or replay")
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 0, "stale-commit", {
+          name: "workspace.commit",
+          payload: { expectedJourneyRevision: 2 },
+        })
+      )
+    ).rejects.toThrow("refresh, fork, or replay")
+    await expect(
+      appendWorkspaceRevision(context, workspace.id, {
+        expectedRevision: 0,
+        commandName: "journey.update_event",
+        after: { ...base, title: "repository bypass" },
+        patch: [],
+        inversePatch: [],
+        idempotencyKey: "stale-repository-bypass",
+        now: new Date(now),
+      })
+    ).rejects.toThrow("refresh, fork, or replay")
+    expect(
+      await prisma.workspaceRevision.count({
+        where: { workspaceId: workspace.id },
+      })
+    ).toBe(0)
+
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 0, "stale-fork", {
+          name: "workspace.fork",
+          payload: { fromWorkspaceRevision: 0 },
+        })
+      )
+    ).resolves.toMatchObject({ outcome: { type: "workspace.forked" } })
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 1, "stale-refresh", {
+          name: "workspace.refresh",
+          payload: { fromWorkspaceRevision: 0 },
+        })
+      )
+    ).resolves.toMatchObject({
+      outcome: { type: "workspace.refreshed", baseJourneyRevision: 2 },
+    })
+  })
+
+  it("invalidates projection scopes for branch-selection-only and Link-only refreshes", async () => {
+    const journeyId = `workspace-refresh-topology-${randomUUID()}`
+    const initial = graph(journeyId)
+    initial.branchSelections.push({
+      id: `${journeyId}-selection-main`,
+      journeyId,
+      forkEventId: `${journeyId}-fork`,
+      selectedLinkId: `${journeyId}-fork-a`,
+      journeyRevision: 1,
+      actor: { kind: "USER", userId: ownerId },
+      createdAt: now,
+    })
+    const base = await createJourney(context, {
+      graph: initial,
+      operation: "create topology refresh Journey",
+      patch: [],
+      inversePatch: [],
+      idempotencyKey: `${journeyId}-create`,
+    })
+    const branchWorkspace = await createWorkspace(context, {
+      graph: base,
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 1,
+      now: new Date(now),
+    })
+    const branchHead = structuredClone(base)
+    branchHead.revision = 2
+    branchHead.branchSelections.push({
+      id: `${journeyId}-selection-alternative`,
+      journeyId,
+      forkEventId: `${journeyId}-fork`,
+      selectedLinkId: `${journeyId}-fork-b`,
+      journeyRevision: 2,
+      supersedesId: `${journeyId}-selection-main`,
+      actor: { kind: "USER", userId: ownerId },
+      createdAt: "2026-08-01T00:01:00.000Z",
+    })
+    const canonical2 = await commitJourneyGraph(
+      context,
+      journeyId,
+      {
+        graph: branchHead,
+        operation: "select alternate branch",
+        patch: [],
+        inversePatch: [],
+        idempotencyKey: `${journeyId}-branch`,
+      },
+      1
+    )
+    const service = new WorkspaceCommandService()
+    await expect(
+      service.execute(
+        context,
+        command(branchWorkspace.id, 0, "refresh-branch-only", {
+          name: "workspace.refresh",
+          payload: { fromWorkspaceRevision: 0 },
+        })
+      )
+    ).resolves.toMatchObject({
+      changedEventIds: expect.arrayContaining([`${journeyId}-fork`]),
+      projectionInvalidationScopes: [null],
+    })
+
+    const linkWorkspace = await createWorkspace(context, {
+      graph: canonical2!,
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 2,
+      now: new Date(now),
+    })
+    const linkHead = structuredClone(canonical2!)
+    linkHead.revision = 3
+    linkHead.links.find((link) => link.id === `${journeyId}-fork-b`)!.rank =
+      4096
+    await commitJourneyGraph(
+      context,
+      journeyId,
+      {
+        graph: linkHead,
+        operation: "change Link rank only",
+        patch: [],
+        inversePatch: [],
+        idempotencyKey: `${journeyId}-link`,
+      },
+      2
+    )
+    await expect(
+      service.execute(
+        context,
+        command(linkWorkspace.id, 0, "refresh-link-only", {
+          name: "workspace.refresh",
+          payload: { fromWorkspaceRevision: 0 },
+        })
+      )
+    ).resolves.toMatchObject({
+      changedEventIds: expect.arrayContaining([
+        `${journeyId}-fork`,
+        `${journeyId}-b`,
+      ]),
+      projectionInvalidationScopes: [null],
+    })
+  })
+
+  it("reports cross-service idempotency replay for commands and lifecycle writes", async () => {
+    const concurrent = async (
+      request: TargetCommandEnvelope,
+      options?: { now?: Date }
+    ) => {
+      const results = await Promise.all([
+        new WorkspaceCommandService().execute(context, request, options),
+        new WorkspaceCommandService().execute(context, request, options),
+      ])
+      expect(results.map((result) => result.newRevision)).toEqual([
+        results[0]!.newRevision,
+        results[0]!.newRevision,
+      ])
+      expect(
+        results.map((result) => result.replayedFromIdempotencyKey).sort()
+      ).toEqual([false, true])
+      return results[0]!
+    }
+
+    const commandWorkspace = await createWorkspace(context, {
+      graph: graph(`workspace-cross-service-command-${randomUUID()}`),
+      now: new Date(now),
+    })
+    await concurrent(
+      command(commandWorkspace.id, 0, "cross-service-command", {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${commandWorkspace.headGraph.id}-a`,
+          patch: { type: "VISIT", title: "cross-service" },
+        },
+      })
+    )
+
+    const forkWorkspace = await createWorkspace(context, {
+      graph: graph(`workspace-cross-service-fork-${randomUUID()}`),
+      now: new Date(now),
+    })
+    await concurrent(
+      command(forkWorkspace.id, 0, "cross-service-fork", {
+        name: "workspace.fork",
+        payload: { fromWorkspaceRevision: 0 },
+      })
+    )
+
+    const scratch = await createWorkspace(context, {
+      graph: transitGraph(`workspace-cross-service-commit-${randomUUID()}`),
+      now: new Date(now),
+    })
+    await new WorkspaceCommandService().execute(
+      context,
+      command(scratch.id, 0, "cross-service-commit-edit", {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${scratch.headGraph.id}-a`,
+          patch: { type: "VISIT", title: "commit me" },
+        },
+      })
+    )
+    await concurrent(
+      command(scratch.id, 1, "cross-service-commit", {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: null },
+      })
+    )
+
+    const refreshJourneyId = `workspace-cross-service-refresh-${randomUUID()}`
+    const refreshBase = await createJourney(context, {
+      graph: graph(refreshJourneyId),
+      operation: "create concurrent refresh Journey",
+      patch: [],
+      inversePatch: [],
+      idempotencyKey: `${refreshJourneyId}-create`,
+    })
+    const refreshWorkspace = await createWorkspace(context, {
+      graph: refreshBase,
+      sourceJourneyId: refreshJourneyId,
+      baseJourneyRevision: 1,
+      now: new Date(now),
+    })
+    const refreshHead = structuredClone(refreshBase)
+    refreshHead.revision = 2
+    refreshHead.title = "Concurrent refresh head"
+    await commitJourneyGraph(
+      context,
+      refreshJourneyId,
+      {
+        graph: refreshHead,
+        operation: "advance concurrent refresh Journey",
+        patch: [],
+        inversePatch: [],
+        idempotencyKey: `${refreshJourneyId}-advance`,
+      },
+      1
+    )
+    await concurrent(
+      command(refreshWorkspace.id, 0, "cross-service-refresh", {
+        name: "workspace.refresh",
+        payload: { fromWorkspaceRevision: 0 },
+      })
+    )
+  })
+
+  it("aligns Workspace head bytes with the canonical graph after commit", async () => {
+    const input = transitGraph(`workspace-canonical-commit-${randomUUID()}`)
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    await service.execute(
+      context,
+      command(workspace.id, 0, "canonical-commit-edit", {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${input.id}-a`,
+          patch: { type: "VISIT", title: "Canonical A" },
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 1, "canonical-commit", {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: null },
+      })
+    )
+
+    const [document, canonical] = await Promise.all([
+      service.getDocument(context, workspace.id),
+      getJourney(context, input.id),
+    ])
+    expect(document?.draftState).toBe("CLEAN")
+    expect(document?.session.headGraph).toEqual(canonical)
+    expect(JSON.stringify(document?.session.headGraph)).toBe(
+      JSON.stringify(canonical)
+    )
+  })
+
+  it("atomically expires the Workspace and active Agent when TTL lapses during a provider call", async () => {
+    const input = transitGraph(`workspace-provider-expiry-${randomUUID()}`)
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    const run = await startWorkspaceAgentRun(
+      context,
+      workspace.id,
+      new Date(now),
+      `runtime-${randomUUID()}`
+    )
+    const plan = vi.fn(async (request: TransitPlanRequest) => {
+      await prisma.workspaceSession.update({
+        where: { id: workspace.id },
+        data: { expiresAt: new Date("2026-08-01T00:01:00.000Z") },
+      })
+      return {
+        transitEventId: request.transitEventId,
+        requestFingerprint: transitPlanFingerprint(request),
+        plans: [
+          {
+            id: "provider-expiry-plan",
+            provider: "mock" as const,
+            rank: 0,
+            label: "推荐",
+            strategy: "recommended",
+            distanceMeters: 1_000,
+            durationSeconds: 300,
+            trafficBasis: "TYPICAL" as const,
+            calculatedAt: now,
+            requestFingerprint: transitPlanFingerprint(request),
+            segments: [],
+          },
+        ],
+      }
+    })
+    const service = new WorkspaceCommandService({
+      transitPlanning: { plan },
+    })
+    await expect(
+      service.execute(
+        context,
+        command(
+          workspace.id,
+          0,
+          "provider-expiry-command",
+          {
+            name: "journey.plan_transit",
+            payload: {
+              eventId: `${input.id}-transit`,
+              forceRefresh: false,
+            },
+          },
+          { kind: "AGENT", agentRunId: run!.id }
+        ),
+        { now: new Date("2026-08-01T00:02:00.000Z") }
+      )
+    ).rejects.toThrow("Workspace is not active")
+    await expect(
+      prisma.workspaceSession.findUniqueOrThrow({
+        where: { id: workspace.id },
+      })
+    ).resolves.toMatchObject({ status: "EXPIRED" })
+    await expect(
+      prisma.workspaceAgentRun.findUniqueOrThrow({ where: { id: run!.id } })
+    ).resolves.toMatchObject({
+      status: "FAILED",
+      errorCode: "WORKSPACE_EXPIRED",
+      completedAt: expect.any(Date),
+      leaseExpiresAt: null,
+    })
+    expect(
+      await prisma.workspaceRevision.count({
+        where: { workspaceId: workspace.id },
+      })
+    ).toBe(0)
+  })
+
+  it("persists malformed provider bundles as failed Transit facts", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: readyTransitFixtureGraph(),
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService({
+      transitPlanning: {
+        plan: vi.fn(async (request: TransitPlanRequest) => ({
+          transitEventId: request.transitEventId,
+          requestFingerprint: transitPlanFingerprint(request),
+          plans: [],
+        })),
+      },
+    })
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 0, "malformed-provider-bundle", {
+          name: "journey.plan_transit",
+          payload: { eventId: "transit", forceRefresh: true },
+        })
+      )
+    ).resolves.toMatchObject({ newRevision: 1 })
+    const document = await service.getDocument(context, workspace.id)
+    expect(
+      document?.session.headGraph.transitPlanningRuns.at(-1)
+    ).toMatchObject({
+      status: "FAILED",
+      errorCode: "MALFORMED_RESPONSE",
+      errorMessage: expect.stringContaining(
+        "READY planning run requires at least one plan"
+      ),
+      plans: [],
+    })
+    expect(
+      document?.session.headGraph.events.find((event) => event.id === "transit")
+    ).toMatchObject({ detail: { routeState: "ROUTE_STALE" } })
+
+    const duplicateRankInput = transitGraph(
+      `workspace-duplicate-provider-rank-${randomUUID()}`
+    )
+    const duplicateRankWorkspace = await createWorkspace(context, {
+      graph: duplicateRankInput,
+      now: new Date(now),
+    })
+    const duplicateRankService = new WorkspaceCommandService({
+      transitPlanning: {
+        plan: vi.fn(async (request: TransitPlanRequest) => ({
+          transitEventId: request.transitEventId,
+          requestFingerprint: transitPlanFingerprint(request),
+          plans: [0, 1].map((index) => ({
+            id: `duplicate-rank-${index}`,
+            provider: "mock" as const,
+            rank: 0,
+            label: `Plan ${index}`,
+            strategy: "recommended",
+            distanceMeters: 1_000 + index,
+            durationSeconds: 300 + index,
+            trafficBasis: "TYPICAL" as const,
+            calculatedAt: now,
+            requestFingerprint: transitPlanFingerprint(request),
+            segments: [],
+          })),
+        })),
+      },
+    })
+    await duplicateRankService.execute(
+      context,
+      command(duplicateRankWorkspace.id, 0, "duplicate-provider-rank", {
+        name: "journey.plan_transit",
+        payload: {
+          eventId: `${duplicateRankInput.id}-transit`,
+          forceRefresh: true,
+        },
+      })
+    )
+    expect(
+      (
+        await duplicateRankService.getDocument(
+          context,
+          duplicateRankWorkspace.id
+        )
+      )?.session.headGraph.transitPlanningRuns.at(-1)
+    ).toMatchObject({
+      status: "FAILED",
+      errorCode: "MALFORMED_RESPONSE",
+      errorMessage: expect.stringContaining(
+        "plan rank must be unique within a planning run"
+      ),
+    })
+    await expect(
+      duplicateRankService.execute(
+        context,
+        command(duplicateRankWorkspace.id, 1, "commit-duplicate-rank", {
+          name: "workspace.commit",
+          payload: { expectedJourneyRevision: null },
+        })
+      )
+    ).resolves.toMatchObject({ outcome: { type: "workspace.committed" } })
   })
 
   it("forks, replays, and atomically commits a CORE-TRANSIT-CONTENT-undo chain", async () => {
@@ -1482,12 +2202,24 @@ describe.sequential("P3 persistent Workspace command bus", () => {
       outcome: midCommit.outcome,
       replayedFromIdempotencyKey: true,
     })
+    const refreshedFull = await service.execute(
+      context,
+      command(fullWorkspaceId, 4, "lifecycle-refresh-full", {
+        name: "workspace.refresh",
+        payload: { fromWorkspaceRevision: 0 },
+      })
+    )
     const fullCommit = await service.execute(
       context,
-      command(fullWorkspaceId, 4, "lifecycle-commit-full", {
-        name: "workspace.commit",
-        payload: { expectedJourneyRevision: 3 },
-      })
+      command(
+        fullWorkspaceId,
+        refreshedFull.newRevision,
+        "lifecycle-commit-full",
+        {
+          name: "workspace.commit",
+          payload: { expectedJourneyRevision: 3 },
+        }
+      )
     )
     expect(fullCommit.outcome).toMatchObject({
       type: "workspace.committed",

@@ -354,6 +354,57 @@ function assertOwner(context: AuthContext, ownerId: string) {
   }
 }
 
+async function expireWorkspaceIfDue(
+  tx: Prisma.TransactionClient,
+  workspaceId: string,
+  now: Date
+) {
+  const expired = await tx.workspaceSession.updateMany({
+    where: { id: workspaceId, status: "ACTIVE", expiresAt: { lte: now } },
+    data: { status: "EXPIRED" },
+  })
+  if (expired.count === 0) return false
+  await tx.workspaceAgentRun.updateMany({
+    where: { workspaceId, status: "RUNNING" },
+    data: {
+      status: "FAILED",
+      completedAt: now,
+      leaseExpiresAt: null,
+      errorCode: "WORKSPACE_EXPIRED",
+      errorMessage: "Workspace expired while the Agent run was active",
+    },
+  })
+  return true
+}
+
+async function assertWorkspaceSourceCurrent(
+  tx: Prisma.TransactionClient,
+  record: Pick<
+    WorkspaceRecord,
+    "ownerId" | "sourceJourneyId" | "baseJourneyRevision"
+  >
+) {
+  if (!record.sourceJourneyId) return
+  if (record.baseJourneyRevision === null) {
+    throw new WorkspaceRevisionConflictError(
+      "Workspace source Journey is stale; refresh, fork, or replay"
+    )
+  }
+  const source = await tx.journey.findUnique({
+    where: { id: record.sourceJourneyId },
+    select: { ownerId: true, revision: true },
+  })
+  if (
+    !source ||
+    source.ownerId !== record.ownerId ||
+    source.revision !== record.baseJourneyRevision
+  ) {
+    throw new WorkspaceRevisionConflictError(
+      "Workspace source Journey is stale; refresh, fork, or replay"
+    )
+  }
+}
+
 async function ownedWorkspace(
   context: AuthContext,
   workspaceId: string,
@@ -372,20 +423,7 @@ async function touchOrExpire(record: WorkspaceRecord, now: Date) {
   if (record.status !== "ACTIVE") return record
   if (record.expiresAt <= now) {
     return prisma.$transaction(async (tx) => {
-      await tx.workspaceSession.updateMany({
-        where: { id: record.id, status: "ACTIVE", expiresAt: { lte: now } },
-        data: { status: "EXPIRED" },
-      })
-      await tx.workspaceAgentRun.updateMany({
-        where: { workspaceId: record.id, status: "RUNNING" },
-        data: {
-          status: "FAILED",
-          completedAt: now,
-          leaseExpiresAt: null,
-          errorCode: "WORKSPACE_EXPIRED",
-          errorMessage: "Workspace expired while the Agent run was active",
-        },
-      })
+      await expireWorkspaceIfDue(tx, record.id, now)
       return tx.workspaceSession.findUniqueOrThrow({
         where: { id: record.id },
         include: workspaceInclude,
@@ -412,20 +450,7 @@ async function requireActiveWorkspace(
   if (record.status !== "ACTIVE" || record.expiresAt <= now) {
     if (record.status === "ACTIVE") {
       await prisma.$transaction(async (tx) => {
-        await tx.workspaceSession.updateMany({
-          where: { id: record.id, status: "ACTIVE", expiresAt: { lte: now } },
-          data: { status: "EXPIRED" },
-        })
-        await tx.workspaceAgentRun.updateMany({
-          where: { workspaceId: record.id, status: "RUNNING" },
-          data: {
-            status: "FAILED",
-            completedAt: now,
-            leaseExpiresAt: null,
-            errorCode: "WORKSPACE_EXPIRED",
-            errorMessage: "Workspace expired while the Agent run was active",
-          },
-        })
+        await expireWorkspaceIfDue(tx, record.id, now)
       })
     }
     throw new WorkspaceInputError("Workspace is not active")
@@ -600,15 +625,14 @@ export async function appendWorkspaceRevision(
   }
   const now = input.now ?? new Date()
 
-  return prisma.$transaction(async (tx) => {
+  let expired = false
+  const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,
     })
     if (!record) return null
     assertOwner(context, record.ownerId)
-
-    await assertWorkspaceActor(tx, context, workspaceId, actor)
 
     const existing = await tx.workspaceRevision.findUnique({
       where: {
@@ -635,20 +659,26 @@ export async function appendWorkspaceRevision(
       ) {
         throw new WorkspaceIdempotencyConflictError()
       }
-      return mapRevision(existing)
+      return {
+        revision: mapRevision(existing),
+        replayedFromIdempotencyKey: true,
+      }
     }
     if (record.status !== "ACTIVE" || record.expiresAt <= now) {
-      if (record.status === "ACTIVE") {
-        await tx.workspaceSession.update({
-          where: { id: workspaceId },
-          data: { status: "EXPIRED" },
-        })
+      if (record.status === "ACTIVE" && record.expiresAt <= now) {
+        await expireWorkspaceIfDue(tx, workspaceId, now)
+        expired = true
+        return null
       }
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (record.headWorkspaceRevision !== input.expectedRevision) {
       throw new WorkspaceRevisionConflictError()
     }
+    if (input.commandName.startsWith("journey.")) {
+      await assertWorkspaceSourceCurrent(tx, record)
+    }
+    await assertWorkspaceActor(tx, context, workspaceId, actor)
 
     const before = parseGraph(
       record.headGraphJson,
@@ -747,8 +777,13 @@ export async function appendWorkspaceRevision(
       },
     })
     if (updated.count !== 1) throw new WorkspaceRevisionConflictError()
-    return mapRevision(revision)
+    return {
+      revision: mapRevision(revision),
+      replayedFromIdempotencyKey: false,
+    }
   })
+  if (expired) throw new WorkspaceInputError("Workspace is not active")
+  return result
 }
 
 export async function getWorkspaceRevision(
@@ -1184,7 +1219,8 @@ export async function forkWorkspaceRevisionChain(
   }
 ) {
   const now = input.now ?? new Date()
-  return prisma.$transaction(async (tx) => {
+  let expired = false
+  const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,
@@ -1217,9 +1253,18 @@ export async function forkWorkspaceRevisionChain(
           "Fork outcome is missing its Workspace"
         )
       }
-      return { revision: mapRevision(existing), fork: mapSession(fork) }
+      return {
+        revision: mapRevision(existing),
+        fork: mapSession(fork),
+        replayedFromIdempotencyKey: true,
+      }
     }
     if (record.status !== "ACTIVE" || record.expiresAt <= now) {
+      if (record.status === "ACTIVE" && record.expiresAt <= now) {
+        await expireWorkspaceIfDue(tx, workspaceId, now)
+        expired = true
+        return null
+      }
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (record.headWorkspaceRevision !== input.expectedRevision) {
@@ -1433,8 +1478,14 @@ export async function forkWorkspaceRevisionChain(
       where: { id: input.forkWorkspaceId },
       include: workspaceInclude,
     })
-    return { revision: mapRevision(control), fork: mapSession(fork) }
+    return {
+      revision: mapRevision(control),
+      fork: mapSession(fork),
+      replayedFromIdempotencyKey: false,
+    }
   })
+  if (expired) throw new WorkspaceInputError("Workspace is not active")
+  return result
 }
 
 export async function refreshWorkspaceRevisionChain(
@@ -1461,7 +1512,8 @@ export async function refreshWorkspaceRevisionChain(
 ) {
   const now = input.now ?? new Date()
   const canonicalBase = validateJourneyGraph(input.canonicalBase)
-  return prisma.$transaction(async (tx) => {
+  let expired = false
+  const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,
@@ -1484,9 +1536,17 @@ export async function refreshWorkspaceRevisionChain(
       ) {
         throw new WorkspaceIdempotencyConflictError()
       }
-      return mapRevision(existing)
+      return {
+        revision: mapRevision(existing),
+        replayedFromIdempotencyKey: true,
+      }
     }
     if (record.status !== "ACTIVE" || record.expiresAt <= now) {
+      if (record.status === "ACTIVE" && record.expiresAt <= now) {
+        await expireWorkspaceIfDue(tx, workspaceId, now)
+        expired = true
+        return null
+      }
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (
@@ -1622,8 +1682,13 @@ export async function refreshWorkspaceRevisionChain(
         expiresAt: leaseExpiry(now),
       },
     })
-    return mapRevision(control)
+    return {
+      revision: mapRevision(control),
+      replayedFromIdempotencyKey: false,
+    }
   })
+  if (expired) throw new WorkspaceInputError("Workspace is not active")
+  return result
 }
 
 export async function commitWorkspaceRevisionChain(
@@ -1640,7 +1705,8 @@ export async function commitWorkspaceRevisionChain(
   }
 ) {
   const now = input.now ?? new Date()
-  return prisma.$transaction(async (tx) => {
+  let expired = false
+  const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,
@@ -1664,14 +1730,23 @@ export async function commitWorkspaceRevisionChain(
       ) {
         throw new WorkspaceIdempotencyConflictError()
       }
-      return mapRevision(existing)
+      return {
+        revision: mapRevision(existing),
+        replayedFromIdempotencyKey: true,
+      }
     }
     if (record.status !== "ACTIVE" || record.expiresAt <= now) {
+      if (record.status === "ACTIVE" && record.expiresAt <= now) {
+        await expireWorkspaceIfDue(tx, workspaceId, now)
+        expired = true
+        return null
+      }
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (record.headWorkspaceRevision !== input.expectedRevision) {
       throw new WorkspaceRevisionConflictError()
     }
+    await assertWorkspaceSourceCurrent(tx, record)
     await assertWorkspaceActor(tx, context, workspaceId, input.actor)
     if (record.sourceJourneyId && input.expectedJourneyRevision === null) {
       throw new JourneyRevisionConflictError(
@@ -1742,9 +1817,21 @@ export async function commitWorkspaceRevisionChain(
       )
     )
     const expectedGraphRevision = input.expectedJourneyRevision ?? 1
+    const baseAdvanceWorkspaceRevision = record.sourceJourneyId
+      ? Math.max(
+          0,
+          ...record.revisions
+            .filter(
+              (revision) =>
+                forkBaseAdvance(revision) === record.baseJourneyRevision
+            )
+            .map((revision) => revision.revision)
+        )
+      : 0
     const candidates = record.revisions.filter(
       (revision) =>
         revision.revision <= input.expectedRevision &&
+        revision.revision > baseAdvanceWorkspaceRevision &&
         !committedIds.has(revision.id) &&
         contractCommandNames[revision.commandName].startsWith("journey.") &&
         parseGraph(
@@ -1807,6 +1894,7 @@ export async function commitWorkspaceRevisionChain(
     if (!committed) {
       throw new WorkspaceInputError("Workspace source Journey was not found")
     }
+    const committedHeadJson = json(committed)
 
     const sourceParent = record.revisions.find(
       (revision) => revision.revision === input.expectedRevision
@@ -1819,7 +1907,7 @@ export async function commitWorkspaceRevisionChain(
         parentRevisionId: sourceParent?.id ?? null,
         commandName: commandNames["workspace.commit"],
         beforeGraphJson: record.headGraphJson,
-        afterGraphJson: record.headGraphJson,
+        afterGraphJson: committedHeadJson,
         patchJson: json(input.patch),
         inversePatchJson: json(input.inversePatch),
         ...actorColumns(input.actor),
@@ -1837,13 +1925,19 @@ export async function commitWorkspaceRevisionChain(
         headWorkspaceRevision: input.expectedRevision + 1,
         sourceJourneyId: committed.id,
         baseJourneyRevision: committed.revision,
+        headGraphJson: committedHeadJson,
         lastAccessAt: now,
         expiresAt: leaseExpiry(now),
       },
     })
     if (advanced.count !== 1) throw new WorkspaceRevisionConflictError()
-    return mapRevision(control)
+    return {
+      revision: mapRevision(control),
+      replayedFromIdempotencyKey: false,
+    }
   })
+  if (expired) throw new WorkspaceInputError("Workspace is not active")
+  return result
 }
 
 export async function archiveWorkspace(
