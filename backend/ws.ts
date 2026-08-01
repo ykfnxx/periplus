@@ -52,6 +52,23 @@ export function parseWireMessage(rawMessage: string) {
   return wireMessageSchema.parse(value)
 }
 
+export function commandIdFromRawWireMessage(rawMessage: string) {
+  try {
+    const value: unknown = JSON.parse(rawMessage)
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined
+    }
+    const payload = (value as Record<string, unknown>).payload
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return undefined
+    }
+    const commandId = (payload as Record<string, unknown>).commandId
+    return typeof commandId === "string" ? commandId : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function send(socket: WebSocket, event: AgentEvent) {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event))
 }
@@ -120,13 +137,10 @@ export function createAgentWebSocketServer(
 
       socket.on("message", (rawMessage) => {
         void (async () => {
-          let commandId: string | undefined
+          const rawText = rawMessage.toString("utf8")
+          const commandId = commandIdFromRawWireMessage(rawText)
           try {
-            const message = parseWireMessage(rawMessage.toString("utf8"))
-            commandId =
-              typeof message.payload?.commandId === "string"
-                ? message.payload.commandId
-                : undefined
+            const message = parseWireMessage(rawText)
 
             if (message.type === "workspace.get") {
               send(socket, {

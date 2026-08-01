@@ -5,8 +5,13 @@ import { z } from "zod"
 import type { AgentGateway } from "@/backend/agent/gateway"
 import { domainErrorResponse } from "@/backend/domain-error"
 import { errorResponse, handleInternalRequest } from "@/backend/internal-api"
-import { errorEvent, parseWireMessage } from "@/backend/ws"
+import {
+  commandIdFromRawWireMessage,
+  errorEvent,
+  parseWireMessage,
+} from "@/backend/ws"
 import { PermissionDeniedError } from "@/modules/auth/server/context"
+import { targetCommandEnvelopeSchema } from "@/modules/data-model/contracts"
 import { JourneyGraphValidationError } from "@/modules/data/journeys/journey-graph-validator"
 import {
   JourneyIdempotencyConflictError,
@@ -151,5 +156,67 @@ describe("Agent HTTP and WebSocket domain error contract", () => {
         payload: { code: "invalid_input" },
       })
     }
+  })
+
+  it("preserves command correlation when strict WebSocket validation fails", () => {
+    const cases = [
+      {
+        commandId: "malformed-command",
+        raw: JSON.stringify({
+          type: "agent.run.start",
+          payload: { commandId: "malformed-command", prompt: 42 },
+        }),
+      },
+      {
+        commandId: "unsupported-command",
+        raw: JSON.stringify({
+          type: "unsupported",
+          payload: { commandId: "unsupported-command" },
+        }),
+      },
+      {
+        commandId: "invalid-workspace-command",
+        raw: JSON.stringify({
+          type: "workspace.command",
+          payload: {
+            commandId: "invalid-workspace-command",
+            envelope: { expectedRevision: "not-a-revision" },
+          },
+        }),
+      },
+    ]
+
+    for (const { commandId, raw } of cases) {
+      let error: unknown
+      try {
+        const message = parseWireMessage(raw)
+        if (message.type === "workspace.command") {
+          const payload = message.payload
+          const supplied =
+            payload.envelope && typeof payload.envelope === "object"
+              ? (payload.envelope as Record<string, unknown>)
+              : payload
+          targetCommandEnvelopeSchema.parse({
+            ...supplied,
+            aggregateId: "workspace",
+            actor: { kind: "USER", userId: "user" },
+          })
+        }
+      } catch (caught) {
+        error = caught
+      }
+
+      expect(errorEvent(error, commandIdFromRawWireMessage(raw))).toMatchObject(
+        {
+          type: "error",
+          payload: { code: "invalid_input", commandId },
+        }
+      )
+    }
+    expect(
+      commandIdFromRawWireMessage(
+        JSON.stringify({ payload: { commandId: 42 } })
+      )
+    ).toBeUndefined()
   })
 })
