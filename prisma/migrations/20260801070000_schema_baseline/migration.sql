@@ -1352,6 +1352,11 @@ BEFORE UPDATE OF "eventId" ON "SectionEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'SECTION')
 BEGIN SELECT RAISE(ABORT, 'SectionEventDetail requires a SECTION Event'); END;
 
+CREATE TRIGGER "SectionEventDetail_delete_guard"
+BEFORE DELETE ON "SectionEventDetail"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'SectionEventDetail can only be deleted by deleting its Event'); END;
+
 CREATE TRIGGER "VisitEventDetail_insert_guard"
 BEFORE INSERT ON "VisitEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'VISIT')
@@ -1361,6 +1366,11 @@ CREATE TRIGGER "VisitEventDetail_update_guard"
 BEFORE UPDATE OF "eventId" ON "VisitEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'VISIT')
 BEGIN SELECT RAISE(ABORT, 'VisitEventDetail requires a VISIT Event'); END;
+
+CREATE TRIGGER "VisitEventDetail_delete_guard"
+BEFORE DELETE ON "VisitEventDetail"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'VisitEventDetail can only be deleted by deleting its Event'); END;
 
 CREATE TRIGGER "StayEventDetail_insert_guard"
 BEFORE INSERT ON "StayEventDetail"
@@ -1372,6 +1382,11 @@ BEFORE UPDATE OF "eventId" ON "StayEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'STAY')
 BEGIN SELECT RAISE(ABORT, 'StayEventDetail requires a STAY Event'); END;
 
+CREATE TRIGGER "StayEventDetail_delete_guard"
+BEFORE DELETE ON "StayEventDetail"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'StayEventDetail can only be deleted by deleting its Event'); END;
+
 CREATE TRIGGER "MealEventDetail_insert_guard"
 BEFORE INSERT ON "MealEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'MEAL')
@@ -1381,6 +1396,11 @@ CREATE TRIGGER "MealEventDetail_update_guard"
 BEFORE UPDATE OF "eventId" ON "MealEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'MEAL')
 BEGIN SELECT RAISE(ABORT, 'MealEventDetail requires a MEAL Event'); END;
+
+CREATE TRIGGER "MealEventDetail_delete_guard"
+BEFORE DELETE ON "MealEventDetail"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'MealEventDetail can only be deleted by deleting its Event'); END;
 
 CREATE TRIGGER "ActivityEventDetail_insert_guard"
 BEFORE INSERT ON "ActivityEventDetail"
@@ -1392,6 +1412,11 @@ BEFORE UPDATE OF "eventId" ON "ActivityEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'ACTIVITY')
 BEGIN SELECT RAISE(ABORT, 'ActivityEventDetail requires an ACTIVITY Event'); END;
 
+CREATE TRIGGER "ActivityEventDetail_delete_guard"
+BEFORE DELETE ON "ActivityEventDetail"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'ActivityEventDetail can only be deleted by deleting its Event'); END;
+
 CREATE TRIGGER "TransitEventDetail_insert_guard"
 BEFORE INSERT ON "TransitEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'TRANSIT')
@@ -1401,6 +1426,11 @@ CREATE TRIGGER "TransitEventDetail_update_guard"
 BEFORE UPDATE OF "eventId" ON "TransitEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'TRANSIT')
 BEGIN SELECT RAISE(ABORT, 'TransitEventDetail requires a TRANSIT Event'); END;
+
+CREATE TRIGGER "TransitEventDetail_delete_guard"
+BEFORE DELETE ON "TransitEventDetail"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'TransitEventDetail can only be deleted by deleting its Event'); END;
 
 CREATE TRIGGER "TransitEventDetail_endpoint_insert_guard"
 BEFORE INSERT ON "TransitEventDetail"
@@ -1437,6 +1467,11 @@ CREATE TRIGGER "NoteEventDetail_update_guard"
 BEFORE UPDATE OF "eventId" ON "NoteEventDetail"
 WHEN NOT EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = NEW."eventId" AND "type" = 'NOTE')
 BEGIN SELECT RAISE(ABORT, 'NoteEventDetail requires a NOTE Event'); END;
+
+CREATE TRIGGER "NoteEventDetail_delete_guard"
+BEFORE DELETE ON "NoteEventDetail"
+WHEN EXISTS (SELECT 1 FROM "JourneyEvent" WHERE "id" = OLD."eventId")
+BEGIN SELECT RAISE(ABORT, 'NoteEventDetail can only be deleted by deleting its Event'); END;
 
 CREATE TRIGGER "JourneyEvent_type_update_guard"
 BEFORE UPDATE OF "type" ON "JourneyEvent"
@@ -1494,9 +1529,9 @@ CREATE TRIGGER "JourneyEventReplacement_delete_guard"
 BEFORE DELETE ON "JourneyEventReplacement"
 WHEN EXISTS (
   SELECT 1 FROM "Journey" journey
-  WHERE journey."id" = OLD."journeyId" AND journey."deletedAt" IS NULL
+  WHERE journey."id" = OLD."journeyId"
 )
-BEGIN SELECT RAISE(ABORT, 'replacement records can only be deleted during explicit Journey purge'); END;
+BEGIN SELECT RAISE(ABORT, 'replacement records cannot be deleted while their Journey exists'); END;
 
 CREATE TRIGGER "JourneyBranchSelection_insert_guard"
 BEFORE INSERT ON "JourneyBranchSelection"
@@ -1541,9 +1576,9 @@ CREATE TRIGGER "JourneyBranchSelection_delete_guard"
 BEFORE DELETE ON "JourneyBranchSelection"
 WHEN EXISTS (
   SELECT 1 FROM "Journey" journey
-  WHERE journey."id" = OLD."journeyId" AND journey."deletedAt" IS NULL
+  WHERE journey."id" = OLD."journeyId"
 )
-BEGIN SELECT RAISE(ABORT, 'branch selections can only be deleted during explicit Journey purge'); END;
+BEGIN SELECT RAISE(ABORT, 'branch selections cannot be deleted while their Journey exists'); END;
 
 -- READY runs are finalized only after their stable Plan/Segment rows exist.
 CREATE TRIGGER "TransitPlanningRun_ready_insert_guard"
@@ -1844,9 +1879,9 @@ CREATE TRIGGER "JourneyRevision_delete_guard"
 BEFORE DELETE ON "JourneyRevision"
 WHEN EXISTS (
   SELECT 1 FROM "Journey" journey
-  WHERE journey."id" = OLD."journeyId" AND journey."deletedAt" IS NULL
+  WHERE journey."id" = OLD."journeyId"
 )
-BEGIN SELECT RAISE(ABORT, 'Journey revisions can only be deleted during explicit Journey purge'); END;
+BEGIN SELECT RAISE(ABORT, 'Journey revisions cannot be deleted while their Journey exists'); END;
 
 CREATE TRIGGER "JourneyRevision_workspace_guard"
 BEFORE INSERT ON "JourneyRevision"
@@ -1890,15 +1925,13 @@ CREATE TRIGGER "WorkspaceRevision_update_guard"
 BEFORE UPDATE ON "WorkspaceRevision"
 BEGIN SELECT RAISE(ABORT, 'Workspace revisions are append-only'); END;
 
--- ARCHIVED is the explicit hard-purge gate. The lineage RESTRICT FK then forces
--- leaf-to-root deletion inside the same transaction before removing the Workspace.
 CREATE TRIGGER "WorkspaceRevision_delete_guard"
 BEFORE DELETE ON "WorkspaceRevision"
 WHEN EXISTS (
   SELECT 1 FROM "WorkspaceSession" workspace
-  WHERE workspace."id" = OLD."workspaceId" AND workspace."status" <> 'ARCHIVED'
+  WHERE workspace."id" = OLD."workspaceId"
 )
-BEGIN SELECT RAISE(ABORT, 'Workspace revisions can only be deleted by purging their Workspace'); END;
+BEGIN SELECT RAISE(ABORT, 'Workspace revisions cannot be deleted while their Workspace exists'); END;
 
 CREATE TRIGGER "WorkspaceSession_head_insert_guard"
 BEFORE INSERT ON "WorkspaceSession"

@@ -239,17 +239,21 @@ describe("P1 SQLite schema baseline", () => {
     )
     expectSqlFailure(
       `DELETE FROM "JourneyEventReplacement" WHERE "id" = 'replacement-1';`,
-      /explicit Journey purge/
+      /while their Journey exists/
+    )
+    sqlite(`UPDATE "Journey" SET "deletedAt" = '${NOW}' WHERE "id" = 'j1';`)
+    expectSqlFailure(
+      `DELETE FROM "JourneyEventReplacement" WHERE "id" = 'replacement-1';`,
+      /while their Journey exists/
     )
     sqlite(`
-      UPDATE "Journey" SET "deletedAt" = '${NOW}' WHERE "id" = 'j1';
-      DELETE FROM "JourneyEventReplacement" WHERE "id" = 'replacement-1';
+      UPDATE "Journey" SET "deletedAt" = NULL WHERE "id" = 'j1';
     `)
     expect(
       sqliteJson<{ count: number }>(
         `SELECT count(*) AS count FROM "JourneyEventReplacement" WHERE "id" = 'replacement-1'`
       )[0]?.count
-    ).toBe(0)
+    ).toBe(1)
   })
 
   it("enforces revision, idempotency, and linear-parent uniqueness", () => {
@@ -288,8 +292,23 @@ describe("P1 SQLite schema baseline", () => {
     `)
     expectSqlFailure(
       `DELETE FROM "JourneyRevision" WHERE "id" = 'j1-r2';`,
-      /explicit Journey purge/
+      /while their Journey exists/
     )
+    sqlite(`UPDATE "Journey" SET "deletedAt" = '${NOW}' WHERE "id" = 'j1';`)
+    expectSqlFailure(
+      `DELETE FROM "JourneyRevision" WHERE "id" = 'j1-r2';`,
+      /while their Journey exists/
+    )
+    sqlite(`UPDATE "Journey" SET "deletedAt" = NULL WHERE "id" = 'j1';`)
+    expect(
+      sqliteJson<{ count: number }>(
+        `SELECT count(*) AS count FROM "JourneyRevision" revision
+         JOIN "Journey" journey
+           ON journey."id" = revision."journeyId"
+          AND journey."revision" = revision."revision"
+         WHERE journey."id" = 'j1'`
+      )[0]?.count
+    ).toBe(1)
   })
 
   it("enforces Event checks and typed-detail triggers", () => {
@@ -312,6 +331,36 @@ describe("P1 SQLite schema baseline", () => {
        INSERT INTO "VisitEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('a', 30, 120, 'GCJ02');`,
       /requires a VISIT/
     )
+    sqlite(`
+      INSERT INTO "JourneyEvent" ("id", "journeyId", "parentSectionEventId", "type", "executionStatus", "placementStatus", "origin", "title", "introducedRevision", "createdAt", "updatedAt")
+      VALUES
+        ('detail-visit', 'j1', 'section', 'VISIT', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Visit detail', 1, '${NOW}', '${NOW}'),
+        ('detail-stay', 'j1', 'section', 'STAY', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Stay detail', 1, '${NOW}', '${NOW}'),
+        ('detail-meal', 'j1', 'section', 'MEAL', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Meal detail', 1, '${NOW}', '${NOW}'),
+        ('detail-activity', 'j1', 'section', 'ACTIVITY', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Activity detail', 1, '${NOW}', '${NOW}'),
+        ('detail-note', 'j1', 'section', 'NOTE', NULL, 'SCHEDULED', 'ORIGINAL', 'Note detail', 1, '${NOW}', '${NOW}');
+      INSERT INTO "SectionEventDetail" ("eventId", "kind") VALUES ('section', 'THEME');
+      INSERT INTO "VisitEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('detail-visit', 30, 120, 'GCJ02');
+      INSERT INTO "StayEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('detail-stay', 30, 120, 'GCJ02');
+      INSERT INTO "MealEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('detail-meal', 30, 120, 'GCJ02');
+      INSERT INTO "ActivityEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('detail-activity', 30, 120, 'GCJ02');
+      INSERT INTO "TransitEventDetail" ("eventId", "transportMode", "routeState") VALUES ('transit', 'WALK', 'EMPTY');
+      INSERT INTO "NoteEventDetail" ("eventId", "body") VALUES ('detail-note', 'Note');
+    `)
+    for (const [table, eventId] of [
+      ["SectionEventDetail", "section"],
+      ["VisitEventDetail", "detail-visit"],
+      ["StayEventDetail", "detail-stay"],
+      ["MealEventDetail", "detail-meal"],
+      ["ActivityEventDetail", "detail-activity"],
+      ["TransitEventDetail", "transit"],
+      ["NoteEventDetail", "detail-note"],
+    ] as const) {
+      expectSqlFailure(
+        `DELETE FROM "${table}" WHERE "eventId" = '${eventId}';`,
+        /only be deleted by deleting its Event/
+      )
+    }
   })
 
   it("preserves retired Links while enforcing one active MAIN in and out", () => {
@@ -406,12 +455,23 @@ describe("P1 SQLite schema baseline", () => {
        VALUES ('failed-plan', 'failed-run', 'transit', 'test', 0, 'Bad', 'NONE', 0, 0, 'UNKNOWN', '${NOW}', '${NOW}', '${NOW}');`,
       /finalized planning run/
     )
-    sqlite(`DELETE FROM "TransitEventDetail" WHERE "eventId" = 'transit';`)
+    expectSqlFailure(
+      `DELETE FROM "TransitEventDetail" WHERE "eventId" = 'transit';`,
+      /only be deleted by deleting its Event/
+    )
+    sqlite(`DELETE FROM "JourneyEvent" WHERE "id" = 'transit';`)
     expect(
-      sqliteJson<{ count: number }>(
-        `SELECT count(*) AS count FROM "TransitPlanningRun" WHERE "transitEventId" = 'transit'`
-      )[0]?.count
-    ).toBe(0)
+      sqliteJson<{
+        eventCount: number
+        detailCount: number
+        runCount: number
+      }>(
+        `SELECT
+           (SELECT count(*) FROM "JourneyEvent" WHERE "id" = 'transit') AS eventCount,
+           (SELECT count(*) FROM "TransitEventDetail" WHERE "eventId" = 'transit') AS detailCount,
+           (SELECT count(*) FROM "TransitPlanningRun" WHERE "transitEventId" = 'transit') AS runCount`
+      )[0]
+    ).toEqual({ eventCount: 0, detailCount: 0, runCount: 0 })
   })
 
   it("enforces append-only branch selection supersession", () => {
@@ -445,8 +505,14 @@ describe("P1 SQLite schema baseline", () => {
     )
     expectSqlFailure(
       `DELETE FROM "JourneyBranchSelection" WHERE "id" = 'selection-2';`,
-      /explicit Journey purge/
+      /while their Journey exists/
     )
+    sqlite(`UPDATE "Journey" SET "deletedAt" = '${NOW}' WHERE "id" = 'j1';`)
+    expectSqlFailure(
+      `DELETE FROM "JourneyBranchSelection" WHERE "id" = 'selection-2';`,
+      /while their Journey exists/
+    )
+    sqlite(`UPDATE "Journey" SET "deletedAt" = NULL WHERE "id" = 'j1';`)
   })
 
   it("pins Asset and Source identities through policy triggers", () => {
@@ -559,7 +625,7 @@ describe("P1 SQLite schema baseline", () => {
     )
     expectSqlFailure(
       `DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r1';`,
-      /purging their Workspace/
+      /while their Workspace exists/
     )
     expectSqlFailure(
       `UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 0 WHERE "id" = 'workspace-1';`,
@@ -624,25 +690,37 @@ describe("P1 SQLite schema baseline", () => {
     `)
     expectSqlFailure(
       `DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r3';`,
-      /purging their Workspace/
+      /while their Workspace exists/
     )
     sqlite(`
-      INSERT INTO "JourneyRevision" ("id", "journeyId", "revision", "operation", "snapshotJson", "patchJson", "inversePatchJson", "actorKind", "idempotencyKey", "parentRevisionId", "workspaceRevisionId", "createdAt")
-      VALUES ('j1-r2', 'j1', 2, 'commit workspace', '${graph("j1", "owner", 2)}', '[]', '[]', 'SYSTEM', 'j1-r2-key', 'j1-r1', 'workspace-r1', '${NOW}');
-      BEGIN;
       UPDATE "WorkspaceSession"
       SET "status" = 'ARCHIVED', "archivedAt" = '${NOW}'
       WHERE "id" = 'workspace-1';
-      DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r3';
-      DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r2';
-      DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r1';
-      DELETE FROM "WorkspaceSession" WHERE "id" = 'workspace-1';
-      COMMIT;
+    `)
+    expectSqlFailure(
+      `DELETE FROM "WorkspaceRevision" WHERE "id" = 'workspace-r3';`,
+      /while their Workspace exists/
+    )
+    sqlite(`
+      UPDATE "WorkspaceSession"
+      SET "status" = 'ACTIVE', "archivedAt" = NULL
+      WHERE "id" = 'workspace-1';
     `)
     expect(
-      sqliteJson<{ workspaceRevisionId: string | null }>(
-        `SELECT "workspaceRevisionId" FROM "JourneyRevision" WHERE "id" = 'j1-r2'`
-      )[0]?.workspaceRevisionId
-    ).toBeNull()
+      sqliteJson<{
+        status: string
+        headWorkspaceRevision: number
+        headCount: number
+      }>(
+        `SELECT workspace."status", workspace."headWorkspaceRevision",
+                count(revision."id") AS headCount
+         FROM "WorkspaceSession" workspace
+         LEFT JOIN "WorkspaceRevision" revision
+           ON revision."workspaceId" = workspace."id"
+          AND revision."revision" = workspace."headWorkspaceRevision"
+         WHERE workspace."id" = 'workspace-1'
+         GROUP BY workspace."id"`
+      )[0]
+    ).toEqual({ status: "ACTIVE", headWorkspaceRevision: 3, headCount: 1 })
   })
 })
