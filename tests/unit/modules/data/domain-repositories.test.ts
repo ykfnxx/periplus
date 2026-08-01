@@ -533,6 +533,18 @@ describe.sequential("P2B-P2D repositories", () => {
         })
       )?.revision
     ).toBe(5)
+    await expect(
+      attachAssetToEvent(context, journeyId, {
+        eventId: startId,
+        assetId: image.id,
+        role: "GALLERY",
+        rank: 1,
+        visibility: "JOURNEY",
+        expectedRevision: 4,
+        idempotencyKey: `${journeyId}-attach-image`,
+      })
+    ).rejects.toThrow("idempotency key")
+    expect((await getJourney(context, journeyId))?.revision).toBe(5)
 
     const observed = await addEventObservation(context, journeyId, {
       eventId: startId,
@@ -563,6 +575,20 @@ describe.sequential("P2B-P2D repositories", () => {
         })
       )?.revision
     ).toBe(6)
+    await expect(
+      addEventObservation(context, journeyId, {
+        eventId: startId,
+        kind: "RATING",
+        phase: "ACTUAL",
+        observedAt: "2026-08-01T10:10:00.000Z",
+        value: 4.5,
+        body: "Worth revisiting",
+        visibility: "JOURNEY",
+        expectedRevision: 5,
+        idempotencyKey: `${journeyId}-rating`,
+      })
+    ).rejects.toThrow("idempotency key")
+    expect((await getJourney(context, journeyId))?.revision).toBe(6)
 
     const sourceAsset = await createAsset(context, {
       kind: "FILE",
@@ -625,6 +651,18 @@ describe.sequential("P2B-P2D repositories", () => {
         })
       )?.revision
     ).toBe(7)
+    await expect(
+      linkSourceItemToEvent(context, journeyId, {
+        eventId: startId,
+        sourceItemId: item.id,
+        role: "EVIDENCE",
+        confidence: 0.9,
+        rank: 1,
+        expectedRevision: 6,
+        idempotencyKey: `${journeyId}-source-link`,
+      })
+    ).rejects.toThrow("idempotency key")
+    expect((await getJourney(context, journeyId))?.revision).toBe(7)
 
     const privateExternalAsset = await createAsset(otherContext, {
       kind: "IMAGE",

@@ -237,6 +237,7 @@ export async function attachAssetToEvent(
       replay.eventId !== input.eventId ||
       replay.assetId !== input.assetId ||
       replay.role !== input.role ||
+      replay.rank !== (input.rank ?? replay.rank) ||
       replay.caption !== (input.caption?.trim() || undefined) ||
       replay.visibility !== (input.visibility ?? "PRIVATE")
     ) {
@@ -347,6 +348,9 @@ export async function addEventObservation(
     const expected = {
       kind: parsed.kind,
       phase: parsed.phase,
+      observedAt: parsed.observedAt
+        ? new Date(parsed.observedAt).toISOString()
+        : replay.observedAt,
       body: parsed.body,
       value: "value" in parsed ? parsed.value : undefined,
       supersedesId: parsed.supersedesId,
@@ -355,6 +359,7 @@ export async function addEventObservation(
     const actual = {
       kind: replay.kind,
       phase: replay.phase,
+      observedAt: replay.observedAt,
       body: replay.body,
       value: "value" in replay ? replay.value : undefined,
       supersedesId: replay.supersedesId,
@@ -373,7 +378,9 @@ export async function addEventObservation(
     ...parsed,
     id,
     eventId: input.eventId,
-    observedAt: parsed.observedAt ?? timestamp,
+    observedAt: parsed.observedAt
+      ? new Date(parsed.observedAt).toISOString()
+      : timestamp,
     actor: { kind: "USER", userId: context.userId },
     createdAt: timestamp,
   }) as TargetEventObservation
@@ -598,6 +605,7 @@ export async function linkSourceItemToEvent(
       replay.excerpt !== (input.excerpt?.trim() || undefined) ||
       replay.page !== (input.page?.trim() || undefined) ||
       replay.confidence !== input.confidence ||
+      replay.rank !== (input.rank ?? replay.rank) ||
       replay.approvedForJourneySharing !==
         (input.approvedForJourneySharing ?? false)
     ) {
