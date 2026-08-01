@@ -764,10 +764,24 @@ describe("breaking data-model target contracts", () => {
       "idempotent-replay",
       "restart-recovery",
     ])
+    const replayResult = scenario("10-workspace-lifecycle", "idempotent-replay")
+      .expected.commandResult!
+    expect(replayResult).toMatchObject({
+      replayedFromIdempotencyKey: true,
+      outcome: { type: "workspace.replayed" },
+    })
     expect(
-      scenario("10-workspace-lifecycle", "idempotent-replay").expected
-        .commandResult
-    ).toMatchObject({ replayedFromIdempotencyKey: true })
+      targetCommandResultSchema.safeParse({
+        ...replayResult,
+        outcome: undefined,
+      }).success
+    ).toBe(false)
+    expect(
+      targetCommandResultSchema.safeParse({
+        ...replayResult,
+        commandName: "journey.update_event",
+      }).success
+    ).toBe(false)
     const restart = scenario("10-workspace-lifecycle", "restart-recovery")
     expect(JSON.stringify(restart.input)).toBe(
       JSON.stringify(restart.expected.state)

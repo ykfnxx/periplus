@@ -907,6 +907,13 @@ const replayResult: TargetCommandResult = {
   inversePatch: {},
   projectionInvalidationScopes: [],
   replayedFromIdempotencyKey: true,
+  outcome: {
+    type: "workspace.replayed",
+    sourceWorkspaceId: workspaceDocument.session.id,
+    fromWorkspaceRevision: 1,
+    throughWorkspaceRevision: 1,
+    headWorkspaceRevision: 1,
+  },
 }
 
 const contentJourneyId = "fixture-11-content-journey"

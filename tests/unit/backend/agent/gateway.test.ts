@@ -223,6 +223,37 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
   })
 
+  it("returns lifecycle identities through the Agent tool round-trip", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "fork workspace", "auto", emit)
+    const result = await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "agent-fork-workspace",
+      command: {
+        name: "workspace.fork",
+        payload: { fromWorkspaceRevision: 0 },
+      },
+    })
+    expect(result.result.outcome).toMatchObject({
+      type: "workspace.forked",
+      sourceWorkspaceId: workspace.id,
+      sourceWorkspaceRevision: 0,
+      headWorkspaceRevision: 0,
+      workspaceId: expect.any(String),
+    })
+    const forkWorkspaceId = (result.result.outcome as { workspaceId: string })
+      .workspaceId
+    expect(
+      (await commands.getDocument(context, forkWorkspaceId))?.session
+    ).toMatchObject({
+      id: forkWorkspaceId,
+      headWorkspaceRevision: 0,
+      headGraph: workspace.headGraph,
+    })
+    runtime.exit(0)
+  })
+
   it("exposes only server-resolved scoped projections through the run capability", async () => {
     const branchFixture = TARGET_CONTRACT_FIXTURES.find(
       (candidate) => candidate.id === "06-strict-nested-branch"

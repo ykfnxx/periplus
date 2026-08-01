@@ -14,10 +14,19 @@ import {
   createSourceDocument,
   createSourceItem,
   createSourcePack,
+  deleteAsset,
 } from "@/modules/data/content/content-repository"
 import { prisma } from "@/modules/data/db/prisma"
+import {
+  commitJourneyDomainGraph,
+  commitJourneyGraph,
+  createJourney,
+  getJourney,
+  getJourneyRevision,
+} from "@/modules/data/journeys/journey-repository"
 import { TransitPlanningService } from "@/modules/data/transit/transit-planning-service"
 import {
+  appendWorkspaceRevision,
   createWorkspace,
   finishWorkspaceAgentRun,
   startWorkspaceAgentRun,
@@ -1083,6 +1092,904 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         where: { workspaceId: workspace.id },
       })
     ).toBe(3)
+  })
+
+  it("uses append-only inverses for content retirement and rejects irreversible facts", async () => {
+    const input = sectionGraph(
+      `workspace-undo-content-${randomUUID()}`,
+      "LINEAR"
+    )
+    const eventId = `${input.id}-a`
+    input.eventAssetLinks.push({
+      id: `${eventId}-asset-link`,
+      journeyId: input.id,
+      eventId,
+      assetId: `${eventId}-asset`,
+      assetChecksum: `${eventId}-checksum`,
+      role: "GALLERY",
+      rank: 0,
+      visibility: "PRIVATE",
+      introducedRevision: 1,
+      createdAt: now,
+    })
+    input.eventSourceLinks.push({
+      id: `${eventId}-source-link`,
+      journeyId: input.id,
+      eventId,
+      sourceItemId: `${eventId}-source-item`,
+      sourceDocumentId: `${eventId}-source-document`,
+      sourceDocumentChecksum: `${eventId}-source-checksum`,
+      role: "EVIDENCE",
+      confidence: 0.9,
+      rank: 0,
+      approvedForJourneySharing: false,
+      introducedRevision: 1,
+      createdAt: now,
+    })
+    const workspace = await createWorkspace(context, {
+      graph: input,
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    await service.execute(
+      context,
+      command(workspace.id, 0, "retire-before-undo", {
+        name: "journey.retire_event",
+        payload: { eventId },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 1, "undo-retire", {
+        name: "journey.undo",
+        payload: { steps: 1 },
+      })
+    )
+    const restored = await service.getDocument(context, workspace.id)
+    expect(
+      restored?.session.headGraph.events.find((event) => event.id === eventId)
+        ?.retiredRevision
+    ).toBeUndefined()
+    expect(restored?.session.headGraph.eventAssetLinks).toMatchObject([
+      { id: `${eventId}-asset-link`, retiredRevision: 2 },
+      { introducedRevision: 3 },
+    ])
+    expect(
+      restored?.session.headGraph.eventAssetLinks[1]?.retiredRevision
+    ).toBeUndefined()
+    expect(restored?.session.headGraph.eventSourceLinks).toMatchObject([
+      { id: `${eventId}-source-link`, retiredRevision: 2 },
+      { introducedRevision: 3 },
+    ])
+    expect(
+      restored?.session.headGraph.eventSourceLinks[1]?.retiredRevision
+    ).toBeUndefined()
+
+    const observationWorkspace = await createWorkspace(context, {
+      graph: graph(`workspace-undo-observation-${randomUUID()}`),
+      now: new Date(now),
+    })
+    await service.execute(
+      context,
+      command(observationWorkspace.id, 0, "irreversible-observation", {
+        name: "journey.add_observation",
+        payload: {
+          eventId: `${observationWorkspace.headGraph.id}-a`,
+          observation: {
+            kind: "NOTE",
+            phase: "ACTUAL",
+            visibility: "PRIVATE",
+            body: "immutable fact",
+          },
+        },
+      })
+    )
+    await expect(
+      service.execute(
+        context,
+        command(observationWorkspace.id, 1, "undo-observation", {
+          name: "journey.undo",
+          payload: { steps: 1 },
+        })
+      )
+    ).rejects.toThrow("irreversible journey.add_observation")
+    expect(
+      (await service.getDocument(context, observationWorkspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(1)
+  })
+
+  it("commits retire-then-undo with append-only content relinks", async () => {
+    const journeyId = `workspace-undo-commit-${randomUUID()}`
+    const base = await createJourney(context, {
+      graph: sectionGraph(journeyId, "LINEAR"),
+      operation: "create undo commit Journey",
+      patch: [],
+      inversePatch: [],
+      idempotencyKey: `${journeyId}-create`,
+    })
+    const eventId = `${journeyId}-a`
+    const asset = await createAsset(context, {
+      kind: "IMAGE",
+      storageKey: `workspace-undo-commit/${randomUUID()}.jpg`,
+      mimeType: "image/jpeg",
+      sizeBytes: 32,
+      checksum: `workspace-undo-commit-${randomUUID()}`,
+    })
+    const sourceAsset = await createAsset(context, {
+      kind: "FILE",
+      storageKey: `workspace-undo-commit/${randomUUID()}.pdf`,
+      mimeType: "application/pdf",
+      sizeBytes: 32,
+      checksum: `workspace-undo-commit-source-${randomUUID()}`,
+    })
+    const pack = await createSourcePack(context, {
+      title: "Undo commit source",
+      visibility: "PRIVATE",
+    })
+    const sourceDocument = await createSourceDocument(context, {
+      sourcePackId: pack.id,
+      assetId: sourceAsset.id,
+      title: "Undo commit document",
+    })
+    const sourceItem = await createSourceItem(context, {
+      sourceDocumentId: sourceDocument.id,
+      kind: "NOTE",
+      title: "Undo commit item",
+      sourceOrder: 0,
+      confidence: 0.9,
+    })
+    const content = structuredClone(base)
+    content.revision = 2
+    content.eventAssetLinks.push({
+      id: `${eventId}-asset-link`,
+      journeyId,
+      eventId,
+      assetId: asset.id,
+      assetChecksum: asset.checksum,
+      role: "GALLERY",
+      rank: 0,
+      visibility: "PRIVATE",
+      introducedRevision: 2,
+      createdAt: now,
+    })
+    content.eventSourceLinks.push({
+      id: `${eventId}-source-link`,
+      journeyId,
+      eventId,
+      sourceItemId: sourceItem.id,
+      sourceDocumentId: sourceDocument.id,
+      sourceDocumentChecksum: sourceDocument.checksum,
+      role: "EVIDENCE",
+      confidence: 0.9,
+      rank: 0,
+      approvedForJourneySharing: false,
+      introducedRevision: 2,
+      createdAt: now,
+    })
+    const withContent = await commitJourneyDomainGraph(
+      context,
+      journeyId,
+      {
+        graph: content,
+        operation: "seed undo content",
+        patch: [],
+        inversePatch: [],
+        idempotencyKey: `${journeyId}-content`,
+      },
+      1,
+      "CONTENT"
+    )
+    const workspace = await createWorkspace(context, {
+      graph: withContent!,
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 2,
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    await service.execute(
+      context,
+      command(workspace.id, 0, "undo-commit-retire", {
+        name: "journey.retire_event",
+        payload: { eventId },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 1, "undo-commit-restore", {
+        name: "journey.undo",
+        payload: { steps: 1 },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 2, "undo-commit", {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: 2 },
+      })
+    )
+
+    const committed = await getJourney(context, journeyId)
+    expect(committed).toMatchObject({ revision: 4 })
+    expect(
+      committed?.events.find((event) => event.id === eventId)?.retiredRevision
+    ).toBeUndefined()
+    expect(committed?.eventAssetLinks).toMatchObject([
+      { id: `${eventId}-asset-link`, retiredRevision: 3 },
+      { introducedRevision: 4 },
+    ])
+    expect(committed?.eventAssetLinks[1]?.retiredRevision).toBeUndefined()
+    expect(committed?.eventSourceLinks).toMatchObject([
+      { id: `${eventId}-source-link`, retiredRevision: 3 },
+      { introducedRevision: 4 },
+    ])
+    expect(committed?.eventSourceLinks[1]?.retiredRevision).toBeUndefined()
+  })
+
+  it("forks, replays, and atomically commits a CORE-TRANSIT-CONTENT-undo chain", async () => {
+    const journeyId = `workspace-lifecycle-${randomUUID()}`
+    const base = await createJourney(context, {
+      graph: transitGraph(journeyId),
+      operation: "create lifecycle Journey",
+      patch: [],
+      inversePatch: [],
+      idempotencyKey: `${journeyId}-create`,
+    })
+    const workspace = await createWorkspace(context, {
+      graph: base,
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 1,
+      now: new Date(now),
+    })
+    const asset = await createAsset(context, {
+      kind: "IMAGE",
+      storageKey: `workspace-lifecycle/${randomUUID()}.jpg`,
+      mimeType: "image/jpeg",
+      sizeBytes: 32,
+      checksum: `workspace-lifecycle-${randomUUID()}`,
+    })
+    const plan = vi.fn(async (request: TransitPlanRequest) => ({
+      transitEventId: request.transitEventId,
+      requestFingerprint: transitPlanFingerprint(request),
+      plans: [
+        {
+          id: "lifecycle-plan",
+          provider: "mock" as const,
+          rank: 0,
+          label: "推荐",
+          strategy: "recommended",
+          distanceMeters: 2_000,
+          durationSeconds: 600,
+          trafficBasis: "TYPICAL" as const,
+          calculatedAt: now,
+          requestFingerprint: transitPlanFingerprint(request),
+          segments: [],
+        },
+      ],
+    }))
+    const service = new WorkspaceCommandService({
+      transitPlanning: new TransitPlanningService({ provider: { plan } }),
+    })
+    await service.execute(
+      context,
+      command(workspace.id, 0, "lifecycle-core", {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${journeyId}-a`,
+          patch: { type: "VISIT", title: "A lifecycle" },
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 1, "lifecycle-transit", {
+        name: "journey.plan_transit",
+        payload: { eventId: `${journeyId}-transit`, forceRefresh: false },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 2, "lifecycle-content", {
+        name: "journey.attach_asset",
+        payload: {
+          eventId: `${journeyId}-b`,
+          assetId: asset.id,
+          role: "GALLERY",
+          visibility: "PRIVATE",
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 3, "lifecycle-undo-content", {
+        name: "journey.undo",
+        payload: { steps: 1 },
+      })
+    )
+    const originalGraph = structuredClone(
+      (await service.getDocument(context, workspace.id))!.session.headGraph
+    )
+
+    const forkRequest = command(workspace.id, 4, "lifecycle-fork-mid", {
+      name: "workspace.fork",
+      payload: { fromWorkspaceRevision: 2 },
+    })
+    const [forked, forkReplay] = await Promise.all([
+      service.execute(context, forkRequest),
+      service.execute(context, forkRequest),
+    ])
+    expect(forked.outcome).toMatchObject({
+      type: "workspace.forked",
+      sourceWorkspaceRevision: 2,
+      headWorkspaceRevision: 2,
+    })
+    expect(forkReplay).toMatchObject({
+      outcome: forked.outcome,
+      replayedFromIdempotencyKey: true,
+    })
+    const midWorkspaceId = (forked.outcome as { workspaceId: string })
+      .workspaceId
+
+    const replayed = await service.execute(
+      context,
+      command(workspace.id, 5, "lifecycle-replay", {
+        name: "workspace.replay",
+        payload: { fromWorkspaceRevision: 0 },
+      })
+    )
+    expect(replayed.outcome).toMatchObject({
+      type: "workspace.replayed",
+      fromWorkspaceRevision: 0,
+      throughWorkspaceRevision: 5,
+      headWorkspaceRevision: 6,
+    })
+    const fullFork = await service.execute(
+      context,
+      command(workspace.id, 6, "lifecycle-fork-full", {
+        name: "workspace.fork",
+        payload: { fromWorkspaceRevision: 6 },
+      })
+    )
+    const fullWorkspaceId = (fullFork.outcome as { workspaceId: string })
+      .workspaceId
+    expect(
+      (await service.getDocument(context, midWorkspaceId))?.session
+        .headWorkspaceRevision
+    ).toBe(2)
+    expect(
+      (await service.getDocument(context, fullWorkspaceId))?.session
+        .headWorkspaceRevision
+    ).toBe(4)
+
+    const midCommitRequest = command(
+      midWorkspaceId,
+      2,
+      "lifecycle-commit-mid",
+      {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: 1 },
+      }
+    )
+    const [midCommit, midCommitReplay] = await Promise.all([
+      service.execute(context, midCommitRequest),
+      service.execute(context, midCommitRequest),
+    ])
+    expect(midCommit.outcome).toMatchObject({
+      type: "workspace.committed",
+      committedJourneyRevision: 3,
+    })
+    expect(midCommitReplay).toMatchObject({
+      outcome: midCommit.outcome,
+      replayedFromIdempotencyKey: true,
+    })
+    const fullCommit = await service.execute(
+      context,
+      command(fullWorkspaceId, 4, "lifecycle-commit-full", {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: 3 },
+      })
+    )
+    expect(fullCommit.outcome).toMatchObject({
+      type: "workspace.committed",
+      committedJourneyRevision: 5,
+    })
+
+    const canonical = await getJourney(context, journeyId)
+    expect(canonical).toMatchObject({
+      revision: 5,
+      events: expect.arrayContaining([
+        expect.objectContaining({ id: `${journeyId}-a`, title: "A lifecycle" }),
+      ]),
+      transitPlanningRuns: [expect.objectContaining({ status: "READY" })],
+      eventAssetLinks: [expect.objectContaining({ retiredRevision: 5 })],
+    })
+    for (const revisionNumber of [2, 3, 4, 5]) {
+      expect(
+        (await getJourneyRevision(context, journeyId, revisionNumber))
+          ?.workspaceRevisionId
+      ).toEqual(expect.any(String))
+    }
+    expect(plan).toHaveBeenCalledOnce()
+    expect(
+      (await service.getDocument(context, workspace.id))?.session.headGraph
+    ).toEqual(originalGraph)
+  })
+
+  it("refreshes clean and non-conflicting dirty bases, rejects conflicts, and creates a scratch Journey", async () => {
+    const journeyId = `workspace-refresh-${randomUUID()}`
+    const base = await createJourney(context, {
+      graph: graph(journeyId),
+      operation: "create refresh Journey",
+      patch: [],
+      inversePatch: [],
+      idempotencyKey: `${journeyId}-create`,
+    })
+    const [cleanWorkspace, dirtyWorkspace, conflictWorkspace] =
+      await Promise.all([
+        createWorkspace(context, {
+          graph: base,
+          sourceJourneyId: journeyId,
+          baseJourneyRevision: 1,
+          now: new Date(now),
+        }),
+        createWorkspace(context, {
+          graph: base,
+          sourceJourneyId: journeyId,
+          baseJourneyRevision: 1,
+          now: new Date(now),
+        }),
+        createWorkspace(context, {
+          graph: base,
+          sourceJourneyId: journeyId,
+          baseJourneyRevision: 1,
+          now: new Date(now),
+        }),
+      ])
+    const service = new WorkspaceCommandService()
+    await service.execute(
+      context,
+      command(dirtyWorkspace.id, 0, "dirty-before-refresh", {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${journeyId}-a`,
+          patch: { type: "VISIT", title: "dirty local title" },
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(conflictWorkspace.id, 0, "conflict-before-refresh", {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${journeyId}-b`,
+          patch: { type: "VISIT", title: "conflicting local title" },
+        },
+      })
+    )
+    const canonical = structuredClone(base)
+    canonical.revision = 2
+    const canonicalEvent = canonical.events.find(
+      (event) => event.id === `${journeyId}-b`
+    )!
+    canonicalEvent.title = "canonical refreshed title"
+    canonicalEvent.updatedAt = "2026-08-01T00:01:00.000Z"
+    await commitJourneyGraph(
+      context,
+      journeyId,
+      {
+        graph: canonical,
+        operation: "canonical refresh change",
+        patch: [],
+        inversePatch: [],
+        idempotencyKey: `${journeyId}-canonical-refresh`,
+      },
+      1
+    )
+
+    const refreshRequest = command(cleanWorkspace.id, 0, "refresh-clean", {
+      name: "workspace.refresh",
+      payload: { fromWorkspaceRevision: 0 },
+    })
+    const refreshed = await service.execute(context, refreshRequest)
+    expect(refreshed.outcome).toMatchObject({
+      type: "workspace.refreshed",
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 2,
+      headWorkspaceRevision: 1,
+    })
+    expect(await service.execute(context, refreshRequest)).toMatchObject({
+      outcome: refreshed.outcome,
+      replayedFromIdempotencyKey: true,
+    })
+    expect(
+      (await service.getDocument(context, cleanWorkspace.id))?.session
+    ).toMatchObject({
+      baseJourneyRevision: 2,
+      headGraph: {
+        revision: 2,
+        events: expect.arrayContaining([
+          expect.objectContaining({
+            id: `${journeyId}-b`,
+            title: "canonical refreshed title",
+          }),
+        ]),
+      },
+    })
+    const dirtyRefresh = await service.execute(
+      context,
+      command(dirtyWorkspace.id, 1, "refresh-dirty-stale", {
+        name: "workspace.refresh",
+        payload: { fromWorkspaceRevision: 0 },
+      })
+    )
+    expect(dirtyRefresh.outcome).toMatchObject({
+      type: "workspace.refreshed",
+      baseJourneyRevision: 2,
+      headWorkspaceRevision: 4,
+    })
+    expect(
+      (await service.getDocument(context, dirtyWorkspace.id))?.session.headGraph
+        .events
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: `${journeyId}-a`,
+          title: "dirty local title",
+        }),
+        expect.objectContaining({
+          id: `${journeyId}-b`,
+          title: "canonical refreshed title",
+        }),
+      ])
+    )
+    const rebasedCommit = await service.execute(
+      context,
+      command(dirtyWorkspace.id, 4, "commit-dirty-refresh", {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: 2 },
+      })
+    )
+    expect(rebasedCommit.outcome).toMatchObject({
+      type: "workspace.committed",
+      fromWorkspaceRevision: 3,
+      throughWorkspaceRevision: 3,
+      committedJourneyRevision: 3,
+    })
+    expect(await getJourney(context, journeyId)).toMatchObject({
+      revision: 3,
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          id: `${journeyId}-a`,
+          title: "dirty local title",
+        }),
+        expect.objectContaining({
+          id: `${journeyId}-b`,
+          title: "canonical refreshed title",
+        }),
+      ]),
+    })
+    await expect(
+      appendWorkspaceRevision(context, cleanWorkspace.id, {
+        expectedRevision: 1,
+        commandName: "workspace.refresh",
+        after: canonical,
+        patch: [{ op: "stale-refresh-probe" }],
+        inversePatch: [],
+        idempotencyKey: "stale-refresh-probe",
+        actor: { kind: "USER", userId: ownerId },
+        baseJourneyRevision: 2,
+        now: new Date(now),
+      })
+    ).rejects.toThrow(
+      "Workspace refresh base is no longer the canonical Journey head"
+    )
+    const historicalFork = await service.execute(
+      context,
+      command(dirtyWorkspace.id, 5, "fork-dirty-refresh-history", {
+        name: "workspace.fork",
+        payload: { fromWorkspaceRevision: 4 },
+      })
+    )
+    expect(historicalFork.outcome).toMatchObject({
+      type: "workspace.forked",
+      sourceWorkspaceRevision: 4,
+      headWorkspaceRevision: 1,
+    })
+    const historicalForkId = (historicalFork.outcome as { workspaceId: string })
+      .workspaceId
+    expect(
+      (await service.getDocument(context, historicalForkId))?.session
+    ).toMatchObject({
+      baseJourneyRevision: 2,
+      headWorkspaceRevision: 1,
+      headGraph: {
+        revision: 3,
+        events: expect.arrayContaining([
+          expect.objectContaining({
+            id: `${journeyId}-a`,
+            title: "dirty local title",
+          }),
+          expect.objectContaining({
+            id: `${journeyId}-b`,
+            title: "canonical refreshed title",
+          }),
+        ]),
+      },
+    })
+    const committedFork = await service.execute(
+      context,
+      command(dirtyWorkspace.id, 6, "fork-after-dirty-commit", {
+        name: "workspace.fork",
+        payload: { fromWorkspaceRevision: 5 },
+      })
+    )
+    expect(committedFork.outcome).toMatchObject({
+      type: "workspace.forked",
+      sourceWorkspaceRevision: 5,
+      headWorkspaceRevision: 0,
+    })
+    const committedForkId = (committedFork.outcome as { workspaceId: string })
+      .workspaceId
+    expect(
+      (await service.getDocument(context, committedForkId))?.session
+    ).toMatchObject({
+      baseJourneyRevision: 3,
+      headWorkspaceRevision: 0,
+      headGraph: { revision: 3 },
+    })
+    await expect(
+      service.execute(
+        context,
+        command(conflictWorkspace.id, 1, "refresh-conflict", {
+          name: "workspace.refresh",
+          payload: { fromWorkspaceRevision: 0 },
+        })
+      )
+    ).rejects.toThrow("Workspace refresh conflict")
+
+    const scratchId = `workspace-scratch-commit-${randomUUID()}`
+    const scratch = await createWorkspace(context, {
+      graph: graph(scratchId),
+      now: new Date(now),
+    })
+    const scratchCommit = await service.execute(
+      context,
+      command(scratch.id, 0, "commit-scratch", {
+        name: "workspace.commit",
+        payload: { expectedJourneyRevision: null },
+      })
+    )
+    expect(scratchCommit.outcome).toMatchObject({
+      type: "workspace.committed",
+      journeyId: scratchId,
+      fromWorkspaceRevision: 0,
+      throughWorkspaceRevision: 0,
+      committedJourneyRevision: 1,
+    })
+    expect(await getJourney(context, scratchId)).toMatchObject({ revision: 1 })
+    expect(
+      (await service.getDocument(context, scratch.id))?.session
+    ).toMatchObject({
+      sourceJourneyId: scratchId,
+      baseJourneyRevision: 1,
+      headWorkspaceRevision: 1,
+    })
+  })
+
+  it("rolls back the whole commit chain when a later pinned Content fact fails", async () => {
+    const journeyId = `workspace-commit-rollback-${randomUUID()}`
+    const base = await createJourney(context, {
+      graph: graph(journeyId),
+      operation: "create rollback Journey",
+      patch: [],
+      inversePatch: [],
+      idempotencyKey: `${journeyId}-create`,
+    })
+    const workspace = await createWorkspace(context, {
+      graph: base,
+      sourceJourneyId: journeyId,
+      baseJourneyRevision: 1,
+      now: new Date(now),
+    })
+    const asset = await createAsset(context, {
+      kind: "IMAGE",
+      storageKey: `workspace-rollback/${randomUUID()}.jpg`,
+      mimeType: "image/jpeg",
+      sizeBytes: 32,
+      checksum: `workspace-rollback-${randomUUID()}`,
+    })
+    const service = new WorkspaceCommandService()
+    await service.execute(
+      context,
+      command(workspace.id, 0, "rollback-core", {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${journeyId}-a`,
+          patch: { type: "VISIT", title: "must roll back" },
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 1, "rollback-content", {
+        name: "journey.attach_asset",
+        payload: {
+          eventId: `${journeyId}-a`,
+          assetId: asset.id,
+          role: "GALLERY",
+          visibility: "PRIVATE",
+        },
+      })
+    )
+    await deleteAsset(context, asset.id)
+
+    await expect(
+      service.execute(
+        context,
+        command(workspace.id, 2, "rollback-commit", {
+          name: "workspace.commit",
+          payload: { expectedJourneyRevision: 1 },
+        })
+      )
+    ).rejects.toThrow("active Asset checksum")
+    expect(await getJourney(context, journeyId)).toMatchObject({
+      revision: 1,
+      events: expect.arrayContaining([
+        expect.objectContaining({ id: `${journeyId}-a`, title: "A" }),
+      ]),
+      eventAssetLinks: [],
+    })
+    expect(await prisma.journeyRevision.count({ where: { journeyId } })).toBe(1)
+  })
+
+  it("replays pinned READY/FAILED Transit and Content facts without provider or mutable-object reads", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: transitGraph(`workspace-replay-facts-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const asset = await createAsset(context, {
+      kind: "IMAGE",
+      storageKey: `workspace-replay/${randomUUID()}.jpg`,
+      mimeType: "image/jpeg",
+      sizeBytes: 32,
+      checksum: `workspace-replay-${randomUUID()}`,
+    })
+    const sourceAsset = await createAsset(context, {
+      kind: "FILE",
+      storageKey: `workspace-replay/${randomUUID()}.pdf`,
+      mimeType: "application/pdf",
+      sizeBytes: 32,
+      checksum: `workspace-replay-source-${randomUUID()}`,
+    })
+    const pack = await createSourcePack(context, {
+      title: "Replay source",
+      visibility: "PRIVATE",
+    })
+    const sourceDocument = await createSourceDocument(context, {
+      sourcePackId: pack.id,
+      assetId: sourceAsset.id,
+      title: "Replay source document",
+    })
+    const sourceItem = await createSourceItem(context, {
+      sourceDocumentId: sourceDocument.id,
+      kind: "NOTE",
+      title: "Replay source item",
+      sourceOrder: 0,
+      confidence: 0.9,
+    })
+    const plan = vi
+      .fn()
+      .mockImplementationOnce(async (request: TransitPlanRequest) => ({
+        transitEventId: request.transitEventId,
+        requestFingerprint: transitPlanFingerprint(request),
+        plans: [
+          {
+            id: "replay-ready-plan",
+            provider: "mock" as const,
+            rank: 0,
+            label: "推荐",
+            strategy: "recommended",
+            distanceMeters: 2_000,
+            durationSeconds: 600,
+            trafficBasis: "TYPICAL" as const,
+            calculatedAt: now,
+            requestFingerprint: transitPlanFingerprint(request),
+            segments: [],
+          },
+        ],
+      }))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("provider timeout"), { code: "TIMEOUT" })
+      )
+    const service = new WorkspaceCommandService({
+      transitPlanning: { plan },
+    })
+    await service.execute(
+      context,
+      command(workspace.id, 0, "replay-ready", {
+        name: "journey.plan_transit",
+        payload: {
+          eventId: `${workspace.headGraph.id}-transit`,
+          forceRefresh: false,
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 1, "replay-failed", {
+        name: "journey.plan_transit",
+        payload: {
+          eventId: `${workspace.headGraph.id}-transit`,
+          forceRefresh: true,
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 2, "replay-observation", {
+        name: "journey.add_observation",
+        payload: {
+          eventId: `${workspace.headGraph.id}-a`,
+          observation: {
+            kind: "NOTE",
+            phase: "ACTUAL",
+            visibility: "PRIVATE",
+            body: "pinned observation",
+          },
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 3, "replay-asset", {
+        name: "journey.attach_asset",
+        payload: {
+          eventId: `${workspace.headGraph.id}-a`,
+          assetId: asset.id,
+          role: "GALLERY",
+          visibility: "PRIVATE",
+        },
+      })
+    )
+    await service.execute(
+      context,
+      command(workspace.id, 4, "replay-source", {
+        name: "journey.link_source_item",
+        payload: {
+          eventId: `${workspace.headGraph.id}-a`,
+          sourceItemId: sourceItem.id,
+          role: "EVIDENCE",
+          approvedForJourneySharing: false,
+        },
+      })
+    )
+    const pinned = structuredClone(
+      (await service.getDocument(context, workspace.id))!.session.headGraph
+    )
+    await deleteAsset(context, asset.id)
+
+    const replayed = await service.execute(
+      context,
+      command(workspace.id, 5, "replay-pinned-facts", {
+        name: "workspace.replay",
+        payload: { fromWorkspaceRevision: 0 },
+      })
+    )
+    expect(replayed.outcome).toMatchObject({
+      type: "workspace.replayed",
+      throughWorkspaceRevision: 5,
+    })
+    expect(plan).toHaveBeenCalledTimes(2)
+    expect(
+      (await service.getDocument(context, workspace.id))?.session.headGraph
+    ).toEqual(pinned)
+    expect(pinned.transitPlanningRuns.map((run) => run.status)).toEqual([
+      "READY",
+      "FAILED",
+    ])
+    expect(pinned.observations).toHaveLength(1)
+    expect(pinned.eventAssetLinks).toHaveLength(1)
+    expect(pinned.eventSourceLinks).toHaveLength(1)
   })
 
   it("persists Transit planning and observation commands through the same bus", async () => {

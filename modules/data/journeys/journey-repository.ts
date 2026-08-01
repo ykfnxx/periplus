@@ -368,7 +368,7 @@ function assertReadonlyDomainsUnchanged(
   }
 }
 
-export type JourneyWriteDomain = "CORE" | "TRANSIT" | "CONTENT"
+export type JourneyWriteDomain = "CORE" | "TRANSIT" | "CONTENT" | "ALL"
 
 function coreStateWithoutTransitSelection(graph: TargetJourneyGraphSnapshot) {
   return {
@@ -424,11 +424,34 @@ function contentState(graph: TargetJourneyGraphSnapshot) {
   }
 }
 
+function transitPersistenceChanged(
+  previous: TargetJourneyGraphSnapshot,
+  next: TargetJourneyGraphSnapshot
+) {
+  if (!sameJson(previous.transitPlanningRuns, next.transitPlanningRuns)) {
+    return true
+  }
+  const previousEvents = new Map(
+    previous.events.map((event) => [event.id, event])
+  )
+  return next.events.some((event) => {
+    if (event.type !== "TRANSIT") return false
+    const before = previousEvents.get(event.id)
+    return (
+      before?.type === "TRANSIT" &&
+      (before.detail.activePlanningRunId !== event.detail.activePlanningRunId ||
+        before.detail.selectedPlanId !== event.detail.selectedPlanId ||
+        before.detail.routeState !== event.detail.routeState)
+    )
+  })
+}
+
 function assertDomainChanges(
   previous: TargetJourneyGraphSnapshot,
   next: TargetJourneyGraphSnapshot,
   domain: JourneyWriteDomain
 ) {
+  if (domain === "ALL") return
   if (domain === "CORE") {
     assertReadonlyDomainsUnchanged(previous, next)
     return
@@ -1354,7 +1377,8 @@ export async function getJourney(
 
 export async function createJourney(
   context: AuthContext,
-  input: unknown
+  input: unknown,
+  transactionClient?: Prisma.TransactionClient
 ): Promise<TargetJourneyGraphSnapshot> {
   const write = validatedWrite(input)
   const actor = write.actor ?? defaultActor(context)
@@ -1364,67 +1388,70 @@ export async function createJourney(
   assertWriteOwner(context, write.graph.ownerId)
   assertCreateDomainsEmpty(write.graph)
 
-  try {
-    return await prisma.$transaction(async (tx) => {
-      await assertWriteActorsAuthorized(
-        tx,
-        context,
-        write,
-        actor,
-        write.graph.branchSelections
-      )
-      const existing = await tx.journey.findUnique({
-        where: { id: write.graph.id },
-        select: { id: true, ownerId: true },
-      })
-      if (existing) {
-        assertWriteOwner(context, existing.ownerId)
-        const replay = await findIdempotentRevision(
-          tx,
-          write.graph.id,
-          write,
-          actor
-        )
-        if (replay) return replay
-        throw new JourneyInputError("Journey id already exists")
-      }
-
-      await tx.journey.create({
-        data: {
-          id: write.graph.id,
-          ownerId: write.graph.ownerId,
-          revision: 1,
-          status: write.graph.status,
-          visibility: write.graph.visibility,
-          title: write.graph.title,
-          description: write.graph.description ?? null,
-          deletedAt: write.graph.deletedAt
-            ? new Date(write.graph.deletedAt)
-            : null,
-        },
-      })
-      await createRevision(tx, write, actor, null)
-
-      for (const event of containmentOrder(write.graph.events)) {
-        await tx.journeyEvent.create({
-          data: eventEnvelopeData(write.graph.id, event),
-        })
-        await tx.journeyEvent.update({
-          where: { id: event.id },
-          data: { updatedAt: new Date(event.updatedAt) },
-        })
-      }
-      for (const event of write.graph.events) {
-        await createEventDetail(tx, event)
-      }
-      await createLinks(tx, write.graph.links)
-      for (const replacement of write.graph.replacements) {
-        await tx.journeyEventReplacement.create({ data: replacement })
-      }
-      await createSelections(tx, write.graph.branchSelections)
-
-      return graphFromRevisionJson(json(write.graph))
+  const create = async (tx: Prisma.TransactionClient) => {
+    await assertWriteActorsAuthorized(
+      tx,
+      context,
+      write,
+      actor,
+      write.graph.branchSelections
+    )
+    const existing = await tx.journey.findUnique({
+      where: { id: write.graph.id },
+      select: { id: true, ownerId: true },
     })
+    if (existing) {
+      assertWriteOwner(context, existing.ownerId)
+      const replay = await findIdempotentRevision(
+        tx,
+        write.graph.id,
+        write,
+        actor
+      )
+      if (replay) return replay
+      throw new JourneyInputError("Journey id already exists")
+    }
+
+    await tx.journey.create({
+      data: {
+        id: write.graph.id,
+        ownerId: write.graph.ownerId,
+        revision: 1,
+        status: write.graph.status,
+        visibility: write.graph.visibility,
+        title: write.graph.title,
+        description: write.graph.description ?? null,
+        deletedAt: write.graph.deletedAt
+          ? new Date(write.graph.deletedAt)
+          : null,
+      },
+    })
+    await createRevision(tx, write, actor, null)
+
+    for (const event of containmentOrder(write.graph.events)) {
+      await tx.journeyEvent.create({
+        data: eventEnvelopeData(write.graph.id, event),
+      })
+      await tx.journeyEvent.update({
+        where: { id: event.id },
+        data: { updatedAt: new Date(event.updatedAt) },
+      })
+    }
+    for (const event of write.graph.events) {
+      await createEventDetail(tx, event)
+    }
+    await createLinks(tx, write.graph.links)
+    for (const replacement of write.graph.replacements) {
+      await tx.journeyEventReplacement.create({ data: replacement })
+    }
+    await createSelections(tx, write.graph.branchSelections)
+
+    return graphFromRevisionJson(json(write.graph))
+  }
+  try {
+    return transactionClient
+      ? await create(transactionClient)
+      : await prisma.$transaction(create)
   } catch (error) {
     if (
       error instanceof JourneyInputError ||
@@ -1444,7 +1471,8 @@ async function commitJourneyGraphInDomain(
   id: string,
   input: unknown,
   expectedRevision: number | null | undefined,
-  domain: JourneyWriteDomain
+  domain: JourneyWriteDomain,
+  transactionClient?: Prisma.TransactionClient
 ): Promise<TargetJourneyGraphSnapshot | null> {
   const write = validatedWrite(input)
   const actor = write.actor ?? defaultActor(context)
@@ -1452,289 +1480,292 @@ async function commitJourneyGraphInDomain(
     throw new JourneyInputError("write graph must match Journey id")
   }
 
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const record = await tx.journey.findFirst({
-        where: journeyScopeWhere(context, id, true),
-        include: journeyInclude,
-      })
-      if (!record) return null
-      assertWriteOwner(context, record.ownerId)
-      await assertActorAuthorized(tx, context, actor, write.workspaceRevisionId)
+  const commit = async (tx: Prisma.TransactionClient) => {
+    const record = await tx.journey.findFirst({
+      where: journeyScopeWhere(context, id, true),
+      include: journeyInclude,
+    })
+    if (!record) return null
+    assertWriteOwner(context, record.ownerId)
+    await assertActorAuthorized(tx, context, actor, write.workspaceRevisionId)
 
-      const replay = await findIdempotentRevision(tx, id, write, actor)
-      if (replay) return replay
+    const replay = await findIdempotentRevision(tx, id, write, actor)
+    if (replay) return replay
 
-      const previous = mapJourneyToGraph(record)
-      if (
-        typeof expectedRevision === "number" &&
-        previous.revision !== expectedRevision
-      ) {
-        throw new JourneyRevisionConflictError()
-      }
-      if (write.graph.revision !== previous.revision + 1) {
-        throw new JourneyRevisionConflictError()
-      }
+    const previous = mapJourneyToGraph(record)
+    if (
+      typeof expectedRevision === "number" &&
+      previous.revision !== expectedRevision
+    ) {
+      throw new JourneyRevisionConflictError()
+    }
+    if (write.graph.revision !== previous.revision + 1) {
+      throw new JourneyRevisionConflictError()
+    }
 
-      let next: TargetJourneyGraphSnapshot
-      try {
-        next = validateJourneyGraphTransition(previous, write.graph)
-        assertDomainChanges(previous, next, domain)
-      } catch (error) {
-        inputError(error)
-      }
+    let next: TargetJourneyGraphSnapshot
+    try {
+      next = validateJourneyGraphTransition(previous, write.graph)
+      assertDomainChanges(previous, next, domain)
+    } catch (error) {
+      inputError(error)
+    }
 
-      const previousSelections = new Set(
-        previous.branchSelections.map((selection) => selection.id)
+    const previousSelections = new Set(
+      previous.branchSelections.map((selection) => selection.id)
+    )
+    const newSelections = next.branchSelections.filter(
+      (selection) => !previousSelections.has(selection.id)
+    )
+    for (const selection of newSelections) {
+      await assertActorAuthorized(
+        tx,
+        context,
+        selection.actor,
+        write.workspaceRevisionId
       )
-      const newSelections = next.branchSelections.filter(
-        (selection) => !previousSelections.has(selection.id)
+    }
+    if (domain === "CONTENT" || domain === "ALL") {
+      const previousObservationIds = new Set(
+        previous.observations.map((observation) => observation.id)
       )
-      for (const selection of newSelections) {
+      for (const observation of next.observations) {
+        if (previousObservationIds.has(observation.id)) continue
         await assertActorAuthorized(
           tx,
           context,
-          selection.actor,
+          observation.actor,
           write.workspaceRevisionId
         )
       }
-      if (domain === "CONTENT") {
-        const previousObservationIds = new Set(
-          previous.observations.map((observation) => observation.id)
-        )
-        for (const observation of next.observations) {
-          if (previousObservationIds.has(observation.id)) continue
-          await assertActorAuthorized(
-            tx,
-            context,
-            observation.actor,
-            write.workspaceRevisionId
-          )
-        }
-      }
+    }
 
-      const parentRevision = await tx.journeyRevision.findUnique({
-        where: {
-          journeyId_revision: {
-            journeyId: id,
-            revision: previous.revision,
-          },
+    const parentRevision = await tx.journeyRevision.findUnique({
+      where: {
+        journeyId_revision: {
+          journeyId: id,
+          revision: previous.revision,
         },
-        select: { id: true },
-      })
-      if (!parentRevision) {
-        throw new JourneyRevisionConflictError(
-          "Journey head has no persisted parent revision"
-        )
-      }
-      await createRevision(tx, write, actor, parentRevision.id)
-
-      if (domain === "TRANSIT") {
-        await persistTransitDomain(tx, previous, next)
-      } else if (domain === "CONTENT") {
-        await persistContentDomain(tx, previous, next)
-      }
-
-      if (domain !== "CORE") {
-        await advanceJourneyHead(tx, record.ownerId, previous, next)
-        return graphFromRevisionJson(json(next))
-      }
-
-      const previousEvents = new Map(
-        previous.events.map((event) => [event.id, event])
-      )
-      const nextEventsById = new Map(
-        next.events.map((event) => [event.id, event])
-      )
-      const eventUpdateOrder = dependencySafeEventUpdateOrder(
-        previousEvents,
-        next.events
-      )
-      const updatedEnvelopeIds = new Set<string>()
-      const updateEventEnvelope = async (event: TargetJourneyEvent) => {
-        if (updatedEnvelopeIds.has(event.id)) return
-        const data = eventEnvelopeUpdateData(
-          previousEvents.get(event.id)!,
-          event
-        )
-        if (Object.keys(data).length > 0) {
-          await tx.journeyEvent.update({ where: { id: event.id }, data })
-        }
-        updatedEnvelopeIds.add(event.id)
-      }
-      const newEvents = containmentOrder(
-        next.events.filter((event) => !previousEvents.has(event.id))
-      )
-      const restoringEvents = eventUpdateOrder.filter((event) => {
-        const before = previousEvents.get(event.id)!
-        return (
-          before.retiredRevision !== undefined &&
-          event.retiredRevision === undefined
-        )
-      })
-      for (const event of containmentOrder([
-        ...restoringEvents,
-        ...newEvents,
-      ])) {
-        if (previousEvents.has(event.id)) {
-          await updateEventEnvelope(event)
-          continue
-        }
-        await tx.journeyEvent.create({ data: eventEnvelopeData(id, event) })
-        await tx.journeyEvent.update({
-          where: { id: event.id },
-          data: { updatedAt: new Date(event.updatedAt) },
-        })
-      }
-
-      const previousLinks = new Map(
-        previous.links.map((link) => [link.id, link])
-      )
-      const newLinks = next.links.filter((link) => !previousLinks.has(link.id))
-      const supersededSelectionIds = new Set(
-        newSelections.flatMap((selection) =>
-          selection.supersedesId ? [selection.supersedesId] : []
-        )
-      )
-      const supersededCurrentLinkIds = new Set(
-        previous.branchSelections
-          .filter((selection) => supersededSelectionIds.has(selection.id))
-          .map((selection) => selection.selectedLinkId)
-      )
-
-      const currentTargetSelections = new Set(
-        next.branchSelections
-          .filter(
-            (selection) =>
-              !next.branchSelections.some(
-                (candidate) => candidate.supersedesId === selection.id
-              )
-          )
-          .map((selection) => selection.selectedLinkId)
-      )
-      const topologyChangedEventIds = new Set(
-        previous.events
-          .filter((event) => {
-            const current = nextEventsById.get(event.id)!
-            return (
-              event.parentSectionEventId !== current.parentSectionEventId ||
-              event.placementStatus !== current.placementStatus ||
-              event.retiredRevision !== current.retiredRevision
-            )
-          })
-          .map((event) => event.id)
-      )
-      const structurallyChangedLinks = next.links.filter((link) => {
-        const before = previousLinks.get(link.id)
-        return (
-          before !== undefined &&
-          (before.fromEventId !== link.fromEventId ||
-            before.toEventId !== link.toEventId ||
-            before.kind !== link.kind ||
-            before.branchKey !== link.branchKey)
-        )
-      })
-      const structurallyChangedLinkIds = new Set(
-        structurallyChangedLinks.map((link) => link.id)
-      )
-      const linksToSuspend = next.links.filter((link) => {
-        const before = previousLinks.get(link.id)
-        return (
-          before !== undefined &&
-          before.retiredRevision === undefined &&
-          (link.retiredRevision !== undefined ||
-            structurallyChangedLinkIds.has(link.id) ||
-            topologyChangedEventIds.has(link.fromEventId) ||
-            topologyChangedEventIds.has(link.toEventId))
-        )
-      })
-      const parkedLinks = [
-        ...new Map(
-          [...linksToSuspend, ...structurallyChangedLinks].map((link) => [
-            link.id,
-            link,
-          ])
-        ).values(),
-      ]
-      const parkedLinkIds = new Set(parkedLinks.map((link) => link.id))
-      const postSelectionParkedLinkIds = new Set(
-        [...parkedLinkIds].filter(
-          (linkId) =>
-            supersededCurrentLinkIds.has(linkId) &&
-            !currentTargetSelections.has(linkId)
-        )
-      )
-      const preSelectionParkedLinkIds = new Set(
-        [...parkedLinkIds].filter(
-          (linkId) => !postSelectionParkedLinkIds.has(linkId)
-        )
-      )
-      const temporaryParking =
-        parkedLinks.length > 0
-          ? await parkLinksOnTemporaryEvents(tx, id, next.revision, parkedLinks)
-          : []
-      for (const event of eventUpdateOrder) {
-        await updateEventEnvelope(event)
-      }
-      for (const event of next.events) {
-        if (!previousEvents.has(event.id)) continue
-        await updateEventDetail(tx, event)
-      }
-      for (const event of newEvents) await createEventDetail(tx, event)
-
-      const updateLinkToTarget = async (link: JourneyLink) => {
-        await tx.journeyEventLink.update({
-          where: { id: link.id },
-          data: {
-            fromEventId: link.fromEventId,
-            toEventId: link.toEventId,
-            kind: link.kind,
-            branchKey: link.branchKey ?? null,
-            rank: link.rank,
-            retiredRevision: link.retiredRevision ?? null,
-          },
-        })
-      }
-      for (const link of next.links.filter((candidate) =>
-        preSelectionParkedLinkIds.has(candidate.id)
-      )) {
-        await updateLinkToTarget(link)
-      }
-      for (const link of next.links) {
-        const before = previousLinks.get(link.id)
-        if (!before || parkedLinkIds.has(link.id)) continue
-        await updateLinkToTarget(link)
-      }
-
-      await createLinks(tx, newLinks)
-      await createSelections(tx, newSelections)
-
-      for (const link of next.links.filter((candidate) =>
-        postSelectionParkedLinkIds.has(candidate.id)
-      )) {
-        await updateLinkToTarget(link)
-      }
-      const temporaryEventIds = temporaryParking.flatMap(
-        ({ fromEventId, toEventId }) => [fromEventId, toEventId]
-      )
-      if (temporaryEventIds.length > 0) {
-        await tx.journeyEvent.deleteMany({
-          where: { id: { in: temporaryEventIds } },
-        })
-      }
-
-      const previousReplacementIds = new Set(
-        previous.replacements.map((replacement) => replacement.id)
-      )
-      for (const replacement of next.replacements) {
-        if (previousReplacementIds.has(replacement.id)) continue
-        await tx.journeyEventReplacement.create({ data: replacement })
-      }
-
-      await advanceJourneyHead(tx, record.ownerId, previous, next)
-
-      return graphFromRevisionJson(json(next))
+      },
+      select: { id: true },
     })
+    if (!parentRevision) {
+      throw new JourneyRevisionConflictError(
+        "Journey head has no persisted parent revision"
+      )
+    }
+    await createRevision(tx, write, actor, parentRevision.id)
+
+    if (
+      domain === "TRANSIT" ||
+      (domain === "ALL" && transitPersistenceChanged(previous, next))
+    ) {
+      await persistTransitDomain(tx, previous, next)
+    }
+    if (
+      domain === "CONTENT" ||
+      (domain === "ALL" &&
+        !sameJson(contentState(previous), contentState(next)))
+    ) {
+      await persistContentDomain(tx, previous, next)
+    }
+
+    if (domain === "TRANSIT" || domain === "CONTENT") {
+      await advanceJourneyHead(tx, record.ownerId, previous, next)
+      return graphFromRevisionJson(json(next))
+    }
+
+    const previousEvents = new Map(
+      previous.events.map((event) => [event.id, event])
+    )
+    const nextEventsById = new Map(
+      next.events.map((event) => [event.id, event])
+    )
+    const eventUpdateOrder = dependencySafeEventUpdateOrder(
+      previousEvents,
+      next.events
+    )
+    const updatedEnvelopeIds = new Set<string>()
+    const updateEventEnvelope = async (event: TargetJourneyEvent) => {
+      if (updatedEnvelopeIds.has(event.id)) return
+      const data = eventEnvelopeUpdateData(previousEvents.get(event.id)!, event)
+      if (Object.keys(data).length > 0) {
+        await tx.journeyEvent.update({ where: { id: event.id }, data })
+      }
+      updatedEnvelopeIds.add(event.id)
+    }
+    const newEvents = containmentOrder(
+      next.events.filter((event) => !previousEvents.has(event.id))
+    )
+    const restoringEvents = eventUpdateOrder.filter((event) => {
+      const before = previousEvents.get(event.id)!
+      return (
+        before.retiredRevision !== undefined &&
+        event.retiredRevision === undefined
+      )
+    })
+    for (const event of containmentOrder([...restoringEvents, ...newEvents])) {
+      if (previousEvents.has(event.id)) {
+        await updateEventEnvelope(event)
+        continue
+      }
+      await tx.journeyEvent.create({ data: eventEnvelopeData(id, event) })
+      await tx.journeyEvent.update({
+        where: { id: event.id },
+        data: { updatedAt: new Date(event.updatedAt) },
+      })
+    }
+
+    const previousLinks = new Map(previous.links.map((link) => [link.id, link]))
+    const newLinks = next.links.filter((link) => !previousLinks.has(link.id))
+    const supersededSelectionIds = new Set(
+      newSelections.flatMap((selection) =>
+        selection.supersedesId ? [selection.supersedesId] : []
+      )
+    )
+    const supersededCurrentLinkIds = new Set(
+      previous.branchSelections
+        .filter((selection) => supersededSelectionIds.has(selection.id))
+        .map((selection) => selection.selectedLinkId)
+    )
+
+    const currentTargetSelections = new Set(
+      next.branchSelections
+        .filter(
+          (selection) =>
+            !next.branchSelections.some(
+              (candidate) => candidate.supersedesId === selection.id
+            )
+        )
+        .map((selection) => selection.selectedLinkId)
+    )
+    const topologyChangedEventIds = new Set(
+      previous.events
+        .filter((event) => {
+          const current = nextEventsById.get(event.id)!
+          return (
+            event.parentSectionEventId !== current.parentSectionEventId ||
+            event.placementStatus !== current.placementStatus ||
+            event.retiredRevision !== current.retiredRevision
+          )
+        })
+        .map((event) => event.id)
+    )
+    const structurallyChangedLinks = next.links.filter((link) => {
+      const before = previousLinks.get(link.id)
+      return (
+        before !== undefined &&
+        (before.fromEventId !== link.fromEventId ||
+          before.toEventId !== link.toEventId ||
+          before.kind !== link.kind ||
+          before.branchKey !== link.branchKey)
+      )
+    })
+    const structurallyChangedLinkIds = new Set(
+      structurallyChangedLinks.map((link) => link.id)
+    )
+    const linksToSuspend = next.links.filter((link) => {
+      const before = previousLinks.get(link.id)
+      return (
+        before !== undefined &&
+        before.retiredRevision === undefined &&
+        (link.retiredRevision !== undefined ||
+          structurallyChangedLinkIds.has(link.id) ||
+          topologyChangedEventIds.has(link.fromEventId) ||
+          topologyChangedEventIds.has(link.toEventId))
+      )
+    })
+    const parkedLinks = [
+      ...new Map(
+        [...linksToSuspend, ...structurallyChangedLinks].map((link) => [
+          link.id,
+          link,
+        ])
+      ).values(),
+    ]
+    const parkedLinkIds = new Set(parkedLinks.map((link) => link.id))
+    const postSelectionParkedLinkIds = new Set(
+      [...parkedLinkIds].filter(
+        (linkId) =>
+          supersededCurrentLinkIds.has(linkId) &&
+          !currentTargetSelections.has(linkId)
+      )
+    )
+    const preSelectionParkedLinkIds = new Set(
+      [...parkedLinkIds].filter(
+        (linkId) => !postSelectionParkedLinkIds.has(linkId)
+      )
+    )
+    const temporaryParking =
+      parkedLinks.length > 0
+        ? await parkLinksOnTemporaryEvents(tx, id, next.revision, parkedLinks)
+        : []
+    for (const event of eventUpdateOrder) {
+      await updateEventEnvelope(event)
+    }
+    for (const event of next.events) {
+      if (!previousEvents.has(event.id)) continue
+      await updateEventDetail(tx, event)
+    }
+    for (const event of newEvents) await createEventDetail(tx, event)
+
+    const updateLinkToTarget = async (link: JourneyLink) => {
+      await tx.journeyEventLink.update({
+        where: { id: link.id },
+        data: {
+          fromEventId: link.fromEventId,
+          toEventId: link.toEventId,
+          kind: link.kind,
+          branchKey: link.branchKey ?? null,
+          rank: link.rank,
+          retiredRevision: link.retiredRevision ?? null,
+        },
+      })
+    }
+    for (const link of next.links.filter((candidate) =>
+      preSelectionParkedLinkIds.has(candidate.id)
+    )) {
+      await updateLinkToTarget(link)
+    }
+    for (const link of next.links) {
+      const before = previousLinks.get(link.id)
+      if (!before || parkedLinkIds.has(link.id)) continue
+      await updateLinkToTarget(link)
+    }
+
+    await createLinks(tx, newLinks)
+    await createSelections(tx, newSelections)
+
+    for (const link of next.links.filter((candidate) =>
+      postSelectionParkedLinkIds.has(candidate.id)
+    )) {
+      await updateLinkToTarget(link)
+    }
+    const temporaryEventIds = temporaryParking.flatMap(
+      ({ fromEventId, toEventId }) => [fromEventId, toEventId]
+    )
+    if (temporaryEventIds.length > 0) {
+      await tx.journeyEvent.deleteMany({
+        where: { id: { in: temporaryEventIds } },
+      })
+    }
+
+    const previousReplacementIds = new Set(
+      previous.replacements.map((replacement) => replacement.id)
+    )
+    for (const replacement of next.replacements) {
+      if (previousReplacementIds.has(replacement.id)) continue
+      await tx.journeyEventReplacement.create({ data: replacement })
+    }
+
+    await advanceJourneyHead(tx, record.ownerId, previous, next)
+
+    return graphFromRevisionJson(json(next))
+  }
+  try {
+    return transactionClient
+      ? await commit(transactionClient)
+      : await prisma.$transaction(commit)
   } catch (error) {
     if (
       error instanceof JourneyInputError ||
@@ -1770,7 +1801,7 @@ export function commitJourneyDomainGraph(
   id: string,
   input: unknown,
   expectedRevision: number,
-  domain: Exclude<JourneyWriteDomain, "CORE">
+  domain: Exclude<JourneyWriteDomain, "CORE" | "ALL">
 ) {
   return commitJourneyGraphInDomain(
     context,
@@ -1779,6 +1810,74 @@ export function commitJourneyDomainGraph(
     expectedRevision,
     domain
   )
+}
+
+export async function commitJourneyRevisionChain(
+  context: AuthContext,
+  id: string,
+  writes: JourneyRevisionWrite[],
+  expectedRevision: number,
+  transactionClient?: Prisma.TransactionClient
+) {
+  if (writes.length === 0) {
+    const current = await getJourney(context, id, { includeDeleted: true })
+    if (!current) return null
+    if (current.revision !== expectedRevision) {
+      throw new JourneyRevisionConflictError()
+    }
+    return current
+  }
+  const commit = async (tx: Prisma.TransactionClient) => {
+    let revision = expectedRevision
+    let result: TargetJourneyGraphSnapshot | null = null
+    for (const write of writes) {
+      result = await commitJourneyGraphInDomain(
+        context,
+        id,
+        write,
+        revision,
+        "ALL",
+        tx
+      )
+      if (!result) return null
+      revision = result.revision
+    }
+    return result
+  }
+  return transactionClient
+    ? commit(transactionClient)
+    : prisma.$transaction(commit)
+}
+
+export async function createJourneyRevisionChain(
+  context: AuthContext,
+  baseWrite: JourneyRevisionWrite,
+  writes: JourneyRevisionWrite[],
+  transactionClient?: Prisma.TransactionClient
+) {
+  const create = async (tx: Prisma.TransactionClient) => {
+    let result = await createJourney(context, baseWrite, tx)
+    let revision = result.revision
+    for (const write of writes) {
+      const committed = await commitJourneyGraphInDomain(
+        context,
+        result.id,
+        write,
+        revision,
+        "ALL",
+        tx
+      )
+      if (!committed) {
+        throw new JourneyInputError("Created Journey disappeared during commit")
+      }
+      result = committed
+      revision = committed.revision
+    }
+    return result
+  }
+  return transactionClient
+    ? create(transactionClient)
+    : prisma.$transaction(create)
 }
 
 export async function updateJourney(

@@ -123,11 +123,9 @@ describe("TransitPlanningService", () => {
   it("deduplicates only within the same provider-usage attribution", async () => {
     const provider = { plan: vi.fn(async (input) => providerBundle(input)) }
     const logUsage = vi.fn(
-      async (
-        _status: string,
-        _code?: string,
-        _context?: TransitPlanUsageContext
-      ) => undefined
+      async (...args: [string, string?, TransitPlanUsageContext?]) => {
+        void args
+      }
     )
     const service = new TransitPlanningService({
       provider,
@@ -172,11 +170,9 @@ describe("TransitPlanningService", () => {
       }),
     }
     const logUsage = vi.fn(
-      async (
-        _status: string,
-        _code?: string,
-        _context?: TransitPlanUsageContext
-      ) => undefined
+      async (...args: [string, string?, TransitPlanUsageContext?]) => {
+        void args
+      }
     )
     const service = new TransitPlanningService({
       provider,

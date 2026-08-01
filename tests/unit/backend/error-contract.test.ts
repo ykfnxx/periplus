@@ -6,6 +6,11 @@ import { errorEvent } from "@/backend/ws"
 import { PermissionDeniedError } from "@/modules/auth/server/context"
 import { JourneyGraphValidationError } from "@/modules/data/journeys/journey-graph-validator"
 import {
+  JourneyIdempotencyConflictError,
+  JourneyInputError,
+  JourneyRevisionConflictError,
+} from "@/modules/data/journeys/journey-repository"
+import {
   WorkspaceIdempotencyConflictError,
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
@@ -37,6 +42,11 @@ describe("Agent HTTP and WebSocket domain error contract", () => {
       code: "invalid_input",
     },
     {
+      error: new JourneyInputError("correct the Journey commit"),
+      status: 400,
+      code: "invalid_input",
+    },
+    {
       error: new PermissionDeniedError("not allowed"),
       status: 403,
       code: "permission_denied",
@@ -47,7 +57,17 @@ describe("Agent HTTP and WebSocket domain error contract", () => {
       code: "revision_conflict",
     },
     {
+      error: new JourneyRevisionConflictError(),
+      status: 409,
+      code: "revision_conflict",
+    },
+    {
       error: new WorkspaceIdempotencyConflictError(),
+      status: 409,
+      code: "idempotency_conflict",
+    },
+    {
+      error: new JourneyIdempotencyConflictError(),
       status: 409,
       code: "idempotency_conflict",
     },

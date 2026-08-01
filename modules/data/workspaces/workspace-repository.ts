@@ -21,7 +21,16 @@ import {
   type TargetWorkspaceSession,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
-import { validateJourneyGraph } from "@/modules/data/journeys/journey-graph-validator"
+import {
+  commitJourneyRevisionChain,
+  createJourneyRevisionChain,
+  JourneyRevisionConflictError,
+  type JourneyRevisionWrite,
+} from "@/modules/data/journeys/journey-repository"
+import {
+  validateJourneyGraph,
+  validateJourneyGraphTransition,
+} from "@/modules/data/journeys/journey-graph-validator"
 
 export class WorkspaceInputError extends Error {
   constructor(message: string) {
@@ -135,6 +144,45 @@ function commandEnvelopeFromPatch(value: string | unknown) {
   }
 }
 
+function forkBaseAdvance(revision: WorkspaceRecord["revisions"][number]) {
+  try {
+    const patch = JSON.parse(revision.patchJson) as unknown
+    const entry = Array.isArray(patch) ? patch[0] : patch
+    if (!entry || typeof entry !== "object") return undefined
+    const value = entry as {
+      op?: unknown
+      revision?: unknown
+      outcome?: {
+        type?: unknown
+        baseJourneyRevision?: unknown
+        committedJourneyRevision?: unknown
+      }
+    }
+    if (
+      value.op === "workspace.refresh_base" &&
+      typeof value.revision === "number"
+    ) {
+      return value.revision
+    }
+    if (
+      value.outcome?.type === "workspace.committed" &&
+      typeof value.outcome.committedJourneyRevision === "number"
+    ) {
+      return value.outcome.committedJourneyRevision
+    }
+    if (
+      value.outcome?.type === "workspace.refreshed" &&
+      typeof value.outcome.baseJourneyRevision === "number" &&
+      revision.beforeGraphJson !== revision.afterGraphJson
+    ) {
+      return value.outcome.baseJourneyRevision
+    }
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
 function parseGraph(value: string, label: string) {
   try {
     return targetJourneyGraphSnapshotSchema.parse(JSON.parse(value))
@@ -177,6 +225,36 @@ function actorColumns(actor: TargetActorReference) {
           actorUserId: null,
           actorAgentRunId: null,
         }
+}
+
+async function assertWorkspaceActor(
+  tx: Prisma.TransactionClient,
+  context: AuthContext,
+  workspaceId: string,
+  actor: TargetActorReference
+) {
+  if (actor.kind === "USER") {
+    if (actor.userId !== context.userId) {
+      throw new WorkspaceInputError(
+        "Workspace USER actor must be authenticated"
+      )
+    }
+    return
+  }
+  if (actor.kind === "SYSTEM") {
+    throw new WorkspaceInputError(
+      "SYSTEM Workspace writes require a trusted internal writer"
+    )
+  }
+  const run = await tx.workspaceAgentRun.findUnique({
+    where: { id: actor.agentRunId },
+    select: { workspaceId: true, status: true },
+  })
+  if (!run || run.workspaceId !== workspaceId || run.status !== "RUNNING") {
+    throw new WorkspaceInputError(
+      "Workspace AGENT actor requires a running same-Workspace Agent run"
+    )
+  }
 }
 
 function mapSession(record: WorkspaceRecord): TargetWorkspaceSession {
@@ -504,6 +582,7 @@ export async function appendWorkspaceRevision(
     inversePatch: unknown
     idempotencyKey: string
     actor?: TargetActorReference
+    baseJourneyRevision?: number
     now?: Date
   }
 ) {
@@ -529,17 +608,7 @@ export async function appendWorkspaceRevision(
     if (!record) return null
     assertOwner(context, record.ownerId)
 
-    if (actor.kind === "AGENT") {
-      const run = await tx.workspaceAgentRun.findUnique({
-        where: { id: actor.agentRunId },
-        select: { workspaceId: true, status: true },
-      })
-      if (!run || run.workspaceId !== workspaceId || run.status !== "RUNNING") {
-        throw new WorkspaceInputError(
-          "Workspace AGENT actor requires a running same-Workspace Agent run"
-        )
-      }
-    }
+    await assertWorkspaceActor(tx, context, workspaceId, actor)
 
     const existing = await tx.workspaceRevision.findUnique({
       where: {
@@ -594,6 +663,40 @@ export async function appendWorkspaceRevision(
         "Workspace revision cannot change graph identity or owner"
       )
     }
+    if (input.baseJourneyRevision !== undefined) {
+      if (!record.sourceJourneyId) {
+        throw new WorkspaceInputError(
+          "Only a source-backed Workspace can refresh its base"
+        )
+      }
+      const sourceJourney = await tx.journey.findUnique({
+        where: { id: record.sourceJourneyId },
+        select: { ownerId: true, revision: true },
+      })
+      if (
+        !sourceJourney ||
+        sourceJourney.ownerId !== record.ownerId ||
+        sourceJourney.revision !== input.baseJourneyRevision
+      ) {
+        throw new WorkspaceRevisionConflictError(
+          "Workspace refresh base is no longer the canonical Journey head"
+        )
+      }
+      const base = await tx.journeyRevision.findUnique({
+        where: {
+          journeyId_revision: {
+            journeyId: record.sourceJourneyId,
+            revision: input.baseJourneyRevision,
+          },
+        },
+        select: { snapshotJson: true },
+      })
+      if (!base || base.snapshotJson !== json(after)) {
+        throw new WorkspaceInputError(
+          "Refreshed Workspace head must match its exact Journey base snapshot"
+        )
+      }
+    }
     const parent =
       record.headWorkspaceRevision > 0
         ? await tx.workspaceRevision.findUnique({
@@ -636,6 +739,9 @@ export async function appendWorkspaceRevision(
       data: {
         headWorkspaceRevision: record.headWorkspaceRevision + 1,
         headGraphJson: json(after),
+        ...(input.baseJourneyRevision !== undefined
+          ? { baseJourneyRevision: input.baseJourneyRevision }
+          : {}),
         lastAccessAt: now,
         expiresAt: leaseExpiry(now),
       },
@@ -1060,6 +1166,683 @@ export async function forkWorkspace(
       include: workspaceInclude,
     })
     return mapSession(updated)
+  })
+}
+
+export async function forkWorkspaceRevisionChain(
+  context: AuthContext,
+  workspaceId: string,
+  input: {
+    expectedRevision: number
+    fromWorkspaceRevision: number
+    forkWorkspaceId: string
+    patch: unknown
+    inversePatch: unknown
+    idempotencyKey: string
+    actor: TargetActorReference
+    now?: Date
+  }
+) {
+  const now = input.now ?? new Date()
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.workspaceSession.findUnique({
+      where: { id: workspaceId },
+      include: workspaceInclude,
+    })
+    if (!record) return null
+    assertOwner(context, record.ownerId)
+
+    const existing = await tx.workspaceRevision.findUnique({
+      where: {
+        workspaceId_idempotencyKey: {
+          workspaceId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    })
+    if (existing) {
+      if (
+        existing.commandName !== commandNames["workspace.fork"] ||
+        json(commandEnvelopeFromPatch(existing.patchJson)) !==
+          json(commandEnvelopeFromPatch(input.patch))
+      ) {
+        throw new WorkspaceIdempotencyConflictError()
+      }
+      const fork = await tx.workspaceSession.findUnique({
+        where: { id: input.forkWorkspaceId },
+        include: workspaceInclude,
+      })
+      if (!fork) {
+        throw new WorkspaceRevisionConflictError(
+          "Fork outcome is missing its Workspace"
+        )
+      }
+      return { revision: mapRevision(existing), fork: mapSession(fork) }
+    }
+    if (record.status !== "ACTIVE" || record.expiresAt <= now) {
+      throw new WorkspaceInputError("Workspace is not active")
+    }
+    if (record.headWorkspaceRevision !== input.expectedRevision) {
+      throw new WorkspaceRevisionConflictError()
+    }
+    if (
+      input.fromWorkspaceRevision < 0 ||
+      input.fromWorkspaceRevision > input.expectedRevision
+    ) {
+      throw new WorkspaceInputError(
+        "Fork revision must belong to the current Workspace history"
+      )
+    }
+    await assertWorkspaceActor(tx, context, workspaceId, input.actor)
+
+    const initialGraph = record.revisions[0]
+      ? parseGraph(
+          record.revisions[0].beforeGraphJson,
+          `Workspace ${workspaceId} fork initial graph`
+        )
+      : parseGraph(record.headGraphJson, `Workspace ${workspaceId} head`)
+    let forkBaseJourneyRevision = record.sourceJourneyId
+      ? initialGraph.revision
+      : null
+    let materialAfterWorkspaceRevision = 0
+    for (const revision of record.revisions) {
+      if (revision.revision > input.fromWorkspaceRevision) break
+      const advancedBase = forkBaseAdvance(revision)
+      if (advancedBase !== undefined) {
+        forkBaseJourneyRevision = advancedBase
+        materialAfterWorkspaceRevision = revision.revision
+      }
+    }
+    const copied = record.revisions.filter(
+      (revision) =>
+        revision.revision > materialAfterWorkspaceRevision &&
+        revision.revision <= input.fromWorkspaceRevision &&
+        contractCommandNames[revision.commandName].startsWith("journey.") &&
+        parseGraph(
+          revision.beforeGraphJson,
+          `WorkspaceRevision ${revision.id} before`
+        ).revision !==
+          parseGraph(
+            revision.afterGraphJson,
+            `WorkspaceRevision ${revision.id} after`
+          ).revision
+    )
+    let canonicalBaseGraph: TargetJourneyGraphSnapshot | null = null
+    if (record.sourceJourneyId && forkBaseJourneyRevision !== null) {
+      const base = await tx.journeyRevision.findUnique({
+        where: {
+          journeyId_revision: {
+            journeyId: record.sourceJourneyId,
+            revision: forkBaseJourneyRevision,
+          },
+        },
+        select: { snapshotJson: true },
+      })
+      if (!base) {
+        throw new WorkspaceRevisionConflictError(
+          "Fork base Journey revision is missing"
+        )
+      }
+      canonicalBaseGraph = parseGraph(
+        base.snapshotJson,
+        `Journey ${record.sourceJourneyId} revision ${forkBaseJourneyRevision}`
+      )
+    }
+    const baseGraph =
+      canonicalBaseGraph ??
+      (copied[0]
+        ? parseGraph(
+            copied[0].beforeGraphJson,
+            `Workspace ${workspaceId} fork base`
+          )
+        : initialGraph)
+
+    await tx.workspaceSession.create({
+      data: {
+        id: input.forkWorkspaceId,
+        ownerId: record.ownerId,
+        sourceJourneyId: record.sourceJourneyId,
+        baseJourneyRevision: forkBaseJourneyRevision,
+        headGraphJson: json(baseGraph),
+        expiresAt: leaseExpiry(now),
+        lastAccessAt: now,
+        createdAt: now,
+      },
+    })
+    let parentRevisionId: string | null = null
+    let forkBefore = baseGraph
+    for (const [index, sourceRevision] of copied.entries()) {
+      const forkRevision = index + 1
+      const id = randomUUID()
+      const idempotencyKey = `fork:${workspaceId}:${sourceRevision.idempotencyKey}`
+      const sourceBefore = parseGraph(
+        sourceRevision.beforeGraphJson,
+        `WorkspaceRevision ${sourceRevision.id} before`
+      )
+      const forkAfter = parseGraph(
+        sourceRevision.afterGraphJson,
+        `WorkspaceRevision ${sourceRevision.id} after`
+      )
+      const priorSelections = new Map(
+        forkBefore.branchSelections.map((selection) => [
+          selection.id,
+          selection,
+        ])
+      )
+      forkAfter.branchSelections = forkAfter.branchSelections.map(
+        (selection) =>
+          priorSelections.get(selection.id) ?? {
+            ...selection,
+            actor: { kind: "USER" as const, userId: context.userId },
+          }
+      )
+      const priorObservations = new Map(
+        forkBefore.observations.map((observation) => [
+          observation.id,
+          observation,
+        ])
+      )
+      forkAfter.observations = forkAfter.observations.map(
+        (observation) =>
+          priorObservations.get(observation.id) ?? {
+            ...observation,
+            actor: { kind: "USER" as const, userId: context.userId },
+          }
+      )
+      if (forkBefore.revision !== sourceBefore.revision) {
+        throw new WorkspaceRevisionConflictError(
+          "Forked Workspace graph history is not revision-continuous"
+        )
+      }
+      validateJourneyGraphTransition(forkBefore, forkAfter)
+      const patch = JSON.parse(sourceRevision.patchJson) as unknown
+      if (Array.isArray(patch) && patch[0] && typeof patch[0] === "object") {
+        const entry = patch[0] as { commandEnvelope?: Record<string, unknown> }
+        if (entry.commandEnvelope) {
+          entry.commandEnvelope = {
+            ...entry.commandEnvelope,
+            aggregateId: input.forkWorkspaceId,
+            expectedRevision: forkRevision - 1,
+            idempotencyKey,
+            actor: { kind: "USER", userId: context.userId },
+          }
+        }
+      }
+      await tx.workspaceRevision.create({
+        data: {
+          id,
+          workspaceId: input.forkWorkspaceId,
+          revision: forkRevision,
+          parentRevisionId,
+          commandName: sourceRevision.commandName,
+          beforeGraphJson: json(forkBefore),
+          afterGraphJson: json(forkAfter),
+          patchJson: json(patch),
+          inversePatchJson: sourceRevision.inversePatchJson,
+          actorKind: "USER",
+          actorUserId: context.userId,
+          actorAgentRunId: null,
+          idempotencyKey,
+          createdAt: sourceRevision.createdAt,
+        },
+      })
+      await tx.workspaceSession.update({
+        where: { id: input.forkWorkspaceId },
+        data: {
+          headWorkspaceRevision: forkRevision,
+          headGraphJson: json(forkAfter),
+        },
+      })
+      parentRevisionId = id
+      forkBefore = forkAfter
+    }
+
+    const sourceParent = record.revisions.find(
+      (revision) => revision.revision === input.expectedRevision
+    )
+    const control = await tx.workspaceRevision.create({
+      data: {
+        id: randomUUID(),
+        workspaceId,
+        revision: input.expectedRevision + 1,
+        parentRevisionId: sourceParent?.id ?? null,
+        commandName: commandNames["workspace.fork"],
+        beforeGraphJson: record.headGraphJson,
+        afterGraphJson: record.headGraphJson,
+        patchJson: json(input.patch),
+        inversePatchJson: json(input.inversePatch),
+        ...actorColumns(input.actor),
+        idempotencyKey: input.idempotencyKey,
+        createdAt: now,
+      },
+    })
+    const advanced = await tx.workspaceSession.updateMany({
+      where: {
+        id: workspaceId,
+        headWorkspaceRevision: input.expectedRevision,
+        status: "ACTIVE",
+      },
+      data: {
+        headWorkspaceRevision: input.expectedRevision + 1,
+        lastAccessAt: now,
+        expiresAt: leaseExpiry(now),
+      },
+    })
+    if (advanced.count !== 1) throw new WorkspaceRevisionConflictError()
+    const fork = await tx.workspaceSession.findUniqueOrThrow({
+      where: { id: input.forkWorkspaceId },
+      include: workspaceInclude,
+    })
+    return { revision: mapRevision(control), fork: mapSession(fork) }
+  })
+}
+
+export async function refreshWorkspaceRevisionChain(
+  context: AuthContext,
+  workspaceId: string,
+  input: {
+    expectedRevision: number
+    canonicalBase: TargetJourneyGraphSnapshot
+    replays: Array<{
+      commandName: TargetWorkspaceRevision["commandName"]
+      before: TargetJourneyGraphSnapshot
+      after: TargetJourneyGraphSnapshot
+      patch: unknown
+      inversePatch: unknown
+      actor: TargetActorReference
+      sourceRevisionId: string
+    }>
+    patch: unknown
+    inversePatch: unknown
+    idempotencyKey: string
+    actor: TargetActorReference
+    now?: Date
+  }
+) {
+  const now = input.now ?? new Date()
+  const canonicalBase = validateJourneyGraph(input.canonicalBase)
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.workspaceSession.findUnique({
+      where: { id: workspaceId },
+      include: workspaceInclude,
+    })
+    if (!record) return null
+    assertOwner(context, record.ownerId)
+    const existing = await tx.workspaceRevision.findUnique({
+      where: {
+        workspaceId_idempotencyKey: {
+          workspaceId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    })
+    if (existing) {
+      if (
+        existing.commandName !== commandNames["workspace.refresh"] ||
+        json(commandEnvelopeFromPatch(existing.patchJson)) !==
+          json(commandEnvelopeFromPatch(input.patch))
+      ) {
+        throw new WorkspaceIdempotencyConflictError()
+      }
+      return mapRevision(existing)
+    }
+    if (record.status !== "ACTIVE" || record.expiresAt <= now) {
+      throw new WorkspaceInputError("Workspace is not active")
+    }
+    if (
+      record.headWorkspaceRevision !== input.expectedRevision ||
+      !record.sourceJourneyId
+    ) {
+      throw new WorkspaceRevisionConflictError()
+    }
+    await assertWorkspaceActor(tx, context, workspaceId, input.actor)
+    const canonical = await tx.journeyRevision.findUnique({
+      where: {
+        journeyId_revision: {
+          journeyId: record.sourceJourneyId,
+          revision: canonicalBase.revision,
+        },
+      },
+      select: { snapshotJson: true },
+    })
+    const sourceJourney = await tx.journey.findUnique({
+      where: { id: record.sourceJourneyId },
+      select: { ownerId: true, revision: true },
+    })
+    if (
+      !sourceJourney ||
+      sourceJourney.ownerId !== record.ownerId ||
+      sourceJourney.revision !== canonicalBase.revision ||
+      !canonical ||
+      canonical.snapshotJson !== json(canonicalBase)
+    ) {
+      throw new WorkspaceRevisionConflictError(
+        "Workspace refresh base is no longer the canonical Journey head"
+      )
+    }
+
+    let workspaceRevision = input.expectedRevision
+    let parentRevisionId =
+      record.revisions.find(
+        (revision) => revision.revision === input.expectedRevision
+      )?.id ?? null
+    let headGraph = parseGraph(
+      record.headGraphJson,
+      `Workspace ${workspaceId} head`
+    )
+    const append = async (revisionInput: {
+      commandName: TargetWorkspaceRevision["commandName"]
+      before: TargetJourneyGraphSnapshot
+      after: TargetJourneyGraphSnapshot
+      patch: unknown
+      inversePatch: unknown
+      actor: TargetActorReference
+      idempotencyKey: string
+    }) => {
+      workspaceRevision += 1
+      const id = randomUUID()
+      const created = await tx.workspaceRevision.create({
+        data: {
+          id,
+          workspaceId,
+          revision: workspaceRevision,
+          parentRevisionId,
+          commandName: commandNames[revisionInput.commandName],
+          beforeGraphJson: json(revisionInput.before),
+          afterGraphJson: json(revisionInput.after),
+          patchJson: json(revisionInput.patch),
+          inversePatchJson: json(revisionInput.inversePatch),
+          ...actorColumns(revisionInput.actor),
+          idempotencyKey: revisionInput.idempotencyKey,
+          createdAt: now,
+        },
+      })
+      await tx.workspaceSession.update({
+        where: { id: workspaceId },
+        data: {
+          headWorkspaceRevision: workspaceRevision,
+          headGraphJson: json(revisionInput.after),
+        },
+      })
+      parentRevisionId = id
+      headGraph = revisionInput.after
+      return created
+    }
+
+    const refreshBaseIdempotencyKey = `refresh-base:${randomUUID()}`
+    await append({
+      commandName: "workspace.refresh",
+      before: headGraph,
+      after: canonicalBase,
+      patch: [
+        { op: "workspace.refresh_base", revision: canonicalBase.revision },
+      ],
+      inversePatch: [{ op: "workspace.restore_stale_head" }],
+      actor: input.actor,
+      idempotencyKey: refreshBaseIdempotencyKey,
+    })
+    for (const replay of input.replays) {
+      const replayIdempotencyKey = `refresh-replay:${randomUUID()}:${replay.sourceRevisionId}`
+      const patch = structuredClone(replay.patch)
+      if (Array.isArray(patch) && patch[0] && typeof patch[0] === "object") {
+        const entry = patch[0] as { commandEnvelope?: Record<string, unknown> }
+        if (entry.commandEnvelope) {
+          entry.commandEnvelope = {
+            ...entry.commandEnvelope,
+            aggregateId: workspaceId,
+            expectedRevision: workspaceRevision,
+            idempotencyKey: replayIdempotencyKey,
+          }
+        }
+      }
+      await append({
+        commandName: replay.commandName,
+        before: replay.before,
+        after: replay.after,
+        patch,
+        inversePatch: replay.inversePatch,
+        actor: replay.actor,
+        idempotencyKey: replayIdempotencyKey,
+      })
+    }
+    const control = await append({
+      commandName: "workspace.refresh",
+      before: headGraph,
+      after: headGraph,
+      patch: input.patch,
+      inversePatch: input.inversePatch,
+      actor: input.actor,
+      idempotencyKey: input.idempotencyKey,
+    })
+    await tx.workspaceSession.update({
+      where: { id: workspaceId },
+      data: {
+        baseJourneyRevision: canonicalBase.revision,
+        lastAccessAt: now,
+        expiresAt: leaseExpiry(now),
+      },
+    })
+    return mapRevision(control)
+  })
+}
+
+export async function commitWorkspaceRevisionChain(
+  context: AuthContext,
+  workspaceId: string,
+  input: {
+    expectedRevision: number
+    expectedJourneyRevision: number | null
+    patch: unknown
+    inversePatch: unknown
+    idempotencyKey: string
+    actor: TargetActorReference
+    now?: Date
+  }
+) {
+  const now = input.now ?? new Date()
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.workspaceSession.findUnique({
+      where: { id: workspaceId },
+      include: workspaceInclude,
+    })
+    if (!record) return null
+    assertOwner(context, record.ownerId)
+
+    const existing = await tx.workspaceRevision.findUnique({
+      where: {
+        workspaceId_idempotencyKey: {
+          workspaceId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    })
+    if (existing) {
+      if (
+        existing.commandName !== commandNames["workspace.commit"] ||
+        json(commandEnvelopeFromPatch(existing.patchJson)) !==
+          json(commandEnvelopeFromPatch(input.patch))
+      ) {
+        throw new WorkspaceIdempotencyConflictError()
+      }
+      return mapRevision(existing)
+    }
+    if (record.status !== "ACTIVE" || record.expiresAt <= now) {
+      throw new WorkspaceInputError("Workspace is not active")
+    }
+    if (record.headWorkspaceRevision !== input.expectedRevision) {
+      throw new WorkspaceRevisionConflictError()
+    }
+    await assertWorkspaceActor(tx, context, workspaceId, input.actor)
+    if (record.sourceJourneyId && input.expectedJourneyRevision === null) {
+      throw new JourneyRevisionConflictError(
+        "Existing Journey Workspace requires an expected Journey revision"
+      )
+    }
+    if (!record.sourceJourneyId && input.expectedJourneyRevision !== null) {
+      throw new JourneyRevisionConflictError(
+        "Scratch Workspace commit must expect no Journey revision"
+      )
+    }
+    if (
+      record.sourceJourneyId &&
+      record.baseJourneyRevision !== null &&
+      input.expectedJourneyRevision !== null
+    ) {
+      const canonicalBase = await tx.journeyRevision.findUnique({
+        where: {
+          journeyId_revision: {
+            journeyId: record.sourceJourneyId,
+            revision: input.expectedJourneyRevision,
+          },
+        },
+        select: { snapshotJson: true },
+      })
+      const workspaceBaseJson =
+        input.expectedJourneyRevision === record.baseJourneyRevision
+          ? await tx.journeyRevision
+              .findUnique({
+                where: {
+                  journeyId_revision: {
+                    journeyId: record.sourceJourneyId,
+                    revision: record.baseJourneyRevision,
+                  },
+                },
+                select: { snapshotJson: true },
+              })
+              .then((revision) => revision?.snapshotJson)
+          : record.revisions.find(
+              (revision) =>
+                parseGraph(
+                  revision.afterGraphJson,
+                  `WorkspaceRevision ${revision.id} after`
+                ).revision === input.expectedJourneyRevision
+            )?.afterGraphJson
+      if (
+        !canonicalBase ||
+        !workspaceBaseJson ||
+        canonicalBase.snapshotJson !== workspaceBaseJson
+      ) {
+        throw new JourneyRevisionConflictError(
+          "Workspace commit base does not match the canonical Journey"
+        )
+      }
+    }
+
+    const alreadyCommitted = await tx.journeyRevision.findMany({
+      where: {
+        workspaceRevisionId: {
+          in: record.revisions.map((revision) => revision.id),
+        },
+      },
+      select: { workspaceRevisionId: true },
+    })
+    const committedIds = new Set(
+      alreadyCommitted.flatMap((revision) =>
+        revision.workspaceRevisionId ? [revision.workspaceRevisionId] : []
+      )
+    )
+    const expectedGraphRevision = input.expectedJourneyRevision ?? 1
+    const candidates = record.revisions.filter(
+      (revision) =>
+        revision.revision <= input.expectedRevision &&
+        !committedIds.has(revision.id) &&
+        contractCommandNames[revision.commandName].startsWith("journey.") &&
+        parseGraph(
+          revision.afterGraphJson,
+          `WorkspaceRevision ${revision.id} after`
+        ).revision > expectedGraphRevision &&
+        parseGraph(
+          revision.beforeGraphJson,
+          `WorkspaceRevision ${revision.id} before`
+        ).revision !==
+          parseGraph(
+            revision.afterGraphJson,
+            `WorkspaceRevision ${revision.id} after`
+          ).revision
+    )
+    if (candidates.length === 0 && record.sourceJourneyId) {
+      throw new WorkspaceInputError(
+        "Workspace has no uncommitted graph revisions"
+      )
+    }
+    const writes: JourneyRevisionWrite[] = candidates.map((revision) => ({
+      graph: parseGraph(
+        revision.afterGraphJson,
+        `WorkspaceRevision ${revision.id} after`
+      ),
+      operation: contractCommandNames[revision.commandName],
+      patch: JSON.parse(revision.patchJson) as unknown[],
+      inversePatch: JSON.parse(revision.inversePatchJson) as unknown[],
+      actor: actorFromRecord(revision),
+      idempotencyKey: `workspace:${workspaceId}:${revision.id}`,
+      workspaceRevisionId: revision.id,
+    }))
+    const scratchBase = record.revisions[0]
+      ? parseGraph(
+          record.revisions[0].beforeGraphJson,
+          `Workspace ${workspaceId} scratch base`
+        )
+      : parseGraph(record.headGraphJson, `Workspace ${workspaceId} head`)
+    const committed = record.sourceJourneyId
+      ? await commitJourneyRevisionChain(
+          context,
+          record.sourceJourneyId,
+          writes,
+          input.expectedJourneyRevision!,
+          tx
+        )
+      : await createJourneyRevisionChain(
+          context,
+          {
+            graph: scratchBase,
+            operation: "workspace.commit.create",
+            patch: [],
+            inversePatch: [],
+            actor: { kind: "USER", userId: context.userId },
+            idempotencyKey: `workspace:${workspaceId}:create`,
+          },
+          writes,
+          tx
+        )
+    if (!committed) {
+      throw new WorkspaceInputError("Workspace source Journey was not found")
+    }
+
+    const sourceParent = record.revisions.find(
+      (revision) => revision.revision === input.expectedRevision
+    )
+    const control = await tx.workspaceRevision.create({
+      data: {
+        id: randomUUID(),
+        workspaceId,
+        revision: input.expectedRevision + 1,
+        parentRevisionId: sourceParent?.id ?? null,
+        commandName: commandNames["workspace.commit"],
+        beforeGraphJson: record.headGraphJson,
+        afterGraphJson: record.headGraphJson,
+        patchJson: json(input.patch),
+        inversePatchJson: json(input.inversePatch),
+        ...actorColumns(input.actor),
+        idempotencyKey: input.idempotencyKey,
+        createdAt: now,
+      },
+    })
+    const advanced = await tx.workspaceSession.updateMany({
+      where: {
+        id: workspaceId,
+        headWorkspaceRevision: input.expectedRevision,
+        status: "ACTIVE",
+      },
+      data: {
+        headWorkspaceRevision: input.expectedRevision + 1,
+        sourceJourneyId: committed.id,
+        baseJourneyRevision: committed.revision,
+        lastAccessAt: now,
+        expiresAt: leaseExpiry(now),
+      },
+    })
+    if (advanced.count !== 1) throw new WorkspaceRevisionConflictError()
+    return mapRevision(control)
   })
 }
 

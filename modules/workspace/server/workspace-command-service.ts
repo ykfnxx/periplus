@@ -12,6 +12,7 @@ import {
   targetCommandResultSchema,
   type TargetCommandEnvelope,
   type TargetCommandResult,
+  type TargetLifecycleCommandOutcome,
   type TargetJourneyEvent,
   type TargetJourneyEventCreate,
   type TargetJourneyEventLink,
@@ -22,12 +23,23 @@ import {
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import { getAsset } from "@/modules/data/content/content-repository"
-import { validateJourneyGraph } from "@/modules/data/journeys/journey-graph-validator"
+import {
+  validateJourneyGraph,
+  validateJourneyGraphTransition,
+} from "@/modules/data/journeys/journey-graph-validator"
+import {
+  getJourney,
+  getJourneyRevision,
+} from "@/modules/data/journeys/journey-repository"
 import {
   appendWorkspaceRevision,
+  commitWorkspaceRevisionChain,
+  forkWorkspaceRevisionChain,
   getWorkspaceDocument,
   getWorkspaceRevision,
   getWorkspaceRevisionByIdempotencyKey,
+  listWorkspaceRevisions,
+  refreshWorkspaceRevisionChain,
   WorkspaceIdempotencyConflictError,
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
@@ -45,6 +57,7 @@ interface StoredCommandPatchEntry {
   commandEnvelope: TargetCommandEnvelope
   changedEventIds: string[]
   projectionInvalidationScopes: Array<string | null>
+  outcome?: TargetLifecycleCommandOutcome
 }
 
 type StoredCommandPatch = [StoredCommandPatchEntry]
@@ -663,7 +676,597 @@ function commandResult(
     inversePatch: revision.inversePatch,
     projectionInvalidationScopes: patch[0].projectionInvalidationScopes,
     replayedFromIdempotencyKey,
+    outcome: patch[0].outcome,
   })
+}
+
+async function verifiedWorkspaceHistory(
+  context: AuthContext,
+  document: TargetWorkspaceDocument,
+  fromWorkspaceRevision: number,
+  throughWorkspaceRevision: number
+) {
+  if (
+    fromWorkspaceRevision < 0 ||
+    fromWorkspaceRevision > throughWorkspaceRevision
+  ) {
+    throw new WorkspaceInputError(
+      "Workspace replay range must belong to the current history"
+    )
+  }
+  const revisions = await listWorkspaceRevisions(context, document.session.id)
+  if (!revisions) throw new WorkspaceInputError("Workspace was not found")
+  const through = revisions.filter(
+    (revision) => revision.revision <= throughWorkspaceRevision
+  )
+  if (through.length !== throughWorkspaceRevision) {
+    throw new WorkspaceRevisionConflictError(
+      "Workspace replay history is incomplete"
+    )
+  }
+  for (const [index, revision] of through.entries()) {
+    if (revision.revision !== index + 1) {
+      throw new WorkspaceRevisionConflictError(
+        "Workspace replay history is not continuous"
+      )
+    }
+    if (
+      index > 0 &&
+      json(through[index - 1]!.after) !== json(revision.before)
+    ) {
+      throw new WorkspaceRevisionConflictError(
+        "Workspace replay history has a broken causal chain"
+      )
+    }
+  }
+  if (
+    through.at(-1) &&
+    json(through.at(-1)!.after) !== json(document.session.headGraph)
+  ) {
+    throw new WorkspaceRevisionConflictError(
+      "Workspace replay head does not match persisted history"
+    )
+  }
+  return through.filter(
+    (revision) => revision.revision >= Math.max(1, fromWorkspaceRevision)
+  )
+}
+
+function forkMaterialHistory(
+  history: TargetWorkspaceRevision[],
+  throughWorkspaceRevision: number
+) {
+  let materialAfterWorkspaceRevision = 0
+  for (const revision of history) {
+    if (revision.revision > throughWorkspaceRevision) break
+    const patch = revision.patch as unknown
+    const entry = Array.isArray(patch) ? patch[0] : patch
+    if (!entry || typeof entry !== "object") continue
+    const value = entry as {
+      op?: unknown
+      outcome?: { type?: unknown }
+    }
+    if (
+      value.op === "workspace.refresh_base" ||
+      value.outcome?.type === "workspace.committed" ||
+      (value.outcome?.type === "workspace.refreshed" &&
+        json(revision.before) !== json(revision.after))
+    ) {
+      materialAfterWorkspaceRevision = revision.revision
+    }
+  }
+  return history.filter(
+    (revision) =>
+      revision.revision > materialAfterWorkspaceRevision &&
+      revision.revision <= throughWorkspaceRevision &&
+      revision.commandName.startsWith("journey.") &&
+      revision.after.revision !== revision.before.revision
+  )
+}
+
+function recordValue(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function idArray(value: unknown[]): value is Array<Record<string, unknown>> {
+  return value.every(
+    (entry) => recordValue(entry) && typeof entry.id === "string"
+  )
+}
+
+function mergeRebasedValue(
+  before: unknown,
+  after: unknown,
+  current: unknown,
+  path: string
+): unknown {
+  if (json(after) === json(before)) return clone(current)
+  if (json(current) === json(before) || json(current) === json(after)) {
+    return clone(after)
+  }
+  if (Array.isArray(before) && Array.isArray(after) && Array.isArray(current)) {
+    if (!idArray(before) || !idArray(after) || !idArray(current)) {
+      throw new WorkspaceRevisionConflictError(
+        `Workspace refresh conflict at ${path}`
+      )
+    }
+    const beforeById = new Map(before.map((entry) => [entry.id, entry]))
+    const afterById = new Map(after.map((entry) => [entry.id, entry]))
+    const currentById = new Map(current.map((entry) => [entry.id, entry]))
+    const merged: Array<Record<string, unknown>> = []
+    for (const currentEntry of current) {
+      const beforeEntry = beforeById.get(currentEntry.id)
+      const afterEntry = afterById.get(currentEntry.id)
+      if (!afterEntry) {
+        if (!beforeEntry) {
+          merged.push(clone(currentEntry))
+          continue
+        }
+        if (json(currentEntry) !== json(beforeEntry)) {
+          throw new WorkspaceRevisionConflictError(
+            `Workspace refresh conflict at ${path}.${currentEntry.id}`
+          )
+        }
+        continue
+      }
+      merged.push(
+        mergeRebasedValue(
+          beforeEntry,
+          afterEntry,
+          currentEntry,
+          `${path}.${currentEntry.id}`
+        ) as Record<string, unknown>
+      )
+    }
+    for (const afterEntry of after) {
+      if (currentById.has(afterEntry.id)) continue
+      if (beforeById.has(afterEntry.id)) {
+        throw new WorkspaceRevisionConflictError(
+          `Workspace refresh conflict at ${path}.${afterEntry.id}`
+        )
+      }
+      merged.push(clone(afterEntry))
+    }
+    return merged
+  }
+  if (recordValue(before) && recordValue(after) && recordValue(current)) {
+    const merged: Record<string, unknown> = {}
+    const keys = new Set([
+      ...Object.keys(before),
+      ...Object.keys(after),
+      ...Object.keys(current),
+    ])
+    for (const key of keys) {
+      const value = mergeRebasedValue(
+        before[key],
+        after[key],
+        current[key],
+        `${path}.${key}`
+      )
+      if (value !== undefined) merged[key] = value
+    }
+    return merged
+  }
+  throw new WorkspaceRevisionConflictError(
+    `Workspace refresh conflict at ${path}`
+  )
+}
+
+function rebaseWorkspaceGraph(
+  before: TargetJourneyGraphSnapshot,
+  after: TargetJourneyGraphSnapshot,
+  current: TargetJourneyGraphSnapshot
+) {
+  const nextRevision = current.revision + 1
+  const merged = mergeRebasedValue(
+    { ...before, revision: 0 },
+    { ...after, revision: 0 },
+    { ...current, revision: 0 },
+    "graph"
+  ) as TargetJourneyGraphSnapshot
+  merged.revision = nextRevision
+
+  const rebaseRetirable = <
+    T extends {
+      id: string
+      introducedRevision: number
+      retiredRevision?: number | null
+    },
+  >(
+    previous: T[],
+    source: T[],
+    values: T[]
+  ) => {
+    const previousById = new Map(previous.map((value) => [value.id, value]))
+    const sourceById = new Map(source.map((value) => [value.id, value]))
+    for (const value of values) {
+      const previousValue = previousById.get(value.id)
+      const sourceValue = sourceById.get(value.id)
+      if (!previousValue && sourceValue) {
+        value.introducedRevision = nextRevision
+      }
+      if (
+        previousValue &&
+        sourceValue &&
+        previousValue.retiredRevision !== sourceValue.retiredRevision &&
+        sourceValue.retiredRevision != null
+      ) {
+        value.retiredRevision = nextRevision
+      }
+    }
+  }
+  rebaseRetirable(before.events, after.events, merged.events)
+  rebaseRetirable(before.links, after.links, merged.links)
+  rebaseRetirable(
+    before.eventAssetLinks,
+    after.eventAssetLinks,
+    merged.eventAssetLinks
+  )
+  rebaseRetirable(
+    before.eventSourceLinks,
+    after.eventSourceLinks,
+    merged.eventSourceLinks
+  )
+
+  const beforeReplacementIds = new Set(
+    before.replacements.map((replacement) => replacement.id)
+  )
+  for (const replacement of merged.replacements) {
+    if (!beforeReplacementIds.has(replacement.id)) {
+      replacement.revision = nextRevision
+    }
+  }
+  const beforeSelectionIds = new Set(
+    before.branchSelections.map((selection) => selection.id)
+  )
+  for (const selection of merged.branchSelections) {
+    if (!beforeSelectionIds.has(selection.id)) {
+      selection.journeyRevision = nextRevision
+    }
+  }
+  const currentEvents = new Map(
+    current.events.map((event) => [event.id, event])
+  )
+  const beforeEvents = new Map(before.events.map((event) => [event.id, event]))
+  const afterEvents = new Map(after.events.map((event) => [event.id, event]))
+  for (const event of merged.events) {
+    const previousEvent = beforeEvents.get(event.id)
+    const sourceEvent = afterEvents.get(event.id)
+    const currentEvent = currentEvents.get(event.id)
+    if (
+      previousEvent &&
+      sourceEvent &&
+      currentEvent &&
+      json(previousEvent) !== json(sourceEvent) &&
+      Date.parse(event.updatedAt) < Date.parse(currentEvent.updatedAt)
+    ) {
+      event.updatedAt = currentEvent.updatedAt
+    }
+  }
+  return validateJourneyGraphTransition(current, merged)
+}
+
+async function appendLifecycleRevision(
+  context: AuthContext,
+  document: TargetWorkspaceDocument,
+  envelope: TargetCommandEnvelope,
+  after: TargetJourneyGraphSnapshot,
+  outcome: TargetLifecycleCommandOutcome,
+  options: ExecuteOptions & { baseJourneyRevision?: number } = {}
+) {
+  const changedEventIds = diffEventIds(document.session.headGraph, after)
+  const projectionInvalidationScopes = invalidationScopes(
+    document.session.headGraph,
+    after,
+    changedEventIds
+  )
+  const patch: StoredCommandPatch = [
+    {
+      op: "command",
+      commandEnvelope: envelope,
+      changedEventIds,
+      projectionInvalidationScopes,
+      outcome,
+    },
+  ]
+  const inversePatch = [
+    {
+      op: "restore",
+      restoreWorkspaceRevision: envelope.expectedRevision,
+      graph: document.session.headGraph,
+    },
+  ]
+  try {
+    const revision = await appendWorkspaceRevision(
+      context,
+      envelope.aggregateId,
+      {
+        expectedRevision: envelope.expectedRevision,
+        commandName: envelope.command.name,
+        after,
+        patch,
+        inversePatch,
+        idempotencyKey: envelope.idempotencyKey,
+        actor: envelope.actor,
+        baseJourneyRevision: options.baseJourneyRevision,
+        now: options.now,
+      }
+    )
+    if (!revision) throw new WorkspaceInputError("Workspace was not found")
+    return commandResult(revision, false)
+  } catch (error) {
+    if (
+      !(error instanceof WorkspaceRevisionConflictError) &&
+      !(error instanceof WorkspaceIdempotencyConflictError)
+    ) {
+      throw error
+    }
+    const raced = await getWorkspaceRevisionByIdempotencyKey(
+      context,
+      envelope.aggregateId,
+      envelope.idempotencyKey
+    )
+    if (!raced) throw error
+    const racedPatch = storedPatch(raced)
+    if (json(racedPatch[0].commandEnvelope) !== json(envelope)) {
+      throw new WorkspaceIdempotencyConflictError()
+    }
+    return commandResult(raced, true)
+  }
+}
+
+async function executeLifecycleCommand(
+  context: AuthContext,
+  document: TargetWorkspaceDocument,
+  envelope: TargetCommandEnvelope,
+  options: ExecuteOptions
+): Promise<TargetCommandResult> {
+  const command = envelope.command
+  if (!command.name.startsWith("workspace.")) {
+    throw new WorkspaceCommandUnsupportedError(command.name)
+  }
+  if (command.name === "workspace.replay") {
+    await verifiedWorkspaceHistory(
+      context,
+      document,
+      command.payload.fromWorkspaceRevision,
+      envelope.expectedRevision
+    )
+    return appendLifecycleRevision(
+      context,
+      document,
+      envelope,
+      document.session.headGraph,
+      {
+        type: "workspace.replayed",
+        sourceWorkspaceId: envelope.aggregateId,
+        fromWorkspaceRevision: command.payload.fromWorkspaceRevision,
+        throughWorkspaceRevision: envelope.expectedRevision,
+        headWorkspaceRevision: envelope.expectedRevision + 1,
+      },
+      options
+    )
+  }
+  if (command.name === "workspace.refresh") {
+    const history = await verifiedWorkspaceHistory(
+      context,
+      document,
+      command.payload.fromWorkspaceRevision,
+      envelope.expectedRevision
+    )
+    const sourceJourneyId = document.session.sourceJourneyId
+    const baseJourneyRevision = document.session.baseJourneyRevision
+    if (!sourceJourneyId || baseJourneyRevision === null) {
+      throw new WorkspaceInputError(
+        "Only a source-backed Workspace can be refreshed"
+      )
+    }
+    const [source, base] = await Promise.all([
+      getJourney(context, sourceJourneyId, { includeDeleted: true }),
+      getJourneyRevision(context, sourceJourneyId, baseJourneyRevision),
+    ])
+    if (!source || !base) {
+      throw new WorkspaceRevisionConflictError(
+        "Workspace source Journey history is missing"
+      )
+    }
+    let after = document.session.headGraph
+    if (source.revision !== baseJourneyRevision) {
+      if (json(document.session.headGraph) !== json(base.snapshot)) {
+        const material = history.filter(
+          (revision) =>
+            revision.commandName.startsWith("journey.") &&
+            revision.after.revision !== revision.before.revision
+        )
+        let rebasedHead = source
+        const replays = material.map((revision) => {
+          const before = rebasedHead
+          const rebased = rebaseWorkspaceGraph(
+            revision.before,
+            revision.after,
+            before
+          )
+          rebasedHead = rebased
+          return {
+            commandName: revision.commandName,
+            before,
+            after: rebased,
+            patch: revision.patch,
+            inversePatch: revision.inversePatch,
+            actor: revision.actor,
+            sourceRevisionId: revision.id,
+          }
+        })
+        const outcome: TargetLifecycleCommandOutcome = {
+          type: "workspace.refreshed",
+          sourceJourneyId,
+          baseJourneyRevision: source.revision,
+          fromWorkspaceRevision: command.payload.fromWorkspaceRevision,
+          throughWorkspaceRevision: envelope.expectedRevision,
+          headWorkspaceRevision: envelope.expectedRevision + replays.length + 2,
+        }
+        const changedEventIds = diffEventIds(
+          document.session.headGraph,
+          rebasedHead
+        )
+        const patch: StoredCommandPatch = [
+          {
+            op: "command",
+            commandEnvelope: envelope,
+            changedEventIds,
+            projectionInvalidationScopes: invalidationScopes(
+              document.session.headGraph,
+              rebasedHead,
+              changedEventIds
+            ),
+            outcome,
+          },
+        ]
+        const revision = await refreshWorkspaceRevisionChain(
+          context,
+          envelope.aggregateId,
+          {
+            expectedRevision: envelope.expectedRevision,
+            canonicalBase: source,
+            replays,
+            patch,
+            inversePatch: [
+              {
+                op: "workspace.restore_stale_head",
+                graph: document.session.headGraph,
+                baseJourneyRevision,
+              },
+            ],
+            idempotencyKey: envelope.idempotencyKey,
+            actor: envelope.actor,
+            now: options.now,
+          }
+        )
+        if (!revision) {
+          throw new WorkspaceInputError("Workspace was not found")
+        }
+        return commandResult(revision, false)
+      }
+      after = source
+    }
+    return appendLifecycleRevision(
+      context,
+      document,
+      envelope,
+      after,
+      {
+        type: "workspace.refreshed",
+        sourceJourneyId,
+        baseJourneyRevision: source.revision,
+        fromWorkspaceRevision: command.payload.fromWorkspaceRevision,
+        throughWorkspaceRevision: envelope.expectedRevision,
+        headWorkspaceRevision: envelope.expectedRevision + 1,
+      },
+      {
+        ...options,
+        ...(source.revision !== baseJourneyRevision
+          ? { baseJourneyRevision: source.revision }
+          : {}),
+      }
+    )
+  }
+  if (command.name === "workspace.fork") {
+    const history = await verifiedWorkspaceHistory(
+      context,
+      document,
+      0,
+      envelope.expectedRevision
+    )
+    const forkHeadWorkspaceRevision = forkMaterialHistory(
+      history,
+      command.payload.fromWorkspaceRevision
+    ).length
+    const forkWorkspaceId = deterministicId(envelope, "fork-workspace")
+    const outcome: TargetLifecycleCommandOutcome = {
+      type: "workspace.forked",
+      workspaceId: forkWorkspaceId,
+      sourceWorkspaceId: envelope.aggregateId,
+      sourceWorkspaceRevision: command.payload.fromWorkspaceRevision,
+      headWorkspaceRevision: forkHeadWorkspaceRevision,
+    }
+    const patch: StoredCommandPatch = [
+      {
+        op: "command",
+        commandEnvelope: envelope,
+        changedEventIds: [],
+        projectionInvalidationScopes: [],
+        outcome,
+      },
+    ]
+    const result = await forkWorkspaceRevisionChain(
+      context,
+      envelope.aggregateId,
+      {
+        expectedRevision: envelope.expectedRevision,
+        fromWorkspaceRevision: command.payload.fromWorkspaceRevision,
+        forkWorkspaceId,
+        patch,
+        inversePatch: [{ op: "workspace.archive_fork", forkWorkspaceId }],
+        idempotencyKey: envelope.idempotencyKey,
+        actor: envelope.actor,
+        now: options.now,
+      }
+    )
+    if (!result) throw new WorkspaceInputError("Workspace was not found")
+    return commandResult(result.revision, false)
+  }
+  if (command.name === "workspace.commit") {
+    const revisions = await verifiedWorkspaceHistory(
+      context,
+      document,
+      0,
+      envelope.expectedRevision
+    )
+    const material = revisions.filter(
+      (revision) =>
+        revision.commandName.startsWith("journey.") &&
+        revision.after.revision >
+          (command.payload.expectedJourneyRevision ?? 1) &&
+        revision.after.revision !== revision.before.revision
+    )
+    if (!material.length && command.payload.expectedJourneyRevision !== null) {
+      throw new WorkspaceInputError(
+        "Workspace has no uncommitted graph revisions"
+      )
+    }
+    const outcome: TargetLifecycleCommandOutcome = {
+      type: "workspace.committed",
+      journeyId: document.session.headGraph.id,
+      fromWorkspaceRevision: material[0]?.revision ?? 0,
+      throughWorkspaceRevision: material.at(-1)?.revision ?? 0,
+      committedJourneyRevision: document.session.headGraph.revision,
+    }
+    const patch: StoredCommandPatch = [
+      {
+        op: "command",
+        commandEnvelope: envelope,
+        changedEventIds: [],
+        projectionInvalidationScopes: [],
+        outcome,
+      },
+    ]
+    const revision = await commitWorkspaceRevisionChain(
+      context,
+      envelope.aggregateId,
+      {
+        expectedRevision: envelope.expectedRevision,
+        expectedJourneyRevision: command.payload.expectedJourneyRevision,
+        patch,
+        inversePatch: [{ op: "workspace.commit_is_irreversible" }],
+        idempotencyKey: envelope.idempotencyKey,
+        actor: envelope.actor,
+        now: options.now,
+      }
+    )
+    if (!revision) throw new WorkspaceInputError("Workspace was not found")
+    return commandResult(revision, false)
+  }
+  throw new WorkspaceCommandUnsupportedError(command.name)
 }
 
 async function undoGraph(
@@ -678,30 +1281,148 @@ async function undoGraph(
       `Cannot undo ${steps} steps from Workspace revision ${envelope.expectedRevision}`
     )
   }
-  const target = await getWorkspaceRevision(
-    context,
-    envelope.aggregateId,
-    envelope.expectedRevision - steps + 1
-  )
-  if (!target) {
-    throw new WorkspaceRevisionConflictError("Undo target revision is missing")
+  const revisions: TargetWorkspaceRevision[] = []
+  for (
+    let revision = envelope.expectedRevision;
+    revision > envelope.expectedRevision - steps;
+    revision -= 1
+  ) {
+    const target = await getWorkspaceRevision(
+      context,
+      envelope.aggregateId,
+      revision
+    )
+    if (!target) {
+      throw new WorkspaceRevisionConflictError(
+        "Undo target revision is missing"
+      )
+    }
+    revisions.push(target)
   }
+  const irreversible = revisions.find(
+    (revision) =>
+      revision.commandName.startsWith("workspace.") ||
+      [
+        "journey.plan_transit",
+        "journey.add_observation",
+        "journey.replace_event",
+      ].includes(revision.commandName)
+  )
+  if (irreversible) {
+    throw new WorkspaceInputError(
+      `Undo does not support irreversible ${irreversible.commandName} facts`
+    )
+  }
+  const target = revisions.at(-1)!
   const current = document.session.headGraph
-  const restored = clone(target.before)
+  const desired = target.before
+  const restored = clone(current)
   restored.revision = current.revision + 1
+  restored.status = desired.status
+  restored.visibility = desired.visibility
+  restored.title = desired.title
+  restored.description = desired.description
+  restored.deletedAt = desired.deletedAt
+
+  const desiredEvents = new Map(
+    desired.events.map((event) => [event.id, event])
+  )
+  for (const [index, event] of restored.events.entries()) {
+    const desiredEvent = desiredEvents.get(event.id)
+    if (!desiredEvent) {
+      if (activeAtRevision(event, current.revision)) {
+        event.retiredRevision = restored.revision
+        event.updatedAt = timestampAfter(now, event.updatedAt)
+      }
+      continue
+    }
+    const currentActive = activeAtRevision(event, current.revision)
+    const desiredActive = activeAtRevision(desiredEvent, desired.revision)
+    if (!currentActive && !desiredActive) continue
+    const replacement = clone(desiredEvent)
+    replacement.updatedAt = timestampAfter(now, event.updatedAt)
+    if (!desiredActive) replacement.retiredRevision = restored.revision
+    if (desiredActive) replacement.retiredRevision = undefined
+    restored.events[index] = replacement
+  }
+
+  const desiredLinks = new Map(desired.links.map((link) => [link.id, link]))
+  for (const [index, link] of restored.links.entries()) {
+    const desiredLink = desiredLinks.get(link.id)
+    if (!desiredLink) {
+      if (activeAtRevision(link, current.revision)) {
+        link.retiredRevision = restored.revision
+      }
+      continue
+    }
+    const currentActive = activeAtRevision(link, current.revision)
+    const desiredActive = activeAtRevision(desiredLink, desired.revision)
+    if (!currentActive && !desiredActive) continue
+    const replacement = clone(desiredLink)
+    if (!desiredActive) replacement.retiredRevision = restored.revision
+    if (desiredActive) replacement.retiredRevision = undefined
+    restored.links[index] = replacement
+  }
+
+  const restoreContentLinks = <
+    T extends {
+      id: string
+      introducedRevision: number
+      retiredRevision?: number
+      createdAt: string
+    },
+  >(
+    label: "asset" | "source",
+    currentLinks: T[],
+    desiredLinks: T[]
+  ) => {
+    const desiredById = new Map(desiredLinks.map((link) => [link.id, link]))
+    for (const link of currentLinks) {
+      if (
+        !desiredById.has(link.id) &&
+        activeAtRevision(link, current.revision)
+      ) {
+        link.retiredRevision = restored.revision
+      }
+    }
+    const currentById = new Map(currentLinks.map((link) => [link.id, link]))
+    for (const desiredLink of desiredLinks) {
+      if (!activeAtRevision(desiredLink, desired.revision)) continue
+      const currentLink = currentById.get(desiredLink.id)
+      if (currentLink && activeAtRevision(currentLink, current.revision)) {
+        continue
+      }
+      currentLinks.push({
+        ...clone(desiredLink),
+        id: deterministicId(envelope, `undo-${label}-${desiredLink.id}`),
+        introducedRevision: restored.revision,
+        retiredRevision: undefined,
+        createdAt: now,
+      })
+    }
+  }
+  restoreContentLinks(
+    "asset",
+    restored.eventAssetLinks,
+    desired.eventAssetLinks
+  )
+  restoreContentLinks(
+    "source",
+    restored.eventSourceLinks,
+    desired.eventSourceLinks
+  )
 
   const forkEventIds = new Set(
-    [...current.branchSelections, ...target.before.branchSelections].map(
+    [...current.branchSelections, ...desired.branchSelections].map(
       (selection) => selection.forkEventId
     )
   )
-  restored.branchSelections = clone(current.branchSelections)
   for (const forkEventId of forkEventIds) {
-    const currentChoice = currentSelection(current, forkEventId)
-    const desiredChoice = currentSelection(target.before, forkEventId)
+    const currentChoice = currentSelection(restored, forkEventId)
+    const desiredChoice = currentSelection(desired, forkEventId)
     const desiredLinkId =
       desiredChoice?.selectedLinkId ??
-      activeLinks(target.before).find(
+      activeLinks(desired).find(
         (link) => link.fromEventId === forkEventId && link.kind === "MAIN"
       )?.id
     const currentLinkId =
@@ -1612,6 +2333,10 @@ export class WorkspaceCommandService {
           "Workspace AGENT actor requires a running same-Workspace Agent run"
         )
       }
+    }
+
+    if (envelope.command.name.startsWith("workspace.")) {
+      return executeLifecycleCommand(context, document, envelope, options)
     }
 
     const before = document.session.headGraph

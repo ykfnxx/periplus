@@ -2,6 +2,11 @@ import { ZodError } from "zod"
 import { PermissionDeniedError } from "@/modules/auth/server/context"
 import { JourneyGraphValidationError } from "@/modules/data/journeys/journey-graph-validator"
 import {
+  JourneyIdempotencyConflictError,
+  JourneyInputError,
+  JourneyRevisionConflictError,
+} from "@/modules/data/journeys/journey-repository"
+import {
   WorkspaceIdempotencyConflictError,
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
@@ -43,13 +48,22 @@ export function domainErrorResponse(error: unknown): DomainErrorResponse {
   if (error instanceof WorkspaceInputError) {
     return { status: 400, code: "invalid_input", message: error.message }
   }
+  if (error instanceof JourneyInputError) {
+    return { status: 400, code: "invalid_input", message: error.message }
+  }
   if (error instanceof PermissionDeniedError) {
     return { status: 403, code: "permission_denied", message: error.message }
   }
-  if (error instanceof WorkspaceRevisionConflictError) {
+  if (
+    error instanceof WorkspaceRevisionConflictError ||
+    error instanceof JourneyRevisionConflictError
+  ) {
     return { status: 409, code: "revision_conflict", message: error.message }
   }
-  if (error instanceof WorkspaceIdempotencyConflictError) {
+  if (
+    error instanceof WorkspaceIdempotencyConflictError ||
+    error instanceof JourneyIdempotencyConflictError
+  ) {
     return {
       status: 409,
       code: "idempotency_conflict",
