@@ -4,20 +4,18 @@ import {
   parseDirectionPolylines,
   type LngLatTuple,
 } from "@/lib/journeys/transit-geometry"
-import type {
-  TransitPlan,
-  TransitSegment,
-  TransitSegmentMode,
-  TransitTrafficBasis,
-  TransitTrafficSection,
-} from "@/types/journey"
 import { endpointToGcj02 } from "@/lib/journeys/coordinates"
 import {
   transitPlanFingerprint,
+  type TransitPlan,
   type TransitPlanBundle,
   type TransitPlanEndpoint,
   type TransitPlanRequest,
   type TransitProviderErrorCode,
+  type TransitSegment,
+  type TransitSegmentMode,
+  type TransitTrafficBasis,
+  type TransitTrafficSection,
 } from "@/lib/journeys/planning"
 
 type JsonRecord = Record<string, unknown>

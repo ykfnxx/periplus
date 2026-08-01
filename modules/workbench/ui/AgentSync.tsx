@@ -2,17 +2,28 @@
 
 import { useEffect } from "react"
 import {
-  bootstrapAgentSession,
+  bootstrapWorkspace,
   connectAgentSocket,
   sendAgentEvent,
-  type AgentConversationMessage,
   type AgentEvent,
-  type DraftSnapshot,
 } from "@/lib/agent/client"
+import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
-function asDraftSnapshot(payload: unknown) {
-  return payload as DraftSnapshot
+function workspaceFromPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null
+  const record = payload as Record<string, unknown>
+  return (
+    "workspace" in record ? record.workspace : payload
+  ) as TargetWorkspaceDocument | null
+}
+
+function commandNameFromPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null
+  const result = (payload as Record<string, unknown>).result
+  if (!result || typeof result !== "object") return null
+  const commandName = (result as Record<string, unknown>).commandName
+  return typeof commandName === "string" ? commandName : null
 }
 
 function asDelta(payload: unknown) {
@@ -24,27 +35,31 @@ function asDelta(payload: unknown) {
   }
 }
 
-function asConversationMessages(
-  messages: AgentConversationMessage[] | undefined
-) {
-  return messages ?? []
+function conversationMessages(document: TargetWorkspaceDocument) {
+  return document.messages
+    .filter((message) => message.role !== "SYSTEM")
+    .map((message) => ({
+      id: message.id,
+      role:
+        message.role === "USER" ? ("user" as const) : ("assistant" as const),
+      content: message.content,
+      runId: message.agentRunId ?? null,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+    }))
 }
 
 export default function AgentSync() {
-  const applyDraftSnapshot = useWorkspaceStore(
-    (state) => state.applyDraftSnapshot
+  const applyWorkspaceDocument = useWorkspaceStore(
+    (state) => state.applyWorkspaceDocument
   )
-  const setDraftLocked = useWorkspaceStore((state) => state.setDraftLocked)
   const setAgentSender = useWorkspaceStore((state) => state.setAgentSender)
   const setChatMessages = useWorkspaceStore((state) => state.setChatMessages)
-  const setPendingSuggestions = useWorkspaceStore(
-    (state) => state.setPendingSuggestions
-  )
   const appendAssistantMessage = useWorkspaceStore(
     (state) => state.appendAssistantMessage
   )
-  const setDraftSaveState = useWorkspaceStore(
-    (state) => state.setDraftSaveState
+  const setWorkspaceCommitState = useWorkspaceStore(
+    (state) => state.setWorkspaceCommitState
   )
   const setFailedTransitPlanCommandId = useWorkspaceStore(
     (state) => state.setFailedTransitPlanCommandId
@@ -54,23 +69,21 @@ export default function AgentSync() {
     let socket: WebSocket | null = null
     let disposed = false
 
-    const applySnapshot = (snapshot: DraftSnapshot) => {
-      applyDraftSnapshot(snapshot.document, snapshot.revision)
-      setDraftLocked(snapshot.isLocked)
-      setPendingSuggestions(snapshot.pendingSuggestions ?? [])
+    const applyDocument = (document: TargetWorkspaceDocument | null) => {
+      if (!document) return
+      applyWorkspaceDocument(document)
+      setChatMessages(conversationMessages(document))
     }
 
-    bootstrapAgentSession()
-      .then(({ sessionId, draft, messages }) => {
+    bootstrapWorkspace()
+      .then(({ workspace, ticket }) => {
         if (disposed) return
-        applySnapshot(draft)
-        setChatMessages(asConversationMessages(messages))
+        applyDocument(workspace)
 
-        const activeSocket = connectAgentSocket(sessionId)
+        const activeSocket = connectAgentSocket(ticket)
         socket = activeSocket
         activeSocket.addEventListener("open", () => {
           if (disposed) return
-          // 只有 OPEN 后才发布发送器，依赖它的深链接加载事件不会在连接期丢失。
           setAgentSender((type, payload) => {
             sendAgentEvent(activeSocket, type, payload)
           })
@@ -86,22 +99,23 @@ export default function AgentSync() {
           const message = JSON.parse(event.data) as AgentEvent
 
           if (
-            message.type === "session.ready" ||
-            message.type === "draft.updated" ||
-            message.type === "draft.locked" ||
-            message.type === "draft.unlocked"
+            message.type === "workspace.ready" ||
+            message.type === "workspace.updated" ||
+            message.type === "workspace.locked" ||
+            message.type === "workspace.unlocked"
           ) {
-            applySnapshot(asDraftSnapshot(message.payload))
-            return
-          }
-
-          if (message.type === "draft.saved") {
-            setDraftSaveState("success")
+            applyDocument(workspaceFromPayload(message.payload))
+            const commandName = commandNameFromPayload(message.payload)
+            if (commandName) {
+              setWorkspaceCommitState(
+                commandName === "workspace.commit" ? "success" : "idle"
+              )
+            }
             return
           }
 
           if (message.type === "agent.run.started") {
-            setDraftSaveState("idle")
+            setWorkspaceCommitState("idle")
             return
           }
 
@@ -113,10 +127,6 @@ export default function AgentSync() {
             return
           }
 
-          if (message.type === "agent.run.completed") {
-            return
-          }
-
           if (message.type === "agent.run.cancelled") {
             appendAssistantMessage("\n已停止。\n")
             return
@@ -124,14 +134,13 @@ export default function AgentSync() {
 
           if (message.type === "agent.run.failed" || message.type === "error") {
             const error = asDelta(message.payload)
-            if (
-              message.type === "error" &&
-              error.commandId?.startsWith("browser-plan:")
-            ) {
+            if (error.commandId?.startsWith("browser-plan:")) {
               setFailedTransitPlanCommandId(error.commandId)
             }
+            if (error.commandId?.startsWith("browser-commit:")) {
+              setWorkspaceCommitState("error")
+            }
             appendAssistantMessage(`\n${error.message ?? "Agent 运行失败"}\n`)
-            setDraftSaveState("error")
           }
         })
       })
@@ -146,13 +155,11 @@ export default function AgentSync() {
     }
   }, [
     appendAssistantMessage,
+    applyWorkspaceDocument,
     setAgentSender,
     setChatMessages,
-    applyDraftSnapshot,
-    setDraftLocked,
-    setDraftSaveState,
     setFailedTransitPlanCommandId,
-    setPendingSuggestions,
+    setWorkspaceCommitState,
   ])
 
   return null

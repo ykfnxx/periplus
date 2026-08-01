@@ -1,9 +1,15 @@
 "use client"
 
 import { useEffect } from "react"
-import { getEdgePathPositions } from "@/lib/journeys/transit-geometry"
+import {
+  getEdgePathPositions,
+  type LngLatTuple,
+} from "@/lib/journeys/transit-geometry"
 import { plannedLocationOf } from "@/lib/journeys/locations"
-import { selectedTransitPlan } from "@/lib/journeys/planning"
+import {
+  activeTransitPlanningRun,
+  selectedTransitPlan,
+} from "@/lib/journeys/planning"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import {
   getRouteSegmentStyle,
@@ -12,9 +18,16 @@ import {
 } from "@/lib/ui/map-theme"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import type { MapIntent } from "@/modules/workspace/contracts"
-import type { JourneyLngLat, TransitEvent, TransitPlan } from "@/types/journey"
+import type {
+  TargetJourneyEvent,
+  TargetTransitPlanningRun,
+} from "@/modules/data-model/contracts"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 
-function lngLatPath(positions: JourneyLngLat[]) {
+type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
+type TransitPlan = TargetTransitPlanningRun["plans"][number]
+
+function lngLatPath(positions: LngLatTuple[]) {
   return positions.map(([lng, lat]) => new AMap.LngLat(lng, lat))
 }
 
@@ -24,7 +37,7 @@ export default function RoutePolyline({
   onIntent?: (intent: MapIntent) => void
 }) {
   const map = useWorkspaceStore((state) => state.map)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -34,15 +47,13 @@ export default function RoutePolyline({
   )
 
   useEffect(() => {
-    if (!map || !draftJourney) return
+    if (!map || !graph) return
     const view = getJourneyScopeProjection(
-      draftJourney,
+      graph,
       viewLevel,
       activeSectionEventId
     )
-    const eventById = new Map(
-      draftJourney.events.map((event) => [event.id, event])
-    )
+    const eventById = new Map(graph.events.map((event) => [event.id, event]))
     const polylines: AMap.Polyline[] = []
     const transferMarkers: AMap.Marker[] = []
     const bindSelection = (polyline: AMap.Polyline, event: TransitEvent) => {
@@ -61,12 +72,16 @@ export default function RoutePolyline({
         eventById.get(event.detail.plannedToEventId ?? "")
       )
       if (!from || !to) continue
-      const selected = selectedTransitPlan(event)
+      const activeRun = activeTransitPlanningRun(
+        event,
+        graph.transitPlanningRuns
+      )
+      const selected = selectedTransitPlan(event, graph.transitPlanningRuns)
       const isSelected = selectedTransitEventId === event.id
       const isDimmed = selectedTransitEventId !== null && !isSelected
       if (selected?.segments.some((segment) => segment.positions.length >= 2)) {
         if (isSelected) {
-          for (const candidate of event.detail.plans ?? []) {
+          for (const candidate of activeRun?.plans ?? []) {
             if (candidate.id !== selected.id)
               drawCandidate(candidate, polylines)
           }
@@ -91,8 +106,7 @@ export default function RoutePolyline({
         path: lngLatPath(positions),
         strokeColor: periplusColors.routeBluePending,
         strokeWeight: isSelected ? 7 : 6,
-        strokeOpacity:
-          event.detail.planningStatus === "FAILED" || isDimmed ? 0.25 : 0.9,
+        strokeOpacity: activeRun?.status === "FAILED" || isDimmed ? 0.25 : 0.9,
         strokeStyle: "dashed",
         strokeDasharray: [10, 9],
         lineJoin: "round",
@@ -110,7 +124,7 @@ export default function RoutePolyline({
     }
   }, [
     map,
-    draftJourney,
+    graph,
     viewLevel,
     activeSectionEventId,
     selectedTransitEventId,
@@ -154,7 +168,11 @@ function drawSelectedPlan(
       strokeColor: periplusColors.routeBlue,
       strokeWeight: isSelected ? 9 : 7,
       strokeOpacity:
-        event.detail.planningStatus === "STALE" ? 0.48 : isDimmed ? 0.3 : 0.96,
+        event.detail.routeState === "ROUTE_STALE"
+          ? 0.48
+          : isDimmed
+            ? 0.3
+            : 0.96,
       strokeStyle:
         schematic || style.strokeStyle === "dashed" ? "dashed" : "solid",
       strokeDasharray: schematic ? [10, 8] : style.dasharray,

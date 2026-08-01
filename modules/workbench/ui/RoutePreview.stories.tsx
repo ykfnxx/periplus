@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { silkRoadJourney } from "@/lib/mock-journeys"
-import { withWorkspaceState } from "@/tests/storybook/workspace-story"
+import {
+  withWorkspaceState,
+  workspaceDocumentForStory,
+} from "@/tests/storybook/workspace-story"
 import RoutePreview from "./RoutePreview"
 
 const meta = {
@@ -19,13 +22,17 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Overview: Story = {
-  decorators: [withWorkspaceState({ draftJourney: silkRoadJourney })],
+  decorators: [
+    withWorkspaceState({
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
+    }),
+  ],
 }
 
 export const Section: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourney,
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
       viewLevel: "section",
       activeSectionEventId: "section-xian",
     }),
@@ -33,5 +40,5 @@ export const Section: Story = {
 }
 
 export const Empty: Story = {
-  decorators: [withWorkspaceState({ draftJourney: null })],
+  decorators: [withWorkspaceState({ workspaceDocument: null })],
 }

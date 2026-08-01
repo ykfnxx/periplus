@@ -1,62 +1,120 @@
-import { cookies } from "next/headers"
+import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
-import { periplusServerConfig } from "@/config/periplus.server"
 import {
   AuthRequiredError,
   requireCurrentUser,
 } from "@/modules/auth/server/context"
+import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
+import { getJourney } from "@/modules/data/journeys/journey-repository"
+import {
+  createWorkspace,
+  getWorkspaceDocument,
+} from "@/modules/data/workspaces/workspace-repository"
+import { issueWorkspaceTicket } from "@/modules/data/workspaces/workspace-ticket"
+import { createSilkRoadJourney } from "@/lib/mock-journeys"
 
-const agentSessionCookie = "periplus_agent_session"
-const agentBackendUrl = periplusServerConfig.agentBackend.url
+function emptyJourney(ownerId: string): TargetJourneyGraphSnapshot {
+  return {
+    id: randomUUID(),
+    ownerId,
+    revision: 1,
+    status: "DRAFT",
+    visibility: "PRIVATE",
+    title: "未命名行程",
+    events: [],
+    links: [],
+    replacements: [],
+    branchSelections: [],
+    transitPlanningRuns: [],
+    eventAssetLinks: [],
+    observations: [],
+    eventSourceLinks: [],
+  }
+}
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await requireCurrentUser()
-    const cookieStore = await cookies()
-    const existingSessionId = cookieStore.get(agentSessionCookie)?.value
-
-    let backendResponse: Response
-    try {
-      backendResponse = await fetch(`${agentBackendUrl}/session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: existingSessionId,
-          userId: context.userId,
-          role: context.role,
-        }),
-        cache: "no-store",
-      })
-    } catch {
+    const search = new URL(request.url).searchParams
+    const workspaceId = search.get("workspace")?.trim() || null
+    const journeyId = search.get("journey")?.trim() || null
+    if (workspaceId && journeyId) {
       return NextResponse.json(
-        {
-          error: {
-            code: "agent_unavailable",
-            message: "Agent backend is unavailable",
-          },
-        },
-        { status: 503 }
+        { error: { code: "invalid_input", message: "Choose one source" } },
+        { status: 400 }
       )
     }
 
-    const body = await backendResponse.json()
-    if (!backendResponse.ok) {
-      return NextResponse.json(body, { status: backendResponse.status })
+    let workspace = workspaceId
+      ? await getWorkspaceDocument(context, workspaceId)
+      : null
+    if (workspaceId && !workspace) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "workspace_not_found",
+            message: "Workspace was not found",
+          },
+        },
+        { status: 404 }
+      )
     }
 
-    const response = NextResponse.json(body)
-    if (body.sessionId && typeof body.sessionId === "string") {
-      response.cookies.set(agentSessionCookie, body.sessionId, {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
+    if (!workspace) {
+      const sourceJourney =
+        journeyId && journeyId !== "preset-silk-road"
+          ? await getJourney(context, journeyId)
+          : null
+      if (journeyId && journeyId !== "preset-silk-road" && !sourceJourney) {
+        return NextResponse.json(
+          {
+            error: {
+              code: "journey_not_found",
+              message: "Journey was not found",
+            },
+          },
+          { status: 404 }
+        )
+      }
+      const graph = sourceJourney
+        ? sourceJourney
+        : journeyId === "preset-silk-road"
+          ? createSilkRoadJourney({ id: randomUUID(), ownerId: context.userId })
+          : emptyJourney(context.userId)
+      const session = await createWorkspace(context, {
+        graph,
+        ...(sourceJourney
+          ? {
+              sourceJourneyId: sourceJourney.id,
+              baseJourneyRevision: sourceJourney.revision,
+            }
+          : {}),
       })
+      workspace = await getWorkspaceDocument(context, session.id)
     }
-    return response
+
+    if (!workspace) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "workspace_unavailable",
+            message: "Workspace could not be created",
+          },
+        },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      workspace,
+      ticket: issueWorkspaceTicket(context.userId, workspace.session.id),
+    })
   } catch (error) {
     if (error instanceof AuthRequiredError) {
       return NextResponse.json(
-        { error: "Authentication required" },
+        {
+          error: { code: "auth_required", message: "Authentication required" },
+        },
         { status: 401 }
       )
     }

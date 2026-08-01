@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { expect, fn, userEvent, within } from "storybook/test"
 import { withWorkspaceState } from "@/tests/storybook/workspace-story"
+import { silkRoadJourney } from "@/lib/mock-journeys"
+import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
 import PresetPromptBubbles from "./PresetPromptBubbles"
 
 const meta = {
@@ -39,10 +41,12 @@ export const Ready: Story = {
   },
 }
 
-export const DraftLocked: Story = {
+export const WorkspaceLocked: Story = {
   decorators: [
     withWorkspaceState({
-      isDraftLocked: true,
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney, {
+        locked: true,
+      }),
       sendAgentEvent: fn(),
     }),
   ],

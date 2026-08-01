@@ -11,6 +11,7 @@ import {
   Star,
 } from "lucide-react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import type { ActiveMapPanel } from "@/modules/workspace/state/types"
 import PhotoUploadPanel from "./PhotoUploadPanel"
 import SavedRoutesPanel from "./SavedRoutesPanel"
@@ -29,7 +30,7 @@ const controls: Array<{
 export default function WorkspaceCornerControls() {
   const [menuOpen, setMenuOpen] = useState(false)
   const map = useWorkspaceStore((state) => state.map)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const activeMapPanel = useWorkspaceStore((state) => state.activeMapPanel)
   const setActiveMapPanel = useWorkspaceStore(
     (state) => state.setActiveMapPanel
@@ -67,7 +68,7 @@ export default function WorkspaceCornerControls() {
         </MapControlButton>
         <MapControlButton
           label="定位当前行程"
-          disabled={!draftJourney}
+          disabled={!graph}
           onClick={() =>
             requestMapFocus({ type: "active-journey", maxZoom: 15 })
           }

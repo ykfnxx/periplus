@@ -3,16 +3,19 @@
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { selectWorkspaceLocked } from "@/modules/workspace/state/selectors"
 
 export default function ChatHistory() {
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
-  const pendingSuggestions = useWorkspaceStore(
-    (state) => state.pendingSuggestions
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const suggestions = useWorkspaceStore(
+    (state) =>
+      state.workspaceDocument?.suggestions.filter(
+        (suggestion) => suggestion.status === "PENDING"
+      ) ?? []
   )
-  const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
 
-  if (!chatMessages.length && !pendingSuggestions.length && !isDraftLocked) {
+  if (!chatMessages.length && !suggestions.length && !isWorkspaceLocked) {
     return null
   }
 
@@ -36,10 +39,10 @@ export default function ChatHistory() {
           </div>
         )
       )}
-      {isDraftLocked && (
+      {isWorkspaceLocked && (
         <div className="text-xs font-bold text-teak">正在规划...</div>
       )}
-      {pendingSuggestions.map((suggestion) => (
+      {suggestions.map((suggestion) => (
         <div
           key={suggestion.id}
           className="rounded-xl border border-ink-10 bg-white p-3 shadow-periplus-soft"
@@ -53,35 +56,9 @@ export default function ChatHistory() {
                 {suggestion.summary}
               </p>
               <p className="mt-1 text-[11px] font-bold text-teak">
-                {suggestion.toolCallCount} 项变更
+                {suggestion.commandPayloads.length} 项变更 · 建议模式待确认
               </p>
             </div>
-          </div>
-          <div className="mt-3 flex justify-end gap-2">
-            <button
-              type="button"
-              disabled={!sendAgentEvent || isDraftLocked}
-              onClick={() =>
-                sendAgentEvent?.("agent.diff.reject", {
-                  suggestionId: suggestion.id,
-                })
-              }
-              className="rounded-full border border-ink-15 px-3 py-1.5 text-xs font-bold text-teak transition hover:border-walnut hover:text-ink disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              拒绝
-            </button>
-            <button
-              type="button"
-              disabled={!sendAgentEvent || isDraftLocked}
-              onClick={() =>
-                sendAgentEvent?.("agent.diff.accept", {
-                  suggestionId: suggestion.id,
-                })
-              }
-              className="rounded-full bg-russet px-3 py-1.5 text-xs font-bold text-soft-white transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              接受
-            </button>
           </div>
         </div>
       ))}

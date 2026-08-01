@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { expect, fn, userEvent, within } from "storybook/test"
 import { silkRoadJourney } from "@/lib/mock-journeys"
-import { withWorkspaceState } from "@/tests/storybook/workspace-story"
+import {
+  withWorkspaceState,
+  workspaceDocumentForStory,
+} from "@/tests/storybook/workspace-story"
 import AIComposer from "./AIComposer"
 
 const meta = {
@@ -24,7 +27,7 @@ const sendReadyEvent = fn()
 export const Ready: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourney,
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
       sendAgentEvent: sendReadyEvent,
     }),
   ],
@@ -48,8 +51,9 @@ const sendLockedEvent = fn()
 export const Running: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourney,
-      isDraftLocked: true,
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney, {
+        locked: true,
+      }),
       sendAgentEvent: sendLockedEvent,
     }),
   ],
@@ -67,8 +71,8 @@ export const Running: Story = {
 export const SaveFailed: Story = {
   decorators: [
     withWorkspaceState({
-      draftJourney: silkRoadJourney,
-      draftSaveState: "error",
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
+      workspaceCommitState: "error",
       sendAgentEvent: fn(),
     }),
   ],

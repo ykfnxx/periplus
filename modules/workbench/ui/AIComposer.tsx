@@ -8,20 +8,23 @@ import {
   useRef,
 } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { selectWorkspaceLocked } from "@/modules/workspace/state/selectors"
 import AgentModeToggle from "./AgentModeToggle"
 
 export default function AIComposer() {
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const document = useWorkspaceStore((state) => state.workspaceDocument)
   const composerInput = useWorkspaceStore((state) => state.composerInput)
   const agentMode = useWorkspaceStore((state) => state.agentMode)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
   const setComposerInput = useWorkspaceStore((state) => state.setComposerInput)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const addUserMessage = useWorkspaceStore((state) => state.addUserMessage)
-  const isDraftLocked = useWorkspaceStore((state) => state.isDraftLocked)
-  const draftSaveState = useWorkspaceStore((state) => state.draftSaveState)
-  const setDraftSaveState = useWorkspaceStore(
-    (state) => state.setDraftSaveState
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const workspaceCommitState = useWorkspaceStore(
+    (state) => state.workspaceCommitState
+  )
+  const setWorkspaceCommitState = useWorkspaceStore(
+    (state) => state.setWorkspaceCommitState
   )
   const lightboxPhotoShare = useWorkspaceStore(
     (state) => state.lightboxPhotoShare
@@ -30,7 +33,7 @@ export default function AIComposer() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !isDraftLocked || lightboxPhotoShare) {
+      if (event.key !== "Escape" || !isWorkspaceLocked || lightboxPhotoShare) {
         return
       }
 
@@ -54,11 +57,11 @@ export default function AIComposer() {
         escTimerRef.current = null
       }
     }
-  }, [isDraftLocked, lightboxPhotoShare, sendAgentEvent])
+  }, [isWorkspaceLocked, lightboxPhotoShare, sendAgentEvent])
 
   const sendPrompt = () => {
     const prompt = composerInput.trim()
-    if (!prompt || !sendAgentEvent || isDraftLocked) return
+    if (!prompt || !sendAgentEvent || isWorkspaceLocked) return
 
     addUserMessage(prompt)
     setWorkbenchTab("chat")
@@ -79,9 +82,28 @@ export default function AIComposer() {
   }
 
   const saveRoute = () => {
-    if (!draftJourney || !sendAgentEvent || isDraftLocked) return
-    setDraftSaveState("saving")
-    sendAgentEvent("draft.save")
+    if (
+      !document ||
+      document.draftState === "CLEAN" ||
+      !sendAgentEvent ||
+      isWorkspaceLocked
+    ) {
+      return
+    }
+    const revision = document.session.headWorkspaceRevision
+    const commandId = `browser-commit:${document.session.id}:${revision}`
+    setWorkspaceCommitState("saving")
+    sendAgentEvent("workspace.command", {
+      commandId,
+      expectedRevision: revision,
+      idempotencyKey: commandId,
+      command: {
+        name: "workspace.commit",
+        payload: {
+          expectedJourneyRevision: document.session.baseJourneyRevision,
+        },
+      },
+    })
   }
 
   const cancelAgentRun = () => {
@@ -102,23 +124,24 @@ export default function AIComposer() {
             rows={1}
             aria-label="AI 输入"
             placeholder="告诉我你想怎么改路线..."
-            disabled={isDraftLocked}
+            disabled={isWorkspaceLocked}
             className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent py-1 text-[13px] leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
         <div className="mt-1.5 flex items-center justify-between">
           <AgentModeToggle />
           <div className="flex items-center gap-2">
-            {!isDraftLocked && (
+            {!isWorkspaceLocked && (
               <button
                 type="button"
                 onClick={saveRoute}
                 aria-label="保存"
                 title="保存"
                 disabled={
-                  !draftJourney ||
+                  !document ||
+                  document.draftState === "CLEAN" ||
                   !sendAgentEvent ||
-                  draftSaveState === "saving"
+                  workspaceCommitState === "saving"
                 }
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-ink-15 bg-cream text-walnut transition hover:border-russet hover:text-russet disabled:cursor-default disabled:opacity-45"
               >
@@ -126,20 +149,20 @@ export default function AIComposer() {
               </button>
             )}
             <button
-              type={isDraftLocked ? "button" : "submit"}
-              onClick={isDraftLocked ? cancelAgentRun : undefined}
-              aria-label={isDraftLocked ? "停止" : "发送"}
-              title={isDraftLocked ? "停止" : "发送"}
+              type={isWorkspaceLocked ? "button" : "submit"}
+              onClick={isWorkspaceLocked ? cancelAgentRun : undefined}
+              aria-label={isWorkspaceLocked ? "停止" : "发送"}
+              title={isWorkspaceLocked ? "停止" : "发送"}
               disabled={
-                !isDraftLocked && (!composerInput.trim() || !sendAgentEvent)
+                !isWorkspaceLocked && (!composerInput.trim() || !sendAgentEvent)
               }
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-soft-white transition disabled:cursor-default disabled:opacity-55 ${
-                isDraftLocked
+                isWorkspaceLocked
                   ? "bg-ink hover:bg-russet"
                   : "bg-russet hover:bg-ink disabled:bg-mustard disabled:text-ink"
               }`}
             >
-              {isDraftLocked ? (
+              {isWorkspaceLocked ? (
                 <Square className="h-4 w-4" aria-hidden="true" />
               ) : (
                 <Send className="h-4 w-4" aria-hidden="true" />
@@ -149,8 +172,8 @@ export default function AIComposer() {
         </div>
       </form>
       <div className="flex items-center justify-end px-2 text-[11px] font-bold text-teak">
-        {draftSaveState === "success" && <span>保存成功</span>}
-        {draftSaveState === "error" && (
+        {workspaceCommitState === "success" && <span>保存成功</span>}
+        {workspaceCommitState === "error" && (
           <span className="text-coral">保存失败</span>
         )}
       </div>

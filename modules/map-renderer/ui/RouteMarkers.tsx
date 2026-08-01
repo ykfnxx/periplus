@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { plannedLocationOf } from "@/lib/journeys/locations"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import type { MapIntent } from "@/modules/workspace/contracts"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
 
@@ -13,7 +14,7 @@ interface RouteMarkersProps {
 
 export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
   const map = useWorkspaceStore((state) => state.map)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -24,9 +25,9 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
   )
 
   useEffect(() => {
-    if (!map || !draftJourney) return
+    if (!map || !graph) return
     const view = getJourneyScopeProjection(
-      draftJourney,
+      graph,
       viewLevel,
       activeSectionEventId
     )
@@ -108,7 +109,7 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
     }
   }, [
     map,
-    draftJourney,
+    graph,
     viewLevel,
     activeSectionEventId,
     hoveredEventId,

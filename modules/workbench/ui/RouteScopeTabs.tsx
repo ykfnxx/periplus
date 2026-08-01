@@ -1,12 +1,13 @@
 "use client"
 
 import { useRef } from "react"
-import { projectMainSequence } from "@/lib/journeys/graph"
+import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 export default function RouteScopeTabs() {
   const railRef = useRef<HTMLDivElement>(null)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -15,10 +16,12 @@ export default function RouteScopeTabs() {
   const returnToOverview = useWorkspaceStore((state) => state.returnToOverview)
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
-  if (!draftJourney) return null
-  const sections = projectMainSequence(draftJourney).filter(
-    (event) => event.type === "SECTION"
-  )
+  if (!graph) return null
+  const sections = getJourneyScopeProjection(
+    graph,
+    "overview",
+    null
+  ).events.filter((event) => event.type === "SECTION")
 
   const selectOverview = () => {
     if (viewLevel === "overview") return

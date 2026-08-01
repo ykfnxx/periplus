@@ -57,16 +57,24 @@ test.describe("Journey workspace", () => {
     ).toHaveAttribute("aria-selected", "true")
     await expect(
       page.getByRole("button", { name: "选择事件 西安城墙" })
-    ).toBeVisible()
+    ).toContainText("1")
+    await expect(
+      page.getByRole("button", { name: "选择事件 大雁塔" })
+    ).toContainText("2")
+    await expect(
+      page.getByRole("button", { name: "选择事件 回民街" })
+    ).toContainText("3")
     await expect(
       page.getByRole("button", { name: "交通事件 出租车" })
     ).toBeVisible()
   })
 
-  test("/map preserves the journey query on redirect", async ({ page }) => {
+  test("/map starts a target Workspace from the Journey source", async ({
+    page,
+  }) => {
     await signIn(page)
     await page.goto("/map?journey=preset-silk-road")
-    await page.waitForURL(/\/workspace\?journey=preset-silk-road/)
+    await page.waitForURL(/\/workspace\?workspace=[^&]+/)
     await expect(page.getByRole("heading", { name: "丝绸之路" })).toBeVisible()
   })
 

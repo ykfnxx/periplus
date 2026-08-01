@@ -4,6 +4,7 @@ import { useCallback } from "react"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import { photoDtoToShare, uploadPhoto } from "@/modules/data/photos/client"
 import type { MapIntent } from "@/modules/workspace/contracts"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import AgentSync from "@/modules/workbench/ui/AgentSync"
 import PhotoSync from "./PhotoSync"
@@ -60,7 +61,7 @@ export function dispatchMapIntent(intent: MapIntent) {
     intent.type === "map.event-hover-cleared"
   ) {
     const view = getJourneyScopeProjection(
-      state.draftJourney,
+      selectWorkspaceGraph(state),
       state.viewLevel,
       state.activeSectionEventId
     )
@@ -77,10 +78,12 @@ export function dispatchMapIntent(intent: MapIntent) {
       state.setHoveredEventId(event.id)
       return
     }
-    if (view.level === "overview" && event.type === "SECTION") {
-      state.setWorkbenchTab("preview")
-      state.enterSectionView(event.id)
-      state.requestMapFocus({ type: "active-journey", maxZoom: 15 })
+    if (event.type === "SECTION") {
+      if (view.level === "overview") {
+        state.setWorkbenchTab("preview")
+        state.enterSectionView(event.id)
+        state.requestMapFocus({ type: "active-journey", maxZoom: 15 })
+      }
       return
     }
     if (state.selectedLocationEvent?.id === event.id) {

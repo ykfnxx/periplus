@@ -5,6 +5,8 @@ import { ChevronLeft } from "lucide-react"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import { totalDurationDays } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 import RouteOverview from "./RouteOverview"
 import RouteScopeTabs from "./RouteScopeTabs"
 import RouteTimeline from "./RouteTimeline"
@@ -15,24 +17,25 @@ export default function RoutePreview({
   onCollapse?: () => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
   )
-  const draftSaveState = useWorkspaceStore((state) => state.draftSaveState)
-  const view = getJourneyScopeProjection(
-    draftJourney,
-    viewLevel,
-    activeSectionEventId
+  const workspaceCommitState = useWorkspaceStore(
+    (state) => state.workspaceCommitState
   )
+  const workspaceDraftState = useWorkspaceStore(
+    (state) => state.workspaceDocument?.draftState ?? "CLEAN"
+  )
+  const view = getJourneyScopeProjection(graph, viewLevel, activeSectionEventId)
 
   useEffect(() => {
     const scrollContainer = rootRef.current?.closest(".periplus-chat-scroll")
     if (scrollContainer) scrollContainer.scrollTop = 0
   }, [activeSectionEventId, viewLevel])
 
-  if (!draftJourney) {
+  if (!graph) {
     return (
       <div className="flex h-full min-h-72 items-center justify-center px-6 text-center text-sm leading-6 text-teak">
         暂无路线预览
@@ -43,7 +46,7 @@ export default function RoutePreview({
   const durationDays = totalDurationDays(view.events)
   const title =
     view.level === "overview"
-      ? `${draftJourney.title}${durationDays ? ` · ${durationDays} 天` : ""}`
+      ? `${graph.title}${durationDays ? ` · ${durationDays} 天` : ""}`
       : `${view.title}${durationDays ? ` · ${durationDays} 天` : ""}`
 
   return (
@@ -55,16 +58,17 @@ export default function RoutePreview({
               {view.level === "overview" ? "行程总览" : "城市行程"}
             </p>
             <h1
-              aria-label={
-                view.level === "overview" ? draftJourney.title : view.title
-              }
+              aria-label={view.level === "overview" ? graph.title : view.title}
               className="mt-1 truncate text-[22px] leading-7 font-black text-ink"
             >
               {title}
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <SaveState state={draftSaveState} />
+            <SaveState
+              state={workspaceCommitState}
+              draftState={workspaceDraftState}
+            />
             {onCollapse ? (
               <button
                 type="button"
@@ -100,15 +104,41 @@ export default function RoutePreview({
 
 function SaveState({
   state,
+  draftState,
 }: {
-  state: ReturnType<typeof useWorkspaceStore.getState>["draftSaveState"]
+  state: ReturnType<typeof useWorkspaceStore.getState>["workspaceCommitState"]
+  draftState: TargetWorkspaceDocument["draftState"]
 }) {
+  const displayState =
+    state === "saving"
+      ? "saving"
+      : state === "error"
+        ? "failed"
+        : draftState === "CONFLICT"
+          ? "conflict"
+          : draftState === "STALE"
+            ? "stale"
+            : draftState === "DIRTY"
+              ? "dirty"
+              : "saved"
   const label =
-    state === "saving" ? "保存中" : state === "error" ? "保存失败" : "已保存"
+    displayState === "saving"
+      ? "保存中"
+      : displayState === "failed"
+        ? "保存失败"
+        : displayState === "conflict"
+          ? "保存冲突"
+          : displayState === "stale"
+            ? "需要刷新"
+            : displayState === "dirty"
+              ? "未保存"
+              : "已保存"
   const colors =
-    state === "error"
+    displayState === "failed" || displayState === "conflict"
       ? { dot: "bg-coral", text: "text-coral" }
-      : state === "saving"
+      : displayState === "saving" ||
+          displayState === "dirty" ||
+          displayState === "stale"
         ? { dot: "bg-mustard", text: "text-teak" }
         : { dot: "bg-olive", text: "text-olive" }
 

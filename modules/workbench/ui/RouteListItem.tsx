@@ -1,9 +1,9 @@
 import { locationCount } from "@/lib/journeys/summary"
-import type { Journey } from "@/types/journey"
+import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
 
 interface RouteListItemProps {
-  journey: Journey
-  onSelect: (journey: Journey) => void
+  journey: TargetJourneyGraphSnapshot
+  onSelect: (journey: TargetJourneyGraphSnapshot) => void
 }
 
 export default function RouteListItem({

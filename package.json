@@ -7,7 +7,7 @@
     "dev": "tsx scripts/dev.ts",
     "dev:web": "next dev -p 3001",
     "dev:backend": "tsx backend/server.ts",
-    "dev:mcp:draft": "tsx backend/mcp/server.ts",
+    "dev:mcp:workspace": "tsx backend/mcp/server.ts",
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "eslint",

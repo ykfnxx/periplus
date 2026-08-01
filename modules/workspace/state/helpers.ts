@@ -1,4 +1,3 @@
-import type { DraftJourney, TransitEvent } from "@/types/journey"
 import type {
   ChatMessage,
   ChatMessageRole,
@@ -9,17 +8,4 @@ export function createChatMessage(
   content: string
 ): ChatMessage {
   return { id: `message-${Date.now()}-${Math.random()}`, role, content }
-}
-
-export function mapTransitEvents(
-  journey: DraftJourney | null,
-  mapper: (event: TransitEvent) => TransitEvent
-) {
-  if (!journey) return null
-  return {
-    ...journey,
-    events: journey.events.map((event) =>
-      event.type === "TRANSIT" ? mapper(event) : event
-    ),
-  }
 }

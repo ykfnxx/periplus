@@ -5,7 +5,11 @@ import Image from "next/image"
 import { BusFront, Car, Footprints, Plane, TrainFront } from "lucide-react"
 import { matchPhotosToNode } from "@/lib/geo"
 import { plannedLocationOf } from "@/lib/journeys/locations"
-import { selectedTransitPlan } from "@/lib/journeys/planning"
+import {
+  activeTransitPlanningRun,
+  selectedTransitPlan,
+  type TransportMode,
+} from "@/lib/journeys/planning"
 import {
   formatTransitDistance,
   formatTransitDuration,
@@ -18,11 +22,16 @@ import {
 } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import type {
-  JourneyEvent,
-  LocationJourneyEvent,
-  TransitEvent,
-  TransportMode,
-} from "@/types/journey"
+  TargetJourneyEvent,
+  TargetTransitPlanningRun,
+} from "@/modules/data-model/contracts"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+
+type LocationJourneyEvent = Extract<
+  TargetJourneyEvent,
+  { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
+>
+type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
 
 const transportLabels: Record<TransportMode, string> = {
   FLIGHT: "飞机",
@@ -35,9 +44,14 @@ const transportLabels: Record<TransportMode, string> = {
   RENTAL: "租车",
 }
 
-export default function RouteTimeline({ events }: { events: JourneyEvent[] }) {
+export default function RouteTimeline({
+  events,
+}: {
+  events: TargetJourneyEvent[]
+}) {
   const itemRefs = useRef(new Map<string, HTMLDivElement>())
   const photoShares = useWorkspaceStore((state) => state.photoShares)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const selectedLocationEvent = useWorkspaceStore(
     (state) => state.selectedLocationEvent
   )
@@ -81,6 +95,18 @@ export default function RouteTimeline({ events }: { events: JourneyEvent[] }) {
 
   const transits = transitEvents(events)
   const durationMinutes = totalDurationMinutes(events)
+  const locationOrdinals = new Map<string, number>()
+  let locationOrdinal = 0
+  for (const event of events) {
+    if (
+      event.type === "VISIT" ||
+      event.type === "STAY" ||
+      event.type === "MEAL" ||
+      event.type === "ACTIVITY"
+    ) {
+      locationOrdinals.set(event.id, ++locationOrdinal)
+    }
+  }
   return (
     <div className="px-5 pt-2 pb-5">
       <div className="rounded-[10px] border border-olive/20 bg-route-summary px-5 py-3.5">
@@ -97,7 +123,7 @@ export default function RouteTimeline({ events }: { events: JourneyEvent[] }) {
 
       <div className="relative mt-5 pl-10">
         <div className="absolute top-4 bottom-4 left-[15px] w-0.5 bg-bluegray" />
-        {events.map((event, index) => {
+        {events.map((event) => {
           if (event.type === "TRANSIT") {
             return (
               <TransitTimelineRow
@@ -106,6 +132,7 @@ export default function RouteTimeline({ events }: { events: JourneyEvent[] }) {
                 selected={selectedTransitEventId === event.id}
                 onSelect={() => selectTransit(event)}
                 onSelectPlan={(planId) => selectTransitPlan(event.id, planId)}
+                planningRuns={graph?.transitPlanningRuns ?? []}
               />
             )
           }
@@ -113,8 +140,7 @@ export default function RouteTimeline({ events }: { events: JourneyEvent[] }) {
             event.type === "VISIT" ||
             event.type === "STAY" ||
             event.type === "MEAL" ||
-            event.type === "ACTIVITY" ||
-            event.type === "SECTION"
+            event.type === "ACTIVITY"
           ) {
             const location = plannedLocationOf(event)
             const photos = location
@@ -144,7 +170,7 @@ export default function RouteTimeline({ events }: { events: JourneyEvent[] }) {
                   }`}
                 >
                   <span className="absolute top-3 -left-[39px] flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-white bg-route-blue text-[10px] font-black text-ink shadow-sm">
-                    {index + 1}
+                    {locationOrdinals.get(event.id)}
                   </span>
                   <span className="block text-[10px] font-black text-teak">
                     {event.type} · {event.executionStatus ?? "分组"}
@@ -199,13 +225,16 @@ function TransitTimelineRow({
   selected,
   onSelect,
   onSelectPlan,
+  planningRuns,
 }: {
   event: TransitEvent
   selected: boolean
   onSelect: () => void
   onSelectPlan: (planId: string) => void
+  planningRuns: readonly TargetTransitPlanningRun[]
 }) {
-  const plan = selectedTransitPlan(event)
+  const activeRun = activeTransitPlanningRun(event, planningRuns)
+  const plan = selectedTransitPlan(event, planningRuns)
   const modeLabel =
     event.detail.requestMode === "TRANSIT"
       ? "公共交通"
@@ -240,17 +269,17 @@ function TransitTimelineRow({
         <span className="text-[11px] font-black text-bluegray">
           {modeLabel} {[duration, distance].filter(Boolean).join(" · ")}
         </span>
-        {event.detail.planningWarning ? (
+        {activeRun?.warning ? (
           <span className="mt-1.5 block text-[10px] text-coral">
-            {event.detail.planningWarning}
+            {activeRun.warning}
           </span>
         ) : null}
       </button>
-      {selected && (event.detail.plans?.length ?? 0) > 1 ? (
+      {selected && (activeRun?.plans.length ?? 0) > 1 ? (
         <div className="mt-2 rounded-lg border border-ink-10 bg-white p-3">
           <p className="mb-2 text-[10px] font-black text-teak">路线方案</p>
           <div className="scrollbar-hidden flex gap-2 overflow-x-auto">
-            {event.detail.plans!.map((candidate) => (
+            {activeRun!.plans.map((candidate) => (
               <button
                 key={candidate.id}
                 type="button"

@@ -1,12 +1,16 @@
 "use client"
 
 import { AlertCircle, ChevronRight, LoaderCircle } from "lucide-react"
-import { projectMainSequence } from "@/lib/journeys/graph"
+import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import {
   formatTransitDistance,
   formatTransitDuration,
 } from "@/lib/journeys/display"
-import { selectedTransitPlan } from "@/lib/journeys/planning"
+import {
+  activeTransitPlanningRun,
+  selectedTransitPlan,
+  type TransportMode,
+} from "@/lib/journeys/planning"
 import {
   locationCount,
   readyTransitCount,
@@ -14,7 +18,14 @@ import {
   totalTransitDistanceMeters,
 } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import type { SectionEvent, TransitEvent, TransportMode } from "@/types/journey"
+import type {
+  TargetJourneyEvent,
+  TargetTransitPlanningRun,
+} from "@/modules/data-model/contracts"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+
+type SectionEvent = Extract<TargetJourneyEvent, { type: "SECTION" }>
+type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
 
 const transportLabels: Partial<Record<TransportMode, string>> = {
   FLIGHT: "飞机",
@@ -37,7 +48,7 @@ const markerClasses = [
 ]
 
 export default function RouteOverview() {
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const enterSectionView = useWorkspaceStore((state) => state.enterSectionView)
   const selectedTransitEventId = useWorkspaceStore(
     (state) => state.selectedTransitEventId
@@ -47,16 +58,16 @@ export default function RouteOverview() {
   )
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
-  if (!draftJourney) return null
-  const sequence = projectMainSequence(draftJourney)
+  if (!graph) return null
+  const sequence = getJourneyScopeProjection(graph, "overview", null).events
   const sections = sequence.filter(
     (event): event is SectionEvent => event.type === "SECTION"
   )
   const transits = sequence.filter(
     (event): event is TransitEvent => event.type === "TRANSIT"
   )
-  const childEvents = sections.flatMap((section) =>
-    projectMainSequence(draftJourney, section.id)
+  const childEvents = sections.flatMap(
+    (section) => getJourneyScopeProjection(graph, "section", section.id).events
   )
 
   const openSection = (eventId: string) => {
@@ -78,9 +89,12 @@ export default function RouteOverview() {
           {totalDurationDays(childEvents) ? (
             <span>· {totalDurationDays(childEvents)} 天</span>
           ) : null}
-          {totalTransitDistanceMeters(sequence) ? (
+          {totalTransitDistanceMeters(sequence, graph.transitPlanningRuns) ? (
             <span>
-              · {formatTransitDistance(totalTransitDistanceMeters(sequence))}
+              ·{" "}
+              {formatTransitDistance(
+                totalTransitDistanceMeters(sequence, graph.transitPlanningRuns)
+              )}
             </span>
           ) : null}
         </p>
@@ -97,8 +111,8 @@ export default function RouteOverview() {
               key={event.id}
               section={event}
               index={sections.findIndex((section) => section.id === event.id)}
-              childTitles={projectMainSequence(draftJourney, event.id)
-                .filter((child) => child.type !== "TRANSIT")
+              childTitles={getJourneyScopeProjection(graph, "section", event.id)
+                .events.filter((child) => child.type !== "TRANSIT")
                 .map((child) => child.title)}
               onSelect={() => openSection(event.id)}
             />
@@ -108,6 +122,7 @@ export default function RouteOverview() {
               event={event}
               selected={selectedTransitEventId === event.id}
               onSelect={() => selectTransit(event.id)}
+              planningRuns={graph.transitPlanningRuns}
             />
           ) : null
         )}
@@ -166,12 +181,15 @@ function TransitSummaryCard({
   event,
   selected,
   onSelect,
+  planningRuns,
 }: {
   event: TransitEvent
   selected: boolean
   onSelect: () => void
+  planningRuns: readonly TargetTransitPlanningRun[]
 }) {
-  const plan = selectedTransitPlan(event)
+  const activeRun = activeTransitPlanningRun(event, planningRuns)
+  const plan = selectedTransitPlan(event, planningRuns)
   const label =
     event.detail.requestMode === "TRANSIT"
       ? "公共交通"
@@ -199,16 +217,14 @@ function TransitSummaryCard({
       }`}
     >
       <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-bluegray">
-        {event.detail.planningStatus === "PLANNING" ? (
+        {activeRun?.status === "PLANNING" ? (
           <LoaderCircle className="h-2.5 w-2.5 animate-spin text-soft-white" />
-        ) : event.detail.planningStatus === "FAILED" ? (
+        ) : activeRun?.status === "FAILED" ? (
           <AlertCircle className="h-2.5 w-2.5 text-soft-white" />
         ) : null}
       </span>
       <span className="min-w-0 flex-1 truncate text-[11px] font-black text-bluegray">
-        {event.detail.planningStatus === "PLANNING"
-          ? "正在规划真实路线"
-          : details}
+        {activeRun?.status === "PLANNING" ? "正在规划真实路线" : details}
       </span>
     </button>
   )

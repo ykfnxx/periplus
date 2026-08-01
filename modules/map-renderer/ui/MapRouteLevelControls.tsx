@@ -9,9 +9,10 @@ import {
 } from "@/lib/journeys/summary"
 import { useWorkspaceViewportInsets } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 
 export default function MapRouteLevelControls() {
-  const draftJourney = useWorkspaceStore((state) => state.draftJourney)
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -19,13 +20,9 @@ export default function MapRouteLevelControls() {
   const returnToOverview = useWorkspaceStore((state) => state.returnToOverview)
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
   const viewportInsets = useWorkspaceViewportInsets()
-  const view = getJourneyScopeProjection(
-    draftJourney,
-    viewLevel,
-    activeSectionEventId
-  )
+  const view = getJourneyScopeProjection(graph, viewLevel, activeSectionEventId)
 
-  if (!draftJourney) return null
+  if (!graph) return null
 
   const showOverview = () => {
     returnToOverview()
@@ -34,7 +31,7 @@ export default function MapRouteLevelControls() {
   const days = totalDurationDays(view.events)
   const minutes = totalDurationMinutes(view.events)
   const mobileTitle =
-    view.level === "overview" ? draftJourney.title : `${view.title} · 分段行程`
+    view.level === "overview" ? graph.title : `${view.title} · 分段行程`
   const mobileSummary = [
     `${locationCount(view.events)} 个地点`,
     view.level === "overview" && days ? `${days} 天` : null,
