@@ -292,10 +292,25 @@ async function ownedWorkspace(
 async function touchOrExpire(record: WorkspaceRecord, now: Date) {
   if (record.status !== "ACTIVE") return record
   if (record.expiresAt <= now) {
-    return prisma.workspaceSession.update({
-      where: { id: record.id },
-      data: { status: "EXPIRED" },
-      include: workspaceInclude,
+    return prisma.$transaction(async (tx) => {
+      await tx.workspaceSession.updateMany({
+        where: { id: record.id, status: "ACTIVE", expiresAt: { lte: now } },
+        data: { status: "EXPIRED" },
+      })
+      await tx.workspaceAgentRun.updateMany({
+        where: { workspaceId: record.id, status: "RUNNING" },
+        data: {
+          status: "FAILED",
+          completedAt: now,
+          leaseExpiresAt: null,
+          errorCode: "WORKSPACE_EXPIRED",
+          errorMessage: "Workspace expired while the Agent run was active",
+        },
+      })
+      return tx.workspaceSession.findUniqueOrThrow({
+        where: { id: record.id },
+        include: workspaceInclude,
+      })
     })
   }
   if (record.lastAccessAt >= now) return record
@@ -317,9 +332,21 @@ async function requireActiveWorkspace(
 ) {
   if (record.status !== "ACTIVE" || record.expiresAt <= now) {
     if (record.status === "ACTIVE") {
-      await prisma.workspaceSession.updateMany({
-        where: { id: record.id, status: "ACTIVE", expiresAt: { lte: now } },
-        data: { status: "EXPIRED" },
+      await prisma.$transaction(async (tx) => {
+        await tx.workspaceSession.updateMany({
+          where: { id: record.id, status: "ACTIVE", expiresAt: { lte: now } },
+          data: { status: "EXPIRED" },
+        })
+        await tx.workspaceAgentRun.updateMany({
+          where: { workspaceId: record.id, status: "RUNNING" },
+          data: {
+            status: "FAILED",
+            completedAt: now,
+            leaseExpiresAt: null,
+            errorCode: "WORKSPACE_EXPIRED",
+            errorMessage: "Workspace expired while the Agent run was active",
+          },
+        })
       })
     }
     throw new WorkspaceInputError("Workspace is not active")
@@ -694,13 +721,33 @@ export async function appendWorkspaceMessage(
       "Workspace message Agent run must belong to the same Workspace"
     )
   }
-  const record = await prisma.workspaceMessage.create({
-    data: {
-      workspaceId,
-      role: input.role,
-      content: input.content,
-      agentRunId: input.agentRunId ?? null,
-    },
+  const record = await prisma.$transaction(async (tx) => {
+    const active = await tx.workspaceSession.updateMany({
+      where: { id: workspaceId, status: "ACTIVE", expiresAt: { gt: now } },
+      data: { lastAccessAt: now, expiresAt: leaseExpiry(now) },
+    })
+    if (active.count !== 1) {
+      throw new WorkspaceInputError("Workspace is not active")
+    }
+    if (input.agentRunId) {
+      const run = await tx.workspaceAgentRun.findFirst({
+        where: { id: input.agentRunId, workspaceId },
+        select: { id: true },
+      })
+      if (!run) {
+        throw new WorkspaceInputError(
+          "Workspace message Agent run must belong to the same Workspace"
+        )
+      }
+    }
+    return tx.workspaceMessage.create({
+      data: {
+        workspaceId,
+        role: input.role,
+        content: input.content,
+        agentRunId: input.agentRunId ?? null,
+      },
+    })
   })
   return targetWorkspaceMessageSchema.parse({
     ...record,
@@ -756,15 +803,24 @@ export async function startWorkspaceAgentRun(
   await requireActiveWorkspace(workspace, now)
   let record
   try {
-    record = await prisma.workspaceAgentRun.create({
-      data: {
-        workspaceId,
-        status: "RUNNING",
-        runtimeOwnerId,
-        heartbeatAt: now,
-        leaseExpiresAt: new Date(now.getTime() + leaseSeconds * 1000),
-        startedAt: now,
-      },
+    record = await prisma.$transaction(async (tx) => {
+      const active = await tx.workspaceSession.updateMany({
+        where: { id: workspaceId, status: "ACTIVE", expiresAt: { gt: now } },
+        data: { lastAccessAt: now, expiresAt: leaseExpiry(now) },
+      })
+      if (active.count !== 1) {
+        throw new WorkspaceInputError("Workspace is not active")
+      }
+      return tx.workspaceAgentRun.create({
+        data: {
+          workspaceId,
+          status: "RUNNING",
+          runtimeOwnerId,
+          heartbeatAt: now,
+          leaseExpiresAt: new Date(now.getTime() + leaseSeconds * 1000),
+          startedAt: now,
+        },
+      })
     })
   } catch (error) {
     if (hasPrismaCode(error, "P2002")) {
@@ -863,7 +919,6 @@ export async function finishWorkspaceAgentRun(
 ) {
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return null
-  await requireActiveWorkspace(workspace, input.now ?? new Date())
   const updated = await prisma.workspaceAgentRun.updateMany({
     where: {
       id: runId,
@@ -1014,17 +1069,51 @@ export async function archiveWorkspace(
 ) {
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return false
-  if (workspace.status === "ARCHIVED") return true
-  await prisma.workspaceSession.update({
-    where: { id: workspaceId },
-    data: { status: "ARCHIVED", archivedAt: now },
+  await prisma.$transaction(async (tx) => {
+    if (workspace.status !== "ARCHIVED") {
+      await tx.workspaceSession.update({
+        where: { id: workspaceId },
+        data: { status: "ARCHIVED", archivedAt: now },
+      })
+    }
+    await tx.workspaceAgentRun.updateMany({
+      where: { workspaceId, status: "RUNNING" },
+      data: {
+        status: "CANCELLED",
+        completedAt: now,
+        leaseExpiresAt: null,
+      },
+    })
   })
   return true
 }
 
 export async function expireInactiveWorkspaces(now = new Date()) {
-  return prisma.workspaceSession.updateMany({
-    where: { status: "ACTIVE", expiresAt: { lte: now } },
-    data: { status: "EXPIRED" },
+  return prisma.$transaction(async (tx) => {
+    const candidates = await tx.workspaceSession.findMany({
+      where: { status: "ACTIVE", expiresAt: { lte: now } },
+      select: { id: true },
+    })
+    const workspaceIds = candidates.map((candidate) => candidate.id)
+    if (workspaceIds.length === 0) return { count: 0 }
+    const expired = await tx.workspaceSession.updateMany({
+      where: {
+        id: { in: workspaceIds },
+        status: "ACTIVE",
+        expiresAt: { lte: now },
+      },
+      data: { status: "EXPIRED" },
+    })
+    await tx.workspaceAgentRun.updateMany({
+      where: { workspaceId: { in: workspaceIds }, status: "RUNNING" },
+      data: {
+        status: "FAILED",
+        completedAt: now,
+        leaseExpiresAt: null,
+        errorCode: "WORKSPACE_EXPIRED",
+        errorMessage: "Workspace expired while the Agent run was active",
+      },
+    })
+    return expired
   })
 }

@@ -46,8 +46,10 @@ import { TransitPlanningService } from "@/modules/data/transit/transit-planning-
 import {
   appendWorkspaceMessage,
   appendWorkspaceRevision,
+  archiveWorkspace,
   createWorkspaceSuggestion,
   createWorkspace,
+  expireInactiveWorkspaces,
   finishWorkspaceAgentRun,
   forkWorkspace,
   getWorkspaceDocument,
@@ -380,6 +382,91 @@ describe.sequential("P2B-P2D repositories", () => {
         secret: "workspace-test-secret",
       })
     ).toThrow("between 1 and 300")
+  })
+
+  it("atomically terminalizes Agent runs across archive, TTL expiry, and recovery", async () => {
+    const archiveNow = new Date("2026-08-01T11:00:00.000Z")
+    const archived = await createWorkspace(context, {
+      id: `workspace-archive-${randomUUID()}`,
+      graph: graph(),
+      now: archiveNow,
+    })
+    const archivedRun = await startWorkspaceAgentRun(
+      context,
+      archived.id,
+      archiveNow,
+      `runtime-${randomUUID()}`
+    )
+    await Promise.allSettled([
+      archiveWorkspace(
+        context,
+        archived.id,
+        new Date("2026-08-01T11:01:00.000Z")
+      ),
+      finishWorkspaceAgentRun(context, archived.id, archivedRun!.id, {
+        status: "SUCCEEDED",
+        now: new Date("2026-08-01T11:01:00.000Z"),
+      }),
+    ])
+    expect(
+      await prisma.workspaceAgentRun.count({
+        where: { workspaceId: archived.id, status: "RUNNING" },
+      })
+    ).toBe(0)
+    expect(
+      await prisma.workspaceSession.findUnique({ where: { id: archived.id } })
+    ).toMatchObject({ status: "ARCHIVED" })
+
+    const expiring = await createWorkspace(context, {
+      id: `workspace-expire-${randomUUID()}`,
+      graph: graph(),
+      now: archiveNow,
+    })
+    const expiringRun = await startWorkspaceAgentRun(
+      context,
+      expiring.id,
+      archiveNow,
+      `runtime-${randomUUID()}`
+    )
+    const expiresAt = new Date("2026-08-01T11:02:00.000Z")
+    await prisma.workspaceSession.update({
+      where: { id: expiring.id },
+      data: { expiresAt },
+    })
+    await Promise.allSettled([
+      expireInactiveWorkspaces(expiresAt),
+      finishWorkspaceAgentRun(context, expiring.id, expiringRun!.id, {
+        status: "SUCCEEDED",
+        now: expiresAt,
+      }),
+    ])
+    expect(
+      await prisma.workspaceAgentRun.count({
+        where: { workspaceId: expiring.id, status: "RUNNING" },
+      })
+    ).toBe(0)
+    expect(
+      await prisma.workspaceSession.findUnique({ where: { id: expiring.id } })
+    ).toMatchObject({ status: "EXPIRED" })
+
+    const recoveredAt = new Date("2026-08-01T11:03:00.000Z")
+    await prisma.workspaceSession.update({
+      where: { id: expiring.id },
+      data: {
+        status: "ACTIVE",
+        archivedAt: null,
+        lastAccessAt: recoveredAt,
+        expiresAt: new Date("2026-08-02T11:03:00.000Z"),
+      },
+    })
+    await expect(
+      startWorkspaceAgentRun(
+        context,
+        expiring.id,
+        recoveredAt,
+        `runtime-${randomUUID()}`
+      )
+    ).resolves.toMatchObject({ status: "RUNNING" })
   })
 
   it("persists stable READY and FAILED Transit runs with lossless geometry", async () => {
