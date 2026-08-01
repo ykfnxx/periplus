@@ -8,7 +8,10 @@ import type {
   AgentRuntimeRequest,
 } from "@/backend/agent/runtime"
 import type { AgentEvent } from "@/backend/types"
-import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
+import {
+  TARGET_CONTRACT_FIXTURES,
+  type TargetJourneyGraphSnapshot,
+} from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import { createWorkspace } from "@/modules/data/workspaces/workspace-repository"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
@@ -217,6 +220,127 @@ describe.sequential("P3 persistent AgentGateway", () => {
       title: "调整西湖标题",
       basedOnWorkspaceRevision: 0,
     })
+  })
+
+  it("exposes only server-resolved scoped projections through the run capability", async () => {
+    const branchFixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "06-strict-nested-branch"
+    )!.cases.find((candidate) => candidate.id === "two-level-nested-forks")!
+    const branchGraph = structuredClone(branchFixture.input.graph!)
+    branchGraph.ownerId = ownerId
+    const branchWorkspace = await createWorkspace(context, {
+      graph: branchGraph,
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await gateway.start(
+      context,
+      branchWorkspace.id,
+      "read projection",
+      "auto",
+      vi.fn()
+    )
+    const token = capabilityToken(runtime)
+    for (const mode of ["PLANNER", "EXECUTION", "TRAVELOGUE"] as const) {
+      const result = await gateway.executeTool(token, {
+        type: "workspace.project",
+        scopeSectionEventId: null,
+        mode,
+        asOfRevision: branchGraph.revision,
+      })
+      expect(result).toMatchObject({
+        projection: {
+          journeyId: branchGraph.id,
+          mode,
+          scopeSectionEventId: null,
+        },
+        headWorkspaceRevision: 0,
+      })
+      if (mode !== "TRAVELOGUE") {
+        expect(result.projection.events.map((event) => event.eventId)).toEqual([
+          "outer-fork",
+          "inner-fork",
+          "inner-a",
+          "inner-join",
+          "outer-join",
+          "end",
+        ])
+      } else {
+        expect(result.projection.events).toEqual([])
+      }
+    }
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.project",
+        scopeSectionEventId: "missing-section",
+        mode: "PLANNER",
+      })
+    ).rejects.toThrow("not a SECTION")
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.project",
+        scopeSectionEventId: null,
+        mode: "PLANNER",
+        asOfRevision: branchGraph.revision + 1,
+      })
+    ).rejects.toThrow("exact revision snapshot")
+    await expect(
+      gateway.executeTool("wrong-capability", {
+        type: "workspace.project",
+        scopeSectionEventId: null,
+        mode: "PLANNER",
+      })
+    ).rejects.toThrow("invalid or expired")
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, branchWorkspace.id))?.agentRuns[0]
+          ?.status
+      ).toBe("SUCCEEDED")
+    })
+
+    const sectionFixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "02-city-day-event-drilldown"
+    )!.cases.find((candidate) => candidate.id === "city-day-drilldown")!
+    const sectionGraph = structuredClone(sectionFixture.input.graph!)
+    sectionGraph.ownerId = ownerId
+    const sectionWorkspace = await createWorkspace(context, {
+      graph: sectionGraph,
+      now: new Date(now),
+    })
+    const sectionRuntime = new FakeRuntime()
+    const sectionGateway = new AgentGateway(commands, sectionRuntime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await sectionGateway.start(
+      context,
+      sectionWorkspace.id,
+      "read section",
+      "auto",
+      vi.fn()
+    )
+    const section = await sectionGateway.executeTool(
+      capabilityToken(sectionRuntime),
+      {
+        type: "workspace.project",
+        scopeSectionEventId: "day",
+        mode: "PLANNER",
+      }
+    )
+    expect(section.projection.events.map((event) => event.eventId)).toEqual([
+      "morning",
+      "afternoon",
+    ])
+    sectionRuntime.exit(0)
   })
 
   it("reclaims an expired crash-orphan without losing persisted messages or commands", async () => {

@@ -5,7 +5,9 @@ import {
   targetCommandBodySchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type TargetCommandEnvelope,
+  type TargetProjectionMode,
 } from "@/modules/data-model/contracts"
+import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import {
   appendWorkspaceMessage,
   createWorkspaceSuggestion,
@@ -54,6 +56,12 @@ interface RunningAgent {
 
 export type AgentToolRequest =
   | { type: "workspace.get" }
+  | {
+      type: "workspace.project"
+      scopeSectionEventId: string | null
+      mode: TargetProjectionMode
+      asOfRevision?: number
+    }
   | {
       type: "workspace.command"
       expectedRevision: number
@@ -260,6 +268,22 @@ export class AgentGateway {
       )
       if (!document) throw new WorkspaceInputError("Workspace was not found")
       return { workspace: document }
+    }
+    if (request.type === "workspace.project") {
+      const document = await this.commands.getDocument(
+        running.context,
+        running.workspaceId
+      )
+      if (!document) throw new WorkspaceInputError("Workspace was not found")
+      return {
+        projection: resolveJourneyProjection({
+          graph: document.session.headGraph,
+          scopeSectionEventId: request.scopeSectionEventId,
+          mode: request.mode,
+          asOfRevision: request.asOfRevision,
+        }),
+        headWorkspaceRevision: document.session.headWorkspaceRevision,
+      }
     }
     const envelope: TargetCommandEnvelope = {
       aggregateId: running.workspaceId,

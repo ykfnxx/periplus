@@ -11,6 +11,7 @@ function basePrompt(messages: AgentConversationMessage[]) {
     "所有修改都必须通过 typed Workspace command 工具作用于持久 Workspace；禁止直接写数据库。",
     "SECTION 只用于层级分组，VISIT/STAY/MEAL/ACTIVITY/TRANSIT 才是可执行事件；TRANSIT 必须是显式事件。",
     "修改前读取 headWorkspaceRevision；每个 command 都传 expectedRevision 和唯一 idempotencyKey，成功后使用返回的新 revision。",
+    "任何有序路线、分支选择、位置序号或时间视图都必须调用 periplus.workspace.project 获取；workspace.get 的 canonical graph 只用于定位编辑对象，禁止自行排序 Links/Events。",
     "下面是当前会话从开始到现在的完整上下文，请基于历史继续对话，只执行最后一条用户需求。",
     "",
     "完整对话：",

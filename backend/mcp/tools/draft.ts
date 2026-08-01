@@ -20,6 +20,12 @@ const workspaceCommandInputSchema = z.object({
   command: targetCommandBodySchema,
 })
 
+const workspaceProjectionInputSchema = z.object({
+  scopeSectionEventId: z.string().trim().min(1).nullable(),
+  mode: z.enum(["PLANNER", "EXECUTION", "TRAVELOGUE"]),
+  asOfRevision: z.number().int().positive().optional(),
+})
+
 function getArgValue(name: string) {
   const index = process.argv.indexOf(name)
   return index >= 0 ? process.argv[index + 1] : undefined
@@ -98,6 +104,26 @@ export function registerDraftTools(server: McpServer): void {
       inputSchema: {},
     },
     async () => callWorkspaceBackend({ type: "workspace.get" })
+  )
+  server.registerTool(
+    "periplus.workspace.project",
+    {
+      title: "Resolve ordered Workspace projection",
+      description:
+        "Resolve the only authoritative ordered route/ordinal/time/branch view for one scope and mode.",
+      inputSchema: workspaceProjectionInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const parsed = workspaceProjectionInputSchema.parse(input)
+        return callWorkspaceBackend({
+          type: "workspace.project",
+          ...parsed,
+        })
+      } catch (error) {
+        return errorResult(error)
+      }
+    }
   )
   server.registerTool(
     "periplus.workspace.command",
