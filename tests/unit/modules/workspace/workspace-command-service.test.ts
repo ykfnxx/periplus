@@ -375,6 +375,75 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     ).toBe(1)
   })
 
+  it("serializes simultaneous idempotency keys before side effects", async () => {
+    const duplicateWorkspace = await createWorkspace(context, {
+      graph: graph(`workspace-duplicate-key-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const service = new WorkspaceCommandService()
+    const duplicate = command(
+      duplicateWorkspace.id,
+      0,
+      "simultaneous-same-key",
+      {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${duplicateWorkspace.headGraph.id}-a`,
+          patch: { type: "VISIT", title: "one result" },
+        },
+      }
+    )
+    const duplicateResults = await Promise.all([
+      service.execute(context, duplicate),
+      service.execute(context, duplicate),
+    ])
+    expect(duplicateResults.map((result) => result.newRevision)).toEqual([1, 1])
+    expect(
+      duplicateResults.map((result) => result.replayedFromIdempotencyKey)
+    ).toEqual([false, true])
+    expect(
+      await prisma.workspaceRevision.count({
+        where: { workspaceId: duplicateWorkspace.id },
+      })
+    ).toBe(1)
+
+    const conflictWorkspace = await createWorkspace(context, {
+      graph: graph(`workspace-conflicting-key-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const conflicting = await Promise.allSettled([
+      service.execute(
+        context,
+        command(conflictWorkspace.id, 0, "simultaneous-conflict", {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${conflictWorkspace.headGraph.id}-a`,
+            patch: { type: "VISIT", title: "payload A" },
+          },
+        })
+      ),
+      service.execute(
+        context,
+        command(conflictWorkspace.id, 0, "simultaneous-conflict", {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${conflictWorkspace.headGraph.id}-a`,
+            patch: { type: "VISIT", title: "payload B" },
+          },
+        })
+      ),
+    ])
+    expect(
+      conflicting.filter((result) => result.status === "fulfilled")
+    ).toHaveLength(1)
+    expect(
+      conflicting.find((result) => result.status === "rejected")
+    ).toMatchObject({
+      status: "rejected",
+      reason: expect.any(WorkspaceIdempotencyConflictError),
+    })
+  })
+
   it("recursively retires every internal Link in linear and selected-branch SECTIONs", async () => {
     const service = new WorkspaceCommandService()
     for (const topology of ["LINEAR", "BRANCH"] as const) {
@@ -1051,15 +1120,16 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         forceRefresh: false,
       },
     })
-    await expect(
-      service.execute(context, planningCommand)
-    ).resolves.toMatchObject({
+    const [planned, replayed] = await Promise.all([
+      service.execute(context, planningCommand),
+      service.execute(context, planningCommand),
+    ])
+    expect(planned).toMatchObject({
       newRevision: 1,
       changedEventIds: [`${workspace.headGraph.id}-transit`],
+      replayedFromIdempotencyKey: false,
     })
-    await expect(
-      service.execute(context, planningCommand)
-    ).resolves.toMatchObject({
+    expect(replayed).toMatchObject({
       newRevision: 1,
       replayedFromIdempotencyKey: true,
     })

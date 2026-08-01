@@ -85,6 +85,12 @@ export class TransitPlanningService {
     const dedupeKey = JSON.stringify({
       ...request,
       transitEventId: undefined,
+      usageContext: {
+        userId: usageContext?.userId,
+        workspaceId: usageContext?.workspaceId,
+        agentRunId: usageContext?.agentRunId,
+        requestId: usageContext?.requestId,
+      },
     })
     const existing = this.inFlight.get(dedupeKey)
     if (existing) {

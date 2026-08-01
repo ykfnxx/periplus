@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   TransitPlanningService,
   type TransitPlanProvider,
+  type TransitPlanUsageContext,
 } from "@/modules/data/transit/transit-planning-service"
 import { TransitProviderError } from "@/modules/data/transit/providers/amap-transit-provider"
 import {
@@ -117,5 +118,81 @@ describe("TransitPlanningService", () => {
 
     expect(provider.plan).toHaveBeenCalledTimes(2)
     expect(result.plans[0]!.id).toMatch(/^transit-a-/)
+  })
+
+  it("deduplicates only within the same provider-usage attribution", async () => {
+    const provider = { plan: vi.fn(async (input) => providerBundle(input)) }
+    const logUsage = vi.fn(
+      async (
+        _status: string,
+        _code?: string,
+        _context?: TransitPlanUsageContext
+      ) => undefined
+    )
+    const service = new TransitPlanningService({
+      provider,
+      sleep: vi.fn(async () => undefined),
+      logUsage,
+    })
+    const contexts = [
+      {
+        userId: "user",
+        workspaceId: "workspace-a",
+        agentRunId: "run-a",
+        requestId: "request-a",
+      },
+      {
+        userId: "user",
+        workspaceId: "workspace-b",
+        agentRunId: "run-a",
+        requestId: "request-a",
+      },
+      {
+        userId: "user",
+        workspaceId: "workspace-a",
+        agentRunId: "run-b",
+        requestId: "request-b",
+      },
+    ]
+    await Promise.all([
+      service.plan(request, contexts[0]),
+      service.plan({ ...request, transitEventId: "transit-b" }, contexts[0]),
+      service.plan({ ...request, transitEventId: "transit-c" }, contexts[1]),
+      service.plan({ ...request, transitEventId: "transit-d" }, contexts[2]),
+    ])
+    expect(provider.plan).toHaveBeenCalledTimes(3)
+    expect(logUsage).toHaveBeenCalledTimes(3)
+    expect(logUsage.mock.calls.map((call) => call[2])).toEqual(contexts)
+  })
+
+  it("records failures independently for distinct logical attributions", async () => {
+    const provider = {
+      plan: vi.fn(async () => {
+        throw new TransitProviderError("AUTH_OR_QUOTA", "denied")
+      }),
+    }
+    const logUsage = vi.fn(
+      async (
+        _status: string,
+        _code?: string,
+        _context?: TransitPlanUsageContext
+      ) => undefined
+    )
+    const service = new TransitPlanningService({
+      provider,
+      sleep: vi.fn(async () => undefined),
+      logUsage,
+    })
+    const contexts = [
+      { userId: "user", workspaceId: "workspace-a", requestId: "a" },
+      { userId: "user", workspaceId: "workspace-b", requestId: "b" },
+    ]
+    const results = await Promise.allSettled(
+      contexts.map((usageContext) => service.plan(request, usageContext))
+    )
+    expect(results.every((result) => result.status === "rejected")).toBe(true)
+    expect(provider.plan).toHaveBeenCalledTimes(2)
+    expect(logUsage).toHaveBeenCalledTimes(2)
+    expect(logUsage.mock.calls.map((call) => call[2])).toEqual(contexts)
   })
 })

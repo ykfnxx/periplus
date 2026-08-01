@@ -1512,6 +1512,10 @@ function applyJourneyCommand(
 
 export class WorkspaceCommandService {
   private readonly transitPlanning: WorkspaceCommandDependencies["transitPlanning"]
+  private readonly inFlight = new Map<
+    string,
+    { envelope: string; promise: Promise<TargetCommandResult> }
+  >()
 
   constructor(dependencies: WorkspaceCommandDependencies = {}) {
     this.transitPlanning =
@@ -1529,7 +1533,36 @@ export class WorkspaceCommandService {
         "Command aggregate id changed during parsing"
       )
     }
+    const inFlightKey = `${context.userId}:${envelope.aggregateId}:${envelope.idempotencyKey}`
+    const serializedEnvelope = json(envelope)
+    const existingInFlight = this.inFlight.get(inFlightKey)
+    if (existingInFlight) {
+      if (existingInFlight.envelope !== serializedEnvelope) {
+        throw new WorkspaceIdempotencyConflictError()
+      }
+      const result = await existingInFlight.promise
+      return targetCommandResultSchema.parse({
+        ...result,
+        replayedFromIdempotencyKey: true,
+      })
+    }
+    const pending = this.executeOnce(context, envelope, options).finally(() => {
+      if (this.inFlight.get(inFlightKey)?.promise === pending) {
+        this.inFlight.delete(inFlightKey)
+      }
+    })
+    this.inFlight.set(inFlightKey, {
+      envelope: serializedEnvelope,
+      promise: pending,
+    })
+    return pending
+  }
 
+  private async executeOnce(
+    context: AuthContext,
+    envelope: TargetCommandEnvelope,
+    options: ExecuteOptions
+  ): Promise<TargetCommandResult> {
     const existing = await getWorkspaceRevisionByIdempotencyKey(
       context,
       envelope.aggregateId,
@@ -1634,10 +1667,9 @@ export class WorkspaceCommandService {
         graph: before,
       },
     ]
-    const revision = await appendWorkspaceRevision(
-      context,
-      envelope.aggregateId,
-      {
+    let revision: TargetWorkspaceRevision | null
+    try {
+      revision = await appendWorkspaceRevision(context, envelope.aggregateId, {
         expectedRevision: envelope.expectedRevision,
         commandName: envelope.command.name,
         after,
@@ -1646,8 +1678,26 @@ export class WorkspaceCommandService {
         idempotencyKey: envelope.idempotencyKey,
         actor: envelope.actor,
         now: options.now,
+      })
+    } catch (error) {
+      if (
+        !(error instanceof WorkspaceRevisionConflictError) &&
+        !(error instanceof WorkspaceIdempotencyConflictError)
+      ) {
+        throw error
       }
-    )
+      const raced = await getWorkspaceRevisionByIdempotencyKey(
+        context,
+        envelope.aggregateId,
+        envelope.idempotencyKey
+      )
+      if (!raced) throw error
+      const racedPatch = storedPatch(raced)
+      if (json(racedPatch[0].commandEnvelope) !== json(envelope)) {
+        throw new WorkspaceIdempotencyConflictError()
+      }
+      return commandResult(raced, true)
+    }
     if (!revision) throw new WorkspaceInputError("Workspace was not found")
     return commandResult(revision, false)
   }
