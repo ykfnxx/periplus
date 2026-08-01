@@ -43,6 +43,13 @@ type BranchInterval = {
 
 const LOCATION_EVENT_TYPES = new Set(["VISIT", "STAY", "MEAL", "ACTIVITY"])
 
+type ResolvedTimes = {
+  startAt?: string
+  endAt?: string
+  valueSource: "PLANNED" | "ACTUAL"
+  usesPlannedFallback: boolean
+}
+
 function fail(code: JourneyProjectionErrorCode, message: string): never {
   throw new JourneyProjectionError(code, message)
 }
@@ -244,82 +251,12 @@ function executableEvent(event: TargetJourneyEvent) {
   return event.type !== "SECTION" && event.type !== "NOTE"
 }
 
-function hasActualValue(event: TargetJourneyEvent) {
-  if (!executableEvent(event)) return false
-  if (event.actualStartAt || event.actualEndAt) return true
-  if (
-    event.executionStatus === "STARTED" ||
-    event.executionStatus === "CONFIRMED"
-  )
-    return true
-  if (event.type === "TRANSIT") {
-    return Object.entries(event.detail).some(
-      ([key, value]) => key.startsWith("actual") && value !== undefined
-    )
-  }
-  return Object.entries(event.detail).some(
-    ([key, value]) => key.startsWith("actual") && value !== undefined
-  )
-}
-
-function resolveTimes(
-  event: TargetJourneyEvent,
-  mode: TargetProjectionMode
-): {
-  startAt?: string
-  endAt?: string
-  valueSource: "PLANNED" | "ACTUAL"
-} {
-  if (!executableEvent(event)) return { valueSource: "PLANNED" }
-  if (mode === "PLANNER") {
-    return {
-      startAt: event.plannedStartAt,
-      endAt: event.plannedEndAt,
-      valueSource: "PLANNED",
-    }
-  }
-  if (mode === "TRAVELOGUE") {
-    return {
-      startAt: event.actualStartAt,
-      endAt: event.actualEndAt,
-      valueSource: "ACTUAL",
-    }
-  }
-  if (hasActualValue(event)) {
-    return {
-      startAt: event.actualStartAt ?? event.plannedStartAt,
-      endAt: event.actualEndAt ?? event.plannedEndAt,
-      valueSource: "ACTUAL",
-    }
-  }
-  return {
-    startAt: event.plannedStartAt,
-    endAt: event.plannedEndAt,
-    valueSource: "PLANNED",
-  }
-}
-
-export function resolveJourneyProjection({
-  graph: input,
-  scopeSectionEventId,
-  mode,
-  asOfRevision,
-}: ResolveJourneyProjectionInput): TargetResolvedJourneyProjection {
-  const graph = validateJourneyGraph(input)
-  if (asOfRevision !== undefined && asOfRevision !== graph.revision) {
-    fail(
-      "INVALID_REVISION",
-      `projection requires the exact revision snapshot: requested ${asOfRevision}, received graph revision ${graph.revision}`
-    )
-  }
-  const revision = graph.revision
-  if (scopeSectionEventId !== null) {
-    const scope = graph.events.find((event) => event.id === scopeSectionEventId)
-    if (!scope || scope.type !== "SECTION") {
-      fail("INVALID_SCOPE", `${scopeSectionEventId} is not a SECTION event`)
-    }
-  }
-
+function selectedEventsForScope(
+  graph: TargetJourneyGraphSnapshot,
+  scopeSectionEventId: string | null,
+  mode: TargetProjectionMode,
+  revision: number
+) {
   const scopedEvents = graph.events.filter(
     (event) =>
       event.parentSectionEventId === scopeSectionEventId &&
@@ -353,17 +290,19 @@ export function resolveJourneyProjection({
       (fullIncomingCount.get(link.toEventId) ?? 0) + 1
     )
   }
-  for (const link of selectedLinks)
+  for (const link of selectedLinks) {
     selectedOutgoing.get(link.fromEventId)?.push(link)
+  }
   const reached = new Set<string>()
   for (const root of scopedEvents.filter(
     (event) => fullIncomingCount.get(event.id) === 0
   )) {
-    for (const eventId of reachableFrom(root.id, selectedOutgoing))
+    for (const eventId of reachableFrom(root.id, selectedOutgoing)) {
       reached.add(eventId)
+    }
   }
   const selectedEvents = scopedEvents.filter((event) => reached.has(event.id))
-  const ordered = topologicalSort(
+  return topologicalSort(
     selectedEvents,
     selectedLinks.filter(
       (link) => reached.has(link.fromEventId) && reached.has(link.toEventId)
@@ -372,6 +311,139 @@ export function resolveJourneyProjection({
     (event) =>
       mode !== "TRAVELOGUE" ||
       (executableEvent(event) && event.executionStatus === "CONFIRMED")
+  )
+}
+
+function hasActualValue(event: TargetJourneyEvent) {
+  if (!executableEvent(event)) return false
+  if (event.actualStartAt || event.actualEndAt) return true
+  if (
+    event.executionStatus === "STARTED" ||
+    event.executionStatus === "CONFIRMED"
+  )
+    return true
+  if (event.type === "TRANSIT") {
+    return Object.entries(event.detail).some(
+      ([key, value]) => key.startsWith("actual") && value !== undefined
+    )
+  }
+  return Object.entries(event.detail).some(
+    ([key, value]) => key.startsWith("actual") && value !== undefined
+  )
+}
+
+function resolveTimes(
+  event: TargetJourneyEvent,
+  mode: TargetProjectionMode
+): ResolvedTimes {
+  if (!executableEvent(event)) {
+    return { valueSource: "PLANNED", usesPlannedFallback: false }
+  }
+  if (mode === "PLANNER") {
+    return {
+      startAt: event.plannedStartAt,
+      endAt: event.plannedEndAt,
+      valueSource: "PLANNED",
+      usesPlannedFallback: false,
+    }
+  }
+  if (mode === "TRAVELOGUE") {
+    return {
+      startAt: event.actualStartAt,
+      endAt: event.actualEndAt,
+      valueSource: "ACTUAL",
+      usesPlannedFallback: false,
+    }
+  }
+  if (hasActualValue(event)) {
+    return {
+      startAt: event.actualStartAt ?? event.plannedStartAt,
+      endAt: event.actualEndAt ?? event.plannedEndAt,
+      valueSource: "ACTUAL",
+      usesPlannedFallback:
+        (!event.actualStartAt && event.plannedStartAt !== undefined) ||
+        (!event.actualEndAt && event.plannedEndAt !== undefined),
+    }
+  }
+  return {
+    startAt: event.plannedStartAt,
+    endAt: event.plannedEndAt,
+    valueSource: "PLANNED",
+    usesPlannedFallback:
+      event.plannedStartAt !== undefined || event.plannedEndAt !== undefined,
+  }
+}
+
+function derivedSectionTimes(
+  graph: TargetJourneyGraphSnapshot,
+  sectionEventId: string,
+  mode: TargetProjectionMode,
+  revision: number
+): ResolvedTimes {
+  const childTimes: ResolvedTimes[] = selectedEventsForScope(
+    graph,
+    sectionEventId,
+    mode,
+    revision
+  )
+    .map((event) =>
+      event.type === "SECTION"
+        ? derivedSectionTimes(graph, event.id, mode, revision)
+        : resolveTimes(event, mode)
+    )
+    .filter((times) => times.startAt !== undefined || times.endAt !== undefined)
+  const starts = childTimes
+    .flatMap((times) => (times.startAt ? [times.startAt] : []))
+    .sort()
+  const ends = childTimes
+    .flatMap((times) => (times.endAt ? [times.endAt] : []))
+    .sort()
+  const allActual =
+    mode === "EXECUTION" &&
+    childTimes.length > 0 &&
+    childTimes.every(
+      (times) =>
+        times.valueSource === "ACTUAL" && !times.usesPlannedFallback
+    )
+  return {
+    startAt: starts[0],
+    endAt: ends.at(-1),
+    valueSource: allActual ? ("ACTUAL" as const) : ("PLANNED" as const),
+    usesPlannedFallback:
+      mode === "EXECUTION" &&
+      childTimes.some(
+        (times) =>
+          times.valueSource === "PLANNED" || times.usesPlannedFallback
+      ),
+  }
+}
+
+export function resolveJourneyProjection({
+  graph: input,
+  scopeSectionEventId,
+  mode,
+  asOfRevision,
+}: ResolveJourneyProjectionInput): TargetResolvedJourneyProjection {
+  const graph = validateJourneyGraph(input)
+  if (asOfRevision !== undefined && asOfRevision !== graph.revision) {
+    fail(
+      "INVALID_REVISION",
+      `projection requires the exact revision snapshot: requested ${asOfRevision}, received graph revision ${graph.revision}`
+    )
+  }
+  const revision = graph.revision
+  if (scopeSectionEventId !== null) {
+    const scope = graph.events.find((event) => event.id === scopeSectionEventId)
+    if (!scope || scope.type !== "SECTION") {
+      fail("INVALID_SCOPE", `${scopeSectionEventId} is not a SECTION event`)
+    }
+  }
+
+  const ordered = selectedEventsForScope(
+    graph,
+    scopeSectionEventId,
+    mode,
+    revision,
   )
 
   const locationOrdinalByEventId = new Map<string, number>()
@@ -383,11 +455,17 @@ export function resolveJourneyProjection({
   }
 
   const events = ordered.map<TargetResolvedEvent>((event, resolvedPosition) => {
+    const resolvedTimes =
+      event.type === "SECTION"
+        ? derivedSectionTimes(graph, event.id, mode, revision)
+        : resolveTimes(event, mode)
     const resolved: TargetResolvedEvent = {
       eventId: event.id,
       resolvedPosition,
       title: event.title,
-      ...resolveTimes(event, mode),
+      startAt: resolvedTimes.startAt,
+      endAt: resolvedTimes.endAt,
+      valueSource: resolvedTimes.valueSource,
     }
     const ordinal = locationOrdinalByEventId.get(event.id)
     if (ordinal !== undefined) resolved.locationOrdinal = ordinal

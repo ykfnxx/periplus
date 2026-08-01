@@ -152,4 +152,72 @@ describe("P3 Journey projection resolver", () => {
       })
     ).toEqual(expected)
   })
+
+  it("derives SECTION time recursively with deterministic source fallback", () => {
+    const deleted = scenario(
+      "12-coordinate-section-delete-history",
+      "read-soft-deleted-history"
+    )
+    for (const expected of deleted.expected.projections!.slice(1)) {
+      expect(
+        resolveJourneyProjection({
+          graph: deleted.input.graph!,
+          scopeSectionEventId: expected.scopeSectionEventId,
+          mode: expected.mode,
+        })
+      ).toEqual(expected)
+    }
+
+    const nested = graph("02-city-day-event-drilldown", "city-day-drilldown")
+    expect(
+      resolveJourneyProjection({
+        graph: nested,
+        scopeSectionEventId: null,
+        mode: "PLANNER",
+      }).events
+    ).toEqual([
+      {
+        eventId: "city",
+        resolvedPosition: 0,
+        title: "杭州",
+        startAt: "2026-08-01T00:00:00.000Z",
+        endAt: "2026-08-02T00:00:00.000Z",
+        valueSource: "PLANNED",
+      },
+    ])
+
+    const mixed = structuredClone(deleted.input.graph!)
+    const mixedEnd = mixed.events.find((event) => event.id === "delete-end")!
+    if (mixedEnd.type !== "VISIT") throw new Error("fixture invariant")
+    delete mixedEnd.actualEndAt
+    expect(
+      resolveJourneyProjection({
+        graph: mixed,
+        scopeSectionEventId: null,
+        mode: "EXECUTION",
+      }).events[0]
+    ).toMatchObject({
+      startAt: "2026-08-01T01:00:00.000Z",
+      endAt: "2026-08-02T00:00:00.000Z",
+      valueSource: "PLANNED",
+    })
+
+    const empty = structuredClone(nested)
+    empty.events = empty.events.filter((event) => event.id === "city")
+    empty.links = []
+    expect(
+      resolveJourneyProjection({
+        graph: empty,
+        scopeSectionEventId: null,
+        mode: "EXECUTION",
+      }).events
+    ).toEqual([
+      {
+        eventId: "city",
+        resolvedPosition: 0,
+        title: "杭州",
+        valueSource: "PLANNED",
+      },
+    ])
+  })
 })
