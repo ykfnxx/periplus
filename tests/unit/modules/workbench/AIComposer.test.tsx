@@ -136,7 +136,7 @@ describe("AIComposer", () => {
     expect(screen.getByLabelText("保存")).toBeDisabled()
   })
 
-  it("blocks stale save and exposes refresh, replay, and fork recovery", () => {
+  it("blocks stale save and exposes only recovery actions that clear staleness", () => {
     const sendAgentEvent = vi.fn()
     mockStore({
       sendAgentEvent,
@@ -168,7 +168,7 @@ describe("AIComposer", () => {
         payload: { fromWorkspaceRevision: 0 },
       },
     })
-    expect(screen.getByRole("button", { name: "仅重放" })).toBeEnabled()
+    expect(screen.queryByRole("button", { name: "仅重放" })).toBeNull()
     expect(screen.getByRole("button", { name: "派生副本" })).toBeEnabled()
   })
 

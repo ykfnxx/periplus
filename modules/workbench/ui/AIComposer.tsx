@@ -125,7 +125,7 @@ export default function AIComposer() {
   const recoverWorkspace = (
     name: Extract<
       TargetCommandEnvelope["command"]["name"],
-      "workspace.refresh" | "workspace.replay" | "workspace.fork"
+      "workspace.refresh" | "workspace.fork"
     >
   ) => {
     if (!document || !sendAgentEvent || !canRecover || isWorkspaceLocked) {
@@ -225,11 +225,6 @@ export default function AIComposer() {
               label="刷新并重放"
               disabled={!sendAgentEvent || isWorkspaceLocked}
               onClick={() => recoverWorkspace("workspace.refresh")}
-            />
-            <RecoveryButton
-              label="仅重放"
-              disabled={!sendAgentEvent || isWorkspaceLocked}
-              onClick={() => recoverWorkspace("workspace.replay")}
             />
             <RecoveryButton
               label="派生副本"

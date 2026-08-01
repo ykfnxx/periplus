@@ -93,9 +93,10 @@ export default function AgentSync() {
     let disposed = false
 
     const applyDocument = (document: TargetWorkspaceDocument | null) => {
-      if (!document) return
-      if (!applyWorkspaceDocument(document)) return
+      if (!document) return false
+      if (!applyWorkspaceDocument(document)) return false
       setChatMessages(conversationMessages(document))
+      return true
     }
 
     const scheduleReconnect = () => {
@@ -147,7 +148,10 @@ export default function AgentSync() {
             message.type === "workspace.locked" ||
             message.type === "workspace.unlocked"
           ) {
-            applyDocument(workspaceFromPayload(message.payload))
+            const documentAccepted = applyDocument(
+              workspaceFromPayload(message.payload)
+            )
+            if (!documentAccepted) return
             const commandName = commandNameFromPayload(message.payload)
             const outcome = outcomeFromPayload(message.payload)
             if (commandName) {

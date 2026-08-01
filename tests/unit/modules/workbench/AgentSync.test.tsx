@@ -172,7 +172,7 @@ describe("AgentSync", () => {
     expect(useWorkspaceStore.getState().workspaceCommitState).toBe("idle")
   })
 
-  it("never rolls the same Workspace document back to an older revision", async () => {
+  it("rejects document and command side effects from an older revision", async () => {
     const socket = new FakeWebSocket()
     const response = bootstrap()
     vi.mocked(bootstrapWorkspace).mockResolvedValue(response)
@@ -192,7 +192,10 @@ describe("AgentSync", () => {
         new MessageEvent("message", {
           data: JSON.stringify({
             type: "workspace.updated",
-            payload: revisionThree,
+            payload: {
+              result: { commandName: "journey.update_event" },
+              workspace: revisionThree,
+            },
           }),
         })
       )
@@ -200,7 +203,10 @@ describe("AgentSync", () => {
         new MessageEvent("message", {
           data: JSON.stringify({
             type: "workspace.updated",
-            payload: revisionTwo,
+            payload: {
+              result: { commandName: "workspace.commit" },
+              workspace: revisionTwo,
+            },
           }),
         })
       )
@@ -210,6 +216,7 @@ describe("AgentSync", () => {
       useWorkspaceStore.getState().workspaceDocument?.session
         .headWorkspaceRevision
     ).toBe(3)
+    expect(useWorkspaceStore.getState().workspaceCommitState).toBe("idle")
   })
 
   it("correlates a browser planning error back to retry state", async () => {

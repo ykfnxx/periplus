@@ -118,7 +118,7 @@ export default function RouteOverview() {
             <SectionSummaryCard
               key={event.id}
               section={event}
-              resolvedPosition={resolved.resolvedPosition}
+              locationOrdinal={resolved.locationOrdinal}
               childTitles={getJourneyScopeProjection(graph, "section", event.id)
                 .items.filter((child) => child.event.type !== "TRANSIT")
                 .map((child) => child.resolved.title)}
@@ -141,12 +141,12 @@ export default function RouteOverview() {
 
 function SectionSummaryCard({
   section,
-  resolvedPosition,
+  locationOrdinal,
   childTitles,
   onSelect,
 }: {
   section: SectionEvent
-  resolvedPosition: number
+  locationOrdinal?: number
   childTitles: string[]
   onSelect: () => void
 }) {
@@ -159,7 +159,9 @@ function SectionSummaryCard({
     >
       <span
         className={`absolute top-[19px] -left-[7px] h-[18px] w-[26px] rounded-[3px] ${
-          markerClasses[resolvedPosition % markerClasses.length]
+          locationOrdinal === undefined
+            ? "bg-bluegray"
+            : markerClasses[(locationOrdinal - 1) % markerClasses.length]
         }`}
       />
       <span className="flex items-center justify-between gap-3 pl-3">

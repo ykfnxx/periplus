@@ -44,6 +44,20 @@ describe("target Workspace route preview", () => {
     ).toBeVisible()
   })
 
+  it("uses authoritative location ordinals for overview marker palettes", () => {
+    act(() => {
+      useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())
+    })
+
+    render(<RoutePreview />)
+
+    const lanzhouCard = screen.getByRole("button", {
+      name: "查看城市 兰州",
+    })
+    expect(lanzhouCard.querySelector(".bg-marker-mint")).not.toBeNull()
+    expect(lanzhouCard.querySelector(".bg-marker-yellow")).toBeNull()
+  })
+
   it("renders the server-resolved location ordinals without recomputing", () => {
     const document = workspaceDocument()
     const items = getJourneyScopeProjection(

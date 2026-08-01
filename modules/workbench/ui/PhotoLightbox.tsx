@@ -3,6 +3,7 @@
 import { Trash2 } from "lucide-react"
 import { type MouseEvent, useCallback, useEffect, useState } from "react"
 import { deletePhoto } from "@/modules/data/photos/client"
+import { selectWorkspaceCanMutate } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 function formatUploadDate(timestamp: number) {
@@ -18,6 +19,7 @@ export default function PhotoLightbox() {
     (state) => state.setLightboxPhotoShare
   )
   const removePhotoShare = useWorkspaceStore((state) => state.removePhotoShare)
+  const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
 
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -28,7 +30,7 @@ export default function PhotoLightbox() {
   const handleDelete = useCallback(
     async (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
-      if (!lightboxPhotoShare?.canDelete) return
+      if (!lightboxPhotoShare?.canDelete || !canMutate) return
       setDeleteError(null)
       try {
         await deletePhoto(lightboxPhotoShare.id)
@@ -38,7 +40,7 @@ export default function PhotoLightbox() {
         setDeleteError("删除失败，请重试")
       }
     },
-    [lightboxPhotoShare, removePhotoShare, setLightboxPhotoShare]
+    [canMutate, lightboxPhotoShare, removePhotoShare, setLightboxPhotoShare]
   )
 
   useEffect(() => {
@@ -116,7 +118,8 @@ export default function PhotoLightbox() {
               type="button"
               onClick={handleDelete}
               aria-label="删除照片"
-              title="删除"
+              title={canMutate ? "删除" : "Workspace 只读，无法删除"}
+              disabled={!canMutate}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-[rgb(44_36_22_/_14%)] bg-[var(--color-cream)] px-4 py-2 text-sm text-[var(--color-coral)] transition hover:bg-[var(--color-coral)] hover:text-white"
             >
               <Trash2 className="h-4 w-4" aria-hidden="true" />
