@@ -143,13 +143,27 @@ export const targetWorkspaceDocumentSchema = z.object({
   agentRuns: z.array(targetWorkspaceAgentRunSchema),
 })
 
-export const targetWorkspaceWebSocketTicketClaimsSchema = z.object({
-  subjectUserId: idSchema,
-  workspaceId: idSchema,
-  issuedAt: z.number().int().nonnegative(),
-  expiresAt: z.number().int().positive(),
-  nonce: idSchema,
-})
+export const targetWorkspaceWebSocketTicketClaimsSchema = z
+  .object({
+    subjectUserId: idSchema,
+    workspaceId: idSchema,
+    issuedAt: z.number().int().nonnegative(),
+    expiresAt: z.number().int().positive(),
+    nonce: idSchema,
+  })
+  .superRefine((claims, context) => {
+    const lifetimeSeconds = claims.expiresAt - claims.issuedAt
+    if (
+      lifetimeSeconds <= 0 ||
+      lifetimeSeconds > WORKSPACE_WEBSOCKET_TICKET_SECONDS
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["expiresAt"],
+        message: `WebSocket ticket lifetime must be between 1 and ${WORKSPACE_WEBSOCKET_TICKET_SECONDS} seconds`,
+      })
+    }
+  })
 
 export type TargetWorkspaceSession = z.infer<
   typeof targetWorkspaceSessionSchema

@@ -146,6 +146,12 @@ const commandBodySchema = z.discriminatedUnion("name", [
     payload: z.object({ steps: z.number().int().positive().default(1) }),
   }),
   z.object({
+    name: z.literal("workspace.refresh"),
+    payload: z.object({
+      fromWorkspaceRevision: z.number().int().nonnegative(),
+    }),
+  }),
+  z.object({
     name: z.literal("workspace.replay"),
     payload: z.object({
       fromWorkspaceRevision: z.number().int().nonnegative(),

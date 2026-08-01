@@ -4,6 +4,7 @@ import {
   TARGET_DELETION_MATRIX,
   TARGET_FIELD_AUTHORITY,
   TARGET_IDEMPOTENCY_POLICY,
+  TARGET_MANDATORY_RELATION_IDS,
   TARGET_MODEL_RELATIONS,
   WORKSPACE_ACTIVE_LEASE_DAYS,
   WORKSPACE_WEBSOCKET_TICKET_SECONDS,
@@ -17,6 +18,7 @@ import {
   targetTransitPlanningRunSchema,
   targetWorkspaceDocumentSchema,
   targetWorkspaceRevisionSchema,
+  targetWorkspaceWebSocketTicketClaimsSchema,
   type TargetContractFixture,
   type TargetJourneyGraphSnapshot,
   type TargetScenarioCase,
@@ -133,6 +135,58 @@ describe("breaking data-model target contracts", () => {
     }
   })
 
+  it("makes every second-gate fixture row executable", () => {
+    const nestedScope = scenario(
+      "01-root-city-and-local-scope",
+      "nested-scopes"
+    ).input.graph!
+    expect(
+      nestedScope.events.some(
+        (event) =>
+          event.type === "MEAL" && event.parentSectionEventId === "city-a"
+      )
+    ).toBe(true)
+
+    const projectionInput = scenario(
+      "09-exact-projection-modes",
+      "canonical-input-order"
+    ).input.graph!
+    expect(
+      projectionInput.events.flatMap((event) =>
+        "executionStatus" in event ? [event.executionStatus] : []
+      )
+    ).toEqual(expect.arrayContaining(["SKIPPED", "CANCELLED"]))
+
+    const refresh = scenario("10-workspace-lifecycle", "refresh-after-reauth")
+    expect(refresh.command?.command).toMatchObject({
+      name: "workspace.refresh",
+      payload: { fromWorkspaceRevision: 1 },
+    })
+
+    const observation = scenario(
+      "11-content-provenance",
+      "supersede-observation-command"
+    )
+    expect(observation.command?.command).toMatchObject({
+      name: "journey.add_observation",
+      payload: {
+        observation: { supersedesId: "observation-1" },
+      },
+    })
+
+    const deleted = scenario(
+      "12-coordinate-section-delete-history",
+      "read-soft-deleted-history"
+    ).input.graph!
+    const segments = deleted.transitPlanningRuns.flatMap((run) =>
+      run.plans.flatMap((plan) => plan.segments)
+    )
+    expect(segments.length).toBeGreaterThan(0)
+    expect(
+      segments.every((segment) => segment.coordinateSystem === "WGS84")
+    ).toBe(true)
+  })
+
   it("rejects all five invalid graph states from the independent parse probes", () => {
     const activeLinkToRetiredEvent = cloneGraph(
       scenario("01-root-city-and-local-scope", "nested-scopes").input.graph!
@@ -216,6 +270,37 @@ describe("breaking data-model target contracts", () => {
         false
       )
     }
+  })
+
+  it("rejects duplicate Content, TransitPlan, and TransitSegment identities", () => {
+    const content = structuredClone(
+      scenario(
+        "11-content-provenance",
+        "observation-supersession-and-pinned-content"
+      ).input.content!
+    )
+    content.observations.push(structuredClone(content.observations[0]!))
+    expect(targetContentBundleSchema.safeParse(content).success).toBe(false)
+
+    const graphValue = cloneGraph(
+      scenario("04-failed-transit-run", "failed-refresh-retains-active-run")
+        .expected.state!.graph!
+    )
+    const readyRun = graphValue.transitPlanningRuns[0]!
+    readyRun.plans.push(structuredClone(readyRun.plans[0]!))
+    expect(targetJourneyGraphSnapshotSchema.safeParse(graphValue).success).toBe(
+      false
+    )
+
+    const duplicateSegmentRun = structuredClone(
+      scenario("03-transit-plan-choice", "select-low-cost").input.graph!
+        .transitPlanningRuns[0]!
+    )
+    duplicateSegmentRun.plans[1]!.segments[0]!.id =
+      duplicateSegmentRun.plans[0]!.segments[0]!.id
+    expect(
+      targetTransitPlanningRunSchema.safeParse(duplicateSegmentRun).success
+    ).toBe(false)
   })
 
   it("keeps one current branch selection without planned or actual phase", () => {
@@ -495,7 +580,7 @@ describe("breaking data-model target contracts", () => {
       "11-content-provenance",
       "observation-supersession-and-pinned-content"
     ).expected.state!
-    const snapshot = state.journeyRevisions?.[0]?.snapshot
+    const snapshot = state.journeyRevisions?.[1]?.snapshot
     expect(snapshot?.eventAssetLinks[0]).toMatchObject({
       caption: "清晨西湖",
       role: "GALLERY",
@@ -574,6 +659,28 @@ describe("breaking data-model target contracts", () => {
   it("freezes workspace lease and scoped WebSocket ticket lifetimes", () => {
     expect(WORKSPACE_ACTIVE_LEASE_DAYS).toBe(30)
     expect(WORKSPACE_WEBSOCKET_TICKET_SECONDS).toBe(300)
+    const claims = {
+      subjectUserId: "user",
+      workspaceId: "workspace",
+      issuedAt: 1_000,
+      expiresAt: 1_300,
+      nonce: "nonce",
+    }
+    expect(
+      targetWorkspaceWebSocketTicketClaimsSchema.safeParse(claims).success
+    ).toBe(true)
+    expect(
+      targetWorkspaceWebSocketTicketClaimsSchema.safeParse({
+        ...claims,
+        expiresAt: claims.issuedAt,
+      }).success
+    ).toBe(false)
+    expect(
+      targetWorkspaceWebSocketTicketClaimsSchema.safeParse({
+        ...claims,
+        expiresAt: claims.issuedAt + WORKSPACE_WEBSOCKET_TICKET_SECONDS + 1,
+      }).success
+    ).toBe(false)
   })
 
   it("assigns each field one authority and covers all authority classes", () => {
@@ -607,15 +714,16 @@ describe("breaking data-model target contracts", () => {
   })
 
   it("publishes an unambiguous physical-relation ERD for P1", () => {
-    expect(new Set(TARGET_MODEL_RELATIONS.map((item) => item.id)).size).toBe(
-      TARGET_MODEL_RELATIONS.length
-    )
+    const relationIds = TARGET_MODEL_RELATIONS.map((item) => item.id)
+    expect(new Set(relationIds).size).toBe(TARGET_MODEL_RELATIONS.length)
+    expect(new Set(relationIds)).toEqual(new Set(TARGET_MANDATORY_RELATION_IDS))
     for (const item of TARGET_MODEL_RELATIONS) {
       expect(item.fromFields.length, item.id).toBeGreaterThan(0)
       expect(item.fromFields.length, item.id).toBe(item.toFields.length)
       expect(item.fromFields.some((field) => field.includes("/"))).toBe(false)
       expect(item.toFields.some((field) => field.includes("/"))).toBe(false)
       expect(item.relationName.length).toBeGreaterThan(0)
+      if (item.unique) expect(item.cardinality, item.id).toBe("1:1")
     }
     expect(TARGET_MODEL_RELATIONS).toEqual(
       expect.arrayContaining([
@@ -655,11 +763,37 @@ describe("breaking data-model target contracts", () => {
           id: "journey-revision-workspace-revision",
           unique: true,
         }),
+        expect.objectContaining({
+          id: "section-detail-place",
+          fromFields: ["placeId"],
+          toModel: "Place",
+        }),
+        expect.objectContaining({
+          id: "meal-detail-planned-place",
+          fromFields: ["plannedPlaceId"],
+          toModel: "Place",
+        }),
+        expect.objectContaining({
+          id: "place-provider-match-place",
+          fromModel: "PlaceProviderMatch",
+          toModel: "Place",
+        }),
+        expect.objectContaining({
+          id: "provider-usage-agent-run",
+          fromModel: "ProviderUsageLog",
+          optional: true,
+        }),
+        expect.objectContaining({
+          id: "replacement-revision",
+          fromFields: ["journeyId", "revision"],
+          toFields: ["journeyId", "revision"],
+        }),
+        expect.objectContaining({
+          id: "journey-event-retired-revision",
+          optional: true,
+        }),
       ])
     )
-    expect(
-      new Set(TARGET_MODEL_RELATIONS.map((item) => item.fromModel)).size
-    ).toBeGreaterThan(20)
   })
 
   it("pins exact projection bytes and Transit location ordinals", () => {

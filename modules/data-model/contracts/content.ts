@@ -34,6 +34,7 @@ export const targetAssetSchema = z.object({
 
 export const targetEventAssetLinkSchema = z.object({
   id: idSchema,
+  journeyId: idSchema,
   eventId: idSchema,
   assetId: idSchema,
   assetChecksum: z.string().trim().min(1),
@@ -60,6 +61,7 @@ const targetObservationIdentity = {
 const targetObservationCreateIdentity = {
   phase: z.enum(TARGET_OBSERVATION_PHASES),
   observedAt: dateTimeSchema.optional(),
+  supersedesId: idSchema.optional(),
   visibility: z.enum(TARGET_ASSET_VISIBILITIES),
 }
 
@@ -206,6 +208,7 @@ export const targetSourceItemSchema = z.object({
 
 export const targetEventSourceLinkSchema = z.object({
   id: idSchema,
+  journeyId: idSchema,
   eventId: idSchema,
   sourceItemId: idSchema,
   sourceDocumentId: idSchema,
@@ -232,6 +235,26 @@ export const targetContentBundleSchema = z
     eventSourceLinks: z.array(targetEventSourceLinkSchema),
   })
   .superRefine((bundle, context) => {
+    const assertUniqueIds = (
+      path: keyof typeof bundle,
+      values: readonly { id: string }[]
+    ) => {
+      if (new Set(values.map((value) => value.id)).size !== values.length) {
+        context.addIssue({
+          code: "custom",
+          path: [path],
+          message: `${path} ids must be unique`,
+        })
+      }
+    }
+    assertUniqueIds("assets", bundle.assets)
+    assertUniqueIds("eventAssetLinks", bundle.eventAssetLinks)
+    assertUniqueIds("observations", bundle.observations)
+    assertUniqueIds("sourcePacks", bundle.sourcePacks)
+    assertUniqueIds("sourceDocuments", bundle.sourceDocuments)
+    assertUniqueIds("sourceItems", bundle.sourceItems)
+    assertUniqueIds("eventSourceLinks", bundle.eventSourceLinks)
+
     const assetById = new Map(bundle.assets.map((asset) => [asset.id, asset]))
     const visibilityRank = { PRIVATE: 0, JOURNEY: 1, PUBLIC: 2 } as const
     for (const link of bundle.eventAssetLinks) {

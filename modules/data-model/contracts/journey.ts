@@ -491,6 +491,23 @@ export const targetTransitPlanningRunSchema = z
     plans: z.array(targetTransitPlanSchema),
   })
   .superRefine((run, context) => {
+    if (new Set(run.plans.map((plan) => plan.id)).size !== run.plans.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["plans"],
+        message: "plan ids must be unique within a planning run",
+      })
+    }
+    const segments = run.plans.flatMap((plan) => plan.segments)
+    if (
+      new Set(segments.map((segment) => segment.id)).size !== segments.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["plans"],
+        message: "segment ids must be unique within a planning run",
+      })
+    }
     if (run.status === "FAILED" && run.plans.length > 0) {
       context.addIssue({
         code: "custom",
@@ -524,6 +541,16 @@ export const targetTransitPlanningRunSchema = z
           code: "custom",
           path: ["plans"],
           message: `plan ${plan.id} segment order must be unique`,
+        })
+      }
+      if (
+        new Set(plan.segments.map((segment) => segment.id)).size !==
+        plan.segments.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["plans"],
+          message: `plan ${plan.id} segment ids must be unique`,
         })
       }
     }
@@ -587,6 +614,16 @@ export const targetJourneyGraphSnapshotSchema = z
     assertUniqueIds("replacements", graph.replacements)
     assertUniqueIds("branchSelections", graph.branchSelections)
     assertUniqueIds("transitPlanningRuns", graph.transitPlanningRuns)
+    assertUniqueIds(
+      "transitPlans",
+      graph.transitPlanningRuns.flatMap((run) => run.plans)
+    )
+    assertUniqueIds(
+      "transitSegments",
+      graph.transitPlanningRuns.flatMap((run) =>
+        run.plans.flatMap((plan) => plan.segments)
+      )
+    )
     assertUniqueIds("eventAssetLinks", graph.eventAssetLinks)
     assertUniqueIds("observations", graph.observations)
     assertUniqueIds("eventSourceLinks", graph.eventSourceLinks)
@@ -923,6 +960,12 @@ export const targetJourneyGraphSnapshotSchema = z
         link.introducedRevision,
         link.retiredRevision
       )
+      if (link.journeyId !== graph.id) {
+        addIssue(
+          ["eventAssetLinks"],
+          `asset link ${link.id} must belong to graph journey`
+        )
+      }
       if (!events.has(link.eventId)) {
         addIssue(
           ["eventAssetLinks"],
@@ -937,6 +980,12 @@ export const targetJourneyGraphSnapshotSchema = z
         link.introducedRevision,
         link.retiredRevision
       )
+      if (link.journeyId !== graph.id) {
+        addIssue(
+          ["eventSourceLinks"],
+          `source link ${link.id} must belong to graph journey`
+        )
+      }
       if (!events.has(link.eventId)) {
         addIssue(
           ["eventSourceLinks"],

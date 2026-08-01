@@ -96,6 +96,29 @@ function visitEvent(
   }
 }
 
+function mealEvent(
+  id: string,
+  journeyId: string,
+  title: string,
+  parentSectionEventId: string | null = null
+): TargetJourneyEvent {
+  return {
+    ...eventIdentity(id, journeyId, parentSectionEventId),
+    type: "MEAL",
+    executionStatus: "PLANNED",
+    title,
+    plannedStartAt: NOW,
+    plannedEndAt: LATER,
+    detail: {
+      plannedLat: 30.25,
+      plannedLng: 120.15,
+      coordinateSystem: "GCJ02",
+      plannedDurationMinutes: 60,
+      cuisine: "杭帮菜",
+    },
+  }
+}
+
 function transitEvent(
   id: string,
   journeyId: string,
@@ -276,12 +299,14 @@ const nestedScopeGraph = (() => {
       visitEvent("visit-a", journeyId, "西湖", "city-a"),
       transitEvent("local-transit", journeyId, "visit-a", "visit-b", "city-a"),
       visitEvent("visit-b", journeyId, "灵隐寺", "city-a"),
+      mealEvent("meal-a", journeyId, "午餐", "city-a"),
     ],
     [
       link("root-1", journeyId, "city-a", "root-transit", 1024),
       link("root-2", journeyId, "root-transit", "city-b", 2048),
       link("city-a-1", journeyId, "visit-a", "local-transit", 1024),
       link("city-a-2", journeyId, "local-transit", "visit-b", 2048),
+      link("city-a-3", journeyId, "visit-b", "meal-a", 3072),
     ]
   )
 })()
@@ -664,9 +689,16 @@ const projectionGraph = (() => {
   end.actualStartAt = LATER
   end.actualEndAt = LATER
   const skipped = visitEvent("skipped", journeyId, "已跳过", null, "SKIPPED")
+  const cancelled = visitEvent(
+    "cancelled",
+    journeyId,
+    "已取消",
+    null,
+    "CANCELLED"
+  )
   return graph(
     journeyId,
-    [start, transit, end, skipped],
+    [start, transit, end, skipped, cancelled],
     [
       link(
         "projection-1",
@@ -683,6 +715,7 @@ const projectionGraph = (() => {
         2048
       ),
       link("projection-3", journeyId, "confirmed-end", "skipped", 3072),
+      link("projection-4", journeyId, "skipped", "cancelled", 4096),
     ]
   )
 })()
@@ -723,6 +756,15 @@ const plannerEvents = [
     endAt: LATER,
     valueSource: "PLANNED" as const,
   },
+  {
+    eventId: "cancelled",
+    resolvedPosition: 4,
+    locationOrdinal: 4,
+    title: "已取消",
+    startAt: NOW,
+    endAt: LATER,
+    valueSource: "PLANNED" as const,
+  },
 ]
 
 const projectionExpectations: TargetResolvedJourneyProjection[] = [
@@ -758,6 +800,7 @@ const projectionExpectations: TargetResolvedJourneyProjection[] = [
         valueSource: "ACTUAL",
       },
       plannerEvents[3]!,
+      plannerEvents[4]!,
     ],
   },
   {
@@ -885,6 +928,7 @@ const contentBundle: TargetContentBundle = {
   eventAssetLinks: [
     {
       id: "event-asset-link",
+      journeyId: contentJourneyId,
       eventId: contentEvent.id,
       assetId: "asset-private",
       assetChecksum: "asset-checksum",
@@ -961,6 +1005,7 @@ const contentBundle: TargetContentBundle = {
   eventSourceLinks: [
     {
       id: "event-source-link",
+      journeyId: contentJourneyId,
       eventId: contentEvent.id,
       sourceItemId: "source-item",
       sourceDocumentId: "source-document",
@@ -981,9 +1026,22 @@ const contentGraph = graph(contentJourneyId, [contentEvent], [], {
   observations: clone(contentBundle.observations),
   eventSourceLinks: clone(contentBundle.eventSourceLinks),
 })
+contentGraph.revision = 2
+const contentBeforeSupersession = clone(contentBundle)
+contentBeforeSupersession.observations = [clone(contentBundle.observations[0]!)]
+const contentGraphBeforeSupersession = clone(contentGraph)
+contentGraphBeforeSupersession.revision = 1
+contentGraphBeforeSupersession.observations = [
+  clone(contentBundle.observations[0]!),
+]
+const contentBeforeJourneyRevision = journeyRevision(
+  contentGraphBeforeSupersession,
+  "add initial observation"
+)
 const contentJourneyRevision = journeyRevision(
   contentGraph,
-  "attach content metadata"
+  "supersede observation",
+  contentBeforeJourneyRevision.id
 )
 
 const deletedSectionGraph = (() => {
@@ -1012,6 +1070,9 @@ const deletedSectionGraph = (() => {
   transit.actualEndAt = LATER
   transit.detail.actualFromEventId = "delete-start"
   transit.detail.actualToEventId = "delete-end"
+  transit.detail.routeState = "READY"
+  transit.detail.activePlanningRunId = "run-ready"
+  transit.detail.selectedPlanId = "plan-recommended"
   const end = visitEvent("delete-end", journeyId, "终点", "day", "CONFIRMED")
   if (end.type !== "VISIT") throw new Error("fixture invariant")
   end.actualStartAt = LATER
@@ -1023,10 +1084,21 @@ const deletedSectionGraph = (() => {
       link("delete-link-1", journeyId, "delete-start", "delete-transit", 1024),
       link("delete-link-2", journeyId, "delete-transit", "delete-end", 2048),
     ],
-    { revision: 2, deletedAt: LATER }
+    {
+      revision: 2,
+      deletedAt: LATER,
+      transitPlanningRuns: [readyRun("delete-transit")],
+    }
   )
   for (const event of result.events) {
     if (event.type === "VISIT") event.detail.coordinateSystem = "WGS84"
+  }
+  for (const run of result.transitPlanningRuns) {
+    for (const plan of run.plans) {
+      for (const segment of plan.segments) {
+        segment.coordinateSystem = "WGS84"
+      }
+    }
   }
   return result
 })()
@@ -1384,6 +1456,10 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
       {
         id: "refresh-after-reauth",
         input: { workspace: workspaceReauth },
+        command: userCommand(workspaceReauth.session.id, 1, "refresh", {
+          name: "workspace.refresh",
+          payload: { fromWorkspaceRevision: 1 },
+        }),
         expected: { state: { workspace: workspaceRefreshed } },
       },
       {
@@ -1437,17 +1513,60 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
       "snapshots pin display metadata and sharing failures are executable",
     cases: [
       {
+        id: "supersede-observation-command",
+        input: {
+          graph: contentGraphBeforeSupersession,
+          content: contentBeforeSupersession,
+          journeyRevisions: [contentBeforeJourneyRevision],
+        },
+        command: userCommand(
+          contentGraphBeforeSupersession.id,
+          1,
+          "supersede-observation",
+          {
+            name: "journey.add_observation",
+            payload: {
+              eventId: contentEvent.id,
+              observation: {
+                kind: "NOTE",
+                phase: "ACTUAL",
+                body: "清晨人少",
+                observedAt: SOON,
+                supersedesId: "observation-1",
+                visibility: "JOURNEY",
+              },
+            },
+          }
+        ),
+        expected: {
+          state: {
+            graph: contentGraph,
+            content: contentBundle,
+            journeyRevisions: [
+              contentBeforeJourneyRevision,
+              contentJourneyRevision,
+            ],
+          },
+        },
+      },
+      {
         id: "observation-supersession-and-pinned-content",
         input: {
           graph: contentGraph,
           content: contentBundle,
-          journeyRevisions: [contentJourneyRevision],
+          journeyRevisions: [
+            contentBeforeJourneyRevision,
+            contentJourneyRevision,
+          ],
         },
         expected: {
           state: {
             graph: contentGraph,
             content: contentBundle,
-            journeyRevisions: [contentJourneyRevision],
+            journeyRevisions: [
+              contentBeforeJourneyRevision,
+              contentJourneyRevision,
+            ],
           },
           evidence: {
             currentObservationId: "observation-2",
@@ -1461,7 +1580,7 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
         input: { graph: contentGraph, content: contentBundle },
         command: userCommand(
           contentGraph.id,
-          1,
+          contentGraph.revision,
           "attach-foreign-asset",
           {
             name: "journey.attach_asset",
@@ -1479,15 +1598,20 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
       {
         id: "shared-source-requires-excerpt",
         input: { graph: contentGraph, content: contentBundle },
-        command: userCommand(contentGraph.id, 1, "share-source", {
-          name: "journey.link_source_item",
-          payload: {
-            eventId: contentEvent.id,
-            sourceItemId: "source-item",
-            role: "EVIDENCE",
-            approvedForJourneySharing: true,
-          },
-        }),
+        command: userCommand(
+          contentGraph.id,
+          contentGraph.revision,
+          "share-source",
+          {
+            name: "journey.link_source_item",
+            payload: {
+              eventId: contentEvent.id,
+              sourceItemId: "source-item",
+              role: "EVIDENCE",
+              approvedForJourneySharing: true,
+            },
+          }
+        ),
         expected: { error: { code: "SOURCE_EXCERPT_REQUIRED" } },
       },
     ],

@@ -209,6 +209,7 @@ export const TARGET_COMMAND_NAMES = [
   "journey.add_observation",
   "journey.link_source_item",
   "journey.undo",
+  "workspace.refresh",
   "workspace.replay",
   "workspace.fork",
   "workspace.commit",
