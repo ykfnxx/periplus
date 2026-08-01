@@ -1966,5 +1966,16 @@ WHEN NEW."agentRunId" IS NOT NULL AND (
     SELECT 1 FROM "WorkspaceAgentRun" run
     WHERE run."id" = NEW."agentRunId" AND run."workspaceId" = NEW."workspaceId"
   )
+) AND NOT (
+  -- Workspace root deletion applies workspaceId SET NULL before the cascading
+  -- AgentRun deletion applies agentRunId SET NULL. The vanished OLD parent is
+  -- the non-forgeable distinction from a caller-authored partial detach.
+  OLD."workspaceId" IS NOT NULL AND
+  NEW."workspaceId" IS NULL AND
+  NEW."agentRunId" IS OLD."agentRunId" AND
+  NOT EXISTS (
+    SELECT 1 FROM "WorkspaceSession" workspace
+    WHERE workspace."id" = OLD."workspaceId"
+  )
 )
 BEGIN SELECT RAISE(ABORT, 'Provider usage Agent run must belong to the attributed Workspace'); END;

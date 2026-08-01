@@ -669,6 +669,54 @@ describe("P1 SQLite schema baseline", () => {
        VALUES ('bad-provider-usage', 'test', 'route', 'ok', 'agent-run-1', '${NOW}');`,
       /attributed Workspace/
     )
+    sqlite(`
+      INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
+      VALUES ('gc-workspace', 'owner', 'j1', 1, 0, 'ACTIVE', '${graph("j1", "owner", 1)}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
+      VALUES ('gc-workspace-r1', 'gc-workspace', 1, 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'gc-workspace-r1-key', '${NOW}');
+      UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 1 WHERE "id" = 'gc-workspace';
+      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "startedAt", "createdAt", "updatedAt")
+      VALUES ('gc-agent-run', 'gc-workspace', 'RUNNING', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceMessage" ("id", "workspaceId", "role", "content", "agentRunId", "createdAt", "updatedAt")
+      VALUES ('gc-message', 'gc-workspace', 'ASSISTANT', 'GC', 'gc-agent-run', '${NOW}', '${NOW}');
+      INSERT INTO "ProviderUsageLog" ("id", "provider", "purpose", "status", "workspaceId", "agentRunId", "createdAt")
+      VALUES ('gc-provider-usage', 'test', 'route', 'ok', 'gc-workspace', 'gc-agent-run', '${NOW}');
+    `)
+    expectSqlFailure(
+      `UPDATE "ProviderUsageLog" SET "workspaceId" = NULL WHERE "id" = 'gc-provider-usage';`,
+      /attributed Workspace/
+    )
+    sqlite(`DELETE FROM "WorkspaceSession" WHERE "id" = 'gc-workspace';`)
+    expect(
+      sqliteJson<{
+        workspaceCount: number
+        revisionCount: number
+        messageCount: number
+        runCount: number
+        usageCount: number
+        workspaceId: string | null
+        agentRunId: string | null
+      }>(
+        `SELECT
+           (SELECT count(*) FROM "WorkspaceSession" WHERE "id" = 'gc-workspace') AS workspaceCount,
+           (SELECT count(*) FROM "WorkspaceRevision" WHERE "workspaceId" = 'gc-workspace') AS revisionCount,
+           (SELECT count(*) FROM "WorkspaceMessage" WHERE "workspaceId" = 'gc-workspace') AS messageCount,
+           (SELECT count(*) FROM "WorkspaceAgentRun" WHERE "workspaceId" = 'gc-workspace') AS runCount,
+           count(*) AS usageCount,
+           "workspaceId",
+           "agentRunId"
+         FROM "ProviderUsageLog"
+         WHERE "id" = 'gc-provider-usage'`
+      )[0]
+    ).toEqual({
+      workspaceCount: 0,
+      revisionCount: 0,
+      messageCount: 0,
+      runCount: 0,
+      usageCount: 1,
+      workspaceId: null,
+      agentRunId: null,
+    })
     expectSqlFailure(
       `INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "parentRevisionId", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
        VALUES ('workspace-r3', 'workspace-1', 3, 'workspace-r1', 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'workspace-r3-key', '${NOW}');`,
