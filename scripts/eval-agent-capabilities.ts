@@ -1,5 +1,6 @@
 import {
   MemoryEvalTraceSink,
+  evalContentHash,
   validatePlaceCapability,
   validateTransitCapability,
   validateWriteProtocolCapability,
@@ -47,6 +48,13 @@ function transitReport() {
     (candidate) => candidate.id === "03-transit-plan-choice"
   )!.cases[0]!
   const graph = structuredClone(fixture.expected.state!.graph!)
+  const destination = graph.events.find((event) => event.id === "end")
+  if (destination?.type !== "VISIT") throw new Error("fixture invariant")
+  destination.detail.plannedLat = 30.35
+  destination.detail.plannedLng = 120.25
+  graph.transitPlanningRuns[0]!.plans.find(
+    (plan) => plan.id === "plan-low-cost"
+  )!.distanceMeters = 15_000
   const transit = graph.events.find(
     (event): event is Extract<TargetJourneyEvent, { type: "TRANSIT" }> =>
       event.id === "transit" && event.type === "TRANSIT"
@@ -79,9 +87,29 @@ async function writeProtocolReport() {
     type: "command.dispatched",
     spanId: "command-span",
     parentSpanId: "run-span",
+    commandId: "smoke-command",
     revisionBefore: 0,
     status: "OK",
-    payload: { commandName: "journey.update_event" },
+    payload: {
+      commandName: "journey.update_event",
+      idempotencyKey: "smoke-command",
+      commandHash: evalContentHash({ name: "journey.update_event" }),
+    },
+  })
+  await sink.emit({
+    runId: "smoke-write-run",
+    scenarioId: "smoke-write-protocol",
+    type: "state.diff.recorded",
+    spanId: "command-span",
+    parentSpanId: "run-span",
+    commandId: "smoke-command",
+    revisionBefore: 0,
+    revisionAfter: 1,
+    status: "OK",
+    payload: {
+      changedEventIds: ["west-lake"],
+      projectionInvalidationScopes: ["journey"],
+    },
   })
   await sink.emit({
     runId: "smoke-write-run",
@@ -89,6 +117,7 @@ async function writeProtocolReport() {
     type: "command.applied",
     spanId: "command-span",
     parentSpanId: "run-span",
+    commandId: "smoke-command",
     revisionBefore: 0,
     revisionAfter: 1,
     status: "OK",
@@ -106,10 +135,66 @@ async function writeProtocolReport() {
   return validateWriteProtocolCapability("applied-command", sink.events)
 }
 
-const reports: EvalCapabilityReport[] = [
-  validatePlaceCapability({
+async function placeReport() {
+  const result = {
+    status: "resolved" as const,
+    place: resolvedWestLake(),
+    warnings: [],
+  }
+  const evidenceId = "cassette:place:west-lake"
+  const sink = new MemoryEvalTraceSink()
+  await sink.emit({
+    runId: "smoke-place-run",
+    scenarioId: "smoke-place-resolution",
+    type: "run.started",
+    spanId: "run-span",
+    status: "OK",
+    payload: {},
+  })
+  await sink.emit({
+    runId: "smoke-place-run",
+    scenarioId: "smoke-place-resolution",
+    type: "tool.started",
+    spanId: "place-tool-span",
+    parentSpanId: "run-span",
+    status: "OK",
+    payload: { toolType: "place.resolve" },
+  })
+  await sink.emit({
+    runId: "smoke-place-run",
+    scenarioId: "smoke-place-resolution",
+    type: "evidence.recorded",
+    spanId: "place-evidence-span",
+    parentSpanId: "place-tool-span",
+    status: "OK",
+    payload: {
+      evidenceId,
+      toolType: "place.resolve",
+      resultStatus: result.status,
+      contentHash: evalContentHash(result),
+    },
+  })
+  await sink.emit({
+    runId: "smoke-place-run",
+    scenarioId: "smoke-place-resolution",
+    type: "tool.completed",
+    spanId: "place-tool-span",
+    parentSpanId: "run-span",
+    status: "OK",
+    payload: { toolType: "place.resolve" },
+  })
+  await sink.emit({
+    runId: "smoke-place-run",
+    scenarioId: "smoke-place-resolution",
+    type: "run.completed",
+    spanId: "run-span",
+    status: "OK",
+    payload: {},
+  })
+  await sink.close()
+  return validatePlaceCapability({
     id: "recorded-west-lake",
-    result: { status: "resolved", place: resolvedWestLake(), warnings: [] },
+    result,
     expectation: {
       status: "resolved",
       city: "杭州",
@@ -122,8 +207,13 @@ const reports: EvalCapabilityReport[] = [
       requireProviderIdentity: true,
       requireEvidence: true,
     },
-    evidenceId: "cassette:place:west-lake",
-  }),
+    evidenceId,
+    traceEvents: sink.events,
+  })
+}
+
+const reports: EvalCapabilityReport[] = [
+  await placeReport(),
   transitReport(),
   await writeProtocolReport(),
 ]

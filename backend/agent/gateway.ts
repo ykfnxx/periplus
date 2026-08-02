@@ -81,6 +81,7 @@ interface RunningAgent {
   stdout: string
   heartbeatTimer: ReturnType<typeof setInterval> | null
   traceRunSpanId: string
+  traceFailure: Error | null
 }
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
@@ -214,13 +215,20 @@ export class AgentGateway {
     running: RunningAgent,
     input: Omit<EvalTraceInput, "runId" | "scenarioId" | "workspaceId">
   ) {
-    if (!this.options.evalTrace) return
-    await this.options.evalTrace.sink.emit({
-      ...input,
-      runId: running.runId,
-      scenarioId: this.options.evalTrace.scenarioId,
-      workspaceId: running.workspaceId,
-    })
+    if (!this.options.evalTrace || running.traceFailure) return false
+    try {
+      await this.options.evalTrace.sink.emit({
+        ...input,
+        runId: running.runId,
+        scenarioId: this.options.evalTrace.scenarioId,
+        workspaceId: running.workspaceId,
+      })
+      return true
+    } catch (error) {
+      running.traceFailure =
+        error instanceof Error ? error : new Error("Eval trace write failed")
+      return false
+    }
   }
 
   async start(
@@ -299,6 +307,7 @@ export class AgentGateway {
       stdout: "",
       heartbeatTimer: null,
       traceRunSpanId: randomUUID(),
+      traceFailure: null,
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
@@ -448,6 +457,7 @@ export class AgentGateway {
       })
     }
 
+    let appliedCommandResult: TargetCommandResult | null = null
     try {
       await this.heartbeat(running)
       let output: unknown
@@ -484,6 +494,7 @@ export class AgentGateway {
           command: targetCommandBodySchema.parse(request.command),
         }
         const result = await this.commands.execute(running.context, envelope)
+        appliedCommandResult = result
         const document = await this.commands.getDocument(
           running.context,
           running.workspaceId
@@ -492,7 +503,8 @@ export class AgentGateway {
       }
 
       if (request.type === "workspace.command" && commandSpanId) {
-        const result = (output as { result: TargetCommandResult }).result
+        const result = appliedCommandResult
+        if (!result) throw new Error("Command result was not captured")
         await this.trace(running, {
           type: "state.diff.recorded",
           spanId: commandSpanId,
@@ -554,20 +566,51 @@ export class AgentGateway {
       return output
     } catch (error) {
       if (request.type === "workspace.command" && commandSpanId) {
-        await this.trace(running, {
-          type: "command.rejected",
-          spanId: commandSpanId,
-          parentSpanId: toolSpanId,
-          commandId,
-          revisionBefore: request.expectedRevision,
-          status: "ERROR",
-          payload: {
-            commandName: commandName ?? "invalid",
-            errorName: error instanceof Error ? error.name : "Error",
-            errorMessage:
-              error instanceof Error ? error.message : "Command failed",
-          },
-        })
+        if (appliedCommandResult) {
+          await this.trace(running, {
+            type: "state.diff.recorded",
+            spanId: commandSpanId,
+            parentSpanId: toolSpanId,
+            commandId,
+            revisionBefore: request.expectedRevision,
+            revisionAfter: appliedCommandResult.newRevision,
+            status: "OK",
+            payload: {
+              changedEventIds: appliedCommandResult.changedEventIds,
+              projectionInvalidationScopes:
+                appliedCommandResult.projectionInvalidationScopes,
+            },
+          })
+          await this.trace(running, {
+            type: "command.applied",
+            spanId: commandSpanId,
+            parentSpanId: toolSpanId,
+            commandId,
+            revisionBefore: request.expectedRevision,
+            revisionAfter: appliedCommandResult.newRevision,
+            status: "OK",
+            payload: {
+              commandName: appliedCommandResult.commandName,
+              replayedFromIdempotencyKey:
+                appliedCommandResult.replayedFromIdempotencyKey,
+            },
+          })
+        } else {
+          await this.trace(running, {
+            type: "command.rejected",
+            spanId: commandSpanId,
+            parentSpanId: toolSpanId,
+            commandId,
+            revisionBefore: request.expectedRevision,
+            status: "ERROR",
+            payload: {
+              commandName: commandName ?? "invalid",
+              errorName: error instanceof Error ? error.name : "Error",
+              errorMessage:
+                error instanceof Error ? error.message : "Command failed",
+            },
+          })
+        }
       }
       await this.trace(running, {
         type: "tool.failed",

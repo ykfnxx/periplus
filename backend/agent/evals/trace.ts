@@ -26,6 +26,18 @@ const DEFAULT_SENSITIVE_KEYS = new Set([
   "privatekey",
   "env",
 ])
+const SENSITIVE_KEY_SUFFIXES = [
+  "authorization",
+  "accesstoken",
+  "refreshtoken",
+  "capabilitytoken",
+  "usertoken",
+  "apikey",
+  "password",
+  "secret",
+  "clientsecret",
+  "privatekey",
+] as const
 
 export interface EvalRedactionOptions {
   additionalSensitiveKeys?: readonly string[]
@@ -45,13 +57,32 @@ function normalizedKey(key: string) {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "")
 }
 
+function isSensitiveKey(key: string, sensitiveKeys: ReadonlySet<string>) {
+  const normalized = normalizedKey(key)
+  return (
+    sensitiveKeys.has(normalized) ||
+    SENSITIVE_KEY_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
+  )
+}
+
 function redactString(value: string) {
   return value
     .replace(/\bBearer\s+[^\s,;]+/gi, `Bearer ${REDACTED}`)
+    .replace(/\bBasic\s+[A-Za-z0-9+/=]+/gi, `Basic ${REDACTED}`)
     .replace(
-      /([?&](?:userToken|token|access_token|api_key)=)[^&#\s]+/gi,
+      /([?&](?:user[_-]?token|access[_-]?token|refresh[_-]?token|token|api[_-]?key|x-api-key|client[_-]?secret|password)=)[^&#\s]+/gi,
       `$1${REDACTED}`
     )
+    .replace(
+      /\b((?:OPENAI[_-])?API[_-]?KEY|X-API-KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|CLIENT[_-]?SECRET|PASSWORD)\s*[:=]\s*[^\s,;]+/gi,
+      (_match, key: string) => `${key}=${REDACTED}`
+    )
+    .replace(/\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{8,}\b/g, REDACTED)
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, REDACTED)
+    .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, REDACTED)
+    .replace(/\bAKIA[A-Z0-9]{16}\b/g, REDACTED)
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, REDACTED)
+    .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${REDACTED}@`)
     .replace(
       /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
       REDACTED
@@ -85,9 +116,7 @@ export function redactEvalPayload(
     seen.add(current)
     const output: Record<string, unknown> = {}
     for (const [key, entry] of Object.entries(current)) {
-      output[key] = sensitiveKeys.has(normalizedKey(key))
-        ? REDACTED
-        : visit(entry)
+      output[key] = isSensitiveKey(key, sensitiveKeys) ? REDACTED : visit(entry)
     }
     return output
   }
@@ -246,10 +275,41 @@ export function verifyEvalTrace(
   const firstScenarioId = events[0]?.scenarioId
   const openSpans = new Map<
     string,
-    { type: EvalTraceEventType; terminals: ReadonlySet<EvalTraceEventType> }
+    {
+      start: EvalTraceEvent
+      terminals: ReadonlySet<EvalTraceEventType>
+      stateDiff?: EvalTraceEvent
+    }
   >()
   const closedSpans = new Set<string>()
-  const knownSpans = new Set<string>()
+  const runStarts = events.filter((event) => event.type === "run.started")
+  const runTerminals = events.filter(
+    (event) => event.type === "run.completed" || event.type === "run.failed"
+  )
+  if (runStarts.length !== 1) {
+    issues.push(
+      `trace must contain exactly one run.started, got ${runStarts.length}`
+    )
+  }
+  if (runTerminals.length !== 1) {
+    issues.push(
+      `trace must contain exactly one run terminal, got ${runTerminals.length}`
+    )
+  }
+  const rootRunSpanId = runStarts[0]?.spanId
+  let runOpen = false
+  let runClosed = false
+
+  function sameOptionalIdentity(
+    index: number,
+    label: string,
+    left: unknown,
+    right: unknown
+  ) {
+    if (left !== right) {
+      issues.push(`event[${index}] changed lifecycle ${label}`)
+    }
+  }
 
   for (const [index, event] of events.entries()) {
     if (event.seq !== index + 1) {
@@ -269,44 +329,186 @@ export function verifyEvalTrace(
 
     const terminals = LIFECYCLE_STARTS.get(event.type)
     const isTerminal = LIFECYCLE_TERMINALS.has(event.type)
-    if (event.parentSpanId) {
-      if (!knownSpans.has(event.parentSpanId)) {
+
+    if (event.type === "run.started") {
+      if (index !== 0) issues.push("run.started must be the first trace event")
+      if (event.parentSpanId) issues.push("run.started must be a root span")
+      if (runOpen || runClosed)
+        issues.push("run lifecycle started more than once")
+      runOpen = true
+    } else if (!runOpen || runClosed) {
+      issues.push(`event[${index}] occurred outside the open run lifecycle`)
+    }
+
+    const isRunTerminal =
+      event.type === "run.completed" || event.type === "run.failed"
+    if (isRunTerminal) {
+      if (event.spanId !== rootRunSpanId) {
+        issues.push(`event[${index}] terminates a non-root run span`)
+      }
+      if (event.parentSpanId) issues.push("run terminal must be a root event")
+      if (index !== events.length - 1) {
+        issues.push("run terminal must be the final trace event")
+      }
+    } else if (event.type !== "run.started") {
+      if (!event.parentSpanId) {
+        issues.push(`event[${index}] must reference an open parent span`)
+      } else if (!openSpans.has(event.parentSpanId)) {
         issues.push(
-          `event[${index}] references unknown parent span ${event.parentSpanId}`
-        )
-      } else if (closedSpans.has(event.parentSpanId)) {
-        issues.push(
-          `event[${index}] references closed parent span ${event.parentSpanId}`
+          `event[${index}] references unknown or closed parent span ${event.parentSpanId}`
         )
       }
     }
+
     if (!terminals && !isTerminal && closedSpans.has(event.spanId)) {
       issues.push(`event[${index}] occurred after span ${event.spanId} closed`)
     }
-    knownSpans.add(event.spanId)
+
     if (terminals) {
       if (openSpans.has(event.spanId) || closedSpans.has(event.spanId)) {
         issues.push(`span ${event.spanId} was started more than once`)
       } else {
-        openSpans.set(event.spanId, { type: event.type, terminals })
+        openSpans.set(event.spanId, { start: event, terminals })
       }
     }
+
+    if (event.type === "state.diff.recorded") {
+      const command = openSpans.get(event.spanId)
+      if (!command || command.start.type !== "command.dispatched") {
+        issues.push(
+          `event[${index}] state diff is not inside an open command span`
+        )
+      } else {
+        if (command.stateDiff) {
+          issues.push(
+            `command span ${event.spanId} recorded more than one state diff`
+          )
+        }
+        sameOptionalIdentity(
+          index,
+          "parentSpanId",
+          event.parentSpanId,
+          command.start.parentSpanId
+        )
+        sameOptionalIdentity(
+          index,
+          "commandId",
+          event.commandId,
+          command.start.commandId
+        )
+        sameOptionalIdentity(
+          index,
+          "revisionBefore",
+          event.revisionBefore,
+          command.start.revisionBefore
+        )
+        sameOptionalIdentity(
+          index,
+          "workspaceId",
+          event.workspaceId,
+          command.start.workspaceId
+        )
+        sameOptionalIdentity(
+          index,
+          "journeyId",
+          event.journeyId,
+          command.start.journeyId
+        )
+        command.stateDiff = event
+      }
+    }
+
     if (isTerminal) {
       const open = openSpans.get(event.spanId)
       if (!open) {
         issues.push(`span ${event.spanId} terminated without a start`)
       } else if (!open.terminals.has(event.type)) {
         issues.push(
-          `span ${event.spanId} started as ${open.type} but ended as ${event.type}`
+          `span ${event.spanId} started as ${open.start.type} but ended as ${event.type}`
         )
       } else {
+        sameOptionalIdentity(
+          index,
+          "parentSpanId",
+          event.parentSpanId,
+          open.start.parentSpanId
+        )
+        sameOptionalIdentity(index, "turnId", event.turnId, open.start.turnId)
+        sameOptionalIdentity(
+          index,
+          "workspaceId",
+          event.workspaceId,
+          open.start.workspaceId
+        )
+        sameOptionalIdentity(
+          index,
+          "journeyId",
+          event.journeyId,
+          open.start.journeyId
+        )
+        if (open.start.type === "tool.started") {
+          sameOptionalIdentity(
+            index,
+            "toolType",
+            event.payload.toolType,
+            open.start.payload.toolType
+          )
+        }
+        if (open.start.type === "command.dispatched") {
+          sameOptionalIdentity(
+            index,
+            "commandId",
+            event.commandId,
+            open.start.commandId
+          )
+          sameOptionalIdentity(
+            index,
+            "commandName",
+            event.payload.commandName,
+            open.start.payload.commandName
+          )
+          sameOptionalIdentity(
+            index,
+            "revisionBefore",
+            event.revisionBefore,
+            open.start.revisionBefore
+          )
+          if (event.type === "command.applied") {
+            if (!open.stateDiff) {
+              issues.push(
+                `command span ${event.spanId} applied without a state diff`
+              )
+            } else {
+              sameOptionalIdentity(
+                index,
+                "revisionAfter",
+                event.revisionAfter,
+                open.stateDiff.revisionAfter
+              )
+            }
+          } else if (open.stateDiff) {
+            issues.push(
+              `command span ${event.spanId} rejected after a state diff`
+            )
+          }
+        }
+        const openChildren = [...openSpans.values()].filter(
+          (candidate) => candidate.start.parentSpanId === event.spanId
+        )
+        if (openChildren.length > 0) {
+          issues.push(`span ${event.spanId} closed with open child spans`)
+        }
         openSpans.delete(event.spanId)
         closedSpans.add(event.spanId)
+        if (isRunTerminal) {
+          runOpen = false
+          runClosed = true
+        }
       }
     }
   }
   for (const [spanId, open] of openSpans) {
-    issues.push(`span ${spanId} (${open.type}) has no terminal event`)
+    issues.push(`span ${spanId} (${open.start.type}) has no terminal event`)
   }
   return { valid: issues.length === 0, issues }
 }

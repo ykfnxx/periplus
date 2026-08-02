@@ -7,11 +7,14 @@ or the map SDK.
 ## Current scope
 
 - F1 Place resolution: decision state, city, coordinate system/error, provider
-  identity, and evidence.
+  identity, content-hash-bound trace evidence, and exact ready-command target,
+  coordinate, and provider bindings.
 - F2 Transit planning: active endpoints and scope, selected-plan membership,
-  usable geometry, and request fingerprint.
+  run/plan identity, ordered and continuous geometry, endpoint and coordinate
+  system agreement, distance/duration aggregates, and request fingerprint.
 - F6 write protocol: complete command lifecycle, monotonic revisions, rejected
-  writes without revision claims, evidence references, and trace integrity.
+  writes without revision claims, evidence references, typed event payloads,
+  and trace integrity under one unique root run lifecycle.
 
 F3 scheduling, F4 images, and F5 sourced material use the same report contract
 but are not part of this first implementation.
@@ -24,6 +27,9 @@ npm run eval:agent:smoke
 
 The command prints one JSON report and exits non-zero when any hard metric
 fails. It uses recorded/contract data only and makes no provider calls.
+`hardPass` is fail-closed: a report needs at least one hard metric, every hard
+metric must pass, and a skipped hard metric therefore fails. Persisted reports are
+schema-checked against their metrics rather than trusting a supplied boolean.
 
 ## Eval Trace
 
@@ -37,7 +43,13 @@ Use `MemoryEvalTraceSink` in focused tests and `JsonlEvalTraceSink` for durable
 artifacts. JSONL creation fails if the path already exists so a run cannot
 silently overwrite another run. Sensitive keys and credential-shaped strings
 are redacted before hashing and persistence. `verifyEvalTrace` checks schema,
-sequence, run/scenario identity, hash links, and lifecycle span closure.
+sequence, one root run, run/scenario identity, hash links, open-parent ordering,
+command/state-diff identity and revision continuity, and lifecycle closure.
+
+Eval Trace is observational. A sink failure makes the trace artifact incomplete
+and therefore invalid, but it is isolated from the authoritative `AgentGateway`
+operation: a committed command is never reported as rejected and the caller's
+production result is unchanged.
 
 Provider responses and full snapshots should live in separate,
 content-addressed artifacts. Trace events carry hashes and evidence references,

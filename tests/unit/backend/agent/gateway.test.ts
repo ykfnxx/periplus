@@ -5,6 +5,9 @@ import {
   MemoryEvalTraceSink,
   validateWriteProtocolCapability,
   verifyEvalTrace,
+  type EvalTraceEvent,
+  type EvalTraceInput,
+  type EvalTraceSink,
 } from "@/backend/agent/evals"
 import type {
   AgentRuntime,
@@ -61,6 +64,28 @@ class FakeRuntime implements AgentRuntime {
   }
 }
 
+class StateDiffFailingTraceSink implements EvalTraceSink {
+  readonly delegate = new MemoryEvalTraceSink()
+  private failure: Error | null = null
+
+  get events(): readonly EvalTraceEvent[] {
+    return this.delegate.events
+  }
+
+  async emit(input: EvalTraceInput) {
+    if (input.type === "state.diff.recorded") {
+      this.failure = new Error("injected state diff trace failure")
+      throw this.failure
+    }
+    return this.delegate.emit(input)
+  }
+
+  async close() {
+    if (this.failure) throw this.failure
+    await this.delegate.close()
+  }
+}
+
 function graph(id: string): TargetJourneyGraphSnapshot {
   return {
     id,
@@ -99,10 +124,7 @@ function graph(id: string): TargetJourneyGraphSnapshot {
   }
 }
 
-async function setup(evalTrace?: {
-  scenarioId: string
-  sink: MemoryEvalTraceSink
-}) {
+async function setup(evalTrace?: { scenarioId: string; sink: EvalTraceSink }) {
   const workspace = await createWorkspace(context, {
     graph: graph(`agent-workspace-${randomUUID()}`),
     now: new Date(now),
@@ -186,6 +208,54 @@ describe.sequential("P3 persistent AgentGateway", () => {
     expect(
       validateWriteProtocolCapability("gateway-command", sink.events).hardPass
     ).toBe(true)
+  })
+
+  it("does not change a committed command result when Eval Trace persistence fails", async () => {
+    const sink = new StateDiffFailingTraceSink()
+    const { workspace, commands, runtime, gateway, emit } = await setup({
+      scenarioId: "gateway-trace-failure-isolation",
+      sink,
+    })
+    await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
+
+    const mutation = await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "eval-trace-failure-update",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "西湖（Trace 失败后仍提交）" },
+        },
+      },
+    })
+
+    expect(mutation.result).toMatchObject({ newRevision: 1 })
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session.headGraph
+        .events[0]?.title
+    ).toBe("西湖（Trace 失败后仍提交）")
+    expect(sink.events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.started",
+      "command.dispatched",
+    ])
+    expect(sink.events.some((event) => event.type === "command.rejected")).toBe(
+      false
+    )
+    expect(verifyEvalTrace(sink.events).valid).toBe(false)
+    await expect(sink.close()).rejects.toThrow(
+      "injected state diff trace failure"
+    )
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+          ?.status
+      ).toBe("SUCCEEDED")
+    })
   })
 
   it("runs with a scoped capability and persists commands/messages across restart", async () => {

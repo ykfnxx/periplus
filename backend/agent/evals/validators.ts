@@ -18,7 +18,7 @@ import {
   type EvalMetricResult,
   type EvalTraceEvent,
 } from "./contracts"
-import { verifyEvalTrace } from "./trace"
+import { evalContentHash, verifyEvalTrace } from "./trace"
 
 type PlaceCapabilityResult =
   | PlaceResolveResult
@@ -31,6 +31,8 @@ export interface PlaceCapabilityExpectation {
   coordinateNear?: { lat: number; lng: number; maxErrorMeters: number }
   requireProviderIdentity?: boolean
   requireEvidence?: boolean
+  expectedEventId?: string
+  expectedEventType?: "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
 }
 
 export interface PlaceCapabilityCase {
@@ -38,6 +40,7 @@ export interface PlaceCapabilityCase {
   result: PlaceCapabilityResult
   expectation: PlaceCapabilityExpectation
   evidenceId?: string
+  traceEvents?: readonly EvalTraceEvent[]
 }
 
 export interface TransitCapabilityCase {
@@ -46,6 +49,8 @@ export interface TransitCapabilityCase {
   transitEventId: string
   expectedSelectedPlanId?: string
   expectedRequestFingerprint?: string
+  maxEndpointErrorMeters?: number
+  maxSegmentGapMeters?: number
 }
 
 function metric(
@@ -101,6 +106,25 @@ function distanceMeters(
     Math.sin(deltaLat / 2) ** 2 +
     Math.cos(leftLat) * Math.cos(rightLat) * Math.sin(deltaLng / 2) ** 2
   return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function selectedGeometryDistanceMeters(
+  segments: readonly { positions: readonly [number, number][] }[]
+) {
+  let total = 0
+  let previous: [number, number] | undefined
+  for (const segment of segments) {
+    for (const position of segment.positions) {
+      if (previous) {
+        total += distanceMeters(
+          { lng: previous[0], lat: previous[1] },
+          { lng: position[0], lat: position[1] }
+        )
+      }
+      previous = position
+    }
+  }
+  return total
 }
 
 export function validatePlaceCapability(
@@ -201,11 +225,64 @@ export function validatePlaceCapability(
     )
   }
   if (testCase.expectation.requireEvidence) {
+    const integrity = verifyEvalTrace(testCase.traceEvents ?? [])
+    const matchingEvidence = (testCase.traceEvents ?? []).filter(
+      (event) =>
+        event.type === "evidence.recorded" &&
+        event.payload.evidenceId === testCase.evidenceId
+    )
+    const evidence = matchingEvidence[0]
     metrics.push(
       metric(
+        "evidence_trace_integrity",
+        integrity.valid,
+        integrity.valid
+          ? "Place evidence belongs to a complete Eval Trace"
+          : integrity.issues.join("; ")
+      ),
+      metric(
         "evidence_reference",
-        Boolean(testCase.evidenceId?.trim()),
-        "Resolved Place is linked to recorded tool evidence"
+        Boolean(testCase.evidenceId?.trim()) &&
+          matchingEvidence.length === 1 &&
+          evidence?.payload.contentHash === evalContentHash(testCase.result) &&
+          typeof evidence.payload.toolType === "string" &&
+          evidence.payload.toolType.startsWith("place.") &&
+          evidence.payload.resultStatus === testCase.result.status,
+        "Resolved Place is bound to one recorded evidence event with the exact result hash"
+      )
+    )
+  }
+
+  if (testCase.result.status === "ready") {
+    const command = testCase.result.command
+    const detail = command.payload.patch.detail
+    const expectedSource = place.sources.find(
+      (source) =>
+        source.provider === place.bestCoordinate.provider && source.providerId
+    )
+    metrics.push(
+      metric(
+        "ready_command_target",
+        Boolean(testCase.expectation.expectedEventId) &&
+          Boolean(testCase.expectation.expectedEventType) &&
+          command.name === "journey.update_event" &&
+          command.payload.eventId === testCase.expectation.expectedEventId &&
+          command.payload.patch.type === testCase.expectation.expectedEventType,
+        "Ready Place command targets the expected Journey Event and Event type"
+      ),
+      metric(
+        "ready_command_coordinate",
+        detail.plannedLat === place.bestCoordinate.lat &&
+          detail.plannedLng === place.bestCoordinate.lng &&
+          detail.coordinateSystem === place.bestCoordinate.coordinateSystem,
+        "Ready Place command preserves the resolved coordinate and coordinate system"
+      ),
+      metric(
+        "ready_command_provider",
+        detail.coordinateProvider === place.bestCoordinate.provider &&
+          detail.plannedPlaceId === place.placeId &&
+          detail.providerPlaceId === expectedSource?.providerId,
+        "Ready Place command preserves Place and provider identity"
       )
     )
   }
@@ -301,6 +378,19 @@ export function validateTransitCapability(
       "selectedPlanId belongs to the active planning run"
     )
   )
+  metrics.push(
+    metric(
+      "planning_identity",
+      Boolean(
+        run &&
+        selectedPlan &&
+        run.transitEventId === event.id &&
+        selectedPlan.planningRunId === run.id &&
+        selectedPlan.transitEventId === event.id
+      ),
+      "Planning run and selected plan retain the Transit Event identity"
+    )
+  )
   if (testCase.expectedSelectedPlanId) {
     metrics.push(
       metric(
@@ -338,7 +428,131 @@ export function validateTransitCapability(
     )
   )
 
+  const orderedSegments = selectedPlan
+    ? [...selectedPlan.segments].sort((left, right) => left.order - right.order)
+    : []
+  const segmentOrderIsContiguous = orderedSegments.every(
+    (segment, index) => segment.order === index
+  )
+  const segmentIdsAreUnique =
+    new Set(orderedSegments.map((segment) => segment.id)).size ===
+    orderedSegments.length
+  metrics.push(
+    metric(
+      "segment_order",
+      orderedSegments.length > 0 &&
+        segmentOrderIsContiguous &&
+        segmentIdsAreUnique,
+      "Selected plan segments have a unique contiguous execution order"
+    )
+  )
+
   const request = buildTransitPlanRequest(event, graph.events)
+  const endpointTolerance = testCase.maxEndpointErrorMeters ?? 250
+  const segmentGapTolerance = testCase.maxSegmentGapMeters ?? 250
+  const firstPosition = orderedSegments[0]?.positions[0]
+  const lastSegment = orderedSegments.at(-1)
+  const lastPosition = lastSegment?.positions.at(-1)
+  const geometryCoordinateSystemMatches = Boolean(
+    request &&
+    request.origin.coordinateSystem &&
+    request.destination.coordinateSystem &&
+    request.origin.coordinateSystem === request.destination.coordinateSystem &&
+    orderedSegments.every(
+      (segment) => segment.coordinateSystem === request.origin.coordinateSystem
+    )
+  )
+  metrics.push(
+    metric(
+      "geometry_coordinate_system",
+      geometryCoordinateSystemMatches,
+      "Selected geometry uses the same coordinate system as both request endpoints"
+    )
+  )
+  const endpointGeometryMatches = Boolean(
+    request &&
+    firstPosition &&
+    lastPosition &&
+    distanceMeters(request.origin, {
+      lng: firstPosition[0],
+      lat: firstPosition[1],
+    }) <= endpointTolerance &&
+    distanceMeters(request.destination, {
+      lng: lastPosition[0],
+      lat: lastPosition[1],
+    }) <= endpointTolerance
+  )
+  metrics.push(
+    metric(
+      "geometry_endpoints",
+      endpointGeometryMatches,
+      "Selected geometry starts and ends within tolerance of the current request endpoints"
+    )
+  )
+  const geometryIsContinuous = orderedSegments.every((segment, index) => {
+    if (index === 0) return true
+    const previous = orderedSegments[index - 1]
+    const previousEnd = previous?.positions.at(-1)
+    const currentStart = segment.positions[0]
+    if (!previousEnd || !currentStart) return false
+    return (
+      distanceMeters(
+        { lng: previousEnd[0], lat: previousEnd[1] },
+        { lng: currentStart[0], lat: currentStart[1] }
+      ) <= segmentGapTolerance
+    )
+  })
+  metrics.push(
+    metric(
+      "geometry_continuity",
+      orderedSegments.length > 0 && geometryIsContinuous,
+      "Selected plan segment geometries are continuous in execution order"
+    )
+  )
+
+  const geometryDistance = selectedGeometryDistanceMeters(orderedSegments)
+  const directEndpointDistance = request
+    ? distanceMeters(request.origin, request.destination)
+    : 0
+  const geometryAggregateValid = Boolean(
+    selectedPlan &&
+    geometryDistance > 0 &&
+    selectedPlan.distanceMeters >= directEndpointDistance * 0.9 &&
+    selectedPlan.distanceMeters >= geometryDistance * 0.75 &&
+    selectedPlan.distanceMeters <= geometryDistance * 4
+  )
+  metrics.push(
+    metric(
+      "geometry_distance_aggregate",
+      geometryAggregateValid,
+      "Selected plan distance is plausible for its endpoints and recorded geometry"
+    )
+  )
+
+  const distances = orderedSegments.map((segment) => segment.distanceMeters)
+  const durations = orderedSegments.map((segment) => segment.durationSeconds)
+  const distanceAggregateValid =
+    distances.every((value) => value == null) ||
+    (distances.every((value): value is number => value != null) &&
+      Math.abs(
+        distances.reduce((total, value) => total + value, 0) -
+          (selectedPlan?.distanceMeters ?? 0)
+      ) <= 1)
+  const durationAggregateValid =
+    durations.every((value) => value == null) ||
+    (durations.every((value): value is number => value != null) &&
+      Math.abs(
+        durations.reduce((total, value) => total + value, 0) -
+          (selectedPlan?.durationSeconds ?? 0)
+      ) <= 1)
+  metrics.push(
+    metric(
+      "plan_aggregates",
+      Boolean(selectedPlan) && distanceAggregateValid && durationAggregateValid,
+      "Selected plan distance and duration agree with complete segment aggregates"
+    )
+  )
+
   if (request && run) {
     const fingerprint = transitPlanFingerprint(request)
     const expectedFingerprint =

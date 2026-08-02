@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
+  capabilityReport,
+  evalCapabilityReportSchema,
+  evalContentHash,
   MemoryEvalTraceSink,
   validatePlaceCapability,
   validateTransitCapability,
@@ -13,7 +16,10 @@ import type { PlaceSearchResult } from "@/lib/places/types"
 import {
   TARGET_CONTRACT_FIXTURES,
   type TargetJourneyEvent,
+  type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
+
+const commandHash = "0".repeat(64)
 
 function westLake(): PlaceSearchResult {
   const coordinate = {
@@ -42,11 +48,86 @@ function westLake(): PlaceSearchResult {
   }
 }
 
+async function recordedPlaceEvidence(
+  result: unknown,
+  evidenceId: string,
+  resultStatus: string
+) {
+  const sink = new MemoryEvalTraceSink()
+  await sink.emit({
+    runId: "place-run",
+    scenarioId: "place-scenario",
+    type: "run.started",
+    spanId: "run-span",
+    status: "OK",
+    payload: {},
+  })
+  await sink.emit({
+    runId: "place-run",
+    scenarioId: "place-scenario",
+    type: "tool.started",
+    spanId: "place-tool-span",
+    parentSpanId: "run-span",
+    status: "OK",
+    payload: { toolType: "place.resolve" },
+  })
+  await sink.emit({
+    runId: "place-run",
+    scenarioId: "place-scenario",
+    type: "evidence.recorded",
+    spanId: "evidence-span",
+    parentSpanId: "place-tool-span",
+    status: "OK",
+    payload: {
+      evidenceId,
+      toolType: "place.resolve",
+      contentHash: evalContentHash(result),
+      resultStatus,
+    },
+  })
+  await sink.emit({
+    runId: "place-run",
+    scenarioId: "place-scenario",
+    type: "tool.completed",
+    spanId: "place-tool-span",
+    parentSpanId: "run-span",
+    status: "OK",
+    payload: { toolType: "place.resolve" },
+  })
+  await sink.emit({
+    runId: "place-run",
+    scenarioId: "place-scenario",
+    type: "run.completed",
+    spanId: "run-span",
+    status: "OK",
+    payload: {},
+  })
+  return sink.events
+}
+
+function alignTransitFixtureDestination(graph: TargetJourneyGraphSnapshot) {
+  const destination = graph.events.find((event) => event.id === "end")
+  if (destination?.type !== "VISIT") throw new Error("fixture invariant")
+  destination.detail.plannedLat = 30.35
+  destination.detail.plannedLng = 120.25
+}
+
 describe("Agent feature capability validators", () => {
-  it("passes a resolved Place with city, coordinate, provider, and evidence", () => {
+  it("passes a resolved Place with city, coordinate, provider, and bound evidence", async () => {
+    const result = {
+      status: "resolved" as const,
+      place: westLake(),
+      warnings: [],
+    }
+    const evidenceId = "evidence-west-lake"
+    const traceEvents = await recordedPlaceEvidence(
+      result,
+      evidenceId,
+      result.status
+    )
     const report = validatePlaceCapability({
       id: "west-lake-resolved",
-      result: { status: "resolved", place: westLake(), warnings: [] },
+      result,
       expectation: {
         status: "resolved",
         city: "杭州",
@@ -59,7 +140,8 @@ describe("Agent feature capability validators", () => {
         requireProviderIdentity: true,
         requireEvidence: true,
       },
-      evidenceId: "evidence-west-lake",
+      evidenceId,
+      traceEvents,
     })
 
     expect(report.hardPass).toBe(true)
@@ -89,11 +171,84 @@ describe("Agent feature capability validators", () => {
     )
   })
 
+  it("fails a ready Place whose command targets another Event and rewrites provider coordinates", () => {
+    const place = westLake()
+    const report = validatePlaceCapability({
+      id: "forged-ready-command",
+      result: {
+        status: "ready",
+        place,
+        command: {
+          name: "journey.update_event",
+          payload: {
+            eventId: "wrong-event",
+            patch: {
+              type: "VISIT",
+              detail: {
+                plannedLat: 0,
+                plannedLng: 0,
+                coordinateSystem: "WGS84",
+                coordinateProvider: "osm",
+                providerPlaceId: "wrong-provider-id",
+              },
+            },
+          },
+        },
+        warnings: [],
+      },
+      expectation: {
+        status: "ready",
+        expectedEventId: "west-lake-event",
+        expectedEventType: "VISIT",
+      },
+    })
+
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "ready_command_target", status: "FAIL" }),
+        expect.objectContaining({
+          id: "ready_command_coordinate",
+          status: "FAIL",
+        }),
+        expect.objectContaining({
+          id: "ready_command_provider",
+          status: "FAIL",
+        }),
+      ])
+    )
+  })
+
+  it("fails Place evidence that is only a non-empty unbound id", () => {
+    const report = validatePlaceCapability({
+      id: "unbound-evidence",
+      result: { status: "resolved", place: westLake(), warnings: [] },
+      expectation: { status: "resolved", requireEvidence: true },
+      evidenceId: "invented-evidence-id",
+      traceEvents: [],
+    })
+
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "evidence_trace_integrity",
+          status: "FAIL",
+        }),
+        expect.objectContaining({ id: "evidence_reference", status: "FAIL" }),
+      ])
+    )
+  })
+
   it("validates selected TransitPlan membership, geometry, scope, and request fingerprint", () => {
     const fixture = TARGET_CONTRACT_FIXTURES.find(
       (candidate) => candidate.id === "03-transit-plan-choice"
     )!.cases[0]!
     const graph = structuredClone(fixture.expected.state!.graph!)
+    alignTransitFixtureDestination(graph)
+    graph.transitPlanningRuns[0]!.plans.find(
+      (plan) => plan.id === "plan-low-cost"
+    )!.distanceMeters = 15_000
     const transit = graph.events.find(
       (event): event is Extract<TargetJourneyEvent, { type: "TRANSIT" }> =>
         event.id === "transit" && event.type === "TRANSIT"
@@ -123,6 +278,104 @@ describe("Agent feature capability validators", () => {
         }),
       ])
     )
+  })
+
+  it("fails selected Transit geometry that is valid-shaped but detached from its endpoints", () => {
+    const fixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "03-transit-plan-choice"
+    )!.cases[0]!
+    const graph = structuredClone(fixture.expected.state!.graph!)
+    alignTransitFixtureDestination(graph)
+    const transit = graph.events.find(
+      (event): event is Extract<TargetJourneyEvent, { type: "TRANSIT" }> =>
+        event.id === "transit" && event.type === "TRANSIT"
+    )!
+    const request = buildTransitPlanRequest(transit, graph.events)!
+    const fingerprint = transitPlanFingerprint(request)
+    graph.transitPlanningRuns[0]!.requestFingerprint = fingerprint
+    const selectedPlan = graph.transitPlanningRuns[0]!.plans.find(
+      (plan) => plan.id === transit.detail.selectedPlanId
+    )!
+    selectedPlan.distanceMeters = 15_000
+    selectedPlan.segments[0]!.positions = [
+      [0, 0],
+      [1, 1],
+    ]
+
+    const report = validateTransitCapability({
+      id: "detached-selected-geometry",
+      graph,
+      transitEventId: transit.id,
+      expectedSelectedPlanId: selectedPlan.id,
+      expectedRequestFingerprint: fingerprint,
+    })
+
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toContainEqual(
+      expect.objectContaining({ id: "geometry_endpoints", status: "FAIL" })
+    )
+  })
+
+  it("fails discontinuous, misordered, mixed-coordinate segments and partial aggregates", () => {
+    const fixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "03-transit-plan-choice"
+    )!.cases[0]!
+    const graph = structuredClone(fixture.expected.state!.graph!)
+    alignTransitFixtureDestination(graph)
+    const transit = graph.events.find(
+      (event): event is Extract<TargetJourneyEvent, { type: "TRANSIT" }> =>
+        event.id === "transit" && event.type === "TRANSIT"
+    )!
+    const selectedPlan = graph.transitPlanningRuns[0]!.plans.find(
+      (plan) => plan.id === transit.detail.selectedPlanId
+    )!
+    selectedPlan.distanceMeters = 15_000
+    selectedPlan.segments = [
+      {
+        ...selectedPlan.segments[0]!,
+        id: "segment-first",
+        order: 0,
+        distanceMeters: 100,
+        positions: [
+          [120.15, 30.25],
+          [120.18, 30.28],
+        ],
+      },
+      {
+        ...selectedPlan.segments[0]!,
+        id: "segment-second",
+        order: 2,
+        coordinateSystem: "WGS84",
+        distanceMeters: undefined,
+        positions: [
+          [121, 31],
+          [120.25, 30.35],
+        ],
+      },
+    ]
+    const request = buildTransitPlanRequest(transit, graph.events)!
+    const fingerprint = transitPlanFingerprint(request)
+    graph.transitPlanningRuns[0]!.requestFingerprint = fingerprint
+
+    const report = validateTransitCapability({
+      id: "invalid-segment-chain",
+      graph,
+      transitEventId: transit.id,
+      expectedSelectedPlanId: selectedPlan.id,
+      expectedRequestFingerprint: fingerprint,
+    })
+
+    expect(report.hardPass).toBe(false)
+    for (const id of [
+      "segment_order",
+      "geometry_coordinate_system",
+      "geometry_continuity",
+      "plan_aggregates",
+    ]) {
+      expect(report.metrics).toContainEqual(
+        expect.objectContaining({ id, status: "FAIL" })
+      )
+    }
   })
 
   it("fails Transit capability at the graph contract when selectedPlanId is invalid", () => {
@@ -182,9 +435,29 @@ describe("Agent feature capability validators", () => {
       type: "command.dispatched",
       spanId: "command-span",
       parentSpanId: "run-span",
+      commandId: "command-1",
       revisionBefore: 2,
       status: "OK",
-      payload: {},
+      payload: {
+        commandName: "journey.update_event",
+        idempotencyKey: "command-1",
+        commandHash,
+      },
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "state.diff.recorded",
+      spanId: "command-span",
+      parentSpanId: "run-span",
+      commandId: "command-1",
+      revisionBefore: 2,
+      revisionAfter: 3,
+      status: "OK",
+      payload: {
+        changedEventIds: ["event-1"],
+        projectionInvalidationScopes: ["journey"],
+      },
     })
     await sink.emit({
       runId: "write-run",
@@ -192,10 +465,11 @@ describe("Agent feature capability validators", () => {
       type: "command.applied",
       spanId: "command-span",
       parentSpanId: "run-span",
+      commandId: "command-1",
       revisionBefore: 2,
       revisionAfter: 3,
       status: "OK",
-      payload: {},
+      payload: { commandName: "journey.update_event" },
     })
     await sink.emit({
       runId: "write-run",
@@ -208,5 +482,111 @@ describe("Agent feature capability validators", () => {
 
     const report = validateWriteProtocolCapability("write-applied", sink.events)
     expect(report.hardPass).toBe(true)
+  })
+
+  it("fails F6 when a forged command lifecycle has no root run", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "command.dispatched",
+      spanId: "command-span",
+      commandId: "command-1",
+      revisionBefore: 0,
+      status: "OK",
+      payload: {
+        commandName: "journey.update_event",
+        idempotencyKey: "command-1",
+        commandHash,
+      },
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "state.diff.recorded",
+      spanId: "command-span",
+      commandId: "command-1",
+      revisionBefore: 0,
+      revisionAfter: 1,
+      status: "OK",
+      payload: {
+        changedEventIds: ["event-1"],
+        projectionInvalidationScopes: ["journey"],
+      },
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "command.applied",
+      spanId: "command-span",
+      commandId: "command-1",
+      revisionBefore: 0,
+      revisionAfter: 1,
+      status: "OK",
+      payload: { commandName: "journey.update_event" },
+    })
+
+    const report = validateWriteProtocolCapability("forged-write", sink.events)
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toContainEqual(
+      expect.objectContaining({ id: "trace_integrity", status: "FAIL" })
+    )
+  })
+
+  it("fails capability reports closed when no hard metric exists", () => {
+    expect(capabilityReport("F0-contract", "empty", []).hardPass).toBe(false)
+    expect(
+      capabilityReport("F0-contract", "soft-only", [
+        {
+          id: "soft_metric",
+          status: "PASS",
+          hard: false,
+          message: "soft evidence is not a hard gate",
+        },
+      ]).hardPass
+    ).toBe(false)
+    expect(
+      capabilityReport("F0-contract", "hard-skipped", [
+        {
+          id: "hard_metric",
+          status: "SKIPPED",
+          hard: true,
+          message: "missing hard evidence",
+        },
+      ]).hardPass
+    ).toBe(false)
+  })
+
+  it("rejects persisted reports whose hardPass contradicts their metrics", () => {
+    expect(
+      evalCapabilityReportSchema.safeParse({
+        pack: "F0-contract",
+        caseId: "forged-report",
+        hardPass: true,
+        metrics: [
+          {
+            id: "hard_failure",
+            status: "FAIL",
+            hard: true,
+            message: "hard gate failed",
+          },
+        ],
+      }).success
+    ).toBe(false)
+    expect(
+      evalCapabilityReportSchema.safeParse({
+        pack: "F0-contract",
+        caseId: "forged-skipped-report",
+        hardPass: true,
+        metrics: [
+          {
+            id: "hard_missing",
+            status: "SKIPPED",
+            hard: true,
+            message: "hard evidence missing",
+          },
+        ],
+      }).success
+    ).toBe(false)
   })
 })

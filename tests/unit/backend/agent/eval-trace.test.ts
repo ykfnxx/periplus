@@ -9,6 +9,7 @@ import {
 } from "@/backend/agent/evals"
 
 const temporaryDirectories: string[] = []
+const commandHash = "0".repeat(64)
 
 afterEach(async () => {
   await Promise.all(
@@ -37,6 +38,9 @@ async function completeTrace(sink: MemoryEvalTraceSink) {
     payload: {
       toolType: "workspace.command",
       url: "http://penpot/mcp?userToken=secret-token",
+      OPENAI_API_KEY: "sk-proj-structured-secret",
+      "x-api-key": "header-secret",
+      note: "raw sk-proj-abcdefghijklmnopqrstuvwxyz and https://user:pass@example.com/path",
     },
   })
   await sink.emit({
@@ -48,7 +52,26 @@ async function completeTrace(sink: MemoryEvalTraceSink) {
     commandId: "command-1",
     revisionBefore: 0,
     status: "OK",
-    payload: { idempotencyKey: "safe-idempotency-key" },
+    payload: {
+      commandName: "journey.update_event",
+      idempotencyKey: "safe-idempotency-key",
+      commandHash,
+    },
+  })
+  await sink.emit({
+    runId: "run-1",
+    scenarioId: "scenario-1",
+    type: "state.diff.recorded",
+    spanId: "command-span",
+    parentSpanId: "tool-span",
+    commandId: "command-1",
+    revisionBefore: 0,
+    revisionAfter: 1,
+    status: "OK",
+    payload: {
+      changedEventIds: ["event-1"],
+      projectionInvalidationScopes: ["journey"],
+    },
   })
   await sink.emit({
     runId: "run-1",
@@ -60,7 +83,7 @@ async function completeTrace(sink: MemoryEvalTraceSink) {
     revisionBefore: 0,
     revisionAfter: 1,
     status: "OK",
-    payload: {},
+    payload: { commandName: "journey.update_event" },
   })
   await sink.emit({
     runId: "run-1",
@@ -69,7 +92,7 @@ async function completeTrace(sink: MemoryEvalTraceSink) {
     spanId: "tool-span",
     parentSpanId: "run-span",
     status: "OK",
-    payload: {},
+    payload: { toolType: "workspace.command" },
   })
   await sink.emit({
     runId: "run-1",
@@ -91,8 +114,13 @@ describe("Agent eval trace", () => {
     expect(sink.events[1]?.payload.url).toBe(
       "http://penpot/mcp?userToken=[REDACTED]"
     )
+    expect(sink.events[1]?.payload.OPENAI_API_KEY).toBe("[REDACTED]")
+    expect(sink.events[1]?.payload["x-api-key"]).toBe("[REDACTED]")
+    expect(sink.events[1]?.payload.note).toBe(
+      "raw [REDACTED] and https://[REDACTED]@example.com/path"
+    )
     expect(sink.events[2]?.payload.idempotencyKey).toBe("safe-idempotency-key")
-    expect(sink.events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(sink.events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5, 6, 7])
     expect(verifyEvalTrace(sink.events)).toEqual({ valid: true, issues: [] })
   })
 
@@ -100,7 +128,7 @@ describe("Agent eval trace", () => {
     const sink = new MemoryEvalTraceSink()
     await completeTrace(sink)
     const tampered = structuredClone(sink.events)
-    tampered.splice(3, 1)
+    tampered.splice(4, 1)
     tampered[1]!.payload.toolType = "place.resolve"
 
     const integrity = verifyEvalTrace(tampered)
@@ -109,6 +137,131 @@ describe("Agent eval trace", () => {
       expect.arrayContaining([
         expect.stringContaining("invalid event hash"),
         expect.stringContaining("has no terminal event"),
+      ])
+    )
+  })
+
+  it("rejects traces without one complete root run lifecycle", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "command.dispatched",
+      spanId: "command-span",
+      commandId: "command-1",
+      revisionBefore: 0,
+      status: "OK",
+      payload: {
+        commandName: "journey.update_event",
+        idempotencyKey: "command-1",
+        commandHash,
+      },
+    })
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "state.diff.recorded",
+      spanId: "command-span",
+      commandId: "command-1",
+      revisionBefore: 0,
+      revisionAfter: 1,
+      status: "OK",
+      payload: {
+        changedEventIds: ["event-1"],
+        projectionInvalidationScopes: ["journey"],
+      },
+    })
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "command.applied",
+      spanId: "command-span",
+      commandId: "command-1",
+      revisionBefore: 0,
+      revisionAfter: 1,
+      status: "OK",
+      payload: { commandName: "journey.update_event" },
+    })
+
+    const integrity = verifyEvalTrace(sink.events)
+    expect(integrity.valid).toBe(false)
+    expect(integrity.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("exactly one run.started"),
+        expect.stringContaining("exactly one run terminal"),
+        expect.stringContaining("outside the open run lifecycle"),
+      ])
+    )
+  })
+
+  it("rejects forged command identity and revision continuity", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "run.started",
+      spanId: "run-span",
+      status: "OK",
+      payload: {},
+    })
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "command.dispatched",
+      spanId: "command-span",
+      parentSpanId: "run-span",
+      commandId: "command-original",
+      revisionBefore: 99,
+      status: "OK",
+      payload: {
+        commandName: "journey.update_event",
+        idempotencyKey: "command-original",
+        commandHash,
+      },
+    })
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "state.diff.recorded",
+      spanId: "command-span",
+      parentSpanId: "run-span",
+      commandId: "command-forged",
+      revisionBefore: 0,
+      revisionAfter: 1,
+      status: "OK",
+      payload: {
+        changedEventIds: ["event-1"],
+        projectionInvalidationScopes: ["journey"],
+      },
+    })
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "command.applied",
+      spanId: "command-span",
+      parentSpanId: "run-span",
+      commandId: "command-forged",
+      revisionBefore: 0,
+      revisionAfter: 2,
+      status: "OK",
+      payload: { commandName: "journey.update_event" },
+    })
+    await sink.emit({
+      runId: "run-1",
+      scenarioId: "scenario-1",
+      type: "run.completed",
+      spanId: "run-span",
+      status: "OK",
+      payload: {},
+    })
+
+    const integrity = verifyEvalTrace(sink.events)
+    expect(integrity.valid).toBe(false)
+    expect(integrity.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("changed lifecycle commandId"),
+        expect.stringContaining("changed lifecycle revisionBefore"),
+        expect.stringContaining("changed lifecycle revisionAfter"),
       ])
     )
   })
