@@ -989,7 +989,13 @@ describe("Agent feature capability validators", () => {
       payload: {},
     })
     await emitRejectedWriteCommand(sink, {
-      spanId: "rejected-command-span",
+      spanId: "rejected-command-span-1",
+      commandId: "retry-command",
+      idempotencyKey: "retry-key",
+      revisionBefore: 0,
+    })
+    await emitRejectedWriteCommand(sink, {
+      spanId: "rejected-command-span-2",
       commandId: "retry-command",
       idempotencyKey: "retry-key",
       revisionBefore: 0,
