@@ -47,7 +47,7 @@ import {
   getJourneyScopeTreeEvents,
   type JourneyScopeItem,
 } from "@/lib/journeys/projections"
-import { scrollPlanChoicesHorizontally } from "./scroll-plan-choices"
+import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
 
 type LocationJourneyEvent = Extract<
   TargetJourneyEvent,
@@ -555,6 +555,7 @@ function TransitTimelineRow({
   selectionBlocked: boolean
   selectionError: string | null
 }) {
+  const planChoicesRef = usePlanChoiceWheelScroll()
   const activeRun = activeTransitPlanningRun(event, planningRuns)
   const plan = selectedTransitPlan(event, planningRuns)
   const modeLabel =
@@ -645,8 +646,8 @@ function TransitTimelineRow({
           </p>
           <div className="relative -mx-3">
             <div
+              ref={planChoicesRef}
               className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10"
-              onWheel={scrollPlanChoicesHorizontally}
             >
               {activeRun!.plans.map((candidate) => {
                 const isCurrent = plan?.id === candidate.id

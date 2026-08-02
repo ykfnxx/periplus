@@ -247,7 +247,7 @@ describe("target Workspace route preview", () => {
       scrollLeft: { value: 0, writable: true },
       scrollTo: { value: vi.fn() },
     })
-    fireEvent.wheel(choices!, { deltaY: 120 })
+    expect(fireEvent.wheel(choices!, { deltaY: 120 })).toBe(false)
     expect(choices?.scrollTo).toHaveBeenCalledWith({
       left: 120,
       behavior: "smooth",
@@ -257,6 +257,11 @@ describe("target Workspace route preview", () => {
       expect(button).toHaveClass("h-10", "w-[122px]")
       expect(button?.querySelector("svg")).toBeNull()
     }
+
+    fireEvent.click(screen.getByRole("button", { name: "交通事件 驾车" }))
+    vi.mocked(choices!.scrollTo).mockClear()
+    fireEvent.wheel(choices!, { deltaY: 120 })
+    expect(choices?.scrollTo).not.toHaveBeenCalled()
   })
 
   it("expands overview Transit choices and sends the selected provider plan", () => {
@@ -289,7 +294,7 @@ describe("target Workspace route preview", () => {
       scrollLeft: { value: 0, writable: true },
       scrollTo: { value: vi.fn() },
     })
-    fireEvent.wheel(scroller, { deltaY: 90 })
+    expect(fireEvent.wheel(scroller, { deltaY: 90 })).toBe(false)
     expect(scroller.scrollTo).toHaveBeenCalledWith({
       left: 90,
       behavior: "smooth",

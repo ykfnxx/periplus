@@ -1,4 +1,3 @@
-import type { WheelEvent } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { scrollPlanChoicesHorizontally } from "@/modules/workbench/ui/scroll-plan-choices"
 
@@ -13,22 +12,21 @@ function scroller(scrollLeft = 0) {
   return element
 }
 
-function wheelEvent(element: HTMLDivElement, deltaY: number) {
+function wheelEvent(deltaY: number) {
   return {
-    currentTarget: element,
     deltaX: 0,
     deltaY,
     preventDefault: vi.fn(),
-  } as unknown as WheelEvent<HTMLDivElement>
+  } as unknown as WheelEvent
 }
 
 describe("Transit plan choice wheel scrolling", () => {
   it("smoothly scrolls only the plan strip receiving the wheel event", () => {
     const target = scroller()
     const other = scroller(45)
-    const event = wheelEvent(target, 80)
+    const event = wheelEvent(80)
 
-    scrollPlanChoicesHorizontally(event)
+    scrollPlanChoicesHorizontally(target, event)
 
     expect(target.scrollTo).toHaveBeenCalledWith({
       left: 80,
@@ -41,9 +39,9 @@ describe("Transit plan choice wheel scrolling", () => {
 
   it("returns the wheel to the preview at the horizontal boundary", () => {
     const target = scroller(300)
-    const event = wheelEvent(target, 80)
+    const event = wheelEvent(80)
 
-    scrollPlanChoicesHorizontally(event)
+    scrollPlanChoicesHorizontally(target, event)
 
     expect(target.scrollTo).not.toHaveBeenCalled()
     expect(event.preventDefault).not.toHaveBeenCalled()
