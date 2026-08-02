@@ -62,6 +62,12 @@ export default function RouteOverview() {
   const selectTransitPlan = useWorkspaceStore(
     (state) => state.selectTransitPlan
   )
+  const pendingTransitPlanSelection = useWorkspaceStore(
+    (state) => state.pendingTransitPlanSelection
+  )
+  const transitPlanSelectionError = useWorkspaceStore(
+    (state) => state.transitPlanSelectionError
+  )
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
   if (!graph) return null
@@ -136,6 +142,17 @@ export default function RouteOverview() {
               onSelect={() => selectTransit(event.id)}
               onSelectPlan={(planId) => selectTransitPlan(event.id, planId)}
               planningRuns={graph.transitPlanningRuns}
+              pendingPlanId={
+                pendingTransitPlanSelection?.eventId === event.id
+                  ? pendingTransitPlanSelection.planId
+                  : null
+              }
+              selectionBlocked={Boolean(pendingTransitPlanSelection)}
+              selectionError={
+                transitPlanSelectionError?.eventId === event.id
+                  ? transitPlanSelectionError.message
+                  : null
+              }
             />
           ) : null
         )}
@@ -202,12 +219,18 @@ function TransitSummaryCard({
   onSelect,
   onSelectPlan,
   planningRuns,
+  pendingPlanId,
+  selectionBlocked,
+  selectionError,
 }: {
   event: TransitEvent
   selected: boolean
   onSelect: () => void
   onSelectPlan: (planId: string) => void
   planningRuns: readonly TargetTransitPlanningRun[]
+  pendingPlanId: string | null
+  selectionBlocked: boolean
+  selectionError: string | null
 }) {
   const activeRun = activeTransitPlanningRun(event, planningRuns)
   const plan = selectedTransitPlan(event, planningRuns)
@@ -233,6 +256,7 @@ function TransitSummaryCard({
           : "border-transparent bg-route-blue-soft hover:border-bluegray/30"
       }`}
       data-selected-plan-id={plan?.id}
+      aria-busy={Boolean(pendingPlanId)}
     >
       <button
         type="button"
@@ -242,14 +266,18 @@ function TransitSummaryCard({
         className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left"
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-bluegray">
-          {activeRun?.status === "PLANNING" ? (
+          {pendingPlanId || activeRun?.status === "PLANNING" ? (
             <LoaderCircle className="h-2.5 w-2.5 animate-spin text-soft-white" />
           ) : activeRun?.status === "FAILED" ? (
             <AlertCircle className="h-2.5 w-2.5 text-soft-white" />
           ) : null}
         </span>
         <span className="min-w-0 flex-1 truncate text-[11px] font-black text-bluegray">
-          {activeRun?.status === "PLANNING" ? "正在规划真实路线" : details}
+          {pendingPlanId
+            ? "正在切换路线方案…"
+            : activeRun?.status === "PLANNING"
+              ? "正在规划真实路线"
+              : details}
         </span>
         {(activeRun?.plans.length ?? 0) > 1 ? (
           <span className="shrink-0 text-[10px] font-black text-bluegray">
@@ -257,6 +285,14 @@ function TransitSummaryCard({
           </span>
         ) : null}
       </button>
+      {selectionError ? (
+        <p
+          role="alert"
+          className="mx-3 mb-3 rounded-md bg-coral/10 px-2 py-1.5 text-[10px] leading-4 font-bold text-coral"
+        >
+          路线切换失败：{selectionError}
+        </p>
+      ) : null}
       {selected && (activeRun?.plans.length ?? 0) > 1 ? (
         <div className="border-t border-russet/15 px-3 pt-2 pb-3">
           <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
@@ -265,20 +301,23 @@ function TransitSummaryCard({
           <div className="scrollbar-hidden flex gap-2 overflow-x-auto pb-1">
             {activeRun!.plans.map((candidate) => {
               const isCurrent = plan?.id === candidate.id
+              const isPending = pendingPlanId === candidate.id
               return (
                 <button
                   key={candidate.id}
                   type="button"
                   aria-pressed={isCurrent}
+                  aria-busy={isPending}
+                  disabled={selectionBlocked}
                   onClick={() => onSelectPlan(candidate.id)}
-                  className={`h-11 w-[132px] shrink-0 rounded-lg border px-2.5 text-left transition ${
+                  className={`h-11 w-[132px] shrink-0 rounded-lg border px-2.5 text-left transition disabled:cursor-wait disabled:opacity-60 ${
                     isCurrent
                       ? "border-russet bg-white shadow-sm"
                       : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
                   }`}
                 >
                   <span className="block truncate text-[10px] font-black text-ink">
-                    {candidate.label}
+                    {isPending ? "切换中…" : candidate.label}
                   </span>
                   <span className="mt-0.5 block truncate text-[9px] font-bold text-teak">
                     {formatTransitDuration(candidate.durationSeconds)} ·{" "}

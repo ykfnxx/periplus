@@ -88,9 +88,27 @@ describe("AgentSync", () => {
     await waitFor(() => expect(connectAgentSocket).toHaveBeenCalledOnce())
     act(() => socket.dispatchEvent(new Event("open")))
     expect(useWorkspaceStore.getState().sendAgentEvent).not.toBeNull()
+    act(() => {
+      useWorkspaceStore.setState({
+        pendingTransitPlanSelection: {
+          commandId: "browser-select:workspace-1:transit:plan:0",
+          eventId: "transit",
+          planId: "plan",
+          expectedRevision: 0,
+        },
+      })
+    })
 
     act(() => socket.dispatchEvent(new Event("close")))
     expect(useWorkspaceStore.getState().sendAgentEvent).toBeNull()
+    expect(useWorkspaceStore.getState().pendingTransitPlanSelection).toBeNull()
+    expect(
+      useWorkspaceStore.getState().transitPlanSelectionError
+    ).toMatchObject({
+      eventId: "transit",
+      planId: "plan",
+      message: "连接已中断，请重试路线切换",
+    })
   })
 
   it("re-bootstraps with a fresh ticket after the socket closes", async () => {
@@ -243,6 +261,47 @@ describe("AgentSync", () => {
     expect(useWorkspaceStore.getState().failedTransitPlanCommandId).toBe(
       commandId
     )
+    expect(useWorkspaceStore.getState().chatMessages).toHaveLength(0)
+  })
+
+  it("correlates a browser selection error without leaking it into chat", async () => {
+    const socket = new FakeWebSocket()
+    vi.mocked(bootstrapWorkspace).mockResolvedValue(bootstrap())
+    vi.mocked(connectAgentSocket).mockReturnValue(
+      socket as unknown as WebSocket
+    )
+    render(<AgentSync />)
+    await waitFor(() => expect(connectAgentSocket).toHaveBeenCalledOnce())
+
+    const commandId = "browser-select:workspace-1:transit:plan-fastest:0"
+    act(() => {
+      useWorkspaceStore.setState({
+        pendingTransitPlanSelection: {
+          commandId,
+          eventId: "transit",
+          planId: "plan-fastest",
+          expectedRevision: 0,
+        },
+      })
+      socket.dispatchEvent(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "error",
+            payload: { message: "revision conflict", commandId },
+          }),
+        })
+      )
+    })
+
+    expect(useWorkspaceStore.getState().pendingTransitPlanSelection).toBeNull()
+    expect(
+      useWorkspaceStore.getState().transitPlanSelectionError
+    ).toMatchObject({
+      commandId,
+      eventId: "transit",
+      planId: "plan-fastest",
+      message: "revision conflict",
+    })
     expect(useWorkspaceStore.getState().chatMessages).toHaveLength(0)
   })
 })

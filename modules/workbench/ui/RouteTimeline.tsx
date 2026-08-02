@@ -4,12 +4,14 @@ import { useEffect, useRef, type ReactNode } from "react"
 import Image from "next/image"
 import {
   BedDouble,
+  AlertCircle,
   BusFront,
   CalendarDays,
   Car,
   Clock3,
   Footprints,
   Landmark,
+  LoaderCircle,
   MapPin,
   Plane,
   Route,
@@ -93,6 +95,12 @@ export default function RouteTimeline({
   )
   const selectTransitPlan = useWorkspaceStore(
     (state) => state.selectTransitPlan
+  )
+  const pendingTransitPlanSelection = useWorkspaceStore(
+    (state) => state.pendingTransitPlanSelection
+  )
+  const transitPlanSelectionError = useWorkspaceStore(
+    (state) => state.transitPlanSelectionError
   )
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
   const enterSectionView = useWorkspaceStore((state) => state.enterSectionView)
@@ -203,6 +211,17 @@ export default function RouteTimeline({
                 resolved={resolved}
                 fromTitle={fromTitle}
                 toTitle={toTitle}
+                pendingPlanId={
+                  pendingTransitPlanSelection?.eventId === event.id
+                    ? pendingTransitPlanSelection.planId
+                    : null
+                }
+                selectionBlocked={Boolean(pendingTransitPlanSelection)}
+                selectionError={
+                  transitPlanSelectionError?.eventId === event.id
+                    ? transitPlanSelectionError.message
+                    : null
+                }
               />
             )
           }
@@ -519,6 +538,9 @@ function TransitTimelineRow({
   resolved,
   fromTitle,
   toTitle,
+  pendingPlanId,
+  selectionBlocked,
+  selectionError,
 }: {
   event: TransitEvent
   selected: boolean
@@ -528,6 +550,9 @@ function TransitTimelineRow({
   resolved: TargetResolvedEvent
   fromTitle?: string
   toTitle?: string
+  pendingPlanId: string | null
+  selectionBlocked: boolean
+  selectionError: string | null
 }) {
   const activeRun = activeTransitPlanningRun(event, planningRuns)
   const plan = selectedTransitPlan(event, planningRuns)
@@ -551,6 +576,7 @@ function TransitTimelineRow({
       className="rounded-xl border border-bluegray/20 bg-route-blue-soft p-3"
       data-selected-plan-id={plan?.id}
       data-resolved-position={resolved.resolvedPosition}
+      aria-busy={Boolean(pendingPlanId)}
     >
       <button
         type="button"
@@ -586,8 +612,14 @@ function TransitTimelineRow({
               <span className="truncate">{toTitle ?? "目的地"}</span>
             </span>
           </span>
-          <span className="shrink-0 text-[10px] font-black text-bluegray">
-            {selected ? "收起" : "方案"}
+          <span className="flex shrink-0 items-center gap-1 text-[10px] font-black text-bluegray">
+            {pendingPlanId ? (
+              <LoaderCircle
+                className="h-3 w-3 animate-spin"
+                aria-hidden="true"
+              />
+            ) : null}
+            {pendingPlanId ? "切换中…" : selected ? "收起" : "方案"}
           </span>
         </span>
         {activeRun?.warning ? (
@@ -596,6 +628,15 @@ function TransitTimelineRow({
           </span>
         ) : null}
       </button>
+      {selectionError ? (
+        <p
+          role="alert"
+          className="mt-2 rounded-md bg-coral/10 px-2 py-1.5 text-[10px] leading-4 font-bold text-coral"
+        >
+          <AlertCircle className="mr-1 inline h-3 w-3" aria-hidden="true" />
+          路线切换失败：{selectionError}
+        </p>
+      ) : null}
       {selected && (activeRun?.plans.length ?? 0) > 0 ? (
         <div className="mt-3 border-t border-bluegray/15 pt-3">
           <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
@@ -605,13 +646,16 @@ function TransitTimelineRow({
             <div className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10">
               {activeRun!.plans.map((candidate) => {
                 const isCurrent = plan?.id === candidate.id
+                const isPending = pendingPlanId === candidate.id
                 return (
                   <button
                     key={candidate.id}
                     type="button"
                     aria-pressed={isCurrent}
+                    aria-busy={isPending}
+                    disabled={selectionBlocked}
                     onClick={() => onSelectPlan(candidate.id)}
-                    className={`h-10 w-[122px] shrink-0 rounded-lg border px-2 text-left transition ${
+                    className={`h-10 w-[122px] shrink-0 rounded-lg border px-2 text-left transition disabled:cursor-wait disabled:opacity-60 ${
                       isCurrent
                         ? "border-russet bg-white shadow-sm"
                         : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
@@ -619,7 +663,9 @@ function TransitTimelineRow({
                   >
                     <span className="block min-w-0">
                       <span className="block truncate text-[10px] font-black text-ink">
-                        <span className="truncate">{candidate.label}</span>
+                        <span className="truncate">
+                          {isPending ? "切换中…" : candidate.label}
+                        </span>
                       </span>
                       <span className="mt-0.5 block truncate text-[9px] font-bold text-teak">
                         {formatTransitDuration(candidate.durationSeconds)} ·{" "}

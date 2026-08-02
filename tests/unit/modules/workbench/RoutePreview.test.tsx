@@ -255,10 +255,9 @@ describe("target Workspace route preview", () => {
     const graph = fixture?.cases[0]?.input.graph
     if (!graph) throw new Error("transit choice fixture is missing")
     const sendAgentEvent = vi.fn()
+    const document = workspaceDocumentForStory(graph)
     act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(workspaceDocumentForStory(graph))
+      useWorkspaceStore.getState().applyWorkspaceDocument(document)
       useWorkspaceStore.getState().setAgentSender(sendAgentEvent)
     })
 
@@ -280,6 +279,33 @@ describe("target Workspace route preview", () => {
           payload: { eventId: "transit", planId: "plan-fastest" },
         },
       })
+    )
+    expect(within(selector).getByText("切换中…")).toBeVisible()
+    const candidateButtons = within(selector).getAllByRole("button")
+    expect(candidateButtons).toHaveLength(3)
+    for (const button of candidateButtons) expect(button).toBeDisabled()
+
+    fireEvent.click(within(selector).getByText("低价"))
+    expect(sendAgentEvent).toHaveBeenCalledTimes(1)
+
+    const pending = useWorkspaceStore.getState().pendingTransitPlanSelection
+    if (!pending) throw new Error("selection command was not recorded")
+    act(() => {
+      useWorkspaceStore
+        .getState()
+        .failTransitPlanSelection(pending.commandId, "revision conflict")
+    })
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "路线切换失败：revision conflict"
+    )
+
+    const unrelated = structuredClone(document)
+    unrelated.session.headWorkspaceRevision += 1
+    act(() => {
+      useWorkspaceStore.getState().applyWorkspaceDocument(unrelated)
+    })
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "路线切换失败：revision conflict"
     )
   })
 
