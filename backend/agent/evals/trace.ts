@@ -309,7 +309,7 @@ export function verifyEvalTrace(
   let runOpen = false
   let runClosed = false
   const revisionFloorByScope = new Map<string, number>()
-  const terminalCommandsByIdempotency = new Map<
+  const idempotencyRecords = new Map<
     string,
     {
       scope: string
@@ -542,8 +542,7 @@ export function verifyEvalTrace(
             const idempotencyScopeKey = `${scope}\u0000${String(idempotencyKey)}`
             const revisionBefore = event.revisionBefore!
             const revisionAfter = event.revisionAfter!
-            const previousTerminal =
-              terminalCommandsByIdempotency.get(idempotencyScopeKey)
+            const previousRecord = idempotencyRecords.get(idempotencyScopeKey)
             const previousIdempotencyKey =
               idempotencyKeyByCommandId.get(commandId)
             const replayed = event.payload.replayedFromIdempotencyKey === true
@@ -562,18 +561,16 @@ export function verifyEvalTrace(
                 )
               }
               if (
-                !previousTerminal ||
-                previousTerminal.outcome !== "applied" ||
-                previousTerminal.scope !== scope ||
-                previousTerminal.commandId !== commandId ||
-                previousTerminal.commandName !==
-                  open.start.payload.commandName ||
-                previousTerminal.idempotencyKey !==
+                !previousRecord ||
+                previousRecord.outcome !== "applied" ||
+                previousRecord.scope !== scope ||
+                previousRecord.commandId !== commandId ||
+                previousRecord.commandName !== open.start.payload.commandName ||
+                previousRecord.idempotencyKey !==
                   open.start.payload.idempotencyKey ||
-                previousTerminal.commandHash !==
-                  open.start.payload.commandHash ||
-                previousTerminal.revisionBefore !== revisionBefore ||
-                previousTerminal.revisionAfter !== revisionAfter
+                previousRecord.commandHash !== open.start.payload.commandHash ||
+                previousRecord.revisionBefore !== revisionBefore ||
+                previousRecord.revisionAfter !== revisionAfter
               ) {
                 issues.push(
                   `command span ${event.spanId} has no matching prior applied command for replay`
@@ -592,9 +589,19 @@ export function verifyEvalTrace(
                   open.stateDiff.revisionAfter
                 )
               }
-              if (previousTerminal) {
+              const samePreviousIdentity =
+                previousRecord?.scope === scope &&
+                previousRecord.commandId === commandId &&
+                previousRecord.commandName === open.start.payload.commandName &&
+                previousRecord.idempotencyKey === idempotencyKey &&
+                previousRecord.commandHash === open.start.payload.commandHash
+              if (previousRecord?.outcome === "applied") {
                 issues.push(
-                  `idempotencyKey ${String(idempotencyKey)} was reused without matching replay identity`
+                  `idempotencyKey ${String(idempotencyKey)} reused an applied outcome without typed replay`
+                )
+              } else if (previousRecord && !samePreviousIdentity) {
+                issues.push(
+                  `idempotencyKey ${String(idempotencyKey)} changed command identity after rejection`
                 )
               }
               const revisionFloor = revisionFloorByScope.get(scope)
@@ -604,7 +611,7 @@ export function verifyEvalTrace(
                 )
               }
               revisionFloorByScope.set(scope, revisionAfter)
-              terminalCommandsByIdempotency.set(idempotencyScopeKey, {
+              idempotencyRecords.set(idempotencyScopeKey, {
                 scope,
                 commandId,
                 commandName: open.start.payload.commandName,
@@ -626,12 +633,23 @@ export function verifyEvalTrace(
             const commandId = event.commandId!
             const idempotencyKey = open.start.payload.idempotencyKey
             const idempotencyScopeKey = `${scope}\u0000${String(idempotencyKey)}`
-            if (terminalCommandsByIdempotency.has(idempotencyScopeKey)) {
+            const previousRecord = idempotencyRecords.get(idempotencyScopeKey)
+            const samePreviousIdentity =
+              previousRecord?.scope === scope &&
+              previousRecord.commandId === commandId &&
+              previousRecord.commandName === open.start.payload.commandName &&
+              previousRecord.idempotencyKey === idempotencyKey &&
+              previousRecord.commandHash === open.start.payload.commandHash
+            if (previousRecord?.outcome === "applied") {
               issues.push(
-                `idempotencyKey ${String(idempotencyKey)} reached more than one terminal outcome`
+                `idempotencyKey ${String(idempotencyKey)} rejected after an applied outcome`
               )
-            } else {
-              terminalCommandsByIdempotency.set(idempotencyScopeKey, {
+            } else if (previousRecord && !samePreviousIdentity) {
+              issues.push(
+                `idempotencyKey ${String(idempotencyKey)} changed command identity across rejections`
+              )
+            } else if (!previousRecord) {
+              idempotencyRecords.set(idempotencyScopeKey, {
                 scope,
                 commandId,
                 commandName: open.start.payload.commandName,

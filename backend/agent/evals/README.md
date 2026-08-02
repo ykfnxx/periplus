@@ -52,7 +52,10 @@ ordering, descendant workspace/journey/turn identity, evidence provenance,
 command/state-diff identity, cross-command revision continuity, idempotency-key
 terminal identity, typed replay semantics, and lifecycle closure. A replay must
 match a prior applied outcome and its original revisions exactly, and it cannot
-record a new state diff.
+record a new state diff. A rejected attempt preserves command identity for
+same-key conflict detection but does not consume the idempotency key or become
+a replay baseline; the same command may first apply after refreshing its
+expected revision.
 
 Eval Trace is observational. A sink failure makes the trace artifact incomplete
 and therefore invalid, but it is isolated from the authoritative `AgentGateway`

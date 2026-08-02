@@ -184,6 +184,53 @@ async function emitWriteCommand(
   })
 }
 
+async function emitRejectedWriteCommand(
+  sink: MemoryEvalTraceSink,
+  input: {
+    spanId: string
+    commandId: string
+    revisionBefore: number
+    idempotencyKey?: string
+    commandHashSeed?: string
+  }
+) {
+  const commandName = "journey.update_event"
+  const idempotencyKey = input.idempotencyKey ?? input.commandId
+  const commandHash = evalContentHash({
+    commandName,
+    idempotencyKey,
+    seed: input.commandHashSeed,
+  })
+  await sink.emit({
+    runId: "write-run",
+    scenarioId: "write-scenario",
+    type: "command.dispatched",
+    spanId: input.spanId,
+    parentSpanId: "run-span",
+    workspaceId: "workspace-1",
+    commandId: input.commandId,
+    revisionBefore: input.revisionBefore,
+    status: "OK",
+    payload: { commandName, idempotencyKey, commandHash },
+  })
+  await sink.emit({
+    runId: "write-run",
+    scenarioId: "write-scenario",
+    type: "command.rejected",
+    spanId: input.spanId,
+    parentSpanId: "run-span",
+    workspaceId: "workspace-1",
+    commandId: input.commandId,
+    revisionBefore: input.revisionBefore,
+    status: "ERROR",
+    payload: {
+      commandName,
+      errorName: "WorkspaceRevisionConflictError",
+      errorMessage: "Workspace revision conflict",
+    },
+  })
+}
+
 describe("Agent feature capability validators", () => {
   it("passes a resolved Place with city, coordinate, provider, and bound evidence", async () => {
     const result = {
@@ -872,7 +919,9 @@ describe("Agent feature capability validators", () => {
     expect(integrity.valid).toBe(false)
     expect(integrity.issues).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("reused without matching replay identity"),
+        expect.stringContaining(
+          "reused an applied outcome without typed replay"
+        ),
       ])
     )
     expect(
@@ -926,6 +975,102 @@ describe("Agent feature capability validators", () => {
       validateWriteProtocolCapability("exact-idempotent-replay", sink.events)
         .hardPass
     ).toBe(true)
+  })
+
+  it("allows a rejected idempotency key to apply first after a revision refresh", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.started",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+    await emitRejectedWriteCommand(sink, {
+      spanId: "rejected-command-span",
+      commandId: "retry-command",
+      idempotencyKey: "retry-key",
+      revisionBefore: 0,
+    })
+    await emitWriteCommand(sink, {
+      spanId: "applied-command-span",
+      commandId: "retry-command",
+      idempotencyKey: "retry-key",
+      revisionBefore: 1,
+      revisionAfter: 2,
+      replayed: false,
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.completed",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+
+    expect(verifyEvalTrace(sink.events)).toEqual({ valid: true, issues: [] })
+    expect(
+      validateWriteProtocolCapability(
+        "rejected-then-first-authoritative-apply",
+        sink.events
+      ).hardPass
+    ).toBe(true)
+  })
+
+  it("rejects different command content reusing a rejected idempotency key", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.started",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+    await emitRejectedWriteCommand(sink, {
+      spanId: "rejected-command-span",
+      commandId: "retry-command",
+      idempotencyKey: "retry-key",
+      commandHashSeed: "first-payload",
+      revisionBefore: 0,
+    })
+    await emitWriteCommand(sink, {
+      spanId: "forged-command-span",
+      commandId: "retry-command",
+      idempotencyKey: "retry-key",
+      commandHashSeed: "different-payload",
+      revisionBefore: 1,
+      revisionAfter: 2,
+      replayed: false,
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.completed",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+
+    const integrity = verifyEvalTrace(sink.events)
+    expect(integrity.valid).toBe(false)
+    expect(integrity.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("changed command identity after rejection"),
+      ])
+    )
+    expect(
+      validateWriteProtocolCapability(
+        "rejected-key-command-conflict",
+        sink.events
+      ).hardPass
+    ).toBe(false)
   })
 
   it("fails F6 when a forged command lifecycle has no root run", async () => {
