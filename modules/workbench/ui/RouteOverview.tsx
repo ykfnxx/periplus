@@ -26,6 +26,7 @@ import type {
   TargetTransitPlanningRun,
 } from "@/modules/data-model/contracts"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { scrollPlanChoicesHorizontally } from "./scroll-plan-choices"
 
 type SectionEvent = Extract<TargetJourneyEvent, { type: "SECTION" }>
 type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
@@ -298,7 +299,10 @@ function TransitSummaryCard({
           <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
             选择路线方案
           </p>
-          <div className="scrollbar-hidden flex gap-2 overflow-x-auto pb-1">
+          <div
+            className="scrollbar-hidden flex gap-2 overflow-x-auto pb-1"
+            onWheel={scrollPlanChoicesHorizontally}
+          >
             {activeRun!.plans.map((candidate) => {
               const isCurrent = plan?.id === candidate.id
               const isPending = pendingPlanId === candidate.id

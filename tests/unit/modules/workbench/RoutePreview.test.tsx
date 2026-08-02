@@ -241,6 +241,17 @@ describe("target Workspace route preview", () => {
       .parentElement?.querySelector(".overflow-x-auto")
     expect(choices).not.toBeNull()
     expect(choices).toHaveClass("scrollbar-hidden", "flex", "px-4")
+    Object.defineProperties(choices!, {
+      scrollWidth: { value: 500 },
+      clientWidth: { value: 200 },
+      scrollLeft: { value: 0, writable: true },
+      scrollTo: { value: vi.fn() },
+    })
+    fireEvent.wheel(choices!, { deltaY: 120 })
+    expect(choices?.scrollTo).toHaveBeenCalledWith({
+      left: 120,
+      behavior: "smooth",
+    })
     for (const label of ["推荐", "最快", "低价"]) {
       const button = screen.getByText(label).closest("button")
       expect(button).toHaveClass("h-10", "w-[122px]")
@@ -269,6 +280,20 @@ describe("target Workspace route preview", () => {
     expect(within(selector).getByText("推荐")).toBeVisible()
     expect(within(selector).getByText("最快")).toBeVisible()
     expect(within(selector).getByText("低价")).toBeVisible()
+    const scroller = selector.querySelector(".overflow-x-auto")
+    if (!scroller) throw new Error("overview plan scroller is missing")
+    expect(scroller).toHaveClass("scrollbar-hidden")
+    Object.defineProperties(scroller, {
+      scrollWidth: { value: 500 },
+      clientWidth: { value: 200 },
+      scrollLeft: { value: 0, writable: true },
+      scrollTo: { value: vi.fn() },
+    })
+    fireEvent.wheel(scroller, { deltaY: 90 })
+    expect(scroller.scrollTo).toHaveBeenCalledWith({
+      left: 90,
+      behavior: "smooth",
+    })
 
     fireEvent.click(within(selector).getByText("最快"))
     expect(sendAgentEvent).toHaveBeenCalledWith(

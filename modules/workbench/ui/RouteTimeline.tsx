@@ -47,6 +47,7 @@ import {
   getJourneyScopeTreeEvents,
   type JourneyScopeItem,
 } from "@/lib/journeys/projections"
+import { scrollPlanChoicesHorizontally } from "./scroll-plan-choices"
 
 type LocationJourneyEvent = Extract<
   TargetJourneyEvent,
@@ -643,7 +644,10 @@ function TransitTimelineRow({
             选择路线方案
           </p>
           <div className="relative -mx-3">
-            <div className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10">
+            <div
+              className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10"
+              onWheel={scrollPlanChoicesHorizontally}
+            >
               {activeRun!.plans.map((candidate) => {
                 const isCurrent = plan?.id === candidate.id
                 const isPending = pendingPlanId === candidate.id

@@ -1,0 +1,51 @@
+import type { WheelEvent } from "react"
+import { describe, expect, it, vi } from "vitest"
+import { scrollPlanChoicesHorizontally } from "@/modules/workbench/ui/scroll-plan-choices"
+
+function scroller(scrollLeft = 0) {
+  const element = document.createElement("div")
+  Object.defineProperties(element, {
+    scrollWidth: { value: 500 },
+    clientWidth: { value: 200 },
+    scrollLeft: { value: scrollLeft, writable: true },
+    scrollTo: { value: vi.fn() },
+  })
+  return element
+}
+
+function wheelEvent(element: HTMLDivElement, deltaY: number) {
+  return {
+    currentTarget: element,
+    deltaX: 0,
+    deltaY,
+    preventDefault: vi.fn(),
+  } as unknown as WheelEvent<HTMLDivElement>
+}
+
+describe("Transit plan choice wheel scrolling", () => {
+  it("smoothly scrolls only the plan strip receiving the wheel event", () => {
+    const target = scroller()
+    const other = scroller(45)
+    const event = wheelEvent(target, 80)
+
+    scrollPlanChoicesHorizontally(event)
+
+    expect(target.scrollTo).toHaveBeenCalledWith({
+      left: 80,
+      behavior: "smooth",
+    })
+    expect(other.scrollTo).not.toHaveBeenCalled()
+    expect(other.scrollLeft).toBe(45)
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+  })
+
+  it("returns the wheel to the preview at the horizontal boundary", () => {
+    const target = scroller(300)
+    const event = wheelEvent(target, 80)
+
+    scrollPlanChoicesHorizontally(event)
+
+    expect(target.scrollTo).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+})
