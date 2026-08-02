@@ -6,6 +6,7 @@ import { prisma } from "@/modules/data/db/prisma"
 
 export const auth = betterAuth({
   baseURL: periplusServerConfig.app.baseUrl,
+  trustedOrigins: periplusServerConfig.auth.trustedOrigins,
   secret: periplusServerConfig.auth.secret,
   database: prismaAdapter(prisma, {
     provider: "sqlite",

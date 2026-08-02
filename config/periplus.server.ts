@@ -14,6 +14,17 @@ function envNumber(name: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function envList(name: string) {
+  return [
+    ...new Set(
+      envString(name)
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    ),
+  ]
+}
+
 export const periplusServerConfig = {
   app: {
     get baseUrl() {
@@ -32,6 +43,9 @@ export const periplusServerConfig = {
         "BETTER_AUTH_SECRET",
         "periplus-dev-secret-change-before-production-000000"
       )
+    },
+    get trustedOrigins() {
+      return envList("PERIPLUS_AUTH_TRUSTED_ORIGINS")
     },
   },
   database: {
