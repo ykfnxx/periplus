@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createSilkRoadJourney } from "@/lib/mock-journeys"
 import RoutePreview from "@/modules/workbench/ui/RoutePreview"
 import RouteTimeline from "@/modules/workbench/ui/RouteTimeline"
@@ -31,6 +31,10 @@ describe("target Workspace route preview", () => {
       "丝绸之路 · 10 天"
     )
     expect(screen.getByText(/0\/9.*含城市内/)).toBeVisible()
+
+    fireEvent.click(screen.getByRole("tab", { name: "兰州" }))
+    expect(screen.getByText(/4 项安排/)).toBeVisible()
+    expect(screen.getByText(/0\/1 段真实路线/)).toBeVisible()
   })
 
   it("labels location cards by domain type without numeric circles", () => {
@@ -242,6 +246,41 @@ describe("target Workspace route preview", () => {
       expect(button).toHaveClass("h-10", "w-[122px]")
       expect(button?.querySelector("svg")).toBeNull()
     }
+  })
+
+  it("expands overview Transit choices and sends the selected provider plan", () => {
+    const fixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "03-transit-plan-choice"
+    )
+    const graph = fixture?.cases[0]?.input.graph
+    if (!graph) throw new Error("transit choice fixture is missing")
+    const sendAgentEvent = vi.fn()
+    act(() => {
+      useWorkspaceStore
+        .getState()
+        .applyWorkspaceDocument(workspaceDocumentForStory(graph))
+      useWorkspaceStore.getState().setAgentSender(sendAgentEvent)
+    })
+
+    render(<RoutePreview />)
+    fireEvent.click(screen.getByRole("button", { name: "选择交通事件 交通" }))
+
+    const selector = screen.getByText("选择路线方案").parentElement
+    if (!selector) throw new Error("overview selector is missing")
+    expect(within(selector).getByText("推荐")).toBeVisible()
+    expect(within(selector).getByText("最快")).toBeVisible()
+    expect(within(selector).getByText("低价")).toBeVisible()
+
+    fireEvent.click(within(selector).getByText("最快"))
+    expect(sendAgentEvent).toHaveBeenCalledWith(
+      "workspace.command",
+      expect.objectContaining({
+        command: {
+          name: "journey.select_transit_plan",
+          payload: { eventId: "transit", planId: "plan-fastest" },
+        },
+      })
+    )
   })
 
   it("drills from CITY to DAY to events and returns to the parent scope", () => {

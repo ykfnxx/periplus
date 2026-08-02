@@ -41,7 +41,10 @@ import type {
   TargetTransitPlanningRun,
 } from "@/modules/data-model/contracts"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
-import type { JourneyScopeItem } from "@/lib/journeys/projections"
+import {
+  getJourneyScopeTreeEvents,
+  type JourneyScopeItem,
+} from "@/lib/journeys/projections"
 
 type LocationJourneyEvent = Extract<
   TargetJourneyEvent,
@@ -69,6 +72,10 @@ export default function RouteTimeline({
   const itemRefs = useRef(new Map<string, HTMLDivElement>())
   const photoShares = useWorkspaceStore((state) => state.photoShares)
   const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const viewLevel = useWorkspaceStore((state) => state.viewLevel)
+  const activeSectionEventId = useWorkspaceStore(
+    (state) => state.activeSectionEventId
+  )
   const selectedLocationEvent = useWorkspaceStore(
     (state) => state.selectedLocationEvent
   )
@@ -119,9 +126,12 @@ export default function RouteTimeline({
   }
 
   const events = items.map((item) => item.event)
+  const summaryEvents = graph
+    ? getJourneyScopeTreeEvents(graph, viewLevel, activeSectionEventId)
+    : events
   const eventById = new Map(graph?.events.map((event) => [event.id, event]))
-  const transits = transitEvents(events)
-  const durationMinutes = totalDurationMinutes(events)
+  const transits = transitEvents(summaryEvents)
+  const durationMinutes = totalDurationMinutes(summaryEvents)
   return (
     <div className="px-5 pt-2 pb-5">
       <div className="rounded-xl border border-olive/20 bg-route-summary px-5 py-4">
@@ -131,7 +141,7 @@ export default function RouteTimeline({
               当前路线
             </p>
             <p className="mt-1 text-[18px] leading-6 font-black text-ink">
-              {locationCount(events)} 项安排
+              {locationCount(summaryEvents)} 项安排
               {durationMinutes
                 ? ` · ${formatStayDuration(durationMinutes)}`
                 : ""}
@@ -140,7 +150,7 @@ export default function RouteTimeline({
           <Route className="mt-1 h-5 w-5 text-olive" aria-hidden="true" />
         </div>
         <p className="mt-2 text-[10px] font-bold text-teak">
-          {readyTransitCount(events)}/{transits.length} 段真实路线 ·
+          {readyTransitCount(summaryEvents)}/{transits.length} 段真实路线 ·
           方案确认后地图自动同步
         </p>
       </div>

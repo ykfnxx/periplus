@@ -59,6 +59,9 @@ export default function RouteOverview() {
   const setSelectedTransitEventId = useWorkspaceStore(
     (state) => state.setSelectedTransitEventId
   )
+  const selectTransitPlan = useWorkspaceStore(
+    (state) => state.selectTransitPlan
+  )
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
   if (!graph) return null
@@ -91,7 +94,10 @@ export default function RouteOverview() {
           {totalDurationDays(journeyEvents) ? (
             <span>· {totalDurationDays(journeyEvents)} 天</span>
           ) : null}
-          {totalTransitDistanceMeters(journeyEvents, graph.transitPlanningRuns) ? (
+          {totalTransitDistanceMeters(
+            journeyEvents,
+            graph.transitPlanningRuns
+          ) ? (
             <span>
               ·{" "}
               {formatTransitDistance(
@@ -128,6 +134,7 @@ export default function RouteOverview() {
               event={event}
               selected={selectedTransitEventId === event.id}
               onSelect={() => selectTransit(event.id)}
+              onSelectPlan={(planId) => selectTransitPlan(event.id, planId)}
               planningRuns={graph.transitPlanningRuns}
             />
           ) : null
@@ -193,11 +200,13 @@ function TransitSummaryCard({
   event,
   selected,
   onSelect,
+  onSelectPlan,
   planningRuns,
 }: {
   event: TransitEvent
   selected: boolean
   onSelect: () => void
+  onSelectPlan: (planId: string) => void
   planningRuns: readonly TargetTransitPlanningRun[]
 }) {
   const activeRun = activeTransitPlanningRun(event, planningRuns)
@@ -217,27 +226,70 @@ function TransitSummaryCard({
         .filter(Boolean)
         .join(" · ")
   return (
-    <button
-      type="button"
-      aria-label={`选择交通事件 ${event.title}`}
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={`ml-4 flex w-[calc(100%_-_16px)] items-center gap-3 rounded-lg border px-3 py-3 text-left transition ${
+    <div
+      className={`ml-4 w-[calc(100%_-_16px)] rounded-lg border transition ${
         selected
           ? "border-russet bg-selected-soft"
           : "border-transparent bg-route-blue-soft hover:border-bluegray/30"
       }`}
+      data-selected-plan-id={plan?.id}
     >
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-bluegray">
-        {activeRun?.status === "PLANNING" ? (
-          <LoaderCircle className="h-2.5 w-2.5 animate-spin text-soft-white" />
-        ) : activeRun?.status === "FAILED" ? (
-          <AlertCircle className="h-2.5 w-2.5 text-soft-white" />
+      <button
+        type="button"
+        aria-label={`选择交通事件 ${event.title}`}
+        aria-pressed={selected}
+        onClick={onSelect}
+        className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left"
+      >
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-bluegray">
+          {activeRun?.status === "PLANNING" ? (
+            <LoaderCircle className="h-2.5 w-2.5 animate-spin text-soft-white" />
+          ) : activeRun?.status === "FAILED" ? (
+            <AlertCircle className="h-2.5 w-2.5 text-soft-white" />
+          ) : null}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[11px] font-black text-bluegray">
+          {activeRun?.status === "PLANNING" ? "正在规划真实路线" : details}
+        </span>
+        {(activeRun?.plans.length ?? 0) > 1 ? (
+          <span className="shrink-0 text-[10px] font-black text-bluegray">
+            {selected ? "收起" : `${activeRun!.plans.length} 个方案`}
+          </span>
         ) : null}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-[11px] font-black text-bluegray">
-        {activeRun?.status === "PLANNING" ? "正在规划真实路线" : details}
-      </span>
-    </button>
+      </button>
+      {selected && (activeRun?.plans.length ?? 0) > 1 ? (
+        <div className="border-t border-russet/15 px-3 pt-2 pb-3">
+          <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
+            选择路线方案
+          </p>
+          <div className="scrollbar-hidden flex gap-2 overflow-x-auto pb-1">
+            {activeRun!.plans.map((candidate) => {
+              const isCurrent = plan?.id === candidate.id
+              return (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  aria-pressed={isCurrent}
+                  onClick={() => onSelectPlan(candidate.id)}
+                  className={`h-11 w-[132px] shrink-0 rounded-lg border px-2.5 text-left transition ${
+                    isCurrent
+                      ? "border-russet bg-white shadow-sm"
+                      : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
+                  }`}
+                >
+                  <span className="block truncate text-[10px] font-black text-ink">
+                    {candidate.label}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[9px] font-bold text-teak">
+                    {formatTransitDuration(candidate.durationSeconds)} ·{" "}
+                    {formatTransitDistance(candidate.distanceMeters)}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
