@@ -66,7 +66,6 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
         .join(" ")
       content.setAttribute("role", "button")
       content.setAttribute("aria-label", `选择地点 ${event.title}`)
-      const markerPosition = resolved.locationOrdinal
       const colorIndex =
         (resolved.locationOrdinal - 1) % routeMarkerColors.length
       content.style.background =
@@ -77,13 +76,13 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
         view.level === "overview" && colorIndex === 2
           ? periplusColors.ink
           : periplusColors.white
-      content.textContent = `${markerPosition}`
+      content.textContent = routeMarkerLabel(event)
 
       const marker = new AMap.Marker({
         content,
         position: new AMap.LngLat(location.lng, location.lat),
         title: event.title,
-        offset: new AMap.Pixel(-18, -18),
+        offset: new AMap.Pixel(-18, -15),
       })
       marker.on("click", (mapEvent) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -128,4 +127,14 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
   ])
 
   return null
+}
+
+function routeMarkerLabel(
+  event: ReturnType<typeof getJourneyScopeProjection>["locations"][number]
+) {
+  if (event.type === "SECTION") return event.title.slice(0, 2)
+  if (event.type === "VISIT") return "景点"
+  if (event.type === "MEAL") return "餐饮"
+  if (event.type === "STAY") return "住宿"
+  return "活动"
 }

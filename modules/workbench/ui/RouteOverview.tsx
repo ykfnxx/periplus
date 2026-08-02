@@ -39,12 +39,12 @@ const transportLabels: Partial<Record<TransportMode, string>> = {
 }
 
 const markerClasses = [
-  "bg-marker-orange",
-  "bg-marker-mint",
-  "bg-marker-yellow",
-  "bg-marker-violet",
-  "bg-coral",
-  "bg-bluegray",
+  "bg-marker-orange text-ink",
+  "bg-marker-mint text-ink",
+  "bg-marker-yellow text-ink",
+  "bg-marker-violet text-ink",
+  "bg-coral text-soft-white",
+  "bg-bluegray text-soft-white",
 ]
 
 export default function RouteOverview() {
@@ -157,22 +157,26 @@ function SectionSummaryCard({
       onClick={onSelect}
       className="group relative w-full rounded-[10px] border border-ink-10 bg-white px-5 py-4 text-left transition hover:-translate-y-0.5 hover:border-russet hover:shadow-periplus-soft"
     >
-      <span
-        className={`absolute top-[19px] -left-[7px] h-[18px] w-[26px] rounded-[3px] ${
-          locationOrdinal === undefined
-            ? "bg-bluegray"
-            : markerClasses[(locationOrdinal - 1) % markerClasses.length]
-        }`}
-      />
-      <span className="flex items-center justify-between gap-3 pl-3">
-        <span className="truncate text-base font-black text-ink">
-          {section.title}
+      <span className="flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-3">
+          <span
+            className={`inline-flex h-[20px] shrink-0 items-center rounded-[4px] px-2 text-[9px] font-black tracking-[0.08em] ${
+              locationOrdinal === undefined
+                ? "bg-bluegray text-soft-white"
+                : markerClasses[(locationOrdinal - 1) % markerClasses.length]
+            }`}
+          >
+            城市
+          </span>
+          <span className="truncate text-base font-black text-ink">
+            {section.title}
+          </span>
         </span>
         <span className="shrink-0 text-[11px] font-black text-teak">
           {childTitles.length} 项
         </span>
       </span>
-      <span className="mt-4 flex items-end justify-between gap-3 pl-1">
+      <span className="mt-4 flex items-end justify-between gap-3">
         <span className="min-w-0 truncate text-[13px] text-walnut">
           {childTitles.length
             ? childTitles.slice(0, 4).join(" → ")
