@@ -84,6 +84,9 @@ export default function AgentSync() {
   const setFailedTransitPlanCommandId = useWorkspaceStore(
     (state) => state.setFailedTransitPlanCommandId
   )
+  const failTransitPlanSelection = useWorkspaceStore(
+    (state) => state.failTransitPlanSelection
+  )
 
   useEffect(() => {
     let socket: WebSocket | null = null
@@ -102,6 +105,14 @@ export default function AgentSync() {
     const scheduleReconnect = () => {
       if (disposed || reconnectTimer !== null) return
       setAgentSender(null)
+      const pendingSelection =
+        useWorkspaceStore.getState().pendingTransitPlanSelection
+      if (pendingSelection) {
+        failTransitPlanSelection(
+          pendingSelection.commandId,
+          "连接已中断，请重试路线切换"
+        )
+      }
       const delay = Math.min(RECONNECT_DELAY_MS * 2 ** reconnectAttempt, 10_000)
       reconnectAttempt += 1
       reconnectTimer = window.setTimeout(() => {
@@ -190,6 +201,13 @@ export default function AgentSync() {
 
           if (message.type === "agent.run.failed" || message.type === "error") {
             const error = asDelta(message.payload)
+            if (error.commandId?.startsWith("browser-select:")) {
+              failTransitPlanSelection(
+                error.commandId,
+                error.message ?? "路线切换失败，请重试"
+              )
+              return
+            }
             if (error.commandId?.startsWith("browser-plan:")) {
               setFailedTransitPlanCommandId(error.commandId)
               return
@@ -218,6 +236,7 @@ export default function AgentSync() {
   }, [
     appendAssistantMessage,
     applyWorkspaceDocument,
+    failTransitPlanSelection,
     setAgentSender,
     setChatMessages,
     setFailedTransitPlanCommandId,

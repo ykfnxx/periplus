@@ -2,7 +2,10 @@
 
 import { useEffect, useRef } from "react"
 import { ChevronLeft } from "lucide-react"
-import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import {
+  getJourneyScopeProjection,
+  getJourneyScopeTreeEvents,
+} from "@/lib/journeys/projections"
 import { totalDurationDays } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
@@ -43,7 +46,9 @@ export default function RoutePreview({
     )
   }
 
-  const durationDays = totalDurationDays(view.events)
+  const durationDays = totalDurationDays(
+    getJourneyScopeTreeEvents(graph, viewLevel, activeSectionEventId)
+  )
   const activeSection =
     view.level === "section"
       ? graph.events.find(

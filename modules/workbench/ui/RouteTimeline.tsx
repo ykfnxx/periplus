@@ -4,12 +4,14 @@ import { useEffect, useRef, type ReactNode } from "react"
 import Image from "next/image"
 import {
   BedDouble,
+  AlertCircle,
   BusFront,
   CalendarDays,
   Car,
   Clock3,
   Footprints,
   Landmark,
+  LoaderCircle,
   MapPin,
   Plane,
   Route,
@@ -41,7 +43,11 @@ import type {
   TargetTransitPlanningRun,
 } from "@/modules/data-model/contracts"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
-import type { JourneyScopeItem } from "@/lib/journeys/projections"
+import {
+  getJourneyScopeTreeEvents,
+  type JourneyScopeItem,
+} from "@/lib/journeys/projections"
+import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
 
 type LocationJourneyEvent = Extract<
   TargetJourneyEvent,
@@ -69,6 +75,10 @@ export default function RouteTimeline({
   const itemRefs = useRef(new Map<string, HTMLDivElement>())
   const photoShares = useWorkspaceStore((state) => state.photoShares)
   const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const viewLevel = useWorkspaceStore((state) => state.viewLevel)
+  const activeSectionEventId = useWorkspaceStore(
+    (state) => state.activeSectionEventId
+  )
   const selectedLocationEvent = useWorkspaceStore(
     (state) => state.selectedLocationEvent
   )
@@ -86,6 +96,12 @@ export default function RouteTimeline({
   )
   const selectTransitPlan = useWorkspaceStore(
     (state) => state.selectTransitPlan
+  )
+  const pendingTransitPlanSelection = useWorkspaceStore(
+    (state) => state.pendingTransitPlanSelection
+  )
+  const transitPlanSelectionError = useWorkspaceStore(
+    (state) => state.transitPlanSelectionError
   )
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
   const enterSectionView = useWorkspaceStore((state) => state.enterSectionView)
@@ -119,9 +135,12 @@ export default function RouteTimeline({
   }
 
   const events = items.map((item) => item.event)
+  const summaryEvents = graph
+    ? getJourneyScopeTreeEvents(graph, viewLevel, activeSectionEventId)
+    : events
   const eventById = new Map(graph?.events.map((event) => [event.id, event]))
-  const transits = transitEvents(events)
-  const durationMinutes = totalDurationMinutes(events)
+  const transits = transitEvents(summaryEvents)
+  const durationMinutes = totalDurationMinutes(summaryEvents)
   return (
     <div className="px-5 pt-2 pb-5">
       <div className="rounded-xl border border-olive/20 bg-route-summary px-5 py-4">
@@ -131,7 +150,7 @@ export default function RouteTimeline({
               当前路线
             </p>
             <p className="mt-1 text-[18px] leading-6 font-black text-ink">
-              {locationCount(events)} 项安排
+              {locationCount(summaryEvents)} 项安排
               {durationMinutes
                 ? ` · ${formatStayDuration(durationMinutes)}`
                 : ""}
@@ -140,7 +159,7 @@ export default function RouteTimeline({
           <Route className="mt-1 h-5 w-5 text-olive" aria-hidden="true" />
         </div>
         <p className="mt-2 text-[10px] font-bold text-teak">
-          {readyTransitCount(events)}/{transits.length} 段真实路线 ·
+          {readyTransitCount(summaryEvents)}/{transits.length} 段真实路线 ·
           方案确认后地图自动同步
         </p>
       </div>
@@ -193,6 +212,17 @@ export default function RouteTimeline({
                 resolved={resolved}
                 fromTitle={fromTitle}
                 toTitle={toTitle}
+                pendingPlanId={
+                  pendingTransitPlanSelection?.eventId === event.id
+                    ? pendingTransitPlanSelection.planId
+                    : null
+                }
+                selectionBlocked={Boolean(pendingTransitPlanSelection)}
+                selectionError={
+                  transitPlanSelectionError?.eventId === event.id
+                    ? transitPlanSelectionError.message
+                    : null
+                }
               />
             )
           }
@@ -509,6 +539,9 @@ function TransitTimelineRow({
   resolved,
   fromTitle,
   toTitle,
+  pendingPlanId,
+  selectionBlocked,
+  selectionError,
 }: {
   event: TransitEvent
   selected: boolean
@@ -518,7 +551,11 @@ function TransitTimelineRow({
   resolved: TargetResolvedEvent
   fromTitle?: string
   toTitle?: string
+  pendingPlanId: string | null
+  selectionBlocked: boolean
+  selectionError: string | null
 }) {
+  const planChoicesRef = usePlanChoiceWheelScroll()
   const activeRun = activeTransitPlanningRun(event, planningRuns)
   const plan = selectedTransitPlan(event, planningRuns)
   const modeLabel =
@@ -541,6 +578,7 @@ function TransitTimelineRow({
       className="rounded-xl border border-bluegray/20 bg-route-blue-soft p-3"
       data-selected-plan-id={plan?.id}
       data-resolved-position={resolved.resolvedPosition}
+      aria-busy={Boolean(pendingPlanId)}
     >
       <button
         type="button"
@@ -576,8 +614,14 @@ function TransitTimelineRow({
               <span className="truncate">{toTitle ?? "目的地"}</span>
             </span>
           </span>
-          <span className="shrink-0 text-[10px] font-black text-bluegray">
-            {selected ? "收起" : "方案"}
+          <span className="flex shrink-0 items-center gap-1 text-[10px] font-black text-bluegray">
+            {pendingPlanId ? (
+              <LoaderCircle
+                className="h-3 w-3 animate-spin"
+                aria-hidden="true"
+              />
+            ) : null}
+            {pendingPlanId ? "切换中…" : selected ? "收起" : "方案"}
           </span>
         </span>
         {activeRun?.warning ? (
@@ -586,22 +630,37 @@ function TransitTimelineRow({
           </span>
         ) : null}
       </button>
+      {selectionError ? (
+        <p
+          role="alert"
+          className="mt-2 rounded-md bg-coral/10 px-2 py-1.5 text-[10px] leading-4 font-bold text-coral"
+        >
+          <AlertCircle className="mr-1 inline h-3 w-3" aria-hidden="true" />
+          路线切换失败：{selectionError}
+        </p>
+      ) : null}
       {selected && (activeRun?.plans.length ?? 0) > 0 ? (
         <div className="mt-3 border-t border-bluegray/15 pt-3">
           <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
             选择路线方案
           </p>
           <div className="relative -mx-3">
-            <div className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10">
+            <div
+              ref={planChoicesRef}
+              className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10"
+            >
               {activeRun!.plans.map((candidate) => {
                 const isCurrent = plan?.id === candidate.id
+                const isPending = pendingPlanId === candidate.id
                 return (
                   <button
                     key={candidate.id}
                     type="button"
                     aria-pressed={isCurrent}
+                    aria-busy={isPending}
+                    disabled={selectionBlocked}
                     onClick={() => onSelectPlan(candidate.id)}
-                    className={`h-10 w-[122px] shrink-0 rounded-lg border px-2 text-left transition ${
+                    className={`h-10 w-[122px] shrink-0 rounded-lg border px-2 text-left transition disabled:cursor-wait disabled:opacity-60 ${
                       isCurrent
                         ? "border-russet bg-white shadow-sm"
                         : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
@@ -609,7 +668,9 @@ function TransitTimelineRow({
                   >
                     <span className="block min-w-0">
                       <span className="block truncate text-[10px] font-black text-ink">
-                        <span className="truncate">{candidate.label}</span>
+                        <span className="truncate">
+                          {isPending ? "切换中…" : candidate.label}
+                        </span>
                       </span>
                       <span className="mt-0.5 block truncate text-[9px] font-bold text-teak">
                         {formatTransitDuration(candidate.durationSeconds)} ·{" "}

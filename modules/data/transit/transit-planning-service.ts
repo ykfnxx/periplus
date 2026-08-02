@@ -282,8 +282,6 @@ export class TransitPlanningService {
   }
 }
 
-export const transitPlanningService = new TransitPlanningService()
-
 function validateProviderBundle(
   request: TransitPlanRequest,
   bundle: TransitPlanBundle

@@ -48,6 +48,8 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
   failedTransitPlanCommandId: null,
   setFailedTransitPlanCommandId: (failedTransitPlanCommandId) =>
     set({ failedTransitPlanCommandId }),
+  pendingTransitPlanSelection: null,
+  transitPlanSelectionError: null,
   selectTransitPlan: (eventId, planId) => {
     const state = get()
     const document = state.workspaceDocument
@@ -67,13 +69,24 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
       !planningRun?.plans.some((plan) => plan.id === planId) ||
       event.detail.selectedPlanId === planId ||
       !workspaceCanMutate(document) ||
-      workspaceIsLocked(document)
+      workspaceIsLocked(document) ||
+      state.pendingTransitPlanSelection ||
+      !state.sendAgentEvent
     ) {
       return
     }
     const revision = document.session.headWorkspaceRevision
     const commandId = `browser-select:${document.session.id}:${eventId}:${planId}:${revision}`
-    state.sendAgentEvent?.("workspace.command", {
+    set({
+      pendingTransitPlanSelection: {
+        commandId,
+        eventId,
+        planId,
+        expectedRevision: revision,
+      },
+      transitPlanSelectionError: null,
+    })
+    state.sendAgentEvent("workspace.command", {
       commandId,
       expectedRevision: revision,
       idempotencyKey: commandId,
@@ -81,6 +94,14 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
         name: "journey.select_transit_plan",
         payload: { eventId, planId },
       },
+    })
+  },
+  failTransitPlanSelection: (commandId, message) => {
+    const pending = get().pendingTransitPlanSelection
+    if (!pending || pending.commandId !== commandId) return
+    set({
+      pendingTransitPlanSelection: null,
+      transitPlanSelectionError: { ...pending, message },
     })
   },
   workspaceCommitState: "idle",
@@ -93,6 +114,24 @@ function workspaceDocumentPatch(
   workspaceDocument: TargetWorkspaceDocument | null
 ) {
   const graph = workspaceDocument?.session.headGraph
+  const pendingSelection = state.pendingTransitPlanSelection
+  const workspaceChanged = Boolean(
+    state.workspaceDocument &&
+    workspaceDocument &&
+    state.workspaceDocument.session.id !== workspaceDocument.session.id
+  )
+  const selectedPlanConfirmed = Boolean(
+    pendingSelection &&
+    workspaceDocument &&
+    workspaceDocument.session.headWorkspaceRevision >
+      pendingSelection.expectedRevision &&
+    graph?.events.some(
+      (event) =>
+        event.id === pendingSelection.eventId &&
+        event.type === "TRANSIT" &&
+        event.detail.selectedPlanId === pendingSelection.planId
+    )
+  )
   const activeSectionStillExists = Boolean(
     graph?.events.some(
       (event) =>
@@ -105,6 +144,12 @@ function workspaceDocumentPatch(
     topologyKey(state.workspaceDocument) !== topologyKey(workspaceDocument)
   return {
     workspaceDocument,
+    ...(workspaceChanged || selectedPlanConfirmed
+      ? {
+          pendingTransitPlanSelection: null,
+          transitPlanSelectionError: null,
+        }
+      : {}),
     ...(graph && topologyChanged
       ? {
           mapFocusRequest: {

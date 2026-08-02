@@ -45,6 +45,9 @@ function routeDocument(selectedPlanId: "plan-current" | "plan-next") {
   transit.detail.selectedPlanId = selectedPlanId
   transit.detail.routeState = "READY"
   document.session.headGraph.transitPlanningRuns = [
+    ...document.session.headGraph.transitPlanningRuns.filter(
+      (run) => run.transitEventId !== transit.id
+    ),
     {
       id: "run-ready",
       transitEventId: transit.id,

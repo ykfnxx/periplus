@@ -45,8 +45,10 @@ import {
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
 } from "@/modules/data/workspaces/workspace-repository"
-import { transitPlanningService } from "@/modules/data/transit/transit-planning-service"
-import type { TransitPlanUsageContext } from "@/modules/data/transit/transit-planning-service"
+import {
+  TransitPlanningService,
+  type TransitPlanUsageContext,
+} from "@/modules/data/transit/transit-planning-service"
 
 type JourneyCommand = Extract<
   TargetCommandEnvelope["command"],
@@ -2367,7 +2369,7 @@ export class WorkspaceCommandService {
 
   constructor(dependencies: WorkspaceCommandDependencies = {}) {
     this.transitPlanning =
-      dependencies.transitPlanning ?? transitPlanningService
+      dependencies.transitPlanning ?? new TransitPlanningService()
   }
 
   async execute(
