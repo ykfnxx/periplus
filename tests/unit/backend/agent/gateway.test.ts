@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import { AgentGateway } from "@/backend/agent/gateway"
+import {
+  MemoryEvalTraceSink,
+  validateWriteProtocolCapability,
+  verifyEvalTrace,
+} from "@/backend/agent/evals"
 import type {
   AgentRuntime,
   AgentRuntimeExit,
@@ -94,7 +99,10 @@ function graph(id: string): TargetJourneyGraphSnapshot {
   }
 }
 
-async function setup() {
+async function setup(evalTrace?: {
+  scenarioId: string
+  sink: MemoryEvalTraceSink
+}) {
   const workspace = await createWorkspace(context, {
     graph: graph(`agent-workspace-${randomUUID()}`),
     now: new Date(now),
@@ -105,6 +113,7 @@ async function setup() {
   const gateway = new AgentGateway(commands, runtime, {
     backendUrl: "http://127.0.0.1:3002",
     projectRoot: "/workspace/periplus",
+    evalTrace,
   })
   const emit = (_workspaceId: string, event: AgentEvent) => events.push(event)
   return { workspace, commands, runtime, events, gateway, emit }
@@ -117,6 +126,68 @@ function capabilityToken(runtime: FakeRuntime) {
 }
 
 describe.sequential("P3 persistent AgentGateway", () => {
+  it("emits a complete headless Eval Trace around Agent commands", async () => {
+    const sink = new MemoryEvalTraceSink()
+    const { workspace, commands, runtime, gateway, emit } = await setup({
+      scenarioId: "gateway-command-observability",
+      sink,
+    })
+    await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
+    await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "eval-update-visit",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "西湖（可观测）" },
+        },
+      },
+    })
+    await expect(
+      gateway.executeTool(capabilityToken(runtime), {
+        type: "workspace.command",
+        expectedRevision: 0,
+        idempotencyKey: "eval-stale-update",
+        command: {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${workspace.headGraph.id}-visit`,
+            patch: { type: "VISIT", title: "不应写入" },
+          },
+        },
+      })
+    ).rejects.toThrow("updated by another request")
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+          ?.status
+      ).toBe("SUCCEEDED")
+      expect(sink.events.at(-1)?.type).toBe("run.completed")
+    })
+    await sink.close()
+
+    expect(verifyEvalTrace(sink.events)).toEqual({ valid: true, issues: [] })
+    expect(sink.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "run.started",
+        "tool.started",
+        "command.dispatched",
+        "command.applied",
+        "state.diff.recorded",
+        "command.rejected",
+        "tool.failed",
+        "tool.completed",
+        "run.completed",
+      ])
+    )
+    expect(
+      validateWriteProtocolCapability("gateway-command", sink.events).hardPass
+    ).toBe(true)
+  })
+
   it("runs with a scoped capability and persists commands/messages across restart", async () => {
     const { workspace, commands, runtime, events, gateway, emit } =
       await setup()
