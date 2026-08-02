@@ -7,14 +7,17 @@ or the map SDK.
 ## Current scope
 
 - F1 Place resolution: decision state, city, coordinate system/error, provider
-  identity, content-hash-bound trace evidence, and exact ready-command target,
-  coordinate, and provider bindings.
+  identity, content-hash-bound trace evidence for every required result status,
+  parent-tool provenance, result-specific resolver allowlists, and exact
+  ready-command target, coordinate, and provider bindings.
 - F2 Transit planning: active endpoints and scope, selected-plan membership,
   run/plan identity, ordered and continuous geometry, endpoint and coordinate
-  system agreement, distance/duration aggregates, and request fingerprint.
-- F6 write protocol: complete command lifecycle, monotonic revisions, rejected
-  writes without revision claims, evidence references, typed event payloads,
-  and trace integrity under one unique root run lifecycle.
+  system agreement, plausible non-zero duration, distance/duration aggregates,
+  and request fingerprint.
+- F6 write protocol: complete command lifecycle, a run/workspace revision floor,
+  rejected writes without revision claims, evidence references, typed replay
+  outcomes, idempotency-key identity, and trace integrity under one unique root
+  run lifecycle.
 
 F3 scheduling, F4 images, and F5 sourced material use the same report contract
 but are not part of this first implementation.
@@ -41,10 +44,15 @@ documents or provider payloads into events.
 
 Use `MemoryEvalTraceSink` in focused tests and `JsonlEvalTraceSink` for durable
 artifacts. JSONL creation fails if the path already exists so a run cannot
-silently overwrite another run. Sensitive keys and credential-shaped strings
-are redacted before hashing and persistence. `verifyEvalTrace` checks schema,
-sequence, one root run, run/scenario identity, hash links, open-parent ordering,
-command/state-diff identity and revision continuity, and lifecycle closure.
+silently overwrite another run. Sensitive keys—including service-key and
+database-URL environment names—and credential-shaped strings such as URI
+userinfo are redacted before hashing and persistence. `verifyEvalTrace` checks
+schema, sequence, one root run, run/scenario identity, hash links, open-parent
+ordering, descendant workspace/journey/turn identity, evidence provenance,
+command/state-diff identity, cross-command revision continuity, idempotency-key
+terminal identity, typed replay semantics, and lifecycle closure. A replay must
+match a prior applied outcome and its original revisions exactly, and it cannot
+record a new state diff.
 
 Eval Trace is observational. A sink failure makes the trace artifact incomplete
 and therefore invalid, but it is isolated from the authoritative `AgentGateway`

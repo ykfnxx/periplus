@@ -7,12 +7,13 @@ import {
   validatePlaceCapability,
   validateTransitCapability,
   validateWriteProtocolCapability,
+  verifyEvalTrace,
 } from "@/backend/agent/evals"
 import {
   buildTransitPlanRequest,
   transitPlanFingerprint,
 } from "@/lib/journeys/planning"
-import type { PlaceSearchResult } from "@/lib/places/types"
+import type { PlaceResolveResult, PlaceSearchResult } from "@/lib/places/types"
 import {
   TARGET_CONTRACT_FIXTURES,
   type TargetJourneyEvent,
@@ -110,6 +111,77 @@ function alignTransitFixtureDestination(graph: TargetJourneyGraphSnapshot) {
   if (destination?.type !== "VISIT") throw new Error("fixture invariant")
   destination.detail.plannedLat = 30.35
   destination.detail.plannedLng = 120.25
+}
+
+async function emitWriteCommand(
+  sink: MemoryEvalTraceSink,
+  input: {
+    spanId: string
+    commandId: string
+    revisionBefore: number
+    revisionAfter: number
+    replayed: boolean
+    idempotencyKey?: string
+    commandHashSeed?: string
+  }
+) {
+  const commandName = "journey.update_event"
+  const idempotencyKey = input.idempotencyKey ?? input.commandId
+  const commandHash = evalContentHash({
+    commandName,
+    idempotencyKey,
+    seed: input.commandHashSeed,
+  })
+  await sink.emit({
+    runId: "write-run",
+    scenarioId: "write-scenario",
+    type: "command.dispatched",
+    spanId: input.spanId,
+    parentSpanId: "run-span",
+    workspaceId: "workspace-1",
+    commandId: input.commandId,
+    revisionBefore: input.revisionBefore,
+    status: "OK",
+    payload: {
+      commandName,
+      idempotencyKey,
+      commandHash,
+    },
+  })
+  if (!input.replayed) {
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "state.diff.recorded",
+      spanId: input.spanId,
+      parentSpanId: "run-span",
+      workspaceId: "workspace-1",
+      commandId: input.commandId,
+      revisionBefore: input.revisionBefore,
+      revisionAfter: input.revisionAfter,
+      status: "OK",
+      payload: {
+        changedEventIds: ["event-1"],
+        projectionInvalidationScopes: ["journey"],
+      },
+    })
+  }
+  await sink.emit({
+    runId: "write-run",
+    scenarioId: "write-scenario",
+    type: "command.applied",
+    spanId: input.spanId,
+    parentSpanId: "run-span",
+    workspaceId: "workspace-1",
+    commandId: input.commandId,
+    revisionBefore: input.revisionBefore,
+    revisionAfter: input.revisionAfter,
+    status: "OK",
+    payload: {
+      commandName,
+      replayedFromIdempotencyKey: input.replayed,
+    },
+  })
 }
 
 describe("Agent feature capability validators", () => {
@@ -237,6 +309,190 @@ describe("Agent feature capability validators", () => {
         }),
         expect.objectContaining({ id: "evidence_reference", status: "FAIL" }),
       ])
+    )
+  })
+
+  it("enforces required evidence for not_found and ambiguous Place decisions", () => {
+    const results: PlaceResolveResult[] = [
+      {
+        status: "not_found",
+        fallbackQuery: { query: "不存在的地点" },
+        reason: "no provider match",
+        warnings: [],
+      },
+      {
+        status: "ambiguous",
+        candidates: [westLake()],
+        question: "请确认具体地点",
+        warnings: [],
+      },
+    ]
+
+    for (const result of results) {
+      const report = validatePlaceCapability({
+        id: `missing-evidence-${result.status}`,
+        result,
+        expectation: { status: result.status, requireEvidence: true },
+        traceEvents: [],
+      })
+      expect(report.hardPass).toBe(false)
+      expect(report.metrics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "evidence_trace_integrity",
+            status: "FAIL",
+          }),
+          expect.objectContaining({
+            id: "evidence_reference",
+            status: "FAIL",
+          }),
+        ])
+      )
+    }
+  })
+
+  it("rejects Place evidence whose self-reported toolType disagrees with its parent tool", async () => {
+    const result = {
+      status: "resolved" as const,
+      place: westLake(),
+      warnings: [],
+    }
+    const evidenceId = "forged-place-evidence"
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "run.started",
+      spanId: "run-span",
+      status: "OK",
+      payload: {},
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "tool.started",
+      spanId: "workspace-tool-span",
+      parentSpanId: "run-span",
+      status: "OK",
+      payload: { toolType: "workspace.get" },
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "evidence.recorded",
+      spanId: "evidence-span",
+      parentSpanId: "workspace-tool-span",
+      status: "OK",
+      payload: {
+        evidenceId,
+        toolType: "place.resolve",
+        contentHash: evalContentHash(result),
+        resultStatus: result.status,
+      },
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "tool.completed",
+      spanId: "workspace-tool-span",
+      parentSpanId: "run-span",
+      status: "OK",
+      payload: { toolType: "workspace.get" },
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "run.completed",
+      spanId: "run-span",
+      status: "OK",
+      payload: {},
+    })
+
+    expect(verifyEvalTrace(sink.events).valid).toBe(false)
+    const report = validatePlaceCapability({
+      id: "forged-tool-provenance",
+      result,
+      expectation: { status: "resolved", requireEvidence: true },
+      evidenceId,
+      traceEvents: sink.events,
+    })
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toContainEqual(
+      expect.objectContaining({
+        id: "evidence_trace_integrity",
+        status: "FAIL",
+      })
+    )
+  })
+
+  it("rejects place.search evidence for a Place resolve decision", async () => {
+    const result = {
+      status: "resolved" as const,
+      place: westLake(),
+      warnings: [],
+    }
+    const evidenceId = "search-evidence"
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "run.started",
+      spanId: "run-span",
+      status: "OK",
+      payload: {},
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "tool.started",
+      spanId: "search-tool-span",
+      parentSpanId: "run-span",
+      status: "OK",
+      payload: { toolType: "place.search" },
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "evidence.recorded",
+      spanId: "evidence-span",
+      parentSpanId: "search-tool-span",
+      status: "OK",
+      payload: {
+        evidenceId,
+        toolType: "place.search",
+        contentHash: evalContentHash(result),
+        resultStatus: result.status,
+      },
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "tool.completed",
+      spanId: "search-tool-span",
+      parentSpanId: "run-span",
+      status: "OK",
+      payload: { toolType: "place.search" },
+    })
+    await sink.emit({
+      runId: "place-run",
+      scenarioId: "place-scenario",
+      type: "run.completed",
+      spanId: "run-span",
+      status: "OK",
+      payload: {},
+    })
+
+    expect(verifyEvalTrace(sink.events)).toEqual({ valid: true, issues: [] })
+    const report = validatePlaceCapability({
+      id: "search-cannot-prove-resolve",
+      result,
+      expectation: { status: "resolved", requireEvidence: true },
+      evidenceId,
+      traceEvents: sink.events,
+    })
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toContainEqual(
+      expect.objectContaining({ id: "evidence_reference", status: "FAIL" })
     )
   })
 
@@ -378,6 +634,46 @@ describe("Agent feature capability validators", () => {
     }
   })
 
+  it("fails a non-zero Transit plan with zero duration and no segment durations", () => {
+    const fixture = TARGET_CONTRACT_FIXTURES.find(
+      (candidate) => candidate.id === "03-transit-plan-choice"
+    )!.cases[0]!
+    const graph = structuredClone(fixture.expected.state!.graph!)
+    alignTransitFixtureDestination(graph)
+    const transit = graph.events.find(
+      (event): event is Extract<TargetJourneyEvent, { type: "TRANSIT" }> =>
+        event.id === "transit" && event.type === "TRANSIT"
+    )!
+    const selectedPlan = graph.transitPlanningRuns[0]!.plans.find(
+      (plan) => plan.id === transit.detail.selectedPlanId
+    )!
+    selectedPlan.distanceMeters = 15_000
+    selectedPlan.durationSeconds = 0
+    for (const segment of selectedPlan.segments) {
+      segment.distanceMeters = undefined
+      segment.durationSeconds = undefined
+    }
+    const request = buildTransitPlanRequest(transit, graph.events)!
+    const fingerprint = transitPlanFingerprint(request)
+    graph.transitPlanningRuns[0]!.requestFingerprint = fingerprint
+
+    const report = validateTransitCapability({
+      id: "zero-duration-nonzero-route",
+      graph,
+      transitEventId: transit.id,
+      expectedSelectedPlanId: selectedPlan.id,
+      expectedRequestFingerprint: fingerprint,
+    })
+
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "plan_duration", status: "FAIL" }),
+        expect.objectContaining({ id: "plan_aggregates", status: "FAIL" }),
+      ])
+    )
+  })
+
   it("fails Transit capability at the graph contract when selectedPlanId is invalid", () => {
     const fixture = TARGET_CONTRACT_FIXTURES.find(
       (candidate) => candidate.id === "03-transit-plan-choice"
@@ -469,7 +765,10 @@ describe("Agent feature capability validators", () => {
       revisionBefore: 2,
       revisionAfter: 3,
       status: "OK",
-      payload: { commandName: "journey.update_event" },
+      payload: {
+        commandName: "journey.update_event",
+        replayedFromIdempotencyKey: false,
+      },
     })
     await sink.emit({
       runId: "write-run",
@@ -482,6 +781,151 @@ describe("Agent feature capability validators", () => {
 
     const report = validateWriteProtocolCapability("write-applied", sink.events)
     expect(report.hardPass).toBe(true)
+  })
+
+  it("fails F6 when a later command regresses below the revision floor", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.started",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+    await emitWriteCommand(sink, {
+      spanId: "command-span-1",
+      commandId: "command-1",
+      revisionBefore: 5,
+      revisionAfter: 6,
+      replayed: false,
+    })
+    await emitWriteCommand(sink, {
+      spanId: "command-span-2",
+      commandId: "command-2",
+      revisionBefore: 1,
+      revisionAfter: 2,
+      replayed: false,
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.completed",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+
+    expect(verifyEvalTrace(sink.events).valid).toBe(false)
+    const report = validateWriteProtocolCapability(
+      "revision-floor-regression",
+      sink.events
+    )
+    expect(report.hardPass).toBe(false)
+    expect(report.metrics).toContainEqual(
+      expect.objectContaining({ id: "revision_monotonic", status: "FAIL" })
+    )
+  })
+
+  it("fails F6 when an idempotency key is reused for another command hash", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.started",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+    await emitWriteCommand(sink, {
+      spanId: "command-span-1",
+      commandId: "derived-command-id",
+      idempotencyKey: "shared-key",
+      commandHashSeed: "first-payload",
+      revisionBefore: 0,
+      revisionAfter: 1,
+      replayed: false,
+    })
+    await emitWriteCommand(sink, {
+      spanId: "command-span-2",
+      commandId: "derived-command-id",
+      idempotencyKey: "shared-key",
+      commandHashSeed: "different-payload",
+      revisionBefore: 1,
+      revisionAfter: 2,
+      replayed: false,
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.completed",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+
+    const integrity = verifyEvalTrace(sink.events)
+    expect(integrity.valid).toBe(false)
+    expect(integrity.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("reused without matching replay identity"),
+      ])
+    )
+    expect(
+      validateWriteProtocolCapability("idempotency-collision", sink.events)
+        .hardPass
+    ).toBe(false)
+  })
+
+  it("accepts an exact typed replay without a second state diff", async () => {
+    const sink = new MemoryEvalTraceSink()
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.started",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+    await emitWriteCommand(sink, {
+      spanId: "command-span-1",
+      commandId: "command-1",
+      idempotencyKey: "shared-key",
+      revisionBefore: 5,
+      revisionAfter: 6,
+      replayed: false,
+    })
+    await emitWriteCommand(sink, {
+      spanId: "command-span-replay",
+      commandId: "command-1",
+      idempotencyKey: "shared-key",
+      revisionBefore: 5,
+      revisionAfter: 6,
+      replayed: true,
+    })
+    await sink.emit({
+      runId: "write-run",
+      scenarioId: "write-scenario",
+      type: "run.completed",
+      spanId: "run-span",
+      workspaceId: "workspace-1",
+      status: "OK",
+      payload: {},
+    })
+
+    expect(verifyEvalTrace(sink.events)).toEqual({ valid: true, issues: [] })
+    expect(
+      sink.events.filter((event) => event.type === "state.diff.recorded")
+    ).toHaveLength(1)
+    expect(
+      validateWriteProtocolCapability("exact-idempotent-replay", sink.events)
+        .hardPass
+    ).toBe(true)
   })
 
   it("fails F6 when a forged command lifecycle has no root run", async () => {
@@ -523,7 +967,10 @@ describe("Agent feature capability validators", () => {
       revisionBefore: 0,
       revisionAfter: 1,
       status: "OK",
-      payload: { commandName: "journey.update_event" },
+      payload: {
+        commandName: "journey.update_event",
+        replayedFromIdempotencyKey: false,
+      },
     })
 
     const report = validateWriteProtocolCapability("forged-write", sink.events)

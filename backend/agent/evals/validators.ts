@@ -143,6 +143,39 @@ export function validatePlaceCapability(
     )
   )
 
+  if (testCase.expectation.requireEvidence) {
+    const integrity = verifyEvalTrace(testCase.traceEvents ?? [])
+    const matchingEvidence = (testCase.traceEvents ?? []).filter(
+      (event) =>
+        event.type === "evidence.recorded" &&
+        event.payload.evidenceId === testCase.evidenceId
+    )
+    const evidence = matchingEvidence[0]
+    const allowedToolTypes =
+      testCase.result.status === "ready"
+        ? ["place.resolve_for_journey_event"]
+        : ["place.resolve", "place.resolve_for_journey_event"]
+    metrics.push(
+      metric(
+        "evidence_trace_integrity",
+        integrity.valid,
+        integrity.valid
+          ? "Place evidence belongs to a complete Eval Trace"
+          : integrity.issues.join("; ")
+      ),
+      metric(
+        "evidence_reference",
+        Boolean(testCase.evidenceId?.trim()) &&
+          matchingEvidence.length === 1 &&
+          evidence?.payload.contentHash === evalContentHash(testCase.result) &&
+          typeof evidence.payload.toolType === "string" &&
+          allowedToolTypes.includes(evidence.payload.toolType) &&
+          evidence.payload.resultStatus === testCase.result.status,
+        "Place decision is bound to one recorded evidence event with the exact result hash"
+      )
+    )
+  }
+
   const place = resolvedPlace(testCase.result)
   if (!place) {
     if (
@@ -224,35 +257,6 @@ export function validatePlaceCapability(
       )
     )
   }
-  if (testCase.expectation.requireEvidence) {
-    const integrity = verifyEvalTrace(testCase.traceEvents ?? [])
-    const matchingEvidence = (testCase.traceEvents ?? []).filter(
-      (event) =>
-        event.type === "evidence.recorded" &&
-        event.payload.evidenceId === testCase.evidenceId
-    )
-    const evidence = matchingEvidence[0]
-    metrics.push(
-      metric(
-        "evidence_trace_integrity",
-        integrity.valid,
-        integrity.valid
-          ? "Place evidence belongs to a complete Eval Trace"
-          : integrity.issues.join("; ")
-      ),
-      metric(
-        "evidence_reference",
-        Boolean(testCase.evidenceId?.trim()) &&
-          matchingEvidence.length === 1 &&
-          evidence?.payload.contentHash === evalContentHash(testCase.result) &&
-          typeof evidence.payload.toolType === "string" &&
-          evidence.payload.toolType.startsWith("place.") &&
-          evidence.payload.resultStatus === testCase.result.status,
-        "Resolved Place is bound to one recorded evidence event with the exact result hash"
-      )
-    )
-  }
-
   if (testCase.result.status === "ready") {
     const command = testCase.result.command
     const detail = command.payload.patch.detail
@@ -531,6 +535,20 @@ export function validateTransitCapability(
 
   const distances = orderedSegments.map((segment) => segment.distanceMeters)
   const durations = orderedSegments.map((segment) => segment.durationSeconds)
+  const planDurationValid = Boolean(
+    selectedPlan &&
+    (selectedPlan.distanceMeters === 0
+      ? selectedPlan.durationSeconds >= 0
+      : selectedPlan.durationSeconds > 0 &&
+        selectedPlan.durationSeconds >= selectedPlan.distanceMeters / 120)
+  )
+  metrics.push(
+    metric(
+      "plan_duration",
+      planDurationValid,
+      "A non-zero route has a positive duration above the physical lower bound"
+    )
+  )
   const distanceAggregateValid =
     distances.every((value) => value == null) ||
     (distances.every((value): value is number => value != null) &&
@@ -539,12 +557,13 @@ export function validateTransitCapability(
           (selectedPlan?.distanceMeters ?? 0)
       ) <= 1)
   const durationAggregateValid =
-    durations.every((value) => value == null) ||
-    (durations.every((value): value is number => value != null) &&
-      Math.abs(
-        durations.reduce((total, value) => total + value, 0) -
-          (selectedPlan?.durationSeconds ?? 0)
-      ) <= 1)
+    planDurationValid &&
+    (durations.every((value) => value == null) ||
+      (durations.every((value): value is number => value != null) &&
+        Math.abs(
+          durations.reduce((total, value) => total + value, 0) -
+            (selectedPlan?.durationSeconds ?? 0)
+        ) <= 1))
   metrics.push(
     metric(
       "plan_aggregates",
@@ -615,16 +634,29 @@ export function validateWriteProtocolCapability(
     )
   )
   const applied = events.filter((event) => event.type === "command.applied")
+  const revisionFloorByScope = new Map<string, number>()
+  let revisionContinuity = true
+  for (const event of applied) {
+    if (event.revisionBefore == null || event.revisionAfter == null) {
+      revisionContinuity = false
+      continue
+    }
+    if (event.payload.replayedFromIdempotencyKey === true) continue
+    const scope = event.workspaceId ?? "__run__"
+    const revisionFloor = revisionFloorByScope.get(scope)
+    if (revisionFloor != null && event.revisionBefore !== revisionFloor) {
+      revisionContinuity = false
+    }
+    if (event.revisionAfter < event.revisionBefore) {
+      revisionContinuity = false
+    }
+    revisionFloorByScope.set(scope, event.revisionAfter)
+  }
   metrics.push(
     metric(
       "revision_monotonic",
-      applied.every(
-        (event) =>
-          event.revisionBefore != null &&
-          event.revisionAfter != null &&
-          event.revisionAfter >= event.revisionBefore
-      ),
-      "Applied commands never move the authoritative revision backwards"
+      revisionContinuity,
+      "Non-replay applied commands follow the run/workspace authoritative revision floor"
     )
   )
   const rejected = events.filter((event) => event.type === "command.rejected")

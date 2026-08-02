@@ -167,6 +167,19 @@ describe.sequential("P3 persistent AgentGateway", () => {
         },
       },
     })
+    const replay = await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "eval-update-visit",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "西湖（可观测）" },
+        },
+      },
+    })
+    expect(replay.result.replayedFromIdempotencyKey).toBe(true)
     await expect(
       gateway.executeTool(capabilityToken(runtime), {
         type: "workspace.command",
@@ -208,6 +221,17 @@ describe.sequential("P3 persistent AgentGateway", () => {
     expect(
       validateWriteProtocolCapability("gateway-command", sink.events).hardPass
     ).toBe(true)
+    expect(
+      sink.events.filter((event) => event.type === "state.diff.recorded")
+    ).toHaveLength(1)
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        type: "command.applied",
+        payload: expect.objectContaining({
+          replayedFromIdempotencyKey: true,
+        }),
+      })
+    )
   })
 
   it("does not change a committed command result when Eval Trace persistence fails", async () => {

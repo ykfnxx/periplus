@@ -214,6 +214,14 @@ export const evalTraceEventSchema = z
           message: "command.applied requires payload.commandName",
         })
       }
+      if (typeof event.payload.replayedFromIdempotencyKey !== "boolean") {
+        context.addIssue({
+          code: "custom",
+          path: ["payload", "replayedFromIdempotencyKey"],
+          message:
+            "command.applied requires boolean payload.replayedFromIdempotencyKey",
+        })
+      }
     }
     if (event.type === "command.rejected") {
       for (const field of [

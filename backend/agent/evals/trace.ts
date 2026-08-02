@@ -24,6 +24,9 @@ const DEFAULT_SENSITIVE_KEYS = new Set([
   "secret",
   "clientsecret",
   "privatekey",
+  "servicekey",
+  "databaseurl",
+  "connectionstring",
   "env",
 ])
 const SENSITIVE_KEY_SUFFIXES = [
@@ -37,6 +40,9 @@ const SENSITIVE_KEY_SUFFIXES = [
   "secret",
   "clientsecret",
   "privatekey",
+  "servicekey",
+  "databaseurl",
+  "connectionstring",
 ] as const
 
 export interface EvalRedactionOptions {
@@ -74,7 +80,7 @@ function redactString(value: string) {
       `$1${REDACTED}`
     )
     .replace(
-      /\b((?:OPENAI[_-])?API[_-]?KEY|X-API-KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|CLIENT[_-]?SECRET|PASSWORD)\s*[:=]\s*[^\s,;]+/gi,
+      /\b((?:OPENAI[_-])?API[_-]?KEY|X-API-KEY|(?:[A-Z0-9]+[_-])*SERVICE[_-]?KEY|DATABASE[_-]?URL|CONNECTION[_-]?STRING|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|CLIENT[_-]?SECRET|PASSWORD)\s*[:=]\s*[^\s,;]+/gi,
       (_match, key: string) => `${key}=${REDACTED}`
     )
     .replace(/\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{8,}\b/g, REDACTED)
@@ -82,7 +88,10 @@ function redactString(value: string) {
     .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, REDACTED)
     .replace(/\bAKIA[A-Z0-9]{16}\b/g, REDACTED)
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, REDACTED)
-    .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${REDACTED}@`)
+    .replace(
+      /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi,
+      `$1${REDACTED}@`
+    )
     .replace(
       /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
       REDACTED
@@ -299,6 +308,21 @@ export function verifyEvalTrace(
   const rootRunSpanId = runStarts[0]?.spanId
   let runOpen = false
   let runClosed = false
+  const revisionFloorByScope = new Map<string, number>()
+  const terminalCommandsByIdempotency = new Map<
+    string,
+    {
+      scope: string
+      commandId: string
+      commandName: unknown
+      idempotencyKey: unknown
+      commandHash: unknown
+      revisionBefore: number
+      outcome: "applied" | "rejected"
+      revisionAfter?: number
+    }
+  >()
+  const idempotencyKeyByCommandId = new Map<string, unknown>()
 
   function sameOptionalIdentity(
     index: number,
@@ -357,6 +381,28 @@ export function verifyEvalTrace(
         issues.push(
           `event[${index}] references unknown or closed parent span ${event.parentSpanId}`
         )
+      } else {
+        const parent = openSpans.get(event.parentSpanId)!
+        sameOptionalIdentity(
+          index,
+          "parent workspaceId",
+          event.workspaceId,
+          parent.start.workspaceId
+        )
+        sameOptionalIdentity(
+          index,
+          "parent journeyId",
+          event.journeyId,
+          parent.start.journeyId
+        )
+        if (event.type !== "turn.started") {
+          sameOptionalIdentity(
+            index,
+            "parent turnId",
+            event.turnId,
+            parent.start.turnId
+          )
+        }
       }
     }
 
@@ -418,6 +464,22 @@ export function verifyEvalTrace(
       }
     }
 
+    if (event.type === "evidence.recorded") {
+      const parent = event.parentSpanId
+        ? openSpans.get(event.parentSpanId)
+        : undefined
+      if (!parent || parent.start.type !== "tool.started") {
+        issues.push(`event[${index}] evidence is not inside an open tool span`)
+      } else {
+        sameOptionalIdentity(
+          index,
+          "evidence toolType",
+          event.payload.toolType,
+          parent.start.payload.toolType
+        )
+      }
+    }
+
     if (isTerminal) {
       const open = openSpans.get(event.spanId)
       if (!open) {
@@ -474,22 +536,123 @@ export function verifyEvalTrace(
             open.start.revisionBefore
           )
           if (event.type === "command.applied") {
-            if (!open.stateDiff) {
+            const scope = event.workspaceId ?? "__run__"
+            const commandId = event.commandId!
+            const idempotencyKey = open.start.payload.idempotencyKey
+            const idempotencyScopeKey = `${scope}\u0000${String(idempotencyKey)}`
+            const revisionBefore = event.revisionBefore!
+            const revisionAfter = event.revisionAfter!
+            const previousTerminal =
+              terminalCommandsByIdempotency.get(idempotencyScopeKey)
+            const previousIdempotencyKey =
+              idempotencyKeyByCommandId.get(commandId)
+            const replayed = event.payload.replayedFromIdempotencyKey === true
+            if (
+              previousIdempotencyKey !== undefined &&
+              previousIdempotencyKey !== idempotencyKey
+            ) {
               issues.push(
-                `command span ${event.spanId} applied without a state diff`
-              )
-            } else {
-              sameOptionalIdentity(
-                index,
-                "revisionAfter",
-                event.revisionAfter,
-                open.stateDiff.revisionAfter
+                `command ${commandId} changed idempotencyKey across spans`
               )
             }
-          } else if (open.stateDiff) {
-            issues.push(
-              `command span ${event.spanId} rejected after a state diff`
-            )
+            if (replayed) {
+              if (open.stateDiff) {
+                issues.push(
+                  `command span ${event.spanId} replay recorded a new state diff`
+                )
+              }
+              if (
+                !previousTerminal ||
+                previousTerminal.outcome !== "applied" ||
+                previousTerminal.scope !== scope ||
+                previousTerminal.commandId !== commandId ||
+                previousTerminal.commandName !==
+                  open.start.payload.commandName ||
+                previousTerminal.idempotencyKey !==
+                  open.start.payload.idempotencyKey ||
+                previousTerminal.commandHash !==
+                  open.start.payload.commandHash ||
+                previousTerminal.revisionBefore !== revisionBefore ||
+                previousTerminal.revisionAfter !== revisionAfter
+              ) {
+                issues.push(
+                  `command span ${event.spanId} has no matching prior applied command for replay`
+                )
+              }
+            } else {
+              if (!open.stateDiff) {
+                issues.push(
+                  `command span ${event.spanId} applied without a state diff`
+                )
+              } else {
+                sameOptionalIdentity(
+                  index,
+                  "revisionAfter",
+                  event.revisionAfter,
+                  open.stateDiff.revisionAfter
+                )
+              }
+              if (previousTerminal) {
+                issues.push(
+                  `idempotencyKey ${String(idempotencyKey)} was reused without matching replay identity`
+                )
+              }
+              const revisionFloor = revisionFloorByScope.get(scope)
+              if (revisionFloor != null && revisionBefore !== revisionFloor) {
+                issues.push(
+                  `command span ${event.spanId} expected revisionBefore ${revisionFloor}, got ${revisionBefore}`
+                )
+              }
+              revisionFloorByScope.set(scope, revisionAfter)
+              terminalCommandsByIdempotency.set(idempotencyScopeKey, {
+                scope,
+                commandId,
+                commandName: open.start.payload.commandName,
+                idempotencyKey,
+                commandHash: open.start.payload.commandHash,
+                revisionBefore,
+                outcome: "applied",
+                revisionAfter,
+              })
+              idempotencyKeyByCommandId.set(commandId, idempotencyKey)
+            }
+          } else {
+            if (open.stateDiff) {
+              issues.push(
+                `command span ${event.spanId} rejected after a state diff`
+              )
+            }
+            const scope = event.workspaceId ?? "__run__"
+            const commandId = event.commandId!
+            const idempotencyKey = open.start.payload.idempotencyKey
+            const idempotencyScopeKey = `${scope}\u0000${String(idempotencyKey)}`
+            if (terminalCommandsByIdempotency.has(idempotencyScopeKey)) {
+              issues.push(
+                `idempotencyKey ${String(idempotencyKey)} reached more than one terminal outcome`
+              )
+            } else {
+              terminalCommandsByIdempotency.set(idempotencyScopeKey, {
+                scope,
+                commandId,
+                commandName: open.start.payload.commandName,
+                idempotencyKey,
+                commandHash: open.start.payload.commandHash,
+                revisionBefore: event.revisionBefore!,
+                outcome: "rejected",
+              })
+            }
+            const previousIdempotencyKey =
+              idempotencyKeyByCommandId.get(commandId)
+            if (
+              previousIdempotencyKey !== undefined &&
+              previousIdempotencyKey !== idempotencyKey
+            ) {
+              issues.push(
+                `command ${commandId} changed idempotencyKey across spans`
+              )
+            } else {
+              idempotencyKeyByCommandId.set(commandId, idempotencyKey)
+            }
           }
         }
         const openChildren = [...openSpans.values()].filter(

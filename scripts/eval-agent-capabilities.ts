@@ -121,7 +121,10 @@ async function writeProtocolReport() {
     revisionBefore: 0,
     revisionAfter: 1,
     status: "OK",
-    payload: { commandName: "journey.update_event" },
+    payload: {
+      commandName: "journey.update_event",
+      replayedFromIdempotencyKey: false,
+    },
   })
   await sink.emit({
     runId: "smoke-write-run",

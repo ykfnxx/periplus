@@ -505,19 +505,21 @@ export class AgentGateway {
       if (request.type === "workspace.command" && commandSpanId) {
         const result = appliedCommandResult
         if (!result) throw new Error("Command result was not captured")
-        await this.trace(running, {
-          type: "state.diff.recorded",
-          spanId: commandSpanId,
-          parentSpanId: toolSpanId,
-          commandId,
-          revisionBefore: request.expectedRevision,
-          revisionAfter: result.newRevision,
-          status: "OK",
-          payload: {
-            changedEventIds: result.changedEventIds,
-            projectionInvalidationScopes: result.projectionInvalidationScopes,
-          },
-        })
+        if (!result.replayedFromIdempotencyKey) {
+          await this.trace(running, {
+            type: "state.diff.recorded",
+            spanId: commandSpanId,
+            parentSpanId: toolSpanId,
+            commandId,
+            revisionBefore: request.expectedRevision,
+            revisionAfter: result.newRevision,
+            status: "OK",
+            payload: {
+              changedEventIds: result.changedEventIds,
+              projectionInvalidationScopes: result.projectionInvalidationScopes,
+            },
+          })
+        }
         await this.trace(running, {
           type: "command.applied",
           spanId: commandSpanId,
@@ -567,20 +569,22 @@ export class AgentGateway {
     } catch (error) {
       if (request.type === "workspace.command" && commandSpanId) {
         if (appliedCommandResult) {
-          await this.trace(running, {
-            type: "state.diff.recorded",
-            spanId: commandSpanId,
-            parentSpanId: toolSpanId,
-            commandId,
-            revisionBefore: request.expectedRevision,
-            revisionAfter: appliedCommandResult.newRevision,
-            status: "OK",
-            payload: {
-              changedEventIds: appliedCommandResult.changedEventIds,
-              projectionInvalidationScopes:
-                appliedCommandResult.projectionInvalidationScopes,
-            },
-          })
+          if (!appliedCommandResult.replayedFromIdempotencyKey) {
+            await this.trace(running, {
+              type: "state.diff.recorded",
+              spanId: commandSpanId,
+              parentSpanId: toolSpanId,
+              commandId,
+              revisionBefore: request.expectedRevision,
+              revisionAfter: appliedCommandResult.newRevision,
+              status: "OK",
+              payload: {
+                changedEventIds: appliedCommandResult.changedEventIds,
+                projectionInvalidationScopes:
+                  appliedCommandResult.projectionInvalidationScopes,
+              },
+            })
+          }
           await this.trace(running, {
             type: "command.applied",
             spanId: commandSpanId,
