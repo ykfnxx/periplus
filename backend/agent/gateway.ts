@@ -12,6 +12,7 @@ import {
   targetCommandBodySchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type TargetCommandEnvelope,
+  type TargetCommandResult,
 } from "@/modules/data-model/contracts"
 import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import {
@@ -42,6 +43,11 @@ import type {
   AgentToolServer,
 } from "./runtime"
 import { parseSuggestion } from "./suggestion"
+import {
+  evalContentHash,
+  type EvalTraceInput,
+  type EvalTraceSink,
+} from "./evals"
 
 interface AgentGatewayOptions {
   backendUrl: string
@@ -57,6 +63,10 @@ interface AgentGatewayOptions {
     | "resolvePlaceForJourneyEvent"
     | "enrichPlace"
   >
+  evalTrace?: {
+    scenarioId: string
+    sink: EvalTraceSink
+  }
 }
 
 interface RunningAgent {
@@ -70,6 +80,8 @@ interface RunningAgent {
   runtimeFailed: boolean
   stdout: string
   heartbeatTimer: ReturnType<typeof setInterval> | null
+  traceRunSpanId: string
+  traceFailure: Error | null
 }
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
@@ -199,6 +211,26 @@ export class AgentGateway {
     this.placeService = options.placeService ?? createPlaceIntelligenceService()
   }
 
+  private async trace(
+    running: RunningAgent,
+    input: Omit<EvalTraceInput, "runId" | "scenarioId" | "workspaceId">
+  ) {
+    if (!this.options.evalTrace || running.traceFailure) return false
+    try {
+      await this.options.evalTrace.sink.emit({
+        ...input,
+        runId: running.runId,
+        scenarioId: this.options.evalTrace.scenarioId,
+        workspaceId: running.workspaceId,
+      })
+      return true
+    } catch (error) {
+      running.traceFailure =
+        error instanceof Error ? error : new Error("Eval trace write failed")
+      return false
+    }
+  }
+
   async start(
     context: AuthContext,
     workspaceId: string,
@@ -274,12 +306,20 @@ export class AgentGateway {
       runtimeFailed: false,
       stdout: "",
       heartbeatTimer: null,
+      traceRunSpanId: randomUUID(),
+      traceFailure: null,
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
     this.startHeartbeat(running)
 
     try {
+      await this.trace(running, {
+        type: "run.started",
+        spanId: running.traceRunSpanId,
+        status: "OK",
+        payload: { mode, runtimeId: this.runtime.id },
+      })
       const document = await this.commands.getDocument(context, workspaceId)
       if (!document) throw new WorkspaceInputError("Workspace was not found")
       emit(workspaceId, { type: "workspace.locked", payload: document })
@@ -372,47 +412,225 @@ export class AgentGateway {
         "Agent tool capability is invalid or expired"
       )
     }
-    await this.heartbeat(running)
-    if (request.type === "workspace.get") {
-      const document = await this.commands.getDocument(
-        running.context,
-        running.workspaceId
-      )
-      if (!document) throw new WorkspaceInputError("Workspace was not found")
-      return { workspace: document }
+    const toolSpanId = randomUUID()
+    const commandSpanId =
+      request.type === "workspace.command" ? randomUUID() : undefined
+    const commandId =
+      request.type === "workspace.command"
+        ? `${running.runId}:${request.idempotencyKey}`
+        : undefined
+    const startedAt = performance.now()
+    const commandName =
+      request.type === "workspace.command" &&
+      request.command != null &&
+      typeof request.command === "object" &&
+      "name" in request.command &&
+      typeof request.command.name === "string"
+        ? request.command.name
+        : undefined
+    await this.trace(running, {
+      type: "tool.started",
+      spanId: toolSpanId,
+      parentSpanId: running.traceRunSpanId,
+      status: "OK",
+      payload: {
+        toolType: request.type,
+        ...(request.type.startsWith("place.")
+          ? { requestId: (request as PlaceAgentToolRequest).requestId }
+          : {}),
+        ...(commandName ? { commandName } : {}),
+      },
+    })
+    if (request.type === "workspace.command" && commandSpanId) {
+      await this.trace(running, {
+        type: "command.dispatched",
+        spanId: commandSpanId,
+        parentSpanId: toolSpanId,
+        commandId,
+        revisionBefore: request.expectedRevision,
+        status: "OK",
+        payload: {
+          commandName: commandName ?? "invalid",
+          idempotencyKey: request.idempotencyKey,
+          commandHash: evalContentHash(request.command),
+        },
+      })
     }
-    if (request.type === "workspace.project") {
-      const document = await this.commands.getDocument(
-        running.context,
-        running.workspaceId
-      )
-      if (!document) throw new WorkspaceInputError("Workspace was not found")
-      return {
-        projection: resolveJourneyProjection({
-          graph: document.session.headGraph,
-          scopeSectionEventId: request.scopeSectionEventId,
-          mode: request.mode,
-          asOfRevision: request.asOfRevision,
-        }),
-        headWorkspaceRevision: document.session.headWorkspaceRevision,
+
+    let appliedCommandResult: TargetCommandResult | null = null
+    try {
+      await this.heartbeat(running)
+      let output: unknown
+      if (request.type === "workspace.get") {
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        if (!document) throw new WorkspaceInputError("Workspace was not found")
+        output = { workspace: document }
+      } else if (request.type === "workspace.project") {
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        if (!document) throw new WorkspaceInputError("Workspace was not found")
+        output = {
+          projection: resolveJourneyProjection({
+            graph: document.session.headGraph,
+            scopeSectionEventId: request.scopeSectionEventId,
+            mode: request.mode,
+            asOfRevision: request.asOfRevision,
+          }),
+          headWorkspaceRevision: document.session.headWorkspaceRevision,
+        }
+      } else if (isPlaceToolRequest(request)) {
+        output = await this.executePlaceTool(running, request)
+      } else {
+        const envelope: TargetCommandEnvelope = {
+          aggregateId: running.workspaceId,
+          expectedRevision: request.expectedRevision,
+          idempotencyKey: request.idempotencyKey,
+          actor: { kind: "AGENT", agentRunId: running.runId },
+          command: targetCommandBodySchema.parse(request.command),
+        }
+        const result = await this.commands.execute(running.context, envelope)
+        appliedCommandResult = result
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        output = { result, workspace: document }
       }
+
+      if (request.type === "workspace.command" && commandSpanId) {
+        const result = appliedCommandResult
+        if (!result) throw new Error("Command result was not captured")
+        if (!result.replayedFromIdempotencyKey) {
+          await this.trace(running, {
+            type: "state.diff.recorded",
+            spanId: commandSpanId,
+            parentSpanId: toolSpanId,
+            commandId,
+            revisionBefore: request.expectedRevision,
+            revisionAfter: result.newRevision,
+            status: "OK",
+            payload: {
+              changedEventIds: result.changedEventIds,
+              projectionInvalidationScopes: result.projectionInvalidationScopes,
+            },
+          })
+        }
+        await this.trace(running, {
+          type: "command.applied",
+          spanId: commandSpanId,
+          parentSpanId: toolSpanId,
+          commandId,
+          revisionBefore: request.expectedRevision,
+          revisionAfter: result.newRevision,
+          status: "OK",
+          payload: {
+            commandName: result.commandName,
+            replayedFromIdempotencyKey: result.replayedFromIdempotencyKey,
+          },
+        })
+      }
+      if (isPlaceToolRequest(request)) {
+        await this.trace(running, {
+          type: "evidence.recorded",
+          spanId: randomUUID(),
+          parentSpanId: toolSpanId,
+          status: "OK",
+          payload: {
+            evidenceId: `${running.runId}:${request.requestId}`,
+            toolType: request.type,
+            requestId: request.requestId,
+            contentHash: evalContentHash(output),
+            ...(output != null &&
+            typeof output === "object" &&
+            "status" in output &&
+            typeof output.status === "string"
+              ? { resultStatus: output.status }
+              : {}),
+          },
+        })
+      }
+      await this.trace(running, {
+        type: "tool.completed",
+        spanId: toolSpanId,
+        parentSpanId: running.traceRunSpanId,
+        durationMs: performance.now() - startedAt,
+        status: "OK",
+        payload: {
+          toolType: request.type,
+          outputHash: evalContentHash(output),
+        },
+      })
+      return output
+    } catch (error) {
+      if (request.type === "workspace.command" && commandSpanId) {
+        if (appliedCommandResult) {
+          if (!appliedCommandResult.replayedFromIdempotencyKey) {
+            await this.trace(running, {
+              type: "state.diff.recorded",
+              spanId: commandSpanId,
+              parentSpanId: toolSpanId,
+              commandId,
+              revisionBefore: request.expectedRevision,
+              revisionAfter: appliedCommandResult.newRevision,
+              status: "OK",
+              payload: {
+                changedEventIds: appliedCommandResult.changedEventIds,
+                projectionInvalidationScopes:
+                  appliedCommandResult.projectionInvalidationScopes,
+              },
+            })
+          }
+          await this.trace(running, {
+            type: "command.applied",
+            spanId: commandSpanId,
+            parentSpanId: toolSpanId,
+            commandId,
+            revisionBefore: request.expectedRevision,
+            revisionAfter: appliedCommandResult.newRevision,
+            status: "OK",
+            payload: {
+              commandName: appliedCommandResult.commandName,
+              replayedFromIdempotencyKey:
+                appliedCommandResult.replayedFromIdempotencyKey,
+            },
+          })
+        } else {
+          await this.trace(running, {
+            type: "command.rejected",
+            spanId: commandSpanId,
+            parentSpanId: toolSpanId,
+            commandId,
+            revisionBefore: request.expectedRevision,
+            status: "ERROR",
+            payload: {
+              commandName: commandName ?? "invalid",
+              errorName: error instanceof Error ? error.name : "Error",
+              errorMessage:
+                error instanceof Error ? error.message : "Command failed",
+            },
+          })
+        }
+      }
+      await this.trace(running, {
+        type: "tool.failed",
+        spanId: toolSpanId,
+        parentSpanId: running.traceRunSpanId,
+        durationMs: performance.now() - startedAt,
+        status: "ERROR",
+        payload: {
+          toolType: request.type,
+          errorName: error instanceof Error ? error.name : "Error",
+          errorMessage:
+            error instanceof Error ? error.message : "Agent tool failed",
+        },
+      })
+      throw error
     }
-    if (isPlaceToolRequest(request)) {
-      return this.executePlaceTool(running, request)
-    }
-    const envelope: TargetCommandEnvelope = {
-      aggregateId: running.workspaceId,
-      expectedRevision: request.expectedRevision,
-      idempotencyKey: request.idempotencyKey,
-      actor: { kind: "AGENT", agentRunId: running.runId },
-      command: targetCommandBodySchema.parse(request.command),
-    }
-    const result = await this.commands.execute(running.context, envelope)
-    const document = await this.commands.getDocument(
-      running.context,
-      running.workspaceId
-    )
-    return { result, workspace: document }
   }
 
   private async executePlaceTool(
@@ -616,6 +834,16 @@ export class AgentGateway {
           now: this.now(),
         }
       )
+      await this.trace(running, {
+        type: running.cancelled || failed ? "run.failed" : "run.completed",
+        spanId: running.traceRunSpanId,
+        status: running.cancelled || failed ? "ERROR" : "OK",
+        payload: {
+          cancelled: running.cancelled,
+          exitCode: result.code,
+          runtimeId: result.metadata.runtimeId,
+        },
+      })
     } catch (error) {
       failed = true
       emit(running.workspaceId, {
@@ -667,6 +895,16 @@ export class AgentGateway {
           now: this.now(),
         }
       )
+      await this.trace(running, {
+        type: "run.failed",
+        spanId: running.traceRunSpanId,
+        status: "ERROR",
+        payload: {
+          errorName: error instanceof Error ? error.name : "Error",
+          errorMessage:
+            error instanceof Error ? error.message : "Agent runtime failed",
+        },
+      })
     } finally {
       this.releaseRuntime(running)
     }

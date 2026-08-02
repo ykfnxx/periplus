@@ -19,6 +19,7 @@
     "test:storybook": "vitest --project=storybook",
     "test:map-integration": "vitest --config vitest.map-integration.config.ts --run",
     "test:e2e": "playwright test",
+    "eval:agent:smoke": "tsx scripts/eval-agent-capabilities.ts",
     "storybook": "storybook dev -p 6006 --no-open",
     "build:storybook": "storybook build",
     "db:seed": "tsx prisma/seed.ts",

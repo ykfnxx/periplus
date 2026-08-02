@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import { AgentGateway } from "@/backend/agent/gateway"
+import {
+  MemoryEvalTraceSink,
+  validateWriteProtocolCapability,
+  verifyEvalTrace,
+  type EvalTraceEvent,
+  type EvalTraceInput,
+  type EvalTraceSink,
+} from "@/backend/agent/evals"
 import type {
   AgentRuntime,
   AgentRuntimeExit,
@@ -56,6 +64,28 @@ class FakeRuntime implements AgentRuntime {
   }
 }
 
+class StateDiffFailingTraceSink implements EvalTraceSink {
+  readonly delegate = new MemoryEvalTraceSink()
+  private failure: Error | null = null
+
+  get events(): readonly EvalTraceEvent[] {
+    return this.delegate.events
+  }
+
+  async emit(input: EvalTraceInput) {
+    if (input.type === "state.diff.recorded") {
+      this.failure = new Error("injected state diff trace failure")
+      throw this.failure
+    }
+    return this.delegate.emit(input)
+  }
+
+  async close() {
+    if (this.failure) throw this.failure
+    await this.delegate.close()
+  }
+}
+
 function graph(id: string): TargetJourneyGraphSnapshot {
   return {
     id,
@@ -94,7 +124,7 @@ function graph(id: string): TargetJourneyGraphSnapshot {
   }
 }
 
-async function setup() {
+async function setup(evalTrace?: { scenarioId: string; sink: EvalTraceSink }) {
   const workspace = await createWorkspace(context, {
     graph: graph(`agent-workspace-${randomUUID()}`),
     now: new Date(now),
@@ -105,6 +135,7 @@ async function setup() {
   const gateway = new AgentGateway(commands, runtime, {
     backendUrl: "http://127.0.0.1:3002",
     projectRoot: "/workspace/periplus",
+    evalTrace,
   })
   const emit = (_workspaceId: string, event: AgentEvent) => events.push(event)
   return { workspace, commands, runtime, events, gateway, emit }
@@ -117,6 +148,140 @@ function capabilityToken(runtime: FakeRuntime) {
 }
 
 describe.sequential("P3 persistent AgentGateway", () => {
+  it("emits a complete headless Eval Trace around Agent commands", async () => {
+    const sink = new MemoryEvalTraceSink()
+    const { workspace, commands, runtime, gateway, emit } = await setup({
+      scenarioId: "gateway-command-observability",
+      sink,
+    })
+    await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
+    await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "eval-update-visit",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "西湖（可观测）" },
+        },
+      },
+    })
+    const replay = await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "eval-update-visit",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "西湖（可观测）" },
+        },
+      },
+    })
+    expect(replay.result.replayedFromIdempotencyKey).toBe(true)
+    await expect(
+      gateway.executeTool(capabilityToken(runtime), {
+        type: "workspace.command",
+        expectedRevision: 0,
+        idempotencyKey: "eval-stale-update",
+        command: {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${workspace.headGraph.id}-visit`,
+            patch: { type: "VISIT", title: "不应写入" },
+          },
+        },
+      })
+    ).rejects.toThrow("updated by another request")
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+          ?.status
+      ).toBe("SUCCEEDED")
+      expect(sink.events.at(-1)?.type).toBe("run.completed")
+    })
+    await sink.close()
+
+    expect(verifyEvalTrace(sink.events)).toEqual({ valid: true, issues: [] })
+    expect(sink.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "run.started",
+        "tool.started",
+        "command.dispatched",
+        "command.applied",
+        "state.diff.recorded",
+        "command.rejected",
+        "tool.failed",
+        "tool.completed",
+        "run.completed",
+      ])
+    )
+    expect(
+      validateWriteProtocolCapability("gateway-command", sink.events).hardPass
+    ).toBe(true)
+    expect(
+      sink.events.filter((event) => event.type === "state.diff.recorded")
+    ).toHaveLength(1)
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        type: "command.applied",
+        payload: expect.objectContaining({
+          replayedFromIdempotencyKey: true,
+        }),
+      })
+    )
+  })
+
+  it("does not change a committed command result when Eval Trace persistence fails", async () => {
+    const sink = new StateDiffFailingTraceSink()
+    const { workspace, commands, runtime, gateway, emit } = await setup({
+      scenarioId: "gateway-trace-failure-isolation",
+      sink,
+    })
+    await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
+
+    const mutation = await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "eval-trace-failure-update",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "西湖（Trace 失败后仍提交）" },
+        },
+      },
+    })
+
+    expect(mutation.result).toMatchObject({ newRevision: 1 })
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session.headGraph
+        .events[0]?.title
+    ).toBe("西湖（Trace 失败后仍提交）")
+    expect(sink.events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.started",
+      "command.dispatched",
+    ])
+    expect(sink.events.some((event) => event.type === "command.rejected")).toBe(
+      false
+    )
+    expect(verifyEvalTrace(sink.events).valid).toBe(false)
+    await expect(sink.close()).rejects.toThrow(
+      "injected state diff trace failure"
+    )
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+          ?.status
+      ).toBe("SUCCEEDED")
+    })
+  })
+
   it("runs with a scoped capability and persists commands/messages across restart", async () => {
     const { workspace, commands, runtime, events, gateway, emit } =
       await setup()
