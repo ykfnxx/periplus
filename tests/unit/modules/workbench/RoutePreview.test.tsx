@@ -252,6 +252,10 @@ describe("target Workspace route preview", () => {
       left: 120,
       behavior: "smooth",
     })
+    choices!.scrollLeft = 300
+    vi.mocked(choices!.scrollTo).mockClear()
+    expect(fireEvent.wheel(choices!, { deltaY: 120 })).toBe(false)
+    expect(choices?.scrollTo).not.toHaveBeenCalled()
     for (const label of ["推荐", "最快", "低价"]) {
       const button = screen.getByText(label).closest("button")
       expect(button).toHaveClass("h-10", "w-[122px]")
@@ -299,6 +303,10 @@ describe("target Workspace route preview", () => {
       left: 90,
       behavior: "smooth",
     })
+    scroller.scrollLeft = 300
+    vi.mocked(scroller.scrollTo).mockClear()
+    expect(fireEvent.wheel(scroller, { deltaY: 90 })).toBe(false)
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
 
     fireEvent.click(within(selector).getByText("最快"))
     expect(sendAgentEvent).toHaveBeenCalledWith(

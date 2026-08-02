@@ -37,13 +37,18 @@ describe("Transit plan choice wheel scrolling", () => {
     expect(event.preventDefault).toHaveBeenCalledOnce()
   })
 
-  it("returns the wheel to the preview at the horizontal boundary", () => {
-    const target = scroller(300)
-    const event = wheelEvent(80)
+  it("keeps the wheel isolated from the preview at either boundary", () => {
+    for (const [scrollLeft, delta] of [
+      [0, -80],
+      [300, 80],
+    ] as const) {
+      const target = scroller(scrollLeft)
+      const event = wheelEvent(delta)
 
-    scrollPlanChoicesHorizontally(target, event)
+      scrollPlanChoicesHorizontally(target, event)
 
-    expect(target.scrollTo).not.toHaveBeenCalled()
-    expect(event.preventDefault).not.toHaveBeenCalled()
+      expect(target.scrollTo).not.toHaveBeenCalled()
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+    }
   })
 })

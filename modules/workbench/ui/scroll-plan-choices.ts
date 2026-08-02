@@ -4,6 +4,8 @@ export function scrollPlanChoicesHorizontally(
   scroller: HTMLDivElement,
   event: WheelEvent
 ) {
+  event.preventDefault()
+
   const delta =
     Math.abs(event.deltaX) > Math.abs(event.deltaY)
       ? event.deltaX
@@ -17,7 +19,6 @@ export function scrollPlanChoicesHorizontally(
   )
   if (nextScrollLeft === scroller.scrollLeft) return
 
-  event.preventDefault()
   scroller.scrollTo({ left: nextScrollLeft, behavior: "smooth" })
 }
 
