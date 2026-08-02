@@ -1,7 +1,10 @@
 "use client"
 
 import { formatTransitDistance } from "@/lib/journeys/display"
-import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import {
+  getJourneyScopeProjection,
+  getJourneyScopeTreeEvents,
+} from "@/lib/journeys/projections"
 import {
   locationCount,
   totalDurationDays,
@@ -23,7 +26,11 @@ export default function AIContextCard() {
 
   if (!graph) return null
 
-  const contextEvents = view.events
+  const contextEvents = getJourneyScopeTreeEvents(
+    graph,
+    viewLevel,
+    activeSectionEventId
+  )
   const days = totalDurationDays(contextEvents)
   const distance = totalTransitDistanceMeters(
     contextEvents,

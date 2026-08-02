@@ -20,6 +20,19 @@ describe("target Workspace route preview", () => {
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
   })
 
+  it("derives the overview duration across nested CITY and DAY scopes", () => {
+    act(() => {
+      useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())
+    })
+
+    render(<RoutePreview />)
+
+    expect(screen.getByRole("heading", { name: "丝绸之路" })).toHaveTextContent(
+      "丝绸之路 · 10 天"
+    )
+    expect(screen.getByText(/0\/9.*含城市内/)).toBeVisible()
+  })
+
   it("labels location cards by domain type without numeric circles", () => {
     act(() => {
       useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())

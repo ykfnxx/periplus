@@ -1,7 +1,10 @@
 "use client"
 
 import { ArrowLeft } from "lucide-react"
-import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import {
+  getJourneyScopeProjection,
+  getJourneyScopeTreeEvents,
+} from "@/lib/journeys/projections"
 import {
   locationCount,
   totalDurationDays,
@@ -28,12 +31,17 @@ export default function MapRouteLevelControls() {
     returnToOverview()
     requestMapFocus({ type: "active-journey", maxZoom: 12 })
   }
-  const days = totalDurationDays(view.events)
-  const minutes = totalDurationMinutes(view.events)
+  const contextEvents = getJourneyScopeTreeEvents(
+    graph,
+    viewLevel,
+    activeSectionEventId
+  )
+  const days = totalDurationDays(contextEvents)
+  const minutes = totalDurationMinutes(contextEvents)
   const mobileTitle =
     view.level === "overview" ? graph.title : `${view.title} · 分段行程`
   const mobileSummary = [
-    `${locationCount(view.events)} 个地点`,
+    `${locationCount(contextEvents)} 个地点`,
     view.level === "overview" && days ? `${days} 天` : null,
     view.level === "section" && minutes ? formatHours(minutes) : null,
   ]

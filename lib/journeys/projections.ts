@@ -35,6 +35,10 @@ const projectionCache = new WeakMap<
   TargetJourneyGraphSnapshot,
   Map<string, JourneyScopeProjection>
 >()
+const treeEventsCache = new WeakMap<
+  TargetJourneyGraphSnapshot,
+  Map<string, TargetJourneyEvent[]>
+>()
 
 export function findSection(
   graph: Pick<TargetJourneyGraphSnapshot, "events">,
@@ -107,4 +111,35 @@ export function executableEvents(events: readonly TargetJourneyEvent[]) {
   return events.filter(
     (event) => event.type !== "SECTION" && event.type !== "NOTE"
   )
+}
+
+export function getJourneyScopeTreeEvents(
+  graph: TargetJourneyGraphSnapshot | null,
+  level: JourneyViewLevel,
+  activeSectionEventId: string | null
+) {
+  if (!graph) return []
+  const cacheKey = `${level}:${activeSectionEventId ?? "root"}`
+  const cached = treeEventsCache.get(graph)?.get(cacheKey)
+  if (cached) return cached
+
+  const root = getJourneyScopeProjection(graph, level, activeSectionEventId)
+  const events: TargetJourneyEvent[] = []
+  const visited = new Set<string>()
+  const collect = (projection: JourneyScopeProjection) => {
+    for (const event of projection.events) {
+      if (visited.has(event.id)) continue
+      visited.add(event.id)
+      events.push(event)
+      if (event.type === "SECTION") {
+        collect(getJourneyScopeProjection(graph, "section", event.id))
+      }
+    }
+  }
+  collect(root)
+
+  const graphCache = treeEventsCache.get(graph) ?? new Map()
+  graphCache.set(cacheKey, events)
+  treeEventsCache.set(graph, graphCache)
+  return events
 }

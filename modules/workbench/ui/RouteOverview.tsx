@@ -1,7 +1,10 @@
 "use client"
 
 import { AlertCircle, ChevronRight, LoaderCircle } from "lucide-react"
-import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import {
+  getJourneyScopeProjection,
+  getJourneyScopeTreeEvents,
+} from "@/lib/journeys/projections"
 import {
   formatTransitDistance,
   formatTransitDuration,
@@ -64,12 +67,9 @@ export default function RouteOverview() {
     (item): item is typeof item & { event: SectionEvent } =>
       item.event.type === "SECTION"
   )
-  const transits = sequence.items.filter(
-    (item): item is typeof item & { event: TransitEvent } =>
-      item.event.type === "TRANSIT"
-  )
-  const childEvents = sections.flatMap(
-    ({ event }) => getJourneyScopeProjection(graph, "section", event.id).events
+  const journeyEvents = getJourneyScopeTreeEvents(graph, "overview", null)
+  const journeyTransits = journeyEvents.filter(
+    (event): event is TransitEvent => event.type === "TRANSIT"
   )
 
   const openSection = (eventId: string) => {
@@ -88,18 +88,15 @@ export default function RouteOverview() {
         <p className="text-[11px] font-black text-ink">行程摘要</p>
         <p className="mt-1 flex flex-wrap items-center gap-x-1 text-[18px] leading-6 font-black text-ink">
           <span>{sections.length} 个城市</span>
-          {totalDurationDays(childEvents) ? (
-            <span>· {totalDurationDays(childEvents)} 天</span>
+          {totalDurationDays(journeyEvents) ? (
+            <span>· {totalDurationDays(journeyEvents)} 天</span>
           ) : null}
-          {totalTransitDistanceMeters(
-            sequence.events,
-            graph.transitPlanningRuns
-          ) ? (
+          {totalTransitDistanceMeters(journeyEvents, graph.transitPlanningRuns) ? (
             <span>
               ·{" "}
               {formatTransitDistance(
                 totalTransitDistanceMeters(
-                  sequence.events,
+                  journeyEvents,
                   graph.transitPlanningRuns
                 )
               )}
@@ -107,8 +104,9 @@ export default function RouteOverview() {
           ) : null}
         </p>
         <p className="mt-1 text-[10px] font-bold text-teak">
-          {locationCount(childEvents)} 个地点 ·
-          {readyTransitCount(sequence.events)}/{transits.length} 段真实路线
+          {locationCount(journeyEvents)} 个地点 ·
+          {readyTransitCount(journeyEvents)}/{journeyTransits.length}
+          段真实路线（含城市内）
         </p>
       </div>
 
