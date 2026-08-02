@@ -83,6 +83,7 @@ export const targetSectionDetailSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("CITY"),
+      timeZone: z.string().trim().min(1),
       placeId: idSchema.optional(),
       lat: z.number().min(-90).max(90).optional(),
       lng: z.number().min(-180).max(180).optional(),

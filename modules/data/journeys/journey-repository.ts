@@ -613,7 +613,7 @@ function sectionDetailData(
     return {
       kind: detail.kind,
       localDate: null,
-      timezone: null,
+      timezone: detail.timeZone,
       placeId: detail.placeId ?? null,
       lat: detail.lat ?? null,
       lng: detail.lng ?? null,

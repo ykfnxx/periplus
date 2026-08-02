@@ -141,7 +141,11 @@ function graph(): TargetJourneyGraphSnapshot {
         ...identity(sectionId, null),
         type: "SECTION",
         title: "Hangzhou",
-        detail: { kind: "CITY", coordinateSystem: "GCJ02" },
+        detail: {
+          kind: "CITY",
+          timeZone: "Asia/Shanghai",
+          coordinateSystem: "GCJ02",
+        },
       },
       visit(startId, "Start", 120.15),
       {

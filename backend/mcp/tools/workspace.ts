@@ -17,6 +17,10 @@ const workspaceProjectionInputSchema = z.object({
   asOfRevision: z.number().int().positive().optional(),
 })
 
+const workspacePlanValidationInputSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+})
+
 function result(value: ReturnType<typeof mcpJsonResult>): CallToolResult {
   return value as CallToolResult
 }
@@ -62,6 +66,26 @@ export function registerWorkspaceTools(server: McpServer): void {
         const parsed = workspaceProjectionInputSchema.parse(input)
         return callWorkspaceBackend({
           type: "workspace.project",
+          ...parsed,
+        })
+      } catch (error) {
+        return errorResult(error)
+      }
+    }
+  )
+  server.registerTool(
+    "periplus.workspace.validate_plan",
+    {
+      title: "Validate current journey plan",
+      description:
+        "Validate the current two-scope journey topology, local-day grouping, and Transit readiness.",
+      inputSchema: workspacePlanValidationInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const parsed = workspacePlanValidationInputSchema.parse(input)
+        return callWorkspaceBackend({
+          type: "workspace.validate_plan",
           ...parsed,
         })
       } catch (error) {

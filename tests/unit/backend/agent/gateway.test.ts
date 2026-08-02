@@ -98,10 +98,11 @@ function graph(id: string): TargetJourneyGraphSnapshot {
       {
         id: `${id}-visit`,
         journeyId: id,
-        parentSectionEventId: null,
+        parentSectionEventId: `${id}-city`,
         placementStatus: "SCHEDULED",
         origin: "ORIGINAL",
         title: "西湖",
+        plannedStartAt: now,
         introducedRevision: 1,
         createdAt: now,
         updatedAt: now,
@@ -110,6 +111,25 @@ function graph(id: string): TargetJourneyGraphSnapshot {
         detail: {
           plannedLat: 30.25,
           plannedLng: 120.15,
+          coordinateSystem: "GCJ02",
+        },
+      },
+      {
+        id: `${id}-city`,
+        journeyId: id,
+        parentSectionEventId: null,
+        placementStatus: "SCHEDULED",
+        origin: "ORIGINAL",
+        title: "杭州",
+        introducedRevision: 1,
+        createdAt: now,
+        updatedAt: now,
+        type: "SECTION",
+        detail: {
+          kind: "CITY",
+          timeZone: "Asia/Shanghai",
+          lat: 30.2741,
+          lng: 120.1551,
           coordinateSystem: "GCJ02",
         },
       },
@@ -194,6 +214,10 @@ describe.sequential("P3 persistent AgentGateway", () => {
         },
       })
     ).rejects.toThrow("updated by another request")
+    await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.validate_plan",
+      expectedRevision: 1,
+    })
     runtime.exit(0)
     await vi.waitFor(async () => {
       expect(
@@ -273,6 +297,11 @@ describe.sequential("P3 persistent AgentGateway", () => {
       "injected state diff trace failure"
     )
 
+    await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.validate_plan",
+      expectedRevision: 1,
+    })
+
     runtime.exit(0)
     await vi.waitFor(async () => {
       expect(
@@ -320,6 +349,12 @@ describe.sequential("P3 persistent AgentGateway", () => {
       },
     })
     expect(mutation.result).toMatchObject({ newRevision: 1 })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_plan",
+        expectedRevision: 1,
+      })
+    ).resolves.toMatchObject({ valid: true })
 
     runtime.observer?.onStdout("已完成")
     runtime.exit(0)
@@ -344,6 +379,77 @@ describe.sequential("P3 persistent AgentGateway", () => {
     await expect(
       gateway.executeTool(token, { type: "workspace.get" })
     ).rejects.toThrow("invalid or expired")
+  })
+
+  it("fails a mutated run that does not validate its final revision", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "更新路线", "auto", emit)
+    await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "unvalidated-update",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "未校验更新" },
+        },
+      },
+    })
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+      ).toMatchObject({
+        status: "FAILED",
+        errorCode: "PLAN_VALIDATION_REQUIRED",
+      })
+    })
+  })
+
+  it("invalidates a successful report after another graph mutation", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "连续更新路线", "auto", emit)
+    const token = capabilityToken(runtime)
+    await gateway.executeTool(token, {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "validated-update",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "第一次更新" },
+        },
+      },
+    })
+    await gateway.executeTool(token, {
+      type: "workspace.validate_plan",
+      expectedRevision: 1,
+    })
+    await gateway.executeTool(token, {
+      type: "workspace.command",
+      expectedRevision: 1,
+      idempotencyKey: "stale-validation-update",
+      command: {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-visit`,
+          patch: { type: "VISIT", title: "第二次更新" },
+        },
+      },
+    })
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+      ).toMatchObject({
+        status: "FAILED",
+        errorCode: "PLAN_VALIDATION_REQUIRED",
+      })
+    })
   })
 
   it("uses no mutation tools in suggest mode and persists the suggestion", async () => {
