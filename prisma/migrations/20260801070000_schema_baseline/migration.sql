@@ -242,7 +242,7 @@ CREATE TABLE "SectionEventDetail" (
     CONSTRAINT "SectionEventDetail_kind_check" CHECK ("kind" IN ('CITY', 'DAY', 'THEME')),
     CONSTRAINT "SectionEventDetail_shape_check" CHECK (
       ("kind" = 'DAY' AND "localDate" IS NOT NULL AND "localDate" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND "timezone" IS NOT NULL AND length(trim("timezone")) > 0 AND "placeId" IS NULL AND "lat" IS NULL AND "lng" IS NULL AND "coordinateSystem" IS NULL AND "sourcePackId" IS NULL) OR
-      ("kind" = 'CITY' AND "localDate" IS NULL AND "timezone" IS NULL AND "sourcePackId" IS NULL AND ("lat" IS NULL OR "lat" BETWEEN -90 AND 90) AND ("lng" IS NULL OR "lng" BETWEEN -180 AND 180) AND ("coordinateSystem" IS NULL OR "coordinateSystem" IN ('WGS84', 'GCJ02', 'BD09', 'LOCAL'))) OR
+      ("kind" = 'CITY' AND "localDate" IS NULL AND "timezone" IS NOT NULL AND length(trim("timezone")) > 0 AND "sourcePackId" IS NULL AND ("lat" IS NULL OR "lat" BETWEEN -90 AND 90) AND ("lng" IS NULL OR "lng" BETWEEN -180 AND 180) AND ("coordinateSystem" IS NULL OR "coordinateSystem" IN ('WGS84', 'GCJ02', 'BD09', 'LOCAL'))) OR
       ("kind" = 'THEME' AND "localDate" IS NULL AND "timezone" IS NULL AND "placeId" IS NULL AND "lat" IS NULL AND "lng" IS NULL AND "coordinateSystem" IS NULL)
     ),
     CONSTRAINT "SectionEventDetail_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "JourneyEvent" ("id") ON DELETE CASCADE ON UPDATE CASCADE,

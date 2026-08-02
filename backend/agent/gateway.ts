@@ -11,10 +11,12 @@ import {
 import {
   targetCommandBodySchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
+  type PlanValidationReport,
   type TargetCommandEnvelope,
   type TargetCommandResult,
 } from "@/modules/data-model/contracts"
 import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
+import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
 import {
   createPlaceIntelligenceService,
   type PlaceIntelligenceService,
@@ -28,6 +30,7 @@ import {
   reconcileExpiredWorkspaceAgentRun,
   startWorkspaceAgentRun,
   WorkspaceInputError,
+  WorkspaceRevisionConflictError,
 } from "@/modules/data/workspaces/workspace-repository"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import type {
@@ -82,10 +85,18 @@ interface RunningAgent {
   heartbeatTimer: ReturnType<typeof setInterval> | null
   traceRunSpanId: string
   traceFailure: Error | null
+  requiresPlanValidation: boolean
+  lastPlanValidation: PlanValidationReport | null
 }
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("workspace.get") }).strict(),
+  z
+    .object({
+      type: z.literal("workspace.validate_plan"),
+      expectedRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal("workspace.project"),
@@ -157,6 +168,14 @@ function withoutRequestId<T extends { requestId: string }>(
   const output: Partial<T> = { ...input }
   delete output.requestId
   return output as Omit<T, "requestId">
+}
+
+function changesJourneyGraph(commandName: string) {
+  return (
+    commandName.startsWith("journey.") ||
+    commandName === "workspace.refresh" ||
+    commandName === "workspace.replay"
+  )
 }
 
 function conversationMessages(
@@ -308,6 +327,8 @@ export class AgentGateway {
       heartbeatTimer: null,
       traceRunSpanId: randomUUID(),
       traceFailure: null,
+      requiresPlanValidation: false,
+      lastPlanValidation: null,
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
@@ -390,6 +411,10 @@ export class AgentGateway {
     projection: ReturnType<typeof resolveJourneyProjection>
     headWorkspaceRevision: number
   }>
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.validate_plan" }>
+  ): Promise<PlanValidationReport>
   async executeTool(
     capabilityToken: string,
     request: Extract<AgentToolRequest, { type: "workspace.command" }>
@@ -483,6 +508,35 @@ export class AgentGateway {
           }),
           headWorkspaceRevision: document.session.headWorkspaceRevision,
         }
+      } else if (request.type === "workspace.validate_plan") {
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        if (!document) throw new WorkspaceInputError("Workspace was not found")
+        if (
+          document.session.headWorkspaceRevision !== request.expectedRevision
+        ) {
+          throw new WorkspaceRevisionConflictError()
+        }
+        const validation = validateJourneyPlan({
+          graph: document.session.headGraph,
+          workspaceRevision: document.session.headWorkspaceRevision,
+        })
+        running.lastPlanValidation = validation
+        await this.trace(running, {
+          type: "validator.completed",
+          spanId: randomUUID(),
+          parentSpanId: toolSpanId,
+          status: "OK",
+          payload: {
+            valid: validation.valid,
+            issueCodes: validation.issues.map((issue) => issue.code),
+            projectionHash: validation.projectionHash,
+            workspaceRevision: validation.workspaceRevision,
+          },
+        })
+        output = validation
       } else if (isPlaceToolRequest(request)) {
         output = await this.executePlaceTool(running, request)
       } else {
@@ -495,6 +549,10 @@ export class AgentGateway {
         }
         const result = await this.commands.execute(running.context, envelope)
         appliedCommandResult = result
+        if (changesJourneyGraph(result.commandName)) {
+          running.requiresPlanValidation = true
+          running.lastPlanValidation = null
+        }
         const document = await this.commands.getDocument(
           running.context,
           running.workspaceId
@@ -789,6 +847,7 @@ export class AgentGateway {
     running.heartbeatTimer = null
 
     let failed = running.runtimeFailed || result.code !== 0
+    let validationErrorCode: string | undefined
     try {
       if (running.stdout) {
         await appendWorkspaceMessage(running.context, running.workspaceId, {
@@ -805,6 +864,56 @@ export class AgentGateway {
           commandPayloads: suggestion.commandPayloads,
           basedOnWorkspaceRevision: suggestion.basedOnWorkspaceRevision,
         })
+      }
+      if (
+        mode === "auto" &&
+        !failed &&
+        !running.cancelled &&
+        running.requiresPlanValidation
+      ) {
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        if (!document) throw new WorkspaceInputError("Workspace was not found")
+        const finalValidation = validateJourneyPlan({
+          graph: document.session.headGraph,
+          workspaceRevision: document.session.headWorkspaceRevision,
+        })
+        const lastValidation = running.lastPlanValidation
+        const passed =
+          lastValidation?.valid === true &&
+          finalValidation.valid &&
+          lastValidation.workspaceRevision ===
+            finalValidation.workspaceRevision &&
+          lastValidation.projectionHash === finalValidation.projectionHash
+        await this.trace(running, {
+          type: "validator.completed",
+          spanId: randomUUID(),
+          parentSpanId: running.traceRunSpanId,
+          status: "OK",
+          payload: {
+            valid: passed,
+            issueCodes: finalValidation.issues.map((issue) => issue.code),
+            projectionHash: finalValidation.projectionHash,
+            workspaceRevision: finalValidation.workspaceRevision,
+            finalGate: true,
+          },
+        })
+        if (!passed) {
+          failed = true
+          validationErrorCode = lastValidation
+            ? "PLAN_VALIDATION_FAILED"
+            : "PLAN_VALIDATION_REQUIRED"
+          emit(running.workspaceId, {
+            type: "agent.run.failed",
+            payload: {
+              runId: running.runId,
+              code: validationErrorCode,
+              validation: finalValidation,
+            },
+          })
+        }
       }
     } catch (error) {
       failed = true
@@ -829,7 +938,10 @@ export class AgentGateway {
             : failed
               ? "FAILED"
               : "SUCCEEDED",
-          errorCode: failed ? "AGENT_RUNTIME_FAILED" : undefined,
+          errorCode: failed
+            ? (validationErrorCode ?? "AGENT_RUNTIME_FAILED")
+            : undefined,
+          errorMessage: validationErrorCode,
           runtimeOwnerId: this.runtimeOwnerId,
           now: this.now(),
         }

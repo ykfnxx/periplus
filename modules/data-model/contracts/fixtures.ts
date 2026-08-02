@@ -49,7 +49,11 @@ function cityEvent(
     ...eventIdentity(id, journeyId, parentSectionEventId),
     type: "SECTION",
     title,
-    detail: { kind: "CITY", coordinateSystem: "GCJ02" },
+    detail: {
+      kind: "CITY",
+      timeZone: "Asia/Shanghai",
+      coordinateSystem: "GCJ02",
+    },
   }
 }
 

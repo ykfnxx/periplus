@@ -84,7 +84,11 @@ function section(
     createdAt: now,
     updatedAt: now,
     type: "SECTION",
-    detail: { kind: "CITY", coordinateSystem: "GCJ02" },
+    detail: {
+      kind: "CITY",
+      timeZone: "Asia/Shanghai",
+      coordinateSystem: "GCJ02",
+    },
   }
 }
 

@@ -28,6 +28,11 @@ export const TARGET_FIELD_AUTHORITY = [
     source: "DAY scheduling input",
   },
   {
+    field: "CITY SectionEventDetail.timeZone",
+    authority: "TARGET",
+    source: "local-day planning scope",
+  },
+  {
     field: "SectionEvent.startAt/endAt/duration",
     authority: "DERIVED",
     source: "active child events in resolved projection",

@@ -99,6 +99,7 @@ function buildJourneyGraph(): TargetJourneyGraphSnapshot {
         title: "杭州",
         detail: {
           kind: "CITY" as const,
+          timeZone: "Asia/Shanghai",
           placeId: ids.placeWestLake,
           lat: 30.246,
           lng: 120.146,
@@ -412,6 +413,14 @@ async function seedJourney(graph: TargetJourneyGraphSnapshot) {
           data: {
             eventId: event.id,
             kind: event.detail.kind,
+            timezone:
+              event.detail.kind === "CITY"
+                ? event.detail.timeZone
+                : event.detail.kind === "DAY"
+                  ? event.detail.timezone
+                  : undefined,
+            localDate:
+              event.detail.kind === "DAY" ? event.detail.localDate : undefined,
             placeId:
               event.detail.kind === "CITY" ? event.detail.placeId : undefined,
             lat: event.detail.kind === "CITY" ? event.detail.lat : undefined,

@@ -72,7 +72,7 @@ function citySection(
   return {
     ...eventIdentity(journeyId, id, null, title, description),
     type: "SECTION",
-    detail: { kind: "CITY", lat, lng, coordinateSystem },
+    detail: { kind: "CITY", timeZone: timezone, lat, lng, coordinateSystem },
   }
 }
 

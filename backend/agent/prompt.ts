@@ -5,6 +5,14 @@ function formatConversationMessage(message: AgentConversationMessage) {
   return `${message.role === "user" ? "用户" : "Agent"}：\n${message.content}`
 }
 
+const journeyPlanningProtocol = [
+  "行程图只允许两级 Scope：Root Scope 与 City Scope。",
+  "Root Scope 必须由 CITY 与跨城 TRANSIT 交替组成；不得创建 DAY Section。",
+  "City Scope 直接包含该城市全部日期的 VISIT、MEAL、ACTIVITY 与市内 TRANSIT；日期由后端依据 CITY.detail.timeZone 和 plannedStartAt 切分。",
+  "当前版本不得主动创建 STAY。每个地点事件必须填写 plannedStartAt；CITY.detail.timeZone 必须使用 IANA 时区名称。",
+  "同一天相邻地点必须通过显式 TRANSIT 及前后 Link 串联，并调用 journey.plan_transit 得到 READY 路线。",
+]
+
 function basePrompt(messages: AgentConversationMessage[]) {
   return [
     "你是 Periplus 的旅程规划 Agent。",
@@ -12,6 +20,7 @@ function basePrompt(messages: AgentConversationMessage[]) {
     "SECTION 只用于层级分组，VISIT/STAY/MEAL/ACTIVITY/TRANSIT 才是可执行事件；TRANSIT 必须是显式事件。",
     "修改前读取 headWorkspaceRevision；每个 command 都传 expectedRevision 和唯一 idempotencyKey，成功后使用返回的新 revision。",
     "任何有序路线、分支选择、位置序号或时间视图都必须调用 periplus.workspace.project 获取；workspace.get 的 canonical graph 只用于定位编辑对象，禁止自行排序 Links/Events。",
+    ...journeyPlanningProtocol,
     "下面是当前会话从开始到现在的完整上下文，请基于历史继续对话，只执行最后一条用户需求。",
     "",
     "完整对话：",
@@ -65,5 +74,7 @@ export function buildPrompt(
   return [
     ...basePrompt(messages),
     "只能通过 MCP 工具读取和修改当前 Workspace，不要读写项目文件，不要直接连接数据库。",
+    "完成全部修改后必须调用 periplus.workspace.validate_plan，并传入最新 headWorkspaceRevision。",
+    "如果 valid=false，只按 issues 修复并使用最新 revision 再次校验，最多修复三轮；只有 valid=true 且之后未再修改 Workspace 才能向用户声明完成。",
   ].join("\n")
 }

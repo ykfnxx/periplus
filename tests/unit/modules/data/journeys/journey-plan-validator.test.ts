@@ -1,0 +1,225 @@
+import { describe, expect, it } from "vitest"
+import type {
+  TargetJourneyEvent,
+  TargetJourneyEventLink,
+  TargetJourneyGraphSnapshot,
+} from "@/modules/data-model/contracts"
+import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
+
+const NOW = "2026-08-01T01:00:00.000Z"
+
+function identity(id: string, parentSectionEventId: string | null) {
+  return {
+    id,
+    journeyId: "journey-plan",
+    parentSectionEventId,
+    placementStatus: "SCHEDULED" as const,
+    origin: "ORIGINAL" as const,
+    introducedRevision: 1,
+    createdAt: NOW,
+    updatedAt: NOW,
+  }
+}
+
+function city(timeZone = "Asia/Shanghai"): TargetJourneyEvent {
+  return {
+    ...identity("city", null),
+    type: "SECTION",
+    title: "西安",
+    detail: {
+      kind: "CITY",
+      timeZone,
+      lat: 34.3416,
+      lng: 108.9398,
+      coordinateSystem: "GCJ02",
+    },
+  }
+}
+
+function visit(id: string, plannedStartAt: string): TargetJourneyEvent {
+  return {
+    ...identity(id, "city"),
+    type: "VISIT",
+    executionStatus: "PLANNED",
+    title: id,
+    plannedStartAt,
+    detail: {
+      plannedLat: 34.34,
+      plannedLng: 108.94,
+      coordinateSystem: "GCJ02",
+    },
+  }
+}
+
+function transit(fromEventId: string, toEventId: string): TargetJourneyEvent {
+  return {
+    ...identity("transit", "city"),
+    type: "TRANSIT",
+    executionStatus: "PLANNED",
+    title: "市内交通",
+    detail: {
+      plannedFromEventId: fromEventId,
+      plannedToEventId: toEventId,
+      transportMode: "CAR",
+      routeState: "EMPTY",
+    },
+  }
+}
+
+function link(
+  id: string,
+  fromEventId: string,
+  toEventId: string,
+  rank: number
+): TargetJourneyEventLink {
+  return {
+    id,
+    journeyId: "journey-plan",
+    fromEventId,
+    toEventId,
+    kind: "MAIN",
+    rank,
+    introducedRevision: 1,
+  }
+}
+
+function graph(
+  events: TargetJourneyEvent[],
+  links: TargetJourneyEventLink[] = []
+): TargetJourneyGraphSnapshot {
+  return {
+    id: "journey-plan",
+    ownerId: "owner",
+    revision: 1,
+    status: "DRAFT",
+    visibility: "PRIVATE",
+    title: "西安行程",
+    events,
+    links,
+    replacements: [],
+    branchSelections: [],
+    transitPlanningRuns: [],
+    eventAssetLinks: [],
+    observations: [],
+    eventSourceLinks: [],
+  }
+}
+
+describe("validateJourneyPlan", () => {
+  it("accepts one City Scope with a dated place", () => {
+    const report = validateJourneyPlan({
+      graph: graph([city(), visit("wall", NOW)]),
+      workspaceRevision: 3,
+    })
+
+    expect(report).toMatchObject({ valid: true, workspaceRevision: 3 })
+    expect(report.issues).toEqual([])
+  })
+
+  it("rejects Agent-authored DAY at root", () => {
+    const day: TargetJourneyEvent = {
+      ...identity("day", null),
+      type: "SECTION",
+      title: "第一天",
+      detail: {
+        kind: "DAY",
+        localDate: "2026-08-01",
+        timezone: "Asia/Shanghai",
+      },
+    }
+    const report = validateJourneyPlan({
+      graph: graph([day]),
+      workspaceRevision: 0,
+    })
+
+    expect(report.valid).toBe(false)
+    expect(report.issues.map((issue) => issue.code)).toContain(
+      "ROOT_EVENT_TYPE_INVALID"
+    )
+  })
+
+  it("requires Transit between same-day places", () => {
+    const report = validateJourneyPlan({
+      graph: graph(
+        [
+          city(),
+          visit("wall", "2026-08-01T01:00:00.000Z"),
+          visit("meal", "2026-08-01T04:00:00.000Z"),
+        ],
+        [link("direct", "wall", "meal", 0)]
+      ),
+      workspaceRevision: 2,
+    })
+
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        code: "MISSING_TRANSIT_BETWEEN",
+        localDate: "2026-08-01",
+        eventIds: ["wall", "meal"],
+      })
+    )
+  })
+
+  it("allows the backend-derived day boundary without Transit", () => {
+    const report = validateJourneyPlan({
+      graph: graph(
+        [
+          city(),
+          visit("day-one", "2026-08-01T01:00:00.000Z"),
+          visit("day-two", "2026-08-02T01:00:00.000Z"),
+        ],
+        [link("day-boundary", "day-one", "day-two", 0)]
+      ),
+      workspaceRevision: 2,
+    })
+
+    expect(report.valid).toBe(true)
+  })
+
+  it("rejects unsupported stays and unplanned Transit routes", () => {
+    const stay: TargetJourneyEvent = {
+      ...identity("stay", "city"),
+      type: "STAY",
+      executionStatus: "PLANNED",
+      title: "酒店",
+      plannedStartAt: NOW,
+      detail: {
+        plannedLat: 34.34,
+        plannedLng: 108.94,
+        coordinateSystem: "GCJ02",
+      },
+    }
+    const report = validateJourneyPlan({
+      graph: graph(
+        [
+          city(),
+          visit("wall", "2026-08-01T01:00:00.000Z"),
+          transit("wall", "meal"),
+          visit("meal", "2026-08-01T04:00:00.000Z"),
+          stay,
+        ],
+        [
+          link("before-transit", "wall", "transit", 0),
+          link("after-transit", "transit", "meal", 1),
+          link("after-meal", "meal", "stay", 2),
+        ]
+      ),
+      workspaceRevision: 4,
+    })
+
+    expect(report.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["TRANSIT_ROUTE_NOT_READY", "STAY_NOT_SUPPORTED"])
+    )
+  })
+
+  it("rejects a non-IANA City timezone", () => {
+    const report = validateJourneyPlan({
+      graph: graph([city("Shanghai time"), visit("wall", NOW)]),
+      workspaceRevision: 1,
+    })
+
+    expect(report.issues.map((issue) => issue.code)).toContain(
+      "CITY_TIMEZONE_INVALID"
+    )
+  })
+})

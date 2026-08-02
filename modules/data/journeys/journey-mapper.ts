@@ -210,12 +210,13 @@ function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
         },
       }
     }
-    if (detail.kind === "CITY") {
+    if (detail.kind === "CITY" && detail.timezone) {
       return {
         ...eventBase(event),
         type: "SECTION",
         detail: {
           kind: "CITY",
+          timeZone: detail.timezone,
           placeId: detail.placeId ?? undefined,
           lat: detail.lat ?? undefined,
           lng: detail.lng ?? undefined,

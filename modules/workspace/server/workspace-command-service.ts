@@ -28,6 +28,7 @@ import {
   validateJourneyGraph,
   validateJourneyGraphTransition,
 } from "@/modules/data/journeys/journey-graph-validator"
+import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
 import {
   getJourney,
   getJourneyRevision,
@@ -1327,6 +1328,19 @@ async function executeLifecycleCommand(
     return commandResult(result.revision, result.replayedFromIdempotencyKey)
   }
   if (command.name === "workspace.commit") {
+    if (envelope.actor.kind === "AGENT") {
+      const validation = validateJourneyPlan({
+        graph: document.session.headGraph,
+        workspaceRevision: envelope.expectedRevision,
+      })
+      if (!validation.valid) {
+        throw new WorkspaceInputError(
+          `Journey plan validation failed: ${validation.issues
+            .map((issue) => issue.code)
+            .join(", ")}`
+        )
+      }
+    }
     const revisions = await verifiedWorkspaceHistory(
       context,
       document,
