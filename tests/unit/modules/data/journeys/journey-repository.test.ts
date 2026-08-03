@@ -171,6 +171,38 @@ function write(
 }
 
 describe("P2A Journey core repository", () => {
+  it("persists an attraction provider cover snapshot", async () => {
+    const initial = graph(`journey-cover-${randomUUID()}`, ["visit"])
+    const attraction = initial.events[0] as Extract<
+      TargetJourneyEvent,
+      { type: "VISIT" }
+    >
+    attraction.detail.providerCoverImage = {
+      provider: "amap",
+      url: "https://images.example/attraction.jpg",
+      fetchedAt: "2026-08-03T00:00:00.000Z",
+    }
+
+    const created = await createJourney(
+      context,
+      write(initial, "create attraction cover", "create-cover")
+    )
+
+    expect(created.events[0]).toMatchObject({
+      type: "VISIT",
+      detail: { providerCoverImage: attraction.detail.providerCoverImage },
+    })
+    await expect(
+      prisma.visitEventDetail.findUniqueOrThrow({
+        where: { eventId: attraction.id },
+      })
+    ).resolves.toMatchObject({
+      providerCoverImageJson: JSON.stringify(
+        attraction.detail.providerCoverImage
+      ),
+    })
+  })
+
   it("persists one immutable revision per atomic graph write and replays idempotently", async () => {
     const initial = graph(`journey-revision-${randomUUID()}`, ["visit"])
     const created = await createJourney(

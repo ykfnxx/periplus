@@ -1,3 +1,5 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { periplusServerConfig } from "@/config/periplus.server"
 import type {
   HotelCandidate,
@@ -26,10 +28,8 @@ interface RollingGoSearchResult {
   hotelInformationList?: RollingGoHotel[]
 }
 
-interface RollingGoMcpResponse {
-  result?: {
-    content?: Array<{ type?: string; text?: string }>
-  }
+interface RollingGoMcpToolResult {
+  content?: Array<{ type?: string; text?: string }>
 }
 
 function httpsUrl(value: string | undefined) {
@@ -49,8 +49,8 @@ function normalizedSize(size: number | undefined) {
   return Math.min(Math.max(size ?? 5, 1), 10)
 }
 
-function parseSearchResult(response: RollingGoMcpResponse) {
-  const text = response.result?.content?.find(
+function parseSearchResult(response: RollingGoMcpToolResult) {
+  const text = response.content?.find(
     (content) => content.type === "text" && content.text
   )?.text
   if (!text) throw new Error("RollingGo returned no hotel search result")
@@ -112,52 +112,34 @@ export class RollingGoHotelProvider {
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 8_000)
-    try {
-      const response = await fetch(periplusServerConfig.rollinggo.hotelUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
+    const transport = new StreamableHTTPClientTransport(
+      new URL(periplusServerConfig.rollinggo.hotelUrl),
+      {
+        requestInit: {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: controller.signal,
         },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: {
-            name: "searchHotels",
-            arguments: {
-              originQuery: input.originQuery,
-              place: input.place,
-              placeType: input.placeType,
-              countryCode: input.countryCode,
-              size: normalizedSize(input.size),
-              checkInParam: {
-                checkInDate: input.checkInDate,
-                stayNights: input.stayNights,
-                adultCount: input.adultCount,
-              },
+      }
+    )
+    const client = new Client({ name: "periplus-rollinggo", version: "1.0.0" })
+    try {
+      await client.connect(transport)
+      const result = parseSearchResult(
+        (await client.callTool({
+          name: "searchHotels",
+          arguments: {
+            originQuery: input.originQuery,
+            place: input.place,
+            placeType: input.placeType,
+            countryCode: input.countryCode,
+            size: normalizedSize(input.size),
+            checkInParam: {
+              checkInDate: input.checkInDate,
+              stayNights: input.stayNights,
+              adultCount: input.adultCount,
             },
           },
-          id: 1,
-        }),
-        signal: controller.signal,
-      })
-      if (!response.ok) {
-        return {
-          candidates: [],
-          warnings: [
-            {
-              provider: "rollinggo",
-              code:
-                response.status === 429 ? "quota_exceeded" : "provider_error",
-              message: `RollingGo 酒店检索失败 (${response.status})`,
-            },
-          ],
-        }
-      }
-
-      const result = parseSearchResult(
-        (await response.json()) as RollingGoMcpResponse
+        })) as RollingGoMcpToolResult
       )
       const fetchedAt = new Date().toISOString()
       return {
@@ -180,6 +162,7 @@ export class RollingGoHotelProvider {
       return { candidates: [], warnings: [warning] }
     } finally {
       clearTimeout(timeout)
+      await client.close()
     }
   }
 }

@@ -131,6 +131,7 @@ export interface PlaceSearchResponse {
 export interface PlaceResolveInput {
   text: string
   city?: string
+  intent?: PlaceSearchIntent
   journeyContext?: {
     currentCity?: string
     nearbyEventIds?: string[]
@@ -159,6 +160,11 @@ export type PlaceResolveForJourneyEventResult =
               coordinateSystem: CoordinateSystem
               coordinateProvider?: string
               providerPlaceId?: string
+              providerCoverImage?: {
+                provider: "amap"
+                url: string
+                fetchedAt: string
+              }
             }
           }
         }

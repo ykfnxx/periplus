@@ -673,7 +673,13 @@ async function createEventDetail(
     })
   } else if (event.type === "VISIT") {
     await tx.visitEventDetail.create({
-      data: { eventId: event.id, ...locationDetailData(event.detail) },
+      data: {
+        eventId: event.id,
+        ...locationDetailData(event.detail),
+        providerCoverImageJson: event.detail.providerCoverImage
+          ? JSON.stringify(event.detail.providerCoverImage)
+          : null,
+      },
     })
   } else if (event.type === "STAY") {
     await tx.stayEventDetail.create({
@@ -725,7 +731,12 @@ async function updateEventDetail(
   } else if (event.type === "VISIT") {
     await tx.visitEventDetail.update({
       where: { eventId: event.id },
-      data: locationDetailData(event.detail),
+      data: {
+        ...locationDetailData(event.detail),
+        providerCoverImageJson: event.detail.providerCoverImage
+          ? JSON.stringify(event.detail.providerCoverImage)
+          : null,
+      },
     })
   } else if (event.type === "STAY") {
     await tx.stayEventDetail.update({

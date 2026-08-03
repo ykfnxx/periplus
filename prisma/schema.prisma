@@ -577,6 +577,7 @@ model VisitEventDetail {
   providerPlaceId        String?
   plannedDurationMinutes Int?
   actualDurationMinutes  Int?
+  providerCoverImageJson String?
 
   event        JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   plannedPlace Place?       @relation("VisitPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)

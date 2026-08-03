@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it } from "vitest"
 import { createSilkRoadJourney } from "@/lib/mock-journeys"
 import ChatHistory from "@/modules/workbench/ui/ChatHistory"
@@ -94,5 +94,7 @@ describe("target Workspace chat history", () => {
       "src",
       "https://images.example/terracotta.jpg"
     )
+    fireEvent.error(screen.getByAltText("兵马俑"))
+    expect(screen.getByTestId("provider-image-fallback-SIGHT")).toBeVisible()
   })
 })

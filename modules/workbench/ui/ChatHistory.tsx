@@ -2,11 +2,11 @@
 
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import Image from "next/image"
-import { ExternalLink, Hotel, MapPin } from "lucide-react"
+import { ExternalLink, MapPin } from "lucide-react"
 import type { TargetWorkspaceMessage } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { selectWorkspaceLocked } from "@/modules/workspace/state/selectors"
+import { ProviderImage } from "./ProviderImage"
 
 export default function ChatHistory() {
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
@@ -89,7 +89,11 @@ function SearchResultCards({
                 key={hotel.candidateId}
                 className="min-w-[238px] overflow-hidden rounded-xl border border-ink-10 bg-white shadow-periplus-soft md:grid md:min-w-0 md:grid-cols-[104px_1fr]"
               >
-                <CardImage src={hotel.imageUrl} label={hotel.name} />
+                <CardImage
+                  src={hotel.imageUrl}
+                  label={hotel.name}
+                  category="HOTEL"
+                />
                 <div className="p-3">
                   <p className="truncate text-sm font-black text-ink">
                     {hotel.name}
@@ -139,7 +143,11 @@ function SearchResultCards({
               key={place.candidateId}
               className="min-w-[220px] overflow-hidden rounded-xl border border-ink-10 bg-white shadow-periplus-soft md:grid md:min-w-0 md:grid-cols-[104px_1fr]"
             >
-              <CardImage src={place.imageUrl} label={place.name} />
+              <CardImage
+                src={place.imageUrl}
+                label={place.name}
+                category={place.category}
+              />
               <div className="p-3">
                 <p className="truncate text-sm font-black text-ink">
                   {place.name}
@@ -161,20 +169,24 @@ function SearchResultCards({
   })
 }
 
-function CardImage({ src, label }: { src?: string; label: string }) {
-  return src ? (
-    <Image
+function CardImage({
+  src,
+  label,
+  category,
+}: {
+  src?: string
+  label: string
+  category: string
+}) {
+  return (
+    <ProviderImage
       src={src}
       alt={label}
+      category={category}
       width={320}
       height={160}
-      unoptimized
       className="h-28 w-full object-cover md:h-full"
     />
-  ) : (
-    <div className="flex h-28 items-center justify-center bg-route-summary text-olive md:h-full">
-      <Hotel className="h-6 w-6" aria-hidden="true" />
-    </div>
   )
 }
 

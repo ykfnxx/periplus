@@ -1,4 +1,5 @@
 import { decideProviderMatch } from "@/lib/places/matching"
+import { isAttractionCategory } from "@/lib/places/attractions"
 import { normalizePlaceSearchInput } from "@/lib/places/normalize"
 import { planPlaceProviderSearch } from "@/lib/places/policy"
 import { rankPlaceCandidates } from "@/lib/places/ranker"
@@ -106,6 +107,7 @@ export class PlaceIntelligenceService {
       {
         query: input.text,
         city: input.city ?? input.journeyContext?.currentCity,
+        intent: input.intent,
         limit: 5,
         includeLiveProvider: true,
         coordinatePreference: "auto",
@@ -149,7 +151,14 @@ export class PlaceIntelligenceService {
     eventType: LocationEventType,
     usageContext?: PlaceProviderUsageContext
   ): Promise<PlaceResolveForJourneyEventResult> {
-    const resolved = await this.resolvePlace(input, usageContext)
+    const resolved = await this.resolvePlace(
+      {
+        ...input,
+        intent:
+          input.intent ?? (eventType === "VISIT" ? "sightseeing" : undefined),
+      },
+      usageContext
+    )
     if (resolved.status !== "resolved") return resolved
 
     const externalSource = resolved.place.sources.find(
@@ -157,6 +166,10 @@ export class PlaceIntelligenceService {
         source.provider === resolved.place.bestCoordinate.provider &&
         source.providerId
     )
+    const providerCoverImage =
+      eventType === "VISIT" && isAttractionCategory(resolved.place.category)
+        ? resolved.place.images?.find((image) => image.provider === "amap")
+        : undefined
     const command: Extract<
       PlaceResolveForJourneyEventResult,
       { status: "ready" }
@@ -176,6 +189,15 @@ export class PlaceIntelligenceService {
             coordinateProvider: resolved.place.bestCoordinate.provider,
             ...(externalSource?.providerId
               ? { providerPlaceId: externalSource.providerId }
+              : {}),
+            ...(providerCoverImage
+              ? {
+                  providerCoverImage: {
+                    provider: "amap" as const,
+                    url: providerCoverImage.url,
+                    fetchedAt: providerCoverImage.fetchedAt,
+                  },
+                }
               : {}),
           },
         },

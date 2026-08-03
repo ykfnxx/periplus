@@ -4,6 +4,11 @@ import { z } from "zod"
 import type { AuthContext } from "@/modules/auth/server/context"
 import { hotelSearchInputSchema } from "@/backend/mcp/schemas/hotel"
 import {
+  isAttractionCategory,
+  isAttractionSearch,
+} from "@/lib/places/attractions"
+import type { HotelCandidate } from "@/lib/hotels/types"
+import {
   placeEnrichInputSchema,
   placeResolveForJourneyEventInputSchema,
   placeResolveInputSchema,
@@ -94,6 +99,25 @@ interface RunningAgent {
   traceFailure: Error | null
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
+  selectedHotel: {
+    candidate: HotelCandidate
+    stayDetail: {
+      plannedLat: number
+      plannedLng: number
+      coordinateSystem: "WGS84"
+      coordinateProvider: "rollinggo"
+      hotelOffer: {
+        provider: "rollinggo"
+        providerHotelId: string
+        address?: string
+        startingPrice?: { amount: number; currency: string }
+        coverImageUrl?: string
+        externalUrl?: string
+        fetchedAt: string
+      }
+    }
+    idempotencyKey?: string
+  } | null
 }
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
@@ -195,6 +219,89 @@ function changesJourneyGraph(commandName: string) {
     commandName === "workspace.refresh" ||
     commandName === "workspace.replay"
   )
+}
+
+function selectedHotelStay(candidate: HotelCandidate) {
+  return {
+    plannedLat: candidate.coordinates.lat,
+    plannedLng: candidate.coordinates.lng,
+    coordinateSystem: "WGS84" as const,
+    coordinateProvider: "rollinggo" as const,
+    hotelOffer: {
+      provider: candidate.provider,
+      providerHotelId: candidate.providerHotelId,
+      address: candidate.address,
+      startingPrice: candidate.startingPrice,
+      coverImageUrl: candidate.imageUrl,
+      externalUrl: candidate.externalUrl,
+      fetchedAt: candidate.fetchedAt,
+    },
+  }
+}
+
+function commandWithSelectedHotel(
+  running: RunningAgent,
+  command: ReturnType<typeof targetCommandBodySchema.parse>,
+  idempotencyKey: string
+) {
+  const selected = running.selectedHotel
+  const selectedDetail = selected?.stayDetail
+
+  if (
+    command.name === "journey.add_event" &&
+    command.payload.event.type === "STAY" &&
+    command.payload.event.detail.hotelOffer
+  ) {
+    if (
+      !selectedDetail ||
+      (selected.idempotencyKey && selected.idempotencyKey !== idempotencyKey)
+    ) {
+      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
+    }
+    return {
+      command: {
+        ...command,
+        payload: {
+          ...command.payload,
+          event: {
+            ...command.payload.event,
+            title: selected.candidate.name,
+            detail: { ...command.payload.event.detail, ...selectedDetail },
+          },
+        },
+      },
+      usesSelectedHotel: true,
+    }
+  }
+
+  if (
+    command.name === "journey.update_event" &&
+    command.payload.patch.type === "STAY" &&
+    command.payload.patch.detail?.hotelOffer
+  ) {
+    if (
+      !selectedDetail ||
+      (selected.idempotencyKey && selected.idempotencyKey !== idempotencyKey)
+    ) {
+      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
+    }
+    return {
+      command: {
+        ...command,
+        payload: {
+          ...command.payload,
+          patch: {
+            ...command.payload.patch,
+            title: selected.candidate.name,
+            detail: { ...command.payload.patch.detail, ...selectedDetail },
+          },
+        },
+      },
+      usesSelectedHotel: true,
+    }
+  }
+
+  return { command, usesSelectedHotel: false }
 }
 
 function conversationMessages(
@@ -352,6 +459,7 @@ export class AgentGateway {
       traceFailure: null,
       requiresPlanValidation: false,
       lastPlanValidation: null,
+      selectedHotel: null,
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
@@ -573,14 +681,23 @@ export class AgentGateway {
       } else if (request.type === "hotel.search") {
         output = await this.executeHotelTool(running, request)
       } else {
+        const parsedCommand = targetCommandBodySchema.parse(request.command)
+        const selectedCommand = commandWithSelectedHotel(
+          running,
+          parsedCommand,
+          request.idempotencyKey
+        )
         const envelope: TargetCommandEnvelope = {
           aggregateId: running.workspaceId,
           expectedRevision: request.expectedRevision,
           idempotencyKey: request.idempotencyKey,
           actor: { kind: "AGENT", agentRunId: running.runId },
-          command: targetCommandBodySchema.parse(request.command),
+          command: selectedCommand.command,
         }
         const result = await this.commands.execute(running.context, envelope)
+        if (selectedCommand.usesSelectedHotel && running.selectedHotel) {
+          running.selectedHotel.idempotencyKey = request.idempotencyKey
+        }
         appliedCommandResult = result
         if (changesJourneyGraph(result.commandName)) {
           running.requiresPlanValidation = true
@@ -742,25 +859,32 @@ export class AgentGateway {
         })
       )
       const result = await this.placeService.searchPlaces(input, usageContext)
-      await appendWorkspaceMessage(running.context, running.workspaceId, {
-        role: "ASSISTANT",
-        content: "",
-        blocks: [
-          {
-            type: "place_search",
-            title: `${input.query ?? input.city ?? "地点"}地点`,
-            fetchedAt: new Date().toISOString(),
-            candidates: result.results.map((candidate) => ({
-              candidateId: candidate.id,
-              name: candidate.name,
-              category: candidate.category,
-              address: candidate.address,
-              imageUrl: candidate.images?.[0]?.url,
-            })),
-          },
-        ],
-        agentRunId: running.runId,
-      })
+      if (isAttractionSearch(input)) {
+        const candidates = result.results.filter((candidate) =>
+          isAttractionCategory(candidate.category)
+        )
+        if (candidates.length) {
+          await appendWorkspaceMessage(running.context, running.workspaceId, {
+            role: "ASSISTANT",
+            content: "",
+            blocks: [
+              {
+                type: "place_search",
+                title: `${input.query ?? input.city ?? "地点"}地点`,
+                fetchedAt: new Date().toISOString(),
+                candidates: candidates.map((candidate) => ({
+                  candidateId: candidate.id,
+                  name: candidate.name,
+                  category: candidate.category,
+                  address: candidate.address,
+                  imageUrl: candidate.images?.[0]?.url,
+                })),
+              },
+            ],
+            agentRunId: running.runId,
+          })
+        }
+      }
       return result
     }
     if (request.type === "place.resolve") {
@@ -839,6 +963,14 @@ export class AgentGateway {
       requestId: request.requestId,
     }
     const result = await this.hotelService.searchHotels(input, usageContext)
+    const firstCandidate = result.candidates[0]
+    const stayDetail = firstCandidate
+      ? selectedHotelStay(firstCandidate)
+      : undefined
+    running.selectedHotel =
+      firstCandidate && stayDetail
+        ? { candidate: firstCandidate, stayDetail }
+        : null
     await appendWorkspaceMessage(running.context, running.workspaceId, {
       role: "ASSISTANT",
       content: "",
@@ -862,25 +994,10 @@ export class AgentGateway {
       agentRunId: running.runId,
     })
     return {
-      ...result,
-      firstCandidate: result.candidates[0],
-      stayDetail: result.candidates[0]
-        ? {
-            plannedLat: result.candidates[0].coordinates.lat,
-            plannedLng: result.candidates[0].coordinates.lng,
-            coordinateSystem: "WGS84" as const,
-            coordinateProvider: "rollinggo",
-            hotelOffer: {
-              provider: result.candidates[0].provider,
-              providerHotelId: result.candidates[0].providerHotelId,
-              address: result.candidates[0].address,
-              startingPrice: result.candidates[0].startingPrice,
-              coverImageUrl: result.candidates[0].imageUrl,
-              externalUrl: result.candidates[0].externalUrl,
-              fetchedAt: result.candidates[0].fetchedAt,
-            },
-          }
-        : undefined,
+      count: result.candidates.length,
+      warnings: result.warnings,
+      firstCandidate,
+      stayDetail,
     }
   }
 

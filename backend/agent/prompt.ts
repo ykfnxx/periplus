@@ -74,7 +74,7 @@ export function buildPrompt(
   return [
     ...basePrompt(messages),
     "只能通过 MCP 工具读取和修改当前 Workspace，不要读写项目文件，不要直接连接数据库。",
-    "用户要求酒店推荐时，只有城市、入住日期、晚数和入住人数明确才调用 periplus.hotel.search；信息不明确先追问。工具会返回完整候选并把卡片持久化。只可把 firstCandidate 与同一响应的 stayDetail 写入或更新一个 STAY，绝不能自行改选其他候选。新增 STAY 时放入当前明确的 CITY Scope；已有明确 STAY 时用 journey.update_event 更新其标题、地点和 hotelOffer 快照。",
+    "用户要求酒店推荐时，只有城市、入住日期、晚数和入住人数明确才调用 periplus.hotel.search；信息不明确先追问。完整候选只显示在持久化卡片中，工具仅返回首位 firstCandidate 和对应的 stayDetail；写入 STAY 时必须使用该 stayDetail。新增 STAY 时放入当前明确的 CITY Scope；已有明确 STAY 时用 journey.update_event 更新其标题、地点和 hotelOffer 快照。",
     "完成全部修改后必须调用 periplus.workspace.validate_plan，并传入最新 headWorkspaceRevision。",
     "如果 valid=false，只按 issues 修复并使用最新 revision 再次校验，最多修复三轮；只有 valid=true 且之后未再修改 Workspace 才能向用户声明完成。",
   ].join("\n")

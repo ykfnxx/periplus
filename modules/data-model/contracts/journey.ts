@@ -50,6 +50,18 @@ export const targetLocationDetailSchema = z
   })
   .strict()
 
+const targetProviderCoverImageSchema = z
+  .object({
+    provider: z.literal("amap"),
+    url: z.string().url(),
+    fetchedAt: dateTimeSchema,
+  })
+  .strict()
+
+const targetVisitDetailSchema = targetLocationDetailSchema.extend({
+  providerCoverImage: targetProviderCoverImageSchema.optional(),
+})
+
 const targetEventIdentitySchema = z.object({
   id: idSchema,
   journeyId: idSchema,
@@ -106,7 +118,7 @@ const targetSectionEventSchema = targetEventIdentitySchema.extend({
 const targetVisitEventSchema = targetEventIdentitySchema.extend({
   ...targetExecutableEventFields,
   type: z.literal("VISIT"),
-  detail: targetLocationDetailSchema,
+  detail: targetVisitDetailSchema,
 })
 
 const targetStayEventSchema = targetEventIdentitySchema.extend({
@@ -212,6 +224,12 @@ const targetPlannedLocationDetailSchema = targetLocationDetailSchema.omit({
   actualDurationMinutes: true,
 })
 
+const targetPlannedVisitDetailSchema = targetPlannedLocationDetailSchema.extend(
+  {
+    providerCoverImage: targetProviderCoverImageSchema.optional(),
+  }
+)
+
 export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -225,7 +243,7 @@ export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
       ...targetEventCreateBase,
       ...targetExecutableEventCreateFields,
       type: z.literal("VISIT"),
-      detail: targetPlannedLocationDetailSchema,
+      detail: targetPlannedVisitDetailSchema,
     })
     .strict(),
   z
@@ -324,7 +342,7 @@ function requireActualCoordinatePair(
   }
 }
 
-const targetLocationDetailUpdateSchema = targetPlannedLocationDetailSchema
+const targetVisitDetailUpdateSchema = targetPlannedVisitDetailSchema
   .partial()
   .strict()
 
@@ -376,7 +394,7 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         type: z.literal("VISIT"),
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
-        detail: targetLocationDetailUpdateSchema.optional(),
+        detail: targetVisitDetailUpdateSchema.optional(),
       })
       .strict(),
     z

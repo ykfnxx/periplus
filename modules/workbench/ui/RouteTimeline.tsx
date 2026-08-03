@@ -48,6 +48,7 @@ import {
   type JourneyScopeItem,
 } from "@/lib/journeys/projections"
 import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
+import { ProviderImage } from "./ProviderImage"
 
 type LocationJourneyEvent = Extract<
   TargetJourneyEvent,
@@ -332,6 +333,15 @@ function VisitEventCard({
             </span>
           ))}
         </span>
+      ) : event.detail.providerCoverImage ? (
+        <ProviderImage
+          src={event.detail.providerCoverImage.url}
+          alt={event.title}
+          category="SIGHT"
+          width={640}
+          height={224}
+          className="h-28 w-full object-cover px-4 pt-4"
+        />
       ) : null}
       <span className="block px-4 py-4">
         <EventCardHeading
@@ -454,16 +464,14 @@ function StayEventCard({
       </span>
       {hotelOffer ? (
         <span className="mt-3 flex items-center gap-3 rounded-lg bg-route-summary p-2.5">
-          {hotelOffer.coverImageUrl ? (
-            <Image
-              src={hotelOffer.coverImageUrl}
-              alt=""
-              width={56}
-              height={44}
-              unoptimized
-              className="h-11 w-14 rounded-md object-cover"
-            />
-          ) : null}
+          <ProviderImage
+            src={hotelOffer.coverImageUrl}
+            alt=""
+            category="HOTEL"
+            width={56}
+            height={44}
+            className="h-11 w-14 shrink-0 rounded-md object-cover"
+          />
           <span className="min-w-0 flex-1">
             <span className="block text-[10px] font-black text-teak">
               RollingGo 报价快照
