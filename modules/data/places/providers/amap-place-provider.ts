@@ -19,6 +19,7 @@ interface AMapPoi {
   cityname?: string
   adname?: string
   adcode?: string
+  photos?: Array<{ title?: string; url?: string }>
 }
 
 interface AMapSearchResponse {
@@ -55,6 +56,15 @@ function stringField(value: string | unknown[] | undefined) {
   return typeof value === "string" ? value : undefined
 }
 
+function httpsUrl(value: string | undefined) {
+  if (!value) return undefined
+  try {
+    return new URL(value).protocol === "https:" ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function poiToCandidate(poi: AMapPoi): PlaceCandidate | null {
   if (!poi.name || !poi.location) return null
   const parsedLocation = parseLngLat(poi.location)
@@ -72,6 +82,19 @@ function poiToCandidate(poi: AMapPoi): PlaceCandidate | null {
     province: poi.pname,
     city: poi.cityname,
     district: poi.adname,
+    images: (poi.photos ?? []).flatMap((photo) => {
+      const url = httpsUrl(photo.url)
+      return url
+        ? [
+            {
+              provider: "amap" as const,
+              url,
+              title: photo.title,
+              fetchedAt: new Date().toISOString(),
+            },
+          ]
+        : []
+    }),
     coordinates: [
       {
         provider: "amap",
@@ -150,7 +173,7 @@ export class AMapPlaceProvider {
     )
     url.searchParams.set("offset", String(Math.min(query.limit, 20)))
     url.searchParams.set("page", "1")
-    url.searchParams.set("extensions", "base")
+    url.searchParams.set("extensions", "all")
 
     return this.fetchCandidates(url)
   }
@@ -172,7 +195,7 @@ export class AMapPlaceProvider {
     url.searchParams.set("radius", String(query.radiusMeters ?? 3000))
     url.searchParams.set("offset", String(Math.min(query.limit, 20)))
     url.searchParams.set("page", "1")
-    url.searchParams.set("extensions", "base")
+    url.searchParams.set("extensions", "all")
 
     const result = await this.fetchCandidates(url)
     return {

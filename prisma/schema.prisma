@@ -600,6 +600,7 @@ model StayEventDetail {
   plannedDurationMinutes Int?
   actualDurationMinutes  Int?
   checkInNote            String?
+  hotelOfferSnapshotJson String?
 
   event        JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   plannedPlace Place?       @relation("StayPlannedPlace", fields: [plannedPlaceId], references: [id], onDelete: SetNull)
@@ -833,6 +834,7 @@ model WorkspaceMessage {
   workspaceId String
   role        WorkspaceMessageRole
   content     String
+  blocksJson  String               @default("[]")
   agentRunId  String?
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt

@@ -114,6 +114,22 @@ const targetStayEventSchema = targetEventIdentitySchema.extend({
   type: z.literal("STAY"),
   detail: targetLocationDetailSchema.extend({
     checkInNote: z.string().optional(),
+    hotelOffer: z
+      .object({
+        provider: z.literal("rollinggo"),
+        providerHotelId: z.string().trim().min(1),
+        address: z.string().trim().min(1).optional(),
+        startingPrice: z
+          .object({
+            amount: z.number().nonnegative(),
+            currency: z.string().trim().min(1),
+          })
+          .optional(),
+        coverImageUrl: z.string().url().optional(),
+        externalUrl: z.string().url().optional(),
+        fetchedAt: dateTimeSchema,
+      })
+      .optional(),
   }),
 })
 
@@ -237,6 +253,22 @@ export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
       type: z.literal("STAY"),
       detail: targetPlannedLocationDetailSchema.extend({
         checkInNote: z.string().optional(),
+        hotelOffer: z
+          .object({
+            provider: z.literal("rollinggo"),
+            providerHotelId: z.string().trim().min(1),
+            address: z.string().trim().min(1).optional(),
+            startingPrice: z
+              .object({
+                amount: z.number().nonnegative(),
+                currency: z.string().trim().min(1),
+              })
+              .optional(),
+            coverImageUrl: z.string().url().optional(),
+            externalUrl: z.string().url().optional(),
+            fetchedAt: dateTimeSchema,
+          })
+          .optional(),
       }),
     })
     .strict(),
@@ -297,7 +329,25 @@ const targetLocationDetailUpdateSchema = targetPlannedLocationDetailSchema
   .strict()
 
 const targetStayDetailUpdateSchema = targetPlannedLocationDetailSchema
-  .extend({ checkInNote: z.string().optional() })
+  .extend({
+    checkInNote: z.string().optional(),
+    hotelOffer: z
+      .object({
+        provider: z.literal("rollinggo"),
+        providerHotelId: z.string().trim().min(1),
+        address: z.string().trim().min(1).optional(),
+        startingPrice: z
+          .object({
+            amount: z.number().nonnegative(),
+            currency: z.string().trim().min(1),
+          })
+          .optional(),
+        coverImageUrl: z.string().url().optional(),
+        externalUrl: z.string().url().optional(),
+        fetchedAt: dateTimeSchema,
+      })
+      .optional(),
+  })
   .partial()
   .strict()
 

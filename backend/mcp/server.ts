@@ -4,9 +4,14 @@ import { loadProjectEnv } from "@/config/env.server"
 
 loadProjectEnv()
 
-const [{ registerWorkspaceTools }, { registerPlaceTools }] = await Promise.all([
+const [
+  { registerWorkspaceTools },
+  { registerPlaceTools },
+  { registerHotelTools },
+] = await Promise.all([
   import("./tools/workspace"),
   import("./tools/place"),
+  import("./tools/hotel"),
 ])
 
 const server = new McpServer({
@@ -16,6 +21,7 @@ const server = new McpServer({
 
 registerWorkspaceTools(server)
 registerPlaceTools(server)
+registerHotelTools(server)
 
 const transport = new StdioServerTransport()
 await server.connect(transport)

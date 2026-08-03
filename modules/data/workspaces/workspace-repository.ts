@@ -307,6 +307,7 @@ function mapMessage(
     workspaceId: record.workspaceId,
     role: record.role,
     content: record.content,
+    blocks: JSON.parse(record.blocksJson),
     agentRunId: record.agentRunId ?? undefined,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
@@ -833,6 +834,7 @@ export async function appendWorkspaceMessage(
   input: {
     role: TargetWorkspaceMessage["role"]
     content: string
+    blocks?: TargetWorkspaceMessage["blocks"]
     agentRunId?: string
   },
   now = new Date()
@@ -887,12 +889,14 @@ export async function appendWorkspaceMessage(
         workspaceId,
         role: input.role,
         content: input.content,
+        blocksJson: json(input.blocks ?? []),
         agentRunId: input.agentRunId ?? null,
       },
     })
   })
   return targetWorkspaceMessageSchema.parse({
     ...record,
+    blocks: JSON.parse(record.blocksJson),
     agentRunId: record.agentRunId ?? undefined,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),

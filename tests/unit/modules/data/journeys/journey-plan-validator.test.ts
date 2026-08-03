@@ -176,7 +176,7 @@ describe("validateJourneyPlan", () => {
     expect(report.valid).toBe(true)
   })
 
-  it("rejects unsupported stays and unplanned Transit routes", () => {
+  it("accepts provider-backed stays while rejecting unplanned Transit routes", () => {
     const stay: TargetJourneyEvent = {
       ...identity("stay", "city"),
       type: "STAY",
@@ -207,8 +207,11 @@ describe("validateJourneyPlan", () => {
       workspaceRevision: 4,
     })
 
-    expect(report.issues.map((issue) => issue.code)).toEqual(
-      expect.arrayContaining(["TRANSIT_ROUTE_NOT_READY", "STAY_NOT_SUPPORTED"])
+    expect(report.issues.map((issue) => issue.code)).toContain(
+      "TRANSIT_ROUTE_NOT_READY"
+    )
+    expect(report.issues.map((issue) => issue.code)).not.toContain(
+      "STAY_NOT_SUPPORTED"
     )
   })
 

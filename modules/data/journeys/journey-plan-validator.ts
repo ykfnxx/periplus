@@ -16,7 +16,7 @@ interface ValidateJourneyPlanInput {
 type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
 type LocationEvent = Extract<
   TargetJourneyEvent,
-  { type: "VISIT" | "MEAL" | "ACTIVITY" }
+  { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
 >
 type CityEvent = Extract<TargetJourneyEvent, { type: "SECTION" }> & {
   detail: Extract<
@@ -25,7 +25,7 @@ type CityEvent = Extract<TargetJourneyEvent, { type: "SECTION" }> & {
   >
 }
 
-const LOCATION_TYPES = new Set(["VISIT", "MEAL", "ACTIVITY"])
+const LOCATION_TYPES = new Set(["VISIT", "STAY", "MEAL", "ACTIVITY"])
 
 function isLocationEvent(event: TargetJourneyEvent): event is LocationEvent {
   return LOCATION_TYPES.has(event.type)
@@ -239,23 +239,12 @@ export function validateJourneyPlan({
     }> = []
 
     route.forEach((event, index) => {
-      if (event.type === "STAY") {
-        issues.push({
-          code: "STAY_NOT_SUPPORTED",
-          cityEventId: city.id,
-          eventIds: [event.id],
-          message: "STAY is not supported before OTA integration",
-          repairability: "AGENT",
-          allowedOperations: ["journey.retire_event"],
-        })
-        return
-      }
       if (!isLocationEvent(event) && event.type !== "TRANSIT") {
         issues.push({
           code: "CITY_EVENT_TYPE_INVALID",
           cityEventId: city.id,
           eventIds: [event.id],
-          message: `City event ${event.id} must be a place, activity, meal, or Transit`,
+          message: `City event ${event.id} must be a place, stay, activity, meal, or Transit`,
           repairability: "AGENT",
           allowedOperations: ["journey.move_event", "journey.retire_event"],
         })

@@ -31,7 +31,8 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("只执行最后一条用户需求")
     expect(prompt).toContain("Root Scope 必须由 CITY 与跨城 TRANSIT 交替组成")
     expect(prompt).toContain("不得创建 DAY Section")
-    expect(prompt).toContain("当前版本不得主动创建 STAY")
+    expect(prompt).toContain("periplus.hotel.search")
+    expect(prompt).toContain("firstCandidate")
     expect(prompt).toContain("periplus.workspace.validate_plan")
   })
 

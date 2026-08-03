@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { z } from "zod"
 import type { AuthContext } from "@/modules/auth/server/context"
+import { hotelSearchInputSchema } from "@/backend/mcp/schemas/hotel"
 import {
   placeEnrichInputSchema,
   placeResolveForJourneyEventInputSchema,
@@ -22,6 +23,11 @@ import {
   type PlaceIntelligenceService,
   type PlaceProviderUsageContext,
 } from "@/modules/data/places/place-service"
+import {
+  createHotelSearchService,
+  type HotelSearchService,
+  type HotelProviderUsageContext,
+} from "@/modules/data/hotels/hotel-search-service"
 import {
   appendWorkspaceMessage,
   createWorkspaceSuggestion,
@@ -66,6 +72,7 @@ interface AgentGatewayOptions {
     | "resolvePlaceForJourneyEvent"
     | "enrichPlace"
   >
+  hotelService?: Pick<HotelSearchService, "searchHotels">
   evalTrace?: {
     scenarioId: string
     sink: EvalTraceSink
@@ -95,6 +102,13 @@ export const agentToolRequestSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("workspace.validate_plan"),
       expectedRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("hotel.search"),
+      requestId: z.string().trim().min(1),
+      input: z.unknown(),
     })
     .strict(),
   z
@@ -149,11 +163,16 @@ type PlaceAgentToolRequest = Extract<
   AgentToolRequest,
   { type: `place.${string}` }
 >
+type HotelAgentToolRequest = Extract<AgentToolRequest, { type: "hotel.search" }>
 
 function isPlaceToolRequest(
   request: AgentToolRequest
 ): request is PlaceAgentToolRequest {
   return request.type.startsWith("place.")
+}
+
+function isEvidenceToolRequest(request: AgentToolRequest) {
+  return isPlaceToolRequest(request) || request.type === "hotel.search"
 }
 
 function asInputRecord(input: unknown): Record<string, unknown> {
@@ -213,6 +232,9 @@ export class AgentGateway {
   private readonly placeService: NonNullable<
     AgentGatewayOptions["placeService"]
   >
+  private readonly hotelService: NonNullable<
+    AgentGatewayOptions["hotelService"]
+  >
 
   constructor(
     private readonly commands: WorkspaceCommandService,
@@ -228,6 +250,7 @@ export class AgentGateway {
         : options.heartbeatIntervalMs
     this.now = options.now ?? (() => new Date())
     this.placeService = options.placeService ?? createPlaceIntelligenceService()
+    this.hotelService = options.hotelService ?? createHotelSearchService()
   }
 
   private async trace(
@@ -428,6 +451,10 @@ export class AgentGateway {
   ): Promise<unknown>
   async executeTool(
     capabilityToken: string,
+    request: HotelAgentToolRequest
+  ): Promise<unknown>
+  async executeTool(
+    capabilityToken: string,
     request: AgentToolRequest
   ): Promise<unknown>
   async executeTool(capabilityToken: string, request: AgentToolRequest) {
@@ -460,8 +487,12 @@ export class AgentGateway {
       status: "OK",
       payload: {
         toolType: request.type,
-        ...(request.type.startsWith("place.")
-          ? { requestId: (request as PlaceAgentToolRequest).requestId }
+        ...(isEvidenceToolRequest(request)
+          ? {
+              requestId: (
+                request as PlaceAgentToolRequest | HotelAgentToolRequest
+              ).requestId,
+            }
           : {}),
         ...(commandName ? { commandName } : {}),
       },
@@ -539,6 +570,8 @@ export class AgentGateway {
         output = validation
       } else if (isPlaceToolRequest(request)) {
         output = await this.executePlaceTool(running, request)
+      } else if (request.type === "hotel.search") {
+        output = await this.executeHotelTool(running, request)
       } else {
         const envelope: TargetCommandEnvelope = {
           aggregateId: running.workspaceId,
@@ -592,7 +625,7 @@ export class AgentGateway {
           },
         })
       }
-      if (isPlaceToolRequest(request)) {
+      if (isEvidenceToolRequest(request)) {
         await this.trace(running, {
           type: "evidence.recorded",
           spanId: randomUUID(),
@@ -708,7 +741,27 @@ export class AgentGateway {
           requestId: request.requestId,
         })
       )
-      return this.placeService.searchPlaces(input, usageContext)
+      const result = await this.placeService.searchPlaces(input, usageContext)
+      await appendWorkspaceMessage(running.context, running.workspaceId, {
+        role: "ASSISTANT",
+        content: "",
+        blocks: [
+          {
+            type: "place_search",
+            title: `${input.query ?? input.city ?? "地点"}地点`,
+            fetchedAt: new Date().toISOString(),
+            candidates: result.results.map((candidate) => ({
+              candidateId: candidate.id,
+              name: candidate.name,
+              category: candidate.category,
+              address: candidate.address,
+              imageUrl: candidate.images?.[0]?.url,
+            })),
+          },
+        ],
+        agentRunId: running.runId,
+      })
+      return result
     }
     if (request.type === "place.resolve") {
       const input = withoutRequestId(
@@ -767,6 +820,68 @@ export class AgentGateway {
       event.type,
       usageContext
     )
+  }
+
+  private async executeHotelTool(
+    running: RunningAgent,
+    request: HotelAgentToolRequest
+  ) {
+    const input = withoutRequestId(
+      hotelSearchInputSchema.parse({
+        ...asInputRecord(request.input),
+        requestId: request.requestId,
+      })
+    )
+    const usageContext: HotelProviderUsageContext = {
+      userId: running.context.userId,
+      workspaceId: running.workspaceId,
+      agentRunId: running.runId,
+      requestId: request.requestId,
+    }
+    const result = await this.hotelService.searchHotels(input, usageContext)
+    await appendWorkspaceMessage(running.context, running.workspaceId, {
+      role: "ASSISTANT",
+      content: "",
+      blocks: [
+        {
+          type: "hotel_search",
+          title: `${input.place}酒店推荐`,
+          fetchedAt: new Date().toISOString(),
+          candidates: result.candidates.map((candidate) => ({
+            candidateId: candidate.candidateId,
+            provider: candidate.provider,
+            providerHotelId: candidate.providerHotelId,
+            name: candidate.name,
+            address: candidate.address,
+            startingPrice: candidate.startingPrice,
+            imageUrl: candidate.imageUrl,
+            externalUrl: candidate.externalUrl,
+          })),
+        },
+      ],
+      agentRunId: running.runId,
+    })
+    return {
+      ...result,
+      firstCandidate: result.candidates[0],
+      stayDetail: result.candidates[0]
+        ? {
+            plannedLat: result.candidates[0].coordinates.lat,
+            plannedLng: result.candidates[0].coordinates.lng,
+            coordinateSystem: "WGS84" as const,
+            coordinateProvider: "rollinggo",
+            hotelOffer: {
+              provider: result.candidates[0].provider,
+              providerHotelId: result.candidates[0].providerHotelId,
+              address: result.candidates[0].address,
+              startingPrice: result.candidates[0].startingPrice,
+              coverImageUrl: result.candidates[0].imageUrl,
+              externalUrl: result.candidates[0].externalUrl,
+              fetchedAt: result.candidates[0].fetchedAt,
+            },
+          }
+        : undefined,
+    }
   }
 
   private toolServers(

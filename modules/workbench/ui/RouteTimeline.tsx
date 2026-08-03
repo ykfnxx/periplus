@@ -434,6 +434,7 @@ function StayEventCard({
 }: {
   event: Extract<LocationJourneyEvent, { type: "STAY" }>
 }) {
+  const hotelOffer = event.detail.hotelOffer
   return (
     <span className="block p-4">
       <span className="flex items-start gap-3">
@@ -451,6 +452,31 @@ function StayEventCard({
         <StayTime label="入住" value={formatEventTime(event.plannedStartAt)} />
         <StayTime label="离店" value={formatEventTime(event.plannedEndAt)} />
       </span>
+      {hotelOffer ? (
+        <span className="mt-3 flex items-center gap-3 rounded-lg bg-route-summary p-2.5">
+          {hotelOffer.coverImageUrl ? (
+            <Image
+              src={hotelOffer.coverImageUrl}
+              alt=""
+              width={56}
+              height={44}
+              unoptimized
+              className="h-11 w-14 rounded-md object-cover"
+            />
+          ) : null}
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-black text-teak">
+              RollingGo 报价快照
+            </span>
+            {hotelOffer.startingPrice ? (
+              <span className="mt-0.5 block text-xs font-black text-coral">
+                {hotelOffer.startingPrice.currency}{" "}
+                {hotelOffer.startingPrice.amount} 起
+              </span>
+            ) : null}
+          </span>
+        </span>
+      ) : null}
       {event.detail.checkInNote || event.description ? (
         <span className="mt-3 block text-[11px] leading-5 text-walnut">
           {event.detail.checkInNote ?? event.description}

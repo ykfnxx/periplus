@@ -87,6 +87,13 @@ export interface PlaceResultSource {
   fetchedAt?: string
 }
 
+export interface PlaceImage {
+  provider: PlaceProvider
+  url: string
+  title?: string
+  fetchedAt: string
+}
+
 export interface PlaceSearchResult {
   id: string
   placeId?: string
@@ -99,6 +106,7 @@ export interface PlaceSearchResult {
   province?: string
   city?: string
   district?: string
+  images?: PlaceImage[]
   coordinates: PlaceCoordinate[]
   bestCoordinate: PlaceCoordinate
   sources: PlaceResultSource[]
@@ -213,6 +221,7 @@ export interface PlaceCandidate {
   province?: string
   city?: string
   district?: string
+  images?: PlaceImage[]
   coordinates: PlaceCoordinate[]
   sources: PlaceResultSource[]
   sourceConfidence: number

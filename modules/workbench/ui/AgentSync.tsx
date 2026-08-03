@@ -63,6 +63,7 @@ function conversationMessages(document: TargetWorkspaceDocument) {
       role:
         message.role === "USER" ? ("user" as const) : ("assistant" as const),
       content: message.content,
+      blocks: message.blocks,
       runId: message.agentRunId ?? null,
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,

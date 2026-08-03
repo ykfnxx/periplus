@@ -45,6 +45,17 @@ export const periplusServerConfig = {
       return envString("PERIPLUS_AMAP_WEB_SERVICE_KEY")
     },
   },
+  rollinggo: {
+    get apiKey() {
+      return envString("PERIPLUS_ROLLINGGO_API_KEY")
+    },
+    get hotelUrl() {
+      return envString(
+        "PERIPLUS_ROLLINGGO_HOTEL_URL",
+        "https://mcp.rollinggo.cn/mcp"
+      )
+    },
+  },
   transitPlanning: {
     get retention() {
       return envString("PERIPLUS_TRANSIT_PLAN_RETENTION", "SESSION_ONLY") ===

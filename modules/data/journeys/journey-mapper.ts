@@ -249,6 +249,12 @@ function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
       detail: {
         ...locationDetail(event.stayDetail),
         checkInNote: event.stayDetail.checkInNote ?? undefined,
+        hotelOffer: event.stayDetail.hotelOfferSnapshotJson
+          ? parseJson(
+              event.stayDetail.hotelOfferSnapshotJson,
+              `StayEventDetail ${event.id} hotel offer`
+            )
+          : undefined,
       },
     }
   }

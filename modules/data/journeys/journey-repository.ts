@@ -681,6 +681,9 @@ async function createEventDetail(
         eventId: event.id,
         ...locationDetailData(event.detail),
         checkInNote: event.detail.checkInNote ?? null,
+        hotelOfferSnapshotJson: event.detail.hotelOffer
+          ? JSON.stringify(event.detail.hotelOffer)
+          : null,
       },
     })
   } else if (event.type === "MEAL") {
@@ -730,6 +733,9 @@ async function updateEventDetail(
       data: {
         ...locationDetailData(event.detail),
         checkInNote: event.detail.checkInNote ?? null,
+        hotelOfferSnapshotJson: event.detail.hotelOffer
+          ? JSON.stringify(event.detail.hotelOffer)
+          : null,
       },
     })
   } else if (event.type === "MEAL") {
