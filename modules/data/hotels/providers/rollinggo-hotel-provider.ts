@@ -110,36 +110,42 @@ export class RollingGoHotelProvider {
       }
     }
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8_000)
     const transport = new StreamableHTTPClientTransport(
       new URL(periplusServerConfig.rollinggo.hotelUrl),
       {
         requestInit: {
           headers: { Authorization: `Bearer ${apiKey}` },
-          signal: controller.signal,
         },
       }
     )
     const client = new Client({ name: "periplus-rollinggo", version: "1.0.0" })
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      void client.close()
+    }, 8_000)
     try {
-      await client.connect(transport)
+      await client.connect(transport, { timeout: 8_000 })
       const result = parseSearchResult(
-        (await client.callTool({
-          name: "searchHotels",
-          arguments: {
-            originQuery: input.originQuery,
-            place: input.place,
-            placeType: input.placeType,
-            countryCode: input.countryCode,
-            size: normalizedSize(input.size),
-            checkInParam: {
-              checkInDate: input.checkInDate,
-              stayNights: input.stayNights,
-              adultCount: input.adultCount,
+        (await client.callTool(
+          {
+            name: "searchHotels",
+            arguments: {
+              originQuery: input.originQuery,
+              place: input.place,
+              placeType: input.placeType,
+              countryCode: input.countryCode,
+              size: normalizedSize(input.size),
+              checkInParam: {
+                checkInDate: input.checkInDate,
+                stayNights: input.stayNights,
+                adultCount: input.adultCount,
+              },
             },
           },
-        })) as RollingGoMcpToolResult
+          undefined,
+          { timeout: 8_000 }
+        )) as RollingGoMcpToolResult
       )
       const fetchedAt = new Date().toISOString()
       return {
@@ -152,10 +158,7 @@ export class RollingGoHotelProvider {
     } catch (error) {
       const warning: HotelProviderWarning = {
         provider: "rollinggo",
-        code:
-          error instanceof Error && error.name === "AbortError"
-            ? "timeout"
-            : "provider_error",
+        code: timedOut ? "timeout" : "provider_error",
         message:
           error instanceof Error ? error.message : "RollingGo 酒店检索失败",
       }

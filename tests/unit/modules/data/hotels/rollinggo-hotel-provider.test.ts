@@ -109,4 +109,30 @@ describe("RollingGoHotelProvider", () => {
       "rollinggo-session"
     )
   })
+
+  it("closes the MCP transport and returns a timeout after eight seconds", async () => {
+    process.env.PERIPLUS_ROLLINGGO_API_KEY = "test-key"
+    let aborted = false
+    const fetchMock = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true
+            reject(new DOMException("aborted", "AbortError"))
+          })
+        })
+    )
+    global.fetch = fetchMock
+
+    const pending = new RollingGoHotelProvider().search({
+      originQuery: "西安酒店",
+      place: "西安",
+      placeType: "城市",
+    })
+    await expect(pending).resolves.toMatchObject({
+      candidates: [],
+      warnings: [{ code: "timeout" }],
+    })
+    expect(aborted).toBe(true)
+  }, 10_000)
 })

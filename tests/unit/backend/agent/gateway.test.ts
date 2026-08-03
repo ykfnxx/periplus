@@ -388,12 +388,10 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
     const commands = new WorkspaceCommandService()
     const runtime = new FakeRuntime()
-    const gateway = new AgentGateway(commands, runtime, {
-      backendUrl: "http://127.0.0.1:3002",
-      projectRoot: "/workspace/periplus",
-      heartbeatIntervalMs: null,
-      hotelService: {
-        searchHotels: vi.fn().mockResolvedValue({
+    const hotelService = {
+      searchHotels: vi
+        .fn()
+        .mockResolvedValueOnce({
           candidates: [
             {
               candidateId: "rollinggo-first",
@@ -413,8 +411,14 @@ describe.sequential("P3 persistent AgentGateway", () => {
             },
           ],
           warnings: [],
-        }),
-      },
+        })
+        .mockResolvedValueOnce({ candidates: [], warnings: [] }),
+    }
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+      hotelService,
     })
     await gateway.start(context, workspace.id, "推荐西安酒店", "auto", vi.fn())
     const token = capabilityToken(runtime)
@@ -449,11 +453,6 @@ describe.sequential("P3 persistent AgentGateway", () => {
               plannedLat: 34.27,
               plannedLng: 108.95,
               coordinateSystem: "WGS84",
-              hotelOffer: {
-                provider: "rollinggo",
-                providerHotelId: "second",
-                fetchedAt: "2026-08-03T00:00:00.000Z",
-              },
             },
           },
           position: {
@@ -476,6 +475,62 @@ describe.sequential("P3 persistent AgentGateway", () => {
         hotelOffer: { providerHotelId: "first" },
       },
     })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.command",
+        expectedRevision: 1,
+        idempotencyKey: "hotel-second-stay-without-offer",
+        command: {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${workspace.headGraph.id}-visit`,
+            patch: {
+              type: "STAY",
+              detail: {
+                plannedLat: 34.27,
+                plannedLng: 108.95,
+                coordinateSystem: "WGS84",
+              },
+            },
+          },
+        },
+      })
+    ).rejects.toThrow("酒店检索每次只能写入首位候选一次")
+
+    await gateway.executeTool(token, {
+      type: "hotel.search",
+      requestId: "hotel-search-empty",
+      input: {
+        originQuery: "西安酒店",
+        place: "西安",
+        placeType: "城市",
+      },
+    })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.command",
+        expectedRevision: 1,
+        idempotencyKey: "hotel-empty-stay",
+        command: {
+          name: "journey.add_event",
+          payload: {
+            event: {
+              type: "STAY",
+              title: "空结果不应写入",
+              detail: {
+                plannedLat: 34.27,
+                plannedLng: 108.95,
+                coordinateSystem: "WGS84",
+              },
+            },
+            position: {
+              placement: "END",
+              parentSectionEventId: `${workspace.headGraph.id}-city`,
+            },
+          },
+        },
+      })
+    ).rejects.toThrow("酒店检索每次只能写入首位候选一次")
     runtime.exit(1)
   })
 
