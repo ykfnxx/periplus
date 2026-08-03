@@ -106,6 +106,48 @@ export const targetWorkspaceMessageSchema = z.object({
   workspaceId: idSchema,
   role: z.enum(["USER", "ASSISTANT", "SYSTEM"]),
   content: z.string(),
+  blocks: z
+    .array(
+      z.discriminatedUnion("type", [
+        z.object({
+          type: z.literal("hotel_search"),
+          title: z.string().trim().min(1),
+          fetchedAt: dateTimeSchema,
+          candidates: z.array(
+            z.object({
+              candidateId: z.string().trim().min(1),
+              provider: z.literal("rollinggo"),
+              providerHotelId: z.string().trim().min(1),
+              name: z.string().trim().min(1),
+              address: z.string().trim().min(1).optional(),
+              startingPrice: z
+                .object({
+                  amount: z.number().nonnegative(),
+                  currency: z.string().trim().min(1),
+                })
+                .optional(),
+              imageUrl: z.string().url().optional(),
+              externalUrl: z.string().url().optional(),
+            })
+          ),
+        }),
+        z.object({
+          type: z.literal("place_search"),
+          title: z.string().trim().min(1),
+          fetchedAt: dateTimeSchema,
+          candidates: z.array(
+            z.object({
+              candidateId: z.string().trim().min(1),
+              name: z.string().trim().min(1),
+              category: z.string().trim().min(1),
+              address: z.string().trim().min(1).optional(),
+              imageUrl: z.string().url().optional(),
+            })
+          ),
+        }),
+      ])
+    )
+    .default([]),
   agentRunId: idSchema.optional(),
   createdAt: dateTimeSchema,
   updatedAt: dateTimeSchema,
@@ -198,6 +240,9 @@ export type TargetWorkspaceSession = z.infer<
 >
 export type TargetWorkspaceRevision = z.infer<
   typeof targetWorkspaceRevisionSchema
+>
+export type TargetWorkspaceMessage = z.infer<
+  typeof targetWorkspaceMessageSchema
 >
 export type TargetWorkspaceDocument = z.infer<
   typeof targetWorkspaceDocumentSchema

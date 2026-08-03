@@ -13,6 +13,13 @@ function catalogCandidate(): PlaceCandidate {
     category: "SIGHT",
     province: "北京",
     city: "北京市",
+    images: [
+      {
+        provider: "amap",
+        url: "https://images.example/palace.jpg",
+        fetchedAt: "2026-08-03T00:00:00.000Z",
+      },
+    ],
     coordinates: [],
     sources: [
       { provider: "periplus", providerId: "palace", confidence: 0.95 },
@@ -109,6 +116,11 @@ describe("PlaceIntelligenceService", () => {
               coordinateSystem: "GCJ02",
               plannedLat: 39.916,
               plannedLng: 116.397,
+              providerCoverImage: {
+                provider: "amap",
+                url: "https://images.example/palace.jpg",
+                fetchedAt: "2026-08-03T00:00:00.000Z",
+              },
             },
           },
         },

@@ -864,6 +864,7 @@ const workspaceDocument: TargetWorkspaceDocument = {
       workspaceId: "workspace-fixture",
       role: "USER",
       content: "把西湖安排到第一天",
+      blocks: [],
       createdAt: NOW,
       updatedAt: NOW,
     },

@@ -50,6 +50,18 @@ export const targetLocationDetailSchema = z
   })
   .strict()
 
+const targetProviderCoverImageSchema = z
+  .object({
+    provider: z.literal("amap"),
+    url: z.string().url(),
+    fetchedAt: dateTimeSchema,
+  })
+  .strict()
+
+const targetVisitDetailSchema = targetLocationDetailSchema.extend({
+  providerCoverImage: targetProviderCoverImageSchema.optional(),
+})
+
 const targetEventIdentitySchema = z.object({
   id: idSchema,
   journeyId: idSchema,
@@ -106,7 +118,7 @@ const targetSectionEventSchema = targetEventIdentitySchema.extend({
 const targetVisitEventSchema = targetEventIdentitySchema.extend({
   ...targetExecutableEventFields,
   type: z.literal("VISIT"),
-  detail: targetLocationDetailSchema,
+  detail: targetVisitDetailSchema,
 })
 
 const targetStayEventSchema = targetEventIdentitySchema.extend({
@@ -114,6 +126,22 @@ const targetStayEventSchema = targetEventIdentitySchema.extend({
   type: z.literal("STAY"),
   detail: targetLocationDetailSchema.extend({
     checkInNote: z.string().optional(),
+    hotelOffer: z
+      .object({
+        provider: z.literal("rollinggo"),
+        providerHotelId: z.string().trim().min(1),
+        address: z.string().trim().min(1).optional(),
+        startingPrice: z
+          .object({
+            amount: z.number().nonnegative(),
+            currency: z.string().trim().min(1),
+          })
+          .optional(),
+        coverImageUrl: z.string().url().optional(),
+        externalUrl: z.string().url().optional(),
+        fetchedAt: dateTimeSchema,
+      })
+      .optional(),
   }),
 })
 
@@ -196,6 +224,12 @@ const targetPlannedLocationDetailSchema = targetLocationDetailSchema.omit({
   actualDurationMinutes: true,
 })
 
+const targetPlannedVisitDetailSchema = targetPlannedLocationDetailSchema.extend(
+  {
+    providerCoverImage: targetProviderCoverImageSchema.optional(),
+  }
+)
+
 export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -209,7 +243,7 @@ export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
       ...targetEventCreateBase,
       ...targetExecutableEventCreateFields,
       type: z.literal("VISIT"),
-      detail: targetPlannedLocationDetailSchema,
+      detail: targetPlannedVisitDetailSchema,
     })
     .strict(),
   z
@@ -237,6 +271,22 @@ export const targetJourneyEventCreateSchema = z.discriminatedUnion("type", [
       type: z.literal("STAY"),
       detail: targetPlannedLocationDetailSchema.extend({
         checkInNote: z.string().optional(),
+        hotelOffer: z
+          .object({
+            provider: z.literal("rollinggo"),
+            providerHotelId: z.string().trim().min(1),
+            address: z.string().trim().min(1).optional(),
+            startingPrice: z
+              .object({
+                amount: z.number().nonnegative(),
+                currency: z.string().trim().min(1),
+              })
+              .optional(),
+            coverImageUrl: z.string().url().optional(),
+            externalUrl: z.string().url().optional(),
+            fetchedAt: dateTimeSchema,
+          })
+          .optional(),
       }),
     })
     .strict(),
@@ -292,12 +342,30 @@ function requireActualCoordinatePair(
   }
 }
 
-const targetLocationDetailUpdateSchema = targetPlannedLocationDetailSchema
+const targetVisitDetailUpdateSchema = targetPlannedVisitDetailSchema
   .partial()
   .strict()
 
 const targetStayDetailUpdateSchema = targetPlannedLocationDetailSchema
-  .extend({ checkInNote: z.string().optional() })
+  .extend({
+    checkInNote: z.string().optional(),
+    hotelOffer: z
+      .object({
+        provider: z.literal("rollinggo"),
+        providerHotelId: z.string().trim().min(1),
+        address: z.string().trim().min(1).optional(),
+        startingPrice: z
+          .object({
+            amount: z.number().nonnegative(),
+            currency: z.string().trim().min(1),
+          })
+          .optional(),
+        coverImageUrl: z.string().url().optional(),
+        externalUrl: z.string().url().optional(),
+        fetchedAt: dateTimeSchema,
+      })
+      .optional(),
+  })
   .partial()
   .strict()
 
@@ -326,7 +394,7 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         type: z.literal("VISIT"),
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
-        detail: targetLocationDetailUpdateSchema.optional(),
+        detail: targetVisitDetailUpdateSchema.optional(),
       })
       .strict(),
     z

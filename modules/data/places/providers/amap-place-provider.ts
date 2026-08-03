@@ -1,4 +1,8 @@
 import { periplusServerConfig } from "@/config/periplus.server"
+import {
+  isAttractionCategory,
+  isAttractionSearch,
+} from "@/lib/places/attractions"
 import { parseLngLat } from "@/lib/places/coordinates"
 import { normalizePlaceName } from "@/lib/places/normalize"
 import type {
@@ -19,6 +23,7 @@ interface AMapPoi {
   cityname?: string
   adname?: string
   adcode?: string
+  photos?: Array<{ title?: string; url?: string }>
 }
 
 interface AMapSearchResponse {
@@ -55,10 +60,23 @@ function stringField(value: string | unknown[] | undefined) {
   return typeof value === "string" ? value : undefined
 }
 
-function poiToCandidate(poi: AMapPoi): PlaceCandidate | null {
+function httpsUrl(value: string | undefined) {
+  if (!value) return undefined
+  try {
+    return new URL(value).protocol === "https:" ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function poiToCandidate(
+  poi: AMapPoi,
+  includeAttractionImages: boolean
+): PlaceCandidate | null {
   if (!poi.name || !poi.location) return null
   const parsedLocation = parseLngLat(poi.location)
   if (!parsedLocation) return null
+  const category = categoryFromAmap(poi)
 
   return {
     candidateId: `amap-${poi.id ?? normalizePlaceName(poi.name)}`,
@@ -67,11 +85,29 @@ function poiToCandidate(poi: AMapPoi): PlaceCandidate | null {
     name: poi.name,
     normalizedName: normalizePlaceName(poi.name),
     aliases: [],
-    category: categoryFromAmap(poi),
+    category,
     address: stringField(poi.address),
     province: poi.pname,
     city: poi.cityname,
     district: poi.adname,
+    images:
+      includeAttractionImages && isAttractionCategory(category)
+        ? (poi.photos ?? [])
+            .flatMap((photo) => {
+              const url = httpsUrl(photo.url)
+              return url
+                ? [
+                    {
+                      provider: "amap" as const,
+                      url,
+                      title: photo.title,
+                      fetchedAt: new Date().toISOString(),
+                    },
+                  ]
+                : []
+            })
+            .slice(0, 3)
+        : undefined,
     coordinates: [
       {
         provider: "amap",
@@ -150,9 +186,12 @@ export class AMapPlaceProvider {
     )
     url.searchParams.set("offset", String(Math.min(query.limit, 20)))
     url.searchParams.set("page", "1")
-    url.searchParams.set("extensions", "base")
+    url.searchParams.set(
+      "extensions",
+      isAttractionSearch(query) ? "all" : "base"
+    )
 
-    return this.fetchCandidates(url)
+    return this.fetchCandidates(url, isAttractionSearch(query))
   }
 
   private async searchAround(
@@ -172,9 +211,12 @@ export class AMapPlaceProvider {
     url.searchParams.set("radius", String(query.radiusMeters ?? 3000))
     url.searchParams.set("offset", String(Math.min(query.limit, 20)))
     url.searchParams.set("page", "1")
-    url.searchParams.set("extensions", "base")
+    url.searchParams.set(
+      "extensions",
+      isAttractionSearch(query) ? "all" : "base"
+    )
 
-    const result = await this.fetchCandidates(url)
+    const result = await this.fetchCandidates(url, isAttractionSearch(query))
     return {
       candidates: result.candidates,
       warnings: [...location.warnings, ...result.warnings],
@@ -235,7 +277,10 @@ export class AMapPlaceProvider {
     }
   }
 
-  private async fetchCandidates(url: URL): Promise<AMapSearchOutput> {
+  private async fetchCandidates(
+    url: URL,
+    includeAttractionImages: boolean
+  ): Promise<AMapSearchOutput> {
     try {
       const response = await fetchJson(url, 2500)
       if (response.status !== "1") {
@@ -255,7 +300,7 @@ export class AMapPlaceProvider {
 
       return {
         candidates: (response.pois ?? [])
-          .map(poiToCandidate)
+          .map((poi) => poiToCandidate(poi, includeAttractionImages))
           .filter((candidate): candidate is PlaceCandidate =>
             Boolean(candidate)
           ),

@@ -239,7 +239,15 @@ function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
     return {
       ...executableEventBase(event),
       type: "VISIT",
-      detail: locationDetail(event.visitDetail),
+      detail: {
+        ...locationDetail(event.visitDetail),
+        providerCoverImage: event.visitDetail.providerCoverImageJson
+          ? parseJson(
+              event.visitDetail.providerCoverImageJson,
+              `VisitEventDetail ${event.id} provider cover image`
+            )
+          : undefined,
+      },
     }
   }
   if (event.type === "STAY" && event.stayDetail) {
@@ -249,6 +257,12 @@ function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
       detail: {
         ...locationDetail(event.stayDetail),
         checkInNote: event.stayDetail.checkInNote ?? undefined,
+        hotelOffer: event.stayDetail.hotelOfferSnapshotJson
+          ? parseJson(
+              event.stayDetail.hotelOfferSnapshotJson,
+              `StayEventDetail ${event.id} hotel offer`
+            )
+          : undefined,
       },
     }
   }

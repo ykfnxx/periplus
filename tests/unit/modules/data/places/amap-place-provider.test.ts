@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { normalizePlaceSearchInput } from "@/lib/places/normalize"
 import { AMapPlaceProvider } from "@/modules/data/places/providers/amap-place-provider"
 
 const originalAmapKey = process.env.PERIPLUS_AMAP_WEB_SERVICE_KEY
 const originalPublicAmapKey = process.env.NEXT_PUBLIC_AMAP_KEY
+const originalFetch = global.fetch
 
 function restoreEnv(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name]
@@ -14,6 +15,7 @@ describe("AMapPlaceProvider", () => {
   afterEach(() => {
     restoreEnv("PERIPLUS_AMAP_WEB_SERVICE_KEY", originalAmapKey)
     restoreEnv("NEXT_PUBLIC_AMAP_KEY", originalPublicAmapKey)
+    global.fetch = originalFetch
   })
 
   it("returns a warning instead of throwing when no key is configured", async () => {
@@ -29,5 +31,89 @@ describe("AMapPlaceProvider", () => {
     expect(result.warnings).toMatchObject([
       { provider: "amap", code: "provider_error" },
     ])
+  })
+
+  it("requests expanded POI data and normalizes attraction photos", async () => {
+    process.env.PERIPLUS_AMAP_WEB_SERVICE_KEY = "test-key"
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "1",
+          pois: [
+            {
+              id: "poi-1",
+              name: "兵马俑",
+              type: "风景名胜",
+              location: "109.278,34.385",
+              photos: [
+                { title: "主图", url: "https://images.example/terracotta.jpg" },
+                {
+                  title: "图二",
+                  url: "https://images.example/terracotta-2.jpg",
+                },
+                {
+                  title: "图三",
+                  url: "https://images.example/terracotta-3.jpg",
+                },
+                {
+                  title: "图四",
+                  url: "https://images.example/terracotta-4.jpg",
+                },
+              ],
+            },
+          ],
+        })
+      )
+    )
+    global.fetch = fetchMock
+
+    const result = await new AMapPlaceProvider().search(
+      normalizePlaceSearchInput({
+        query: "兵马俑",
+        city: "西安",
+        intent: "sightseeing",
+      })
+    )
+
+    expect(
+      (fetchMock.mock.calls[0]?.[0] as URL).searchParams.get("extensions")
+    ).toBe("all")
+    expect(result.candidates[0]?.images?.[0]).toMatchObject({
+      provider: "amap",
+      url: "https://images.example/terracotta.jpg",
+    })
+    expect(result.candidates[0]?.images).toHaveLength(3)
+  })
+
+  it("keeps ordinary place searches on base details without photos", async () => {
+    process.env.PERIPLUS_AMAP_WEB_SERVICE_KEY = "test-key"
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "1",
+          pois: [
+            {
+              id: "poi-1",
+              name: "西安钟楼酒店",
+              type: "酒店",
+              location: "108.947,34.259",
+              photos: [
+                { title: "不应保留", url: "https://images.example/hotel.jpg" },
+              ],
+            },
+          ],
+        })
+      )
+    )
+    global.fetch = fetchMock
+
+    const result = await new AMapPlaceProvider().search(
+      normalizePlaceSearchInput({ query: "钟楼酒店", city: "西安" })
+    )
+
+    expect(
+      (fetchMock.mock.calls[0]?.[0] as URL).searchParams.get("extensions")
+    ).toBe("base")
+    expect(result.candidates[0]?.images).toBeUndefined()
   })
 })

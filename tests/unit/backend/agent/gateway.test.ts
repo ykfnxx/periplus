@@ -381,6 +381,159 @@ describe.sequential("P3 persistent AgentGateway", () => {
     ).rejects.toThrow("invalid or expired")
   })
 
+  it("exposes and writes only the first hotel candidate", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: graph(`hotel-workspace-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const hotelService = {
+      searchHotels: vi
+        .fn()
+        .mockResolvedValueOnce({
+          candidates: [
+            {
+              candidateId: "rollinggo-first",
+              provider: "rollinggo",
+              providerHotelId: "first",
+              name: "首位酒店",
+              coordinates: { lat: 34.26, lng: 108.94 },
+              fetchedAt: "2026-08-03T00:00:00.000Z",
+            },
+            {
+              candidateId: "rollinggo-second",
+              provider: "rollinggo",
+              providerHotelId: "second",
+              name: "第二酒店",
+              coordinates: { lat: 34.27, lng: 108.95 },
+              fetchedAt: "2026-08-03T00:00:00.000Z",
+            },
+          ],
+          warnings: [],
+        })
+        .mockResolvedValueOnce({ candidates: [], warnings: [] }),
+    }
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+      hotelService,
+    })
+    await gateway.start(context, workspace.id, "推荐西安酒店", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+
+    const search = await gateway.executeTool(token, {
+      type: "hotel.search",
+      requestId: "hotel-search-first-only",
+      input: {
+        originQuery: "西安酒店",
+        place: "西安",
+        placeType: "城市",
+      },
+    })
+
+    expect(search).toMatchObject({
+      count: 2,
+      firstCandidate: { providerHotelId: "first" },
+    })
+    expect(search).not.toHaveProperty("candidates")
+
+    await gateway.executeTool(token, {
+      type: "workspace.command",
+      expectedRevision: 0,
+      idempotencyKey: "hotel-first-only-stay",
+      command: {
+        name: "journey.add_event",
+        payload: {
+          event: {
+            type: "STAY",
+            title: "第二酒店",
+            detail: {
+              plannedLat: 34.27,
+              plannedLng: 108.95,
+              coordinateSystem: "WGS84",
+            },
+          },
+          position: {
+            placement: "END",
+            parentSectionEventId: `${workspace.headGraph.id}-city`,
+          },
+        },
+      },
+    })
+
+    const document = await commands.getDocument(context, workspace.id)
+    const stay = document?.session.headGraph.events.find(
+      (event) => event.type === "STAY"
+    )
+    expect(stay).toMatchObject({
+      title: "首位酒店",
+      detail: {
+        plannedLat: 34.26,
+        plannedLng: 108.94,
+        hotelOffer: { providerHotelId: "first" },
+      },
+    })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.command",
+        expectedRevision: 1,
+        idempotencyKey: "hotel-second-stay-without-offer",
+        command: {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${workspace.headGraph.id}-visit`,
+            patch: {
+              type: "STAY",
+              detail: {
+                plannedLat: 34.27,
+                plannedLng: 108.95,
+                coordinateSystem: "WGS84",
+              },
+            },
+          },
+        },
+      })
+    ).rejects.toThrow("酒店检索每次只能写入首位候选一次")
+
+    await gateway.executeTool(token, {
+      type: "hotel.search",
+      requestId: "hotel-search-empty",
+      input: {
+        originQuery: "西安酒店",
+        place: "西安",
+        placeType: "城市",
+      },
+    })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.command",
+        expectedRevision: 1,
+        idempotencyKey: "hotel-empty-stay",
+        command: {
+          name: "journey.add_event",
+          payload: {
+            event: {
+              type: "STAY",
+              title: "空结果不应写入",
+              detail: {
+                plannedLat: 34.27,
+                plannedLng: 108.95,
+                coordinateSystem: "WGS84",
+              },
+            },
+            position: {
+              placement: "END",
+              parentSectionEventId: `${workspace.headGraph.id}-city`,
+            },
+          },
+        },
+      })
+    ).rejects.toThrow("酒店检索每次只能写入首位候选一次")
+    runtime.exit(1)
+  })
+
   it("fails a mutated run that does not validate its final revision", async () => {
     const { workspace, commands, runtime, gateway, emit } = await setup()
     await gateway.start(context, workspace.id, "更新路线", "auto", emit)

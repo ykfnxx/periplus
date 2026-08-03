@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { z } from "zod"
 import type { AuthContext } from "@/modules/auth/server/context"
+import { hotelSearchInputSchema } from "@/backend/mcp/schemas/hotel"
+import {
+  isAttractionCategory,
+  isAttractionSearch,
+} from "@/lib/places/attractions"
+import type { HotelCandidate } from "@/lib/hotels/types"
 import {
   placeEnrichInputSchema,
   placeResolveForJourneyEventInputSchema,
@@ -22,6 +28,11 @@ import {
   type PlaceIntelligenceService,
   type PlaceProviderUsageContext,
 } from "@/modules/data/places/place-service"
+import {
+  createHotelSearchService,
+  type HotelSearchService,
+  type HotelProviderUsageContext,
+} from "@/modules/data/hotels/hotel-search-service"
 import {
   appendWorkspaceMessage,
   createWorkspaceSuggestion,
@@ -66,11 +77,41 @@ interface AgentGatewayOptions {
     | "resolvePlaceForJourneyEvent"
     | "enrichPlace"
   >
+  hotelService?: Pick<HotelSearchService, "searchHotels">
   evalTrace?: {
     scenarioId: string
     sink: EvalTraceSink
   }
 }
+
+type HotelStaySelection = {
+  candidate: HotelCandidate
+  stayDetail: {
+    plannedLat: number
+    plannedLng: number
+    coordinateSystem: "WGS84"
+    coordinateProvider: "rollinggo"
+    hotelOffer: {
+      provider: "rollinggo"
+      providerHotelId: string
+      address?: string
+      startingPrice?: { amount: number; currency: string }
+      coverImageUrl?: string
+      externalUrl?: string
+      fetchedAt: string
+    }
+  }
+}
+
+type HotelStayState =
+  | { kind: "not_searched" }
+  | { kind: "empty" }
+  | { kind: "available"; selection: HotelStaySelection }
+  | {
+      kind: "consumed"
+      selection: HotelStaySelection
+      idempotencyKey: string
+    }
 
 interface RunningAgent {
   workspaceId: string
@@ -87,6 +128,7 @@ interface RunningAgent {
   traceFailure: Error | null
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
+  hotelStayState: HotelStayState
 }
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
@@ -95,6 +137,13 @@ export const agentToolRequestSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("workspace.validate_plan"),
       expectedRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("hotel.search"),
+      requestId: z.string().trim().min(1),
+      input: z.unknown(),
     })
     .strict(),
   z
@@ -149,11 +198,16 @@ type PlaceAgentToolRequest = Extract<
   AgentToolRequest,
   { type: `place.${string}` }
 >
+type HotelAgentToolRequest = Extract<AgentToolRequest, { type: "hotel.search" }>
 
 function isPlaceToolRequest(
   request: AgentToolRequest
 ): request is PlaceAgentToolRequest {
   return request.type.startsWith("place.")
+}
+
+function isEvidenceToolRequest(request: AgentToolRequest) {
+  return isPlaceToolRequest(request) || request.type === "hotel.search"
 }
 
 function asInputRecord(input: unknown): Record<string, unknown> {
@@ -176,6 +230,89 @@ function changesJourneyGraph(commandName: string) {
     commandName === "workspace.refresh" ||
     commandName === "workspace.replay"
   )
+}
+
+function selectedHotelStay(candidate: HotelCandidate) {
+  return {
+    plannedLat: candidate.coordinates.lat,
+    plannedLng: candidate.coordinates.lng,
+    coordinateSystem: "WGS84" as const,
+    coordinateProvider: "rollinggo" as const,
+    hotelOffer: {
+      provider: candidate.provider,
+      providerHotelId: candidate.providerHotelId,
+      address: candidate.address,
+      startingPrice: candidate.startingPrice,
+      coverImageUrl: candidate.imageUrl,
+      externalUrl: candidate.externalUrl,
+      fetchedAt: candidate.fetchedAt,
+    },
+  }
+}
+
+function commandWithSelectedHotel(
+  running: RunningAgent,
+  command: ReturnType<typeof targetCommandBodySchema.parse>,
+  idempotencyKey: string
+) {
+  const state = running.hotelStayState
+  const selected =
+    state.kind === "available" ||
+    (state.kind === "consumed" && state.idempotencyKey === idempotencyKey)
+      ? state.selection
+      : null
+  const consumesSelectedHotel = state.kind === "available"
+
+  if (
+    command.name === "journey.add_event" &&
+    command.payload.event.type === "STAY"
+  ) {
+    if (!selected) {
+      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
+    }
+    return {
+      command: {
+        ...command,
+        payload: {
+          ...command.payload,
+          event: {
+            ...command.payload.event,
+            title: selected.candidate.name,
+            detail: { ...command.payload.event.detail, ...selected.stayDetail },
+          },
+        },
+      },
+      consumesSelectedHotel,
+    }
+  }
+
+  if (
+    command.name === "journey.update_event" &&
+    command.payload.patch.type === "STAY"
+  ) {
+    if (!selected) {
+      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
+    }
+    return {
+      command: {
+        ...command,
+        payload: {
+          ...command.payload,
+          patch: {
+            ...command.payload.patch,
+            title: selected.candidate.name,
+            detail: {
+              ...command.payload.patch.detail,
+              ...selected.stayDetail,
+            },
+          },
+        },
+      },
+      consumesSelectedHotel,
+    }
+  }
+
+  return { command, consumesSelectedHotel: false }
 }
 
 function conversationMessages(
@@ -213,6 +350,9 @@ export class AgentGateway {
   private readonly placeService: NonNullable<
     AgentGatewayOptions["placeService"]
   >
+  private readonly hotelService: NonNullable<
+    AgentGatewayOptions["hotelService"]
+  >
 
   constructor(
     private readonly commands: WorkspaceCommandService,
@@ -228,6 +368,7 @@ export class AgentGateway {
         : options.heartbeatIntervalMs
     this.now = options.now ?? (() => new Date())
     this.placeService = options.placeService ?? createPlaceIntelligenceService()
+    this.hotelService = options.hotelService ?? createHotelSearchService()
   }
 
   private async trace(
@@ -329,6 +470,7 @@ export class AgentGateway {
       traceFailure: null,
       requiresPlanValidation: false,
       lastPlanValidation: null,
+      hotelStayState: { kind: "not_searched" },
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
@@ -428,6 +570,10 @@ export class AgentGateway {
   ): Promise<unknown>
   async executeTool(
     capabilityToken: string,
+    request: HotelAgentToolRequest
+  ): Promise<unknown>
+  async executeTool(
+    capabilityToken: string,
     request: AgentToolRequest
   ): Promise<unknown>
   async executeTool(capabilityToken: string, request: AgentToolRequest) {
@@ -460,8 +606,12 @@ export class AgentGateway {
       status: "OK",
       payload: {
         toolType: request.type,
-        ...(request.type.startsWith("place.")
-          ? { requestId: (request as PlaceAgentToolRequest).requestId }
+        ...(isEvidenceToolRequest(request)
+          ? {
+              requestId: (
+                request as PlaceAgentToolRequest | HotelAgentToolRequest
+              ).requestId,
+            }
           : {}),
         ...(commandName ? { commandName } : {}),
       },
@@ -539,15 +689,33 @@ export class AgentGateway {
         output = validation
       } else if (isPlaceToolRequest(request)) {
         output = await this.executePlaceTool(running, request)
+      } else if (request.type === "hotel.search") {
+        output = await this.executeHotelTool(running, request)
       } else {
+        const parsedCommand = targetCommandBodySchema.parse(request.command)
+        const selectedCommand = commandWithSelectedHotel(
+          running,
+          parsedCommand,
+          request.idempotencyKey
+        )
         const envelope: TargetCommandEnvelope = {
           aggregateId: running.workspaceId,
           expectedRevision: request.expectedRevision,
           idempotencyKey: request.idempotencyKey,
           actor: { kind: "AGENT", agentRunId: running.runId },
-          command: targetCommandBodySchema.parse(request.command),
+          command: selectedCommand.command,
         }
         const result = await this.commands.execute(running.context, envelope)
+        if (selectedCommand.consumesSelectedHotel) {
+          const current = running.hotelStayState
+          if (current.kind === "available") {
+            running.hotelStayState = {
+              kind: "consumed",
+              selection: current.selection,
+              idempotencyKey: request.idempotencyKey,
+            }
+          }
+        }
         appliedCommandResult = result
         if (changesJourneyGraph(result.commandName)) {
           running.requiresPlanValidation = true
@@ -592,7 +760,7 @@ export class AgentGateway {
           },
         })
       }
-      if (isPlaceToolRequest(request)) {
+      if (isEvidenceToolRequest(request)) {
         await this.trace(running, {
           type: "evidence.recorded",
           spanId: randomUUID(),
@@ -708,7 +876,34 @@ export class AgentGateway {
           requestId: request.requestId,
         })
       )
-      return this.placeService.searchPlaces(input, usageContext)
+      const result = await this.placeService.searchPlaces(input, usageContext)
+      if (isAttractionSearch(input)) {
+        const candidates = result.results.filter((candidate) =>
+          isAttractionCategory(candidate.category)
+        )
+        if (candidates.length) {
+          await appendWorkspaceMessage(running.context, running.workspaceId, {
+            role: "ASSISTANT",
+            content: "",
+            blocks: [
+              {
+                type: "place_search",
+                title: `${input.query ?? input.city ?? "地点"}地点`,
+                fetchedAt: new Date().toISOString(),
+                candidates: candidates.map((candidate) => ({
+                  candidateId: candidate.id,
+                  name: candidate.name,
+                  category: candidate.category,
+                  address: candidate.address,
+                  imageUrl: candidate.images?.[0]?.url,
+                })),
+              },
+            ],
+            agentRunId: running.runId,
+          })
+        }
+      }
+      return result
     }
     if (request.type === "place.resolve") {
       const input = withoutRequestId(
@@ -767,6 +962,64 @@ export class AgentGateway {
       event.type,
       usageContext
     )
+  }
+
+  private async executeHotelTool(
+    running: RunningAgent,
+    request: HotelAgentToolRequest
+  ) {
+    const input = withoutRequestId(
+      hotelSearchInputSchema.parse({
+        ...asInputRecord(request.input),
+        requestId: request.requestId,
+      })
+    )
+    const usageContext: HotelProviderUsageContext = {
+      userId: running.context.userId,
+      workspaceId: running.workspaceId,
+      agentRunId: running.runId,
+      requestId: request.requestId,
+    }
+    const result = await this.hotelService.searchHotels(input, usageContext)
+    const firstCandidate = result.candidates[0]
+    const stayDetail = firstCandidate
+      ? selectedHotelStay(firstCandidate)
+      : undefined
+    running.hotelStayState =
+      firstCandidate && stayDetail
+        ? {
+            kind: "available",
+            selection: { candidate: firstCandidate, stayDetail },
+          }
+        : { kind: "empty" }
+    await appendWorkspaceMessage(running.context, running.workspaceId, {
+      role: "ASSISTANT",
+      content: "",
+      blocks: [
+        {
+          type: "hotel_search",
+          title: `${input.place}酒店推荐`,
+          fetchedAt: new Date().toISOString(),
+          candidates: result.candidates.map((candidate) => ({
+            candidateId: candidate.candidateId,
+            provider: candidate.provider,
+            providerHotelId: candidate.providerHotelId,
+            name: candidate.name,
+            address: candidate.address,
+            startingPrice: candidate.startingPrice,
+            imageUrl: candidate.imageUrl,
+            externalUrl: candidate.externalUrl,
+          })),
+        },
+      ],
+      agentRunId: running.runId,
+    })
+    return {
+      count: result.candidates.length,
+      warnings: result.warnings,
+      firstCandidate,
+      stayDetail,
+    }
   }
 
   private toolServers(

@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand"
 import type { JourneyViewLevel } from "@/lib/journeys/projections"
 import type {
   TargetJourneyEvent,
+  TargetWorkspaceMessage,
   TargetWorkspaceDocument,
 } from "@/modules/data-model/contracts"
 import type { PhotoShare } from "@/types/photo"
@@ -44,6 +45,7 @@ export interface ChatMessage {
   id: string
   role: ChatMessageRole
   content: string
+  blocks?: TargetWorkspaceMessage["blocks"]
   runId?: string | null
   createdAt?: string
   updatedAt?: string

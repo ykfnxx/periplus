@@ -31,6 +31,7 @@ export const placeResolveInputSchema = z.object({
   requestId: requestIdSchema,
   text: z.string().min(1),
   city: z.string().optional(),
+  intent: placeSearchIntentSchema.optional(),
   journeyContext: z
     .object({
       currentCity: z.string().optional(),

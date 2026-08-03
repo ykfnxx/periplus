@@ -155,6 +155,7 @@ function mergeCandidates(candidates: PlaceCandidate[]) {
       province: existing.province ?? candidate.province,
       city: existing.city ?? candidate.city,
       district: existing.district ?? candidate.district,
+      images: existing.images?.length ? existing.images : candidate.images,
     })
   }
   return Array.from(groups.values())
@@ -207,6 +208,7 @@ export function rankPlaceCandidates(
       province: candidate.province,
       city: candidate.city,
       district: candidate.district,
+      images: candidate.images,
       coordinates: candidate.coordinates,
       bestCoordinate,
       sources: candidate.sources,
