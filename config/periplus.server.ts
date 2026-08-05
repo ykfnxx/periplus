@@ -75,6 +75,35 @@ export const periplusServerConfig = {
       return envNumber("PERIPLUS_BACKEND_PORT", 3002)
     },
   },
+  agentRuntime: {
+    get kind() {
+      return envString("PERIPLUS_AGENT_RUNTIME", "kimi") === "pi"
+        ? ("pi" as const)
+        : ("kimi" as const)
+    },
+  },
+  deepseek: {
+    get apiKey() {
+      return envString("DEEPSEEK_API_KEY")
+    },
+    get model() {
+      return envString("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    },
+  },
+  pi: {
+    get bin() {
+      return envString(
+        "PERIPLUS_PI_BIN",
+        join(process.cwd(), "node_modules/.bin/pi")
+      )
+    },
+    get webSearchEnabled() {
+      return envString("PERIPLUS_PI_WEB_SEARCH_ENABLED") === "true"
+    },
+    get timeoutMs() {
+      return envNumber("PERIPLUS_PI_TIMEOUT_MS", 120000)
+    },
+  },
   kimi: {
     get bin() {
       return envString(
