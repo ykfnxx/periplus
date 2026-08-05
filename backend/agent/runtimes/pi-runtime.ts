@@ -257,6 +257,7 @@ export class PiRuntime implements AgentRuntime {
             typeof record.error === "string" ? record.error : "Pi RPC failed"
           )
         )
+        if (record.command === "prompt") requestAbort()
       }
     }
 

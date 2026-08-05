@@ -254,6 +254,42 @@ describe("PiRuntime", () => {
     expect(existsSync(run.metadata.workDir ?? "")).toBe(false)
   })
 
+  it("aborts promptly when Pi rejects the prompt before agent_settled", async () => {
+    const child = createChild({ settle: false })
+    childProcessMock.spawn.mockReturnValue(child)
+    const runtime = new PiRuntime({
+      binary: "/test/pi",
+      projectRoot: process.cwd(),
+      apiKey: "deepseek-key",
+      model: "deepseek-v4-flash",
+      webSearchEnabled: false,
+      timeoutMs: 120_000,
+    })
+    const { observer, finished } = startObserver()
+    const run = await runtime.start(
+      { runId: "run-rejected", prompt: "rejected", toolServers: [] },
+      observer
+    )
+
+    child.stdout.write(
+      `${JSON.stringify({
+        type: "response",
+        command: "prompt",
+        success: false,
+        error: "prompt preflight rejected",
+      })}\n`
+    )
+
+    expect(observer.onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "prompt preflight rejected" })
+    )
+    expect(child.commands.at(-1)).toContain('"type":"abort"')
+
+    child.emit("close", 1)
+    await finished
+    expect(existsSync(run.metadata.workDir ?? "")).toBe(false)
+  })
+
   it("aborts a timed-out run and cleans it after exit", async () => {
     vi.useFakeTimers()
     try {
