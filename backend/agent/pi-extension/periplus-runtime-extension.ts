@@ -87,6 +87,31 @@ function collectSources(response: Record<string, unknown>) {
   return sources
 }
 
+export function responseText(response: Record<string, unknown>) {
+  if (typeof response.output_text === "string" && response.output_text) {
+    return response.output_text
+  }
+  const output = Array.isArray(response.output) ? response.output : []
+  return output
+    .filter(
+      (item): item is { type: string; content: unknown[] } =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        (item as { type?: unknown }).type === "message" &&
+        Array.isArray((item as { content?: unknown }).content)
+    )
+    .flatMap((item) => item.content)
+    .filter(
+      (part): part is { type: string; text: string } =>
+        Boolean(part) &&
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "output_text" &&
+        typeof (part as { text?: unknown }).text === "string"
+    )
+    .map((part) => part.text)
+    .join("\n")
+}
+
 export default function periplusRuntimeExtension(pi: ExtensionAPI) {
   const config = runConfig()
   const enabled = (name: string) => config.toolNames.includes(name)
@@ -291,7 +316,7 @@ export default function periplusRuntimeExtension(pi: ExtensionAPI) {
         )
       }
       return textResult({
-        answer: typeof body.output_text === "string" ? body.output_text : "",
+        answer: responseText(body),
         sources: collectSources(body),
         usage: body.usage,
       })
