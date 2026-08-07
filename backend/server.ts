@@ -4,6 +4,7 @@ import { periplusServerConfig } from "@/config/periplus.server"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { AgentGateway } from "./agent/gateway"
 import { KimiCodeRuntime } from "./agent/runtimes/kimi-code-runtime"
+import { PiRuntime } from "./agent/runtimes/pi-runtime"
 import { handleInternalRequest } from "./internal-api"
 import { createAgentWebSocketServer } from "./ws"
 
@@ -12,10 +13,20 @@ loadProjectEnv()
 const port = periplusServerConfig.agentBackend.port
 const backendUrl = periplusServerConfig.agentBackend.url
 const commands = new WorkspaceCommandService()
-const runtime = new KimiCodeRuntime({
-  binary: periplusServerConfig.kimi.bin,
-  identityHomeSource: periplusServerConfig.kimi.homeSource,
-})
+const runtime =
+  periplusServerConfig.agentRuntime.kind === "pi"
+    ? new PiRuntime({
+        binary: periplusServerConfig.pi.bin,
+        projectRoot: process.cwd(),
+        apiKey: periplusServerConfig.deepseek.apiKey,
+        model: periplusServerConfig.deepseek.model,
+        webSearchEnabled: periplusServerConfig.pi.webSearchEnabled,
+        timeoutMs: periplusServerConfig.pi.timeoutMs,
+      })
+    : new KimiCodeRuntime({
+        binary: periplusServerConfig.kimi.bin,
+        identityHomeSource: periplusServerConfig.kimi.homeSource,
+      })
 const agentGateway = new AgentGateway(commands, runtime, {
   backendUrl,
   projectRoot: process.cwd(),
