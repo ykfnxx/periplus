@@ -453,7 +453,7 @@ function isRootCityInsertion(
 function isScopeEvent(
   draft: PreparedAgentDraft,
   eventId: string,
-  scopeEventId: string
+  scopeEventId: string | null
 ) {
   return (
     draft.after.events.find((event) => event.id === eventId)
@@ -464,7 +464,7 @@ function isScopeEvent(
 function isScopeLink(
   draft: PreparedAgentDraft,
   linkId: string,
-  scopeEventId: string
+  scopeEventId: string | null
 ) {
   const link = draft.after.links.find((candidate) => candidate.id === linkId)
   return Boolean(
@@ -477,7 +477,7 @@ function isScopeLink(
 function projectionRepairTargetsScope(
   command: ReturnType<typeof targetCommandBodySchema.parse>,
   draft: PreparedAgentDraft,
-  scopeEventId: string
+  scopeEventId: string | null
 ) {
   switch (command.name) {
     case "journey.add_link":
@@ -505,8 +505,12 @@ function repairTargetsIssue(
   if (issue.code === "ROOT_ROUTE_DISCONNECTED" && issue.eventIds.length === 0) {
     return isRootCityInsertion(command)
   }
-  if (issue.code === "PROJECTION_INVALID" && issue.cityEventId) {
-    return projectionRepairTargetsScope(command, draft, issue.cityEventId)
+  if (issue.code === "PROJECTION_INVALID") {
+    return projectionRepairTargetsScope(
+      command,
+      draft,
+      issue.cityEventId ?? null
+    )
   }
   const eventIds = new Set(issue.eventIds)
   const touchesEvent = (eventId: string) => eventIds.has(eventId)

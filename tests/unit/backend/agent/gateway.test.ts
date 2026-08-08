@@ -177,6 +177,31 @@ function cityRouteGraph(id: string): TargetJourneyGraphSnapshot {
   return snapshot
 }
 
+function rootTopologyGraph(id: string): TargetJourneyGraphSnapshot {
+  const snapshot = cityRouteGraph(id)
+  const city = snapshot.events.find((event) => event.type === "SECTION")
+  if (!city || city.detail.kind !== "CITY") {
+    throw new Error("expected city fixture")
+  }
+  const secondCity = {
+    ...city,
+    id: `${id}-city-2`,
+    title: "苏州",
+    detail: { ...city.detail, lat: 31.3, lng: 120.6 },
+  }
+  snapshot.events.push(secondCity)
+  snapshot.links.push({
+    id: `${id}-root-main`,
+    journeyId: id,
+    fromEventId: city.id,
+    toEventId: secondCity.id,
+    kind: "MAIN",
+    rank: 1024,
+    introducedRevision: 1,
+  })
+  return snapshot
+}
+
 async function setup(evalTrace?: { scenarioId: string; sink: EvalTraceSink }) {
   const workspace = await createWorkspace(context, {
     graph: graph(`agent-workspace-${randomUUID()}`),
@@ -198,6 +223,46 @@ function capabilityToken(runtime: FakeRuntime) {
   const content = runtime.request?.toolServers[0]?.configFile?.content
   if (!content) throw new Error("missing Agent tool config")
   return JSON.parse(content).capabilityToken as string
+}
+
+function markProjectionInvalid(
+  gateway: AgentGateway,
+  workspaceId: string,
+  draftId: string,
+  cityEventId?: string
+) {
+  const running = (
+    gateway as unknown as {
+      runs: Map<
+        string,
+        { drafts: Map<string, { validation: PlanValidationReport }> }
+      >
+    }
+  ).runs.get(workspaceId)
+  const previous = running?.drafts.get(draftId)
+  if (!previous) throw new Error("expected stored draft")
+  previous.validation = {
+    ...previous.validation,
+    valid: false,
+    issues: [
+      {
+        code: "PROJECTION_INVALID",
+        ...(cityEventId
+          ? { cityEventId, eventIds: [cityEventId] }
+          : { eventIds: [] }),
+        severity: "ERROR",
+        path: cityEventId ?? "graph",
+        message: "Route topology needs a scoped link repair",
+        repairability: "AGENT",
+        allowedOperations: [
+          "journey.add_link",
+          "journey.retire_link",
+          "journey.select_branch",
+        ],
+        suggestion: "Repair only topology inside the affected scope.",
+      },
+    ],
+  }
 }
 
 function visitDescriptionCommand(workspaceId: string, description: string) {
@@ -1011,38 +1076,8 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
     expect(initial.validation.valid).toBe(true)
 
-    const running = (
-      gateway as unknown as {
-        runs: Map<
-          string,
-          { drafts: Map<string, { validation: PlanValidationReport }> }
-        >
-      }
-    ).runs.get(workspace.id)
-    const previous = running?.drafts.get(initial.draftId)
-    if (!previous) throw new Error("expected stored draft")
     const cityEventId = `${journeyId}-city`
-    previous.validation = {
-      ...previous.validation,
-      valid: false,
-      issues: [
-        {
-          code: "PROJECTION_INVALID",
-          cityEventId,
-          eventIds: [cityEventId],
-          severity: "ERROR",
-          path: cityEventId,
-          message: "City route needs a scoped link repair",
-          repairability: "AGENT",
-          allowedOperations: [
-            "journey.add_link",
-            "journey.retire_link",
-            "journey.select_branch",
-          ],
-          suggestion: "Repair only topology inside the CITY scope.",
-        },
-      ],
-    }
+    markProjectionInvalid(gateway, workspace.id, initial.draftId, cityEventId)
 
     const repaired = await gateway.executeTool(token, {
       type: "workspace.validate_draft",
@@ -1066,6 +1101,79 @@ describe.sequential("P3 persistent AgentGateway", () => {
       ],
     })
     expect(repaired.validation.valid).toBe(true)
+    runtime.exit(0)
+  })
+
+  it("allows root projection links but rejects CITY links", async () => {
+    const journeyId = `root-projection-${randomUUID()}`
+    const workspace = await createWorkspace(context, {
+      graph: rootTopologyGraph(journeyId),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await gateway.start(context, workspace.id, "修复根级拓扑", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "root-projection-initial",
+      commands: [visitDescriptionCommand(journeyId, "保留根级拓扑草稿")],
+    })
+    markProjectionInvalid(gateway, workspace.id, initial.draftId)
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "root-projection-city-link",
+        previousDraftId: initial.draftId,
+        commands: [
+          {
+            name: "journey.add_link",
+            payload: {
+              link: {
+                id: "city-link-is-not-root-repair",
+                fromEventId: `${journeyId}-visit`,
+                toEventId: `${journeyId}-visit-2`,
+                kind: "ALTERNATIVE",
+                branchKey: "city-not-root",
+                rank: 2048,
+              },
+            },
+          },
+        ],
+      })
+    ).rejects.toThrow("does not target a previous draft issue")
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "root-projection-root-link",
+        previousDraftId: initial.draftId,
+        commands: [
+          {
+            name: "journey.add_link",
+            payload: {
+              link: {
+                id: "root-scope-alternative",
+                fromEventId: `${journeyId}-city`,
+                toEventId: `${journeyId}-city-2`,
+                kind: "ALTERNATIVE",
+                branchKey: "root-scope-repair",
+                rank: 2048,
+              },
+            },
+          },
+        ],
+      })
+    ).resolves.toMatchObject({ draftId: "root-projection-root-link" })
     runtime.exit(0)
   })
 
