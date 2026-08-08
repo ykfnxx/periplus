@@ -24,6 +24,7 @@
     "build:storybook": "storybook build",
     "observability:up": "docker compose -f ops/observability/compose.yaml up -d",
     "observability:down": "docker compose -f ops/observability/compose.yaml down",
+    "observability:smoke": "tsx scripts/observability-grafana-smoke.ts",
     "db:seed": "tsx prisma/seed.ts",
     "places:import-mct-5a": "tsx scripts/import-mct-5a.ts",
     "places:import-mct-5a:mock": "tsx scripts/import-mct-5a.ts --mock",

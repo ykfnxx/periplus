@@ -4,6 +4,7 @@ Start the local monitoring stack from the Periplus checkout:
 
 ```sh
 docker compose -f ops/observability/compose.yaml up -d
+npm run observability:smoke
 ```
 
 Run the backend with `npm run dev:backend` and keep
@@ -18,6 +19,10 @@ Grafana credentials are also required runtime variables; set
 `npm run observability:up`. The compose file has no usable credential default.
 Grafana is available on port `PERIPLUS_GRAFANA_PORT` (3003 by default) and
 Phoenix is available on port `PERIPLUS_PHOENIX_PORT` (6008 by default).
+After the stack starts, `npm run observability:smoke` authenticates to Grafana
+and waits for the two provisioned data sources (`prometheus`, `tempo`) and two
+dashboards (`periplus-agent-api-overview`, `periplus-agent-runs`) to be
+available through the Grafana API.
 
 The Collector sends full technical traces to Tempo, metrics to Prometheus,
 and the redacted Agent/Prompt subset to Phoenix. The named volumes preserve

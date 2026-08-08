@@ -35,6 +35,15 @@ describe("observability configuration contract", () => {
     )
     expect(compose).not.toContain("GRAFANA_ADMIN_USER:-")
     expect(compose).not.toContain("GRAFANA_ADMIN_PASSWORD:-")
+    expect(compose).toContain(
+      "./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro"
+    )
+    expect(compose).toContain(
+      "./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro"
+    )
+    expect(compose).not.toContain(
+      "./grafana/provisioning:/etc/grafana/provisioning:ro"
+    )
   })
 
   it("exposes spanmetrics quantiles and run lookup variables", () => {
@@ -91,5 +100,11 @@ describe("observability configuration contract", () => {
     expect(runs.panels[0]?.targets?.[0]?.query).toContain(
       ".periplus.agent.mode =~ `$mode`"
     )
+
+    const smoke = read("scripts/observability-grafana-smoke.ts")
+    expect(smoke).toContain("/api/datasources/uid/prometheus")
+    expect(smoke).toContain("/api/datasources/uid/tempo")
+    expect(smoke).toContain("/api/dashboards/uid/periplus-agent-api-overview")
+    expect(smoke).toContain("/api/dashboards/uid/periplus-agent-runs")
   })
 })
