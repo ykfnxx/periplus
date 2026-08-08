@@ -407,6 +407,48 @@ export class AgentGateway {
     }
   }
 
+  private async withTelemetrySpan<T>(
+    telemetry: AgentRunTelemetry,
+    name: string,
+    callback: () => Promise<T>,
+    attributes: Record<string, string | number | boolean> = {}
+  ) {
+    const span = telemetry.startSpan(
+      name,
+      OpenInferenceSpanKind.CHAIN,
+      attributes
+    )
+    try {
+      const result = await telemetry.withSpan(span, callback)
+      span.end("OK")
+      return result
+    } catch (error) {
+      span.recordException(error)
+      span.end("ERROR")
+      throw error
+    }
+  }
+
+  private finishRejectedTelemetry(
+    telemetry: AgentRunTelemetry,
+    code: string,
+    message: string
+  ) {
+    const rejectionSpan = telemetry.startSpan(
+      "agent.run.rejection",
+      OpenInferenceSpanKind.CHAIN,
+      { "periplus.agent.rejection_code": code }
+    )
+    rejectionSpan.end("ERROR", {
+      "error.message": message,
+      "periplus.agent.rejected": true,
+    })
+    telemetry.finish("ERROR", message, {
+      "periplus.agent.rejection_code": code,
+      "periplus.agent.rejected": true,
+    })
+  }
+
   async start(
     context: AuthContext,
     workspaceId: string,
@@ -414,9 +456,39 @@ export class AgentGateway {
     mode: AgentMode,
     emit: AgentEventEmitter
   ) {
-    let initial = await this.commands.getDocument(context, workspaceId)
-    if (!initial) throw new WorkspaceInputError("Workspace was not found")
+    const runId = randomUUID()
+    const telemetry = startAgentRunTelemetry({
+      workspaceId,
+      userId: context.userId,
+      runId,
+      mode,
+      runtimeId: this.runtime.id,
+      promptVersion: promptVersion(mode),
+    })
+    telemetry.setPromptInput(prompt)
+
+    let initial
+    try {
+      initial = await this.withTelemetrySpan(
+        telemetry,
+        "agent.workspace.load",
+        () => this.commands.getDocument(context, workspaceId)
+      )
+      if (!initial) throw new WorkspaceInputError("Workspace was not found")
+    } catch (error) {
+      this.finishRejectedTelemetry(
+        telemetry,
+        "WORKSPACE_LOAD_FAILED",
+        error instanceof Error ? error.message : "Workspace was not found"
+      )
+      throw error
+    }
     if (this.runs.has(workspaceId)) {
+      this.finishRejectedTelemetry(
+        telemetry,
+        "LOCAL_RUN_ALREADY_ACTIVE",
+        "当前 Workspace 正在由 Agent 修改"
+      )
       emit(workspaceId, {
         type: "error",
         payload: { message: "当前 Workspace 正在由 Agent 修改" },
@@ -424,15 +496,38 @@ export class AgentGateway {
       return
     }
     if (initial.agentRuns.some((run) => run.status === "RUNNING")) {
-      await reconcileExpiredWorkspaceAgentRun(
-        context,
-        workspaceId,
-        this.runtimeOwnerId,
-        this.now()
-      )
-      initial = await this.commands.getDocument(context, workspaceId)
-      if (!initial) throw new WorkspaceInputError("Workspace was not found")
+      try {
+        await this.withTelemetrySpan(
+          telemetry,
+          "agent.run.acquire.reconcile",
+          () =>
+            reconcileExpiredWorkspaceAgentRun(
+              context,
+              workspaceId,
+              this.runtimeOwnerId,
+              this.now()
+            )
+        )
+        initial = await this.withTelemetrySpan(
+          telemetry,
+          "agent.workspace.load",
+          () => this.commands.getDocument(context, workspaceId)
+        )
+        if (!initial) throw new WorkspaceInputError("Workspace was not found")
+      } catch (error) {
+        this.finishRejectedTelemetry(
+          telemetry,
+          "RUN_ACQUIRE_FAILED",
+          error instanceof Error ? error.message : "Workspace was not found"
+        )
+        throw error
+      }
       if (initial.agentRuns.some((run) => run.status === "RUNNING")) {
+        this.finishRejectedTelemetry(
+          telemetry,
+          "RUN_ALREADY_ACTIVE",
+          "当前 Workspace 正在由 Agent 修改"
+        )
         emit(workspaceId, {
           type: "error",
           payload: { message: "当前 Workspace 正在由 Agent 修改" },
@@ -441,23 +536,32 @@ export class AgentGateway {
       }
     }
 
-    const persistedRun = await startWorkspaceAgentRun(
-      context,
-      workspaceId,
-      this.now(),
-      this.runtimeOwnerId,
-      this.agentRunLeaseSeconds
-    )
-    if (!persistedRun) throw new WorkspaceInputError("Workspace was not found")
-    const telemetry = startAgentRunTelemetry({
-      workspaceId,
-      userId: context.userId,
-      runId: persistedRun.id,
-      mode,
-      runtimeId: this.runtime.id,
-      promptVersion: promptVersion(mode),
-    })
-    telemetry.setPromptInput(prompt)
+    let persistedRun
+    try {
+      persistedRun = await this.withTelemetrySpan(
+        telemetry,
+        "agent.run.persist",
+        () =>
+          startWorkspaceAgentRun(
+            context,
+            workspaceId,
+            this.now(),
+            this.runtimeOwnerId,
+            this.agentRunLeaseSeconds,
+            runId
+          )
+      )
+      if (!persistedRun)
+        throw new WorkspaceInputError("Workspace was not found")
+    } catch (error) {
+      this.finishRejectedTelemetry(
+        telemetry,
+        "RUN_PERSIST_REJECTED",
+        error instanceof Error ? error.message : "Workspace was not found"
+      )
+      throw error
+    }
+    telemetry.root.addEvent("agent.run.persisted")
     let assistantMessageId: string
     try {
       const userMessageSpan = telemetry.startSpan(
@@ -512,22 +616,27 @@ export class AgentGateway {
       }
       assistantMessageId = assistantMessage.id
     } catch (error) {
+      try {
+        await this.withTelemetrySpan(
+          telemetry,
+          "agent.run.finish.persist",
+          () =>
+            finishWorkspaceAgentRun(context, workspaceId, persistedRun.id, {
+              status: "FAILED",
+              errorCode: "AGENT_MESSAGE_FAILED",
+              errorMessage:
+                error instanceof Error ? error.message : "User message failed",
+              runtimeOwnerId: this.runtimeOwnerId,
+              now: this.now(),
+            })
+        )
+      } catch {
+        // Preserve the original persistence failure if terminalization fails.
+      }
       telemetry.finish(
         "ERROR",
         error instanceof Error ? error.message : "User message failed"
       )
-      try {
-        await finishWorkspaceAgentRun(context, workspaceId, persistedRun.id, {
-          status: "FAILED",
-          errorCode: "AGENT_MESSAGE_FAILED",
-          errorMessage:
-            error instanceof Error ? error.message : "User message failed",
-          runtimeOwnerId: this.runtimeOwnerId,
-          now: this.now(),
-        })
-      } catch {
-        // Preserve the original persistence failure if terminalization fails.
-      }
       throw error
     }
     const capabilityToken = randomUUID()
@@ -562,7 +671,11 @@ export class AgentGateway {
         status: "OK",
         payload: { mode, runtimeId: this.runtime.id },
       })
-      const document = await this.commands.getDocument(context, workspaceId)
+      const document = await this.withTelemetrySpan(
+        running.telemetry,
+        "agent.workspace.lock.load",
+        () => this.commands.getDocument(context, workspaceId)
+      )
       if (!document) throw new WorkspaceInputError("Workspace was not found")
       emit(workspaceId, { type: "workspace.locked", payload: document })
       emit(workspaceId, {
@@ -1347,12 +1460,18 @@ export class AgentGateway {
   ) {
     running.outputWrite = running.outputWrite
       .then(async () => {
+        const persistStartedAt = performance.now()
         await appendWorkspaceMessageDelta(
           running.context,
           running.workspaceId,
           running.assistantMessageId,
           running.runId,
           text,
+          this.now()
+        )
+        running.telemetry.recordStreamPersistence(
+          text,
+          performance.now() - persistStartedAt,
           this.now()
         )
         running.stdout += text
@@ -1519,23 +1638,28 @@ export class AgentGateway {
     }
 
     try {
-      await finishWorkspaceAgentRun(
-        running.context,
-        running.workspaceId,
-        running.runId,
-        {
-          status: failed
-            ? "FAILED"
-            : running.cancelled
-              ? "CANCELLED"
-              : "SUCCEEDED",
-          errorCode: failed
-            ? (validationErrorCode ?? "AGENT_RUNTIME_FAILED")
-            : undefined,
-          errorMessage: validationErrorCode,
-          runtimeOwnerId: this.runtimeOwnerId,
-          now: this.now(),
-        }
+      await this.withTelemetrySpan(
+        running.telemetry,
+        "agent.run.finish.persist",
+        () =>
+          finishWorkspaceAgentRun(
+            running.context,
+            running.workspaceId,
+            running.runId,
+            {
+              status: failed
+                ? "FAILED"
+                : running.cancelled
+                  ? "CANCELLED"
+                  : "SUCCEEDED",
+              errorCode: failed
+                ? (validationErrorCode ?? "AGENT_RUNTIME_FAILED")
+                : undefined,
+              errorMessage: validationErrorCode,
+              runtimeOwnerId: this.runtimeOwnerId,
+              now: this.now(),
+            }
+          )
       )
       await this.trace(running, {
         type: failed || running.cancelled ? "run.failed" : "run.completed",
@@ -1564,6 +1688,29 @@ export class AgentGateway {
       running.telemetry.finishRuntimeStream(
         failed ? "ERROR" : running.cancelled ? "CANCELLED" : "OK"
       )
+    }
+    try {
+      const document = await this.withTelemetrySpan(
+        running.telemetry,
+        "agent.workspace.unlock.load",
+        () => this.commands.getDocument(running.context, running.workspaceId)
+      )
+      emit(running.workspaceId, {
+        type: "workspace.unlocked",
+        payload: document,
+      })
+    } catch (error) {
+      failed = true
+      running.telemetry.root.recordException(error)
+      emit(running.workspaceId, {
+        type: "agent.run.failed",
+        payload: {
+          runId: running.runId,
+          message:
+            error instanceof Error ? error.message : "Workspace unlock failed",
+        },
+      })
+    } finally {
       running.telemetry.finish(
         failed ? "ERROR" : running.cancelled ? "CANCELLED" : "OK",
         running.stdout,
@@ -1574,11 +1721,6 @@ export class AgentGateway {
       )
       this.releaseRuntime(running)
     }
-    const document = await this.commands.getDocument(
-      running.context,
-      running.workspaceId
-    )
-    emit(running.workspaceId, { type: "workspace.unlocked", payload: document })
     emit(running.workspaceId, {
       type: failed
         ? "agent.run.failed"
@@ -1609,18 +1751,23 @@ export class AgentGateway {
       error instanceof Error ? error.name : "Error"
     )
     try {
-      await finishWorkspaceAgentRun(
-        running.context,
-        running.workspaceId,
-        running.runId,
-        {
-          status: "FAILED",
-          errorCode: "AGENT_START_FAILED",
-          errorMessage:
-            error instanceof Error ? error.message : "Agent runtime failed",
-          runtimeOwnerId: this.runtimeOwnerId,
-          now: this.now(),
-        }
+      await this.withTelemetrySpan(
+        running.telemetry,
+        "agent.run.finish.persist",
+        () =>
+          finishWorkspaceAgentRun(
+            running.context,
+            running.workspaceId,
+            running.runId,
+            {
+              status: "FAILED",
+              errorCode: "AGENT_START_FAILED",
+              errorMessage:
+                error instanceof Error ? error.message : "Agent runtime failed",
+              runtimeOwnerId: this.runtimeOwnerId,
+              now: this.now(),
+            }
+          )
       )
       await this.trace(running, {
         type: "run.failed",
@@ -1632,8 +1779,24 @@ export class AgentGateway {
             error instanceof Error ? error.message : "Agent runtime failed",
         },
       })
+    } catch (finishError) {
+      running.telemetry.root.recordException(finishError)
     } finally {
       running.telemetry.finishRuntimeStream("ERROR", error)
+      let document = null
+      try {
+        document = await this.withTelemetrySpan(
+          running.telemetry,
+          "agent.workspace.unlock.load",
+          () => this.commands.getDocument(running.context, running.workspaceId)
+        )
+      } catch (unlockError) {
+        running.telemetry.root.recordException(unlockError)
+      }
+      emit(running.workspaceId, {
+        type: "workspace.unlocked",
+        payload: document,
+      })
       running.telemetry.finish("ERROR", running.stdout, {
         "periplus.agent.error_type":
           error instanceof Error ? error.name : "Error",

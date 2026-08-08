@@ -97,9 +97,27 @@ function statusCode(status: TelemetryStatus) {
 }
 
 function hashIdentity(value: string) {
-  return createHmac("sha256", periplusServerConfig.observability.idSalt)
-    .update(value)
-    .digest("hex")
+  const salt = periplusServerConfig.observability.idSalt
+  if (!salt) {
+    throw new Error(
+      "PERIPLUS_OBSERVABILITY_ID_SALT is required when observability is enabled"
+    )
+  }
+  return createHmac("sha256", salt).update(value).digest("hex")
+}
+
+const droppedTelemetryAttributePattern =
+  /^(?:url\.full|http\.url|url\.query|http\.target)$/i
+
+function safeSpanAttributes(attributes: Attributes): Attributes {
+  return Object.fromEntries(
+    Object.entries(attributes)
+      .filter(([key]) => !droppedTelemetryAttributePattern.test(key))
+      .map(([key, value]) => [
+        key,
+        typeof value === "string" ? redactTelemetryText(value) : value,
+      ])
+  )
 }
 
 function spanAttributes(
@@ -108,7 +126,7 @@ function spanAttributes(
 ): Attributes {
   return {
     [SemanticConventions.OPENINFERENCE_SPAN_KIND]: kind,
-    ...attributes,
+    ...safeSpanAttributes(attributes),
   }
 }
 
@@ -134,13 +152,19 @@ export function startTelemetrySpan(
     context: spanContext,
     startedAt,
     setAttribute(key, value) {
-      span.setAttribute(key, value)
+      const safe = safeSpanAttributes({ [key]: value })[key]
+      if (safe !== undefined) {
+        span.setAttribute(key, safe as string | number | boolean)
+      }
     },
     setAttributes(next) {
-      span.setAttributes(next)
+      span.setAttributes(safeSpanAttributes(next))
     },
     addEvent(eventName, eventAttributes) {
-      span.addEvent(eventName, eventAttributes)
+      span.addEvent(
+        eventName,
+        eventAttributes ? safeSpanAttributes(eventAttributes) : undefined
+      )
     },
     recordException(error) {
       if (error instanceof Error) {
@@ -155,7 +179,7 @@ export function startTelemetrySpan(
     end(status = "OK", endAttributes) {
       if (ended) return
       ended = true
-      if (endAttributes) span.setAttributes(endAttributes)
+      if (endAttributes) span.setAttributes(safeSpanAttributes(endAttributes))
       span.setStatus({ code: statusCode(status) })
       span.end()
     },
@@ -205,20 +229,31 @@ export class AgentRunTelemetry {
   private readonly commonAttributes: Attributes
   private readonly startedAt: number
   private stream: TelemetrySpan | null = null
+  private persistence: TelemetrySpan | null = null
   private firstDeltaAt: number | null = null
+  private deltaCount = 0
+  private byteCount = 0
+  private firstDelta: string | null = null
+  private lastDelta: string | null = null
+  private persistedCount = 0
+  private lastPersistedAt: string | null = null
   private ended = false
 
   constructor(input: AgentRunTelemetryInput) {
-    const sessionId = hashIdentity(`session:${input.workspaceId}`)
-    const runIdHash = hashIdentity(`run:${input.runId}`)
     this.mode = input.mode
     this.runtimeId = input.runtimeId
-    this.commonAttributes = {
-      [SESSION_ID]: sessionId,
-      [USER_ID]: hashIdentity(`user:${input.userId}`),
-      "periplus.session.id_hash": sessionId,
-      "periplus.agent.run_id_hash": runIdHash,
-      "periplus.agent.run_id": runIdHash,
+    if (periplusServerConfig.observability.enabled) {
+      const sessionId = hashIdentity(`session:${input.workspaceId}`)
+      const userIdHash = hashIdentity(`user:${input.userId}`)
+      const runIdHash = hashIdentity(`run:${input.runId}`)
+      this.commonAttributes = {
+        [SESSION_ID]: sessionId,
+        [USER_ID]: userIdHash,
+        "periplus.session.id_hash": sessionId,
+        "periplus.agent.run_id_hash": runIdHash,
+      }
+    } else {
+      this.commonAttributes = {}
     }
     this.root = startTelemetrySpan("agent.run", OpenInferenceSpanKind.AGENT, {
       ...this.commonAttributes,
@@ -284,33 +319,87 @@ export class AgentRunTelemetry {
       parentContext
     )
     this.stream = stream
+    this.persistence = this.startSpan(
+      "agent.stream.persist",
+      OpenInferenceSpanKind.CHAIN,
+      { "periplus.agent.runtime": this.runtimeId },
+      stream.context
+    )
     return stream
   }
 
   recordStreamDelta(text: string) {
     const now = performance.now()
+    const byteCount = Buffer.byteLength(text, "utf8")
+    const redactedText = redactTelemetryText(text).slice(0, 1024)
     if (this.firstDeltaAt === null) {
       this.firstDeltaAt = now
+      this.firstDelta = redactedText
       this.stream?.setAttribute("periplus.stream.ttft_ms", now - this.startedAt)
       this.root.setAttribute("periplus.agent.ttft_ms", now - this.startedAt)
     }
+    this.deltaCount += 1
+    this.byteCount += byteCount
+    this.lastDelta = redactedText
     const attributes = {
       runtime: this.runtimeId,
       status: "streaming",
     }
     instruments().streamDeltas.add(1, attributes)
-    instruments().streamBytes.add(Buffer.byteLength(text, "utf8"), attributes)
+    instruments().streamBytes.add(byteCount, attributes)
     this.stream?.setAttributes({
-      "periplus.stream.delta_count": 1,
-      "periplus.stream.byte_count": Buffer.byteLength(text, "utf8"),
+      "periplus.stream.delta_count": this.deltaCount,
+      "periplus.stream.byte_count": this.byteCount,
+      ...(this.firstDelta
+        ? { "periplus.stream.first_delta": this.firstDelta }
+        : {}),
+      ...(this.lastDelta
+        ? { "periplus.stream.last_delta": this.lastDelta }
+        : {}),
+    })
+  }
+
+  recordStreamPersistence(text: string, durationMs: number, persistedAt: Date) {
+    this.persistedCount += 1
+    this.lastPersistedAt = persistedAt.toISOString()
+    this.persistence?.setAttributes({
+      "periplus.stream.persisted_count": this.persistedCount,
+      "periplus.stream.last_persist_duration_ms": durationMs,
+      "periplus.stream.last_persisted_at": this.lastPersistedAt,
+    })
+    this.persistence?.addEvent("stream.persisted", {
+      "periplus.stream.chunk_bytes": Buffer.byteLength(text, "utf8"),
+      "periplus.stream.persist_duration_ms": durationMs,
+      "periplus.stream.persisted_at": this.lastPersistedAt,
     })
   }
 
   finishRuntimeStream(status: TelemetryStatus, error?: unknown) {
-    if (error) this.stream?.recordException(error)
+    if (error) {
+      this.stream?.recordException(error)
+      this.persistence?.recordException(error)
+    }
+    this.persistence?.end(status, {
+      "periplus.stream.persisted_count": this.persistedCount,
+      ...(this.lastPersistedAt
+        ? { "periplus.stream.last_persisted_at": this.lastPersistedAt }
+        : {}),
+    })
+    this.persistence = null
     this.stream?.end(status, {
       "periplus.stream.status": status,
       ...(this.firstDeltaAt === null ? { "periplus.stream.ttft_ms": -1 } : {}),
+      "periplus.stream.delta_count": this.deltaCount,
+      "periplus.stream.byte_count": this.byteCount,
+      ...(this.firstDelta
+        ? { "periplus.stream.first_delta": this.firstDelta }
+        : {}),
+      ...(this.lastDelta
+        ? { "periplus.stream.last_delta": this.lastDelta }
+        : {}),
+      ...(this.lastPersistedAt
+        ? { "periplus.stream.last_persisted_at": this.lastPersistedAt }
+        : {}),
     })
     this.stream = null
   }

@@ -1,20 +1,46 @@
 const sensitiveKeyPattern =
-  /(?:api[_-]?key|authorization|capability[_-]?token|cookie|password|secret|token|private[_-]?key|access[_-]?key|refresh[_-]?token|address|latitude|longitude|plannedLat|plannedLng|coordinates)/i
+  /^(?:api[_-]?key|authorization|capability[_-]?token|cookie|password|secret|token|private[_-]?key|access[_-]?key|refresh[_-]?token|address|latitude|longitude|lat|lng|plannedLat|plannedLng|coordinates|url|url\.full|url\.query|http\.url|http\.target)$/i
 
-const sensitiveStringPatterns = [
-  /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
-  /(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}/g,
-  /AIza[A-Za-z0-9_-]{20,}/g,
-  /(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi,
-  /("(?:address|latitude|longitude|plannedLat|plannedLng|coordinates)"\s*:\s*)(?:"(?:\\.|[^"\\])*"|[-+]?\d+(?:\.\d+)?|\[[^\]]*\])/gi,
+const sensitiveStringPatterns: Array<{
+  pattern: RegExp
+  replacement: (match: string, ...captures: unknown[]) => string
+}> = [
+  {
+    pattern: /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
+    replacement: () => "[REDACTED]",
+  },
+  {
+    pattern: /(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}/g,
+    replacement: () => "[REDACTED]",
+  },
+  {
+    pattern: /AIza[A-Za-z0-9_-]{20,}/g,
+    replacement: () => "[REDACTED]",
+  },
+  {
+    pattern:
+      /(?<![?&])(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi,
+    replacement: () => "[REDACTED]",
+  },
+  {
+    pattern:
+      /([?&](?:api[_-]?key|token|secret|password|access[_-]?key|authorization)=[^&#\s]*)/gi,
+    replacement: (_match, value: unknown) =>
+      typeof value === "string"
+        ? `${value.slice(0, value.indexOf("=") + 1)}[REDACTED]`
+        : "[REDACTED]",
+  },
+  {
+    pattern:
+      /(\"(?:address|latitude|longitude|lat|lng|plannedLat|plannedLng|coordinates)\"\s*:\s*)(?:\"(?:\\.|[^\"\\])*\"|[-+]?\d+(?:\.\d+)?|\[[^\]]*\])/gi,
+    replacement: (_match, prefix: unknown) =>
+      typeof prefix === "string" ? `${prefix}\"[REDACTED]\"` : "[REDACTED]",
+  },
 ]
 
 function redactString(value: string) {
   return sensitiveStringPatterns.reduce(
-    (output, pattern) =>
-      output.replace(pattern, (match, prefix?: string) =>
-        prefix ? `${prefix}"[REDACTED]"` : "[REDACTED]"
-      ),
+    (output, pattern) => output.replace(pattern.pattern, pattern.replacement),
     value
   )
 }

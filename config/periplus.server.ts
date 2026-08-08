@@ -87,10 +87,7 @@ export const periplusServerConfig = {
       return envString("PERIPLUS_OBSERVABILITY_ENABLED", "true") === "true"
     },
     get idSalt() {
-      return envString(
-        "PERIPLUS_OBSERVABILITY_ID_SALT",
-        "periplus-dev-observability-salt"
-      )
+      return envString("PERIPLUS_OBSERVABILITY_ID_SALT")
     },
     get otlpEndpoint() {
       return envString(

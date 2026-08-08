@@ -8,6 +8,11 @@ import { periplusServerConfig } from "@/config/periplus.server"
 import { setTelemetryShutdown } from "./agent-telemetry"
 
 if (periplusServerConfig.observability.enabled) {
+  if (!periplusServerConfig.observability.idSalt) {
+    throw new Error(
+      "PERIPLUS_OBSERVABILITY_ID_SALT is required when observability is enabled"
+    )
+  }
   const endpoint = periplusServerConfig.observability.otlpEndpoint
   const sdk = new NodeSDK({
     serviceName: periplusServerConfig.observability.serviceName,

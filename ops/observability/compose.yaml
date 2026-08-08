@@ -42,8 +42,8 @@ services:
     ports:
       - "${PERIPLUS_OBSERVABILITY_BIND_HOST:-127.0.0.1}:${PERIPLUS_GRAFANA_PORT:-3003}:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-periplus-dev}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER must be set at runtime}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set at runtime}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana
@@ -51,12 +51,13 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
   phoenix:
-    image: arizephoenix/phoenix:8.17.0
+    image: arizephoenix/phoenix:9.0.0
     restart: unless-stopped
     ports:
       - "${PERIPLUS_OBSERVABILITY_BIND_HOST:-127.0.0.1}:${PERIPLUS_PHOENIX_PORT:-6008}:6006"
     environment:
       PHOENIX_WORKING_DIR: /mnt/data
+      PHOENIX_DEFAULT_RETENTION_POLICY_DAYS: "30"
     volumes:
       - phoenix-data:/mnt/data
 
