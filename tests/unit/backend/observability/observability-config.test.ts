@@ -39,6 +39,7 @@ describe("observability configuration contract", () => {
     expect(collector).toContain("name: http.response.status_code")
     expect(collector).not.toContain("name: http.method")
     expect(collector).not.toContain("name: http.status_code")
+    expect(collector).not.toContain("name: service.name")
     expect(collector).toContain("periplus.stream.first_delta")
     expect(collector).toContain("periplus.stream.last_delta")
 
