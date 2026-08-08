@@ -32,6 +32,7 @@ import AIComposer from "./AIComposer"
 import AIContextCard from "./AIContextCard"
 import ChatHistory from "./ChatHistory"
 import InitialChatState from "./InitialChatState"
+import OverlayScrollArea from "./OverlayScrollArea"
 import RoutePreview from "./RoutePreview"
 
 type WorkbenchLayout = "mobile" | "compact" | "wide"
@@ -297,9 +298,9 @@ function ItineraryPanel({
           : ""
       }`}
     >
-      <div className="periplus-chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <OverlayScrollArea className="min-h-0 flex-1">
         <RoutePreview onCollapse={onCollapse} />
-      </div>
+      </OverlayScrollArea>
       {showContextualComposer ? (
         <div className="shrink-0 border-t border-ink-10 bg-soft-white px-5 pt-3 pb-4">
           <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">

@@ -93,6 +93,17 @@ body {
   color: var(--color-ink);
 }
 
+.periplus-map-marker--ordinal {
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 900;
+  height: 34px;
+  line-height: 1;
+  min-width: 34px;
+  padding: 0;
+  width: 34px;
+}
+
 .periplus-route-badge {
   align-items: center;
   background: rgb(255 250 243 / 96%);

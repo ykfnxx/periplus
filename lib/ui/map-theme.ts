@@ -18,11 +18,15 @@ export const periplusColors = {
   routeAlternative: "#8fa1a8",
 } as const
 
-export const routeMarkerColors = [
+export const routeDayColors = [
   "#ff8a4c",
   "#48c9a9",
   "#ffd166",
   "#a78bfa",
+] as const
+
+export const routeMarkerColors = [
+  ...routeDayColors,
   periplusColors.coral,
   periplusColors.bluegray,
 ] as const

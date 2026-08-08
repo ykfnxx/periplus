@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { loadAMap } from "@/lib/amap"
+import { loadAMap, PERIPLUS_AMAP_STYLE } from "@/lib/amap"
 import type { MapIntent } from "@/modules/workspace/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import RoutePolyline from "./RoutePolyline"
@@ -38,7 +38,8 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
           zoom: 5,
           center: [104.5, 36.5],
           viewMode: "2D",
-          mapStyle: "amap://styles/5fa99faa24edae66ca845a370693c754",
+          animateEnable: false,
+          mapStyle: PERIPLUS_AMAP_STYLE,
         })
 
         mapInstance.addControl(new AMap.Scale())

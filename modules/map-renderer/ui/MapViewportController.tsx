@@ -104,7 +104,7 @@ export default function MapViewportController() {
       map.add(overlays)
       map.setFitView(
         overlays,
-        false,
+        true,
         toAMapAvoid(viewportInsets),
         target.maxZoom
       )

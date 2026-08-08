@@ -2,6 +2,9 @@ import { periplusPublicConfig } from "@/config/periplus"
 
 let amapPromise: Promise<typeof AMap> | null = null
 
+export const PERIPLUS_AMAP_STYLE =
+  "amap://styles/5fa99faa24edae66ca845a370693c754"
+
 export async function loadAMap(): Promise<typeof AMap> {
   if (!amapPromise) {
     const AMAP_KEY = periplusPublicConfig.amap.key
