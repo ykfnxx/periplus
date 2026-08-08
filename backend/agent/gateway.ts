@@ -8,6 +8,7 @@ import {
   isAttractionSearch,
 } from "@/lib/places/attractions"
 import type { HotelCandidate } from "@/lib/hotels/types"
+import type { PlaceImage, PlaceVerification } from "@/lib/places/types"
 import {
   placeEnrichInputSchema,
   placeResolveForJourneyEventInputSchema,
@@ -18,8 +19,6 @@ import {
   targetCommandBodySchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type PlanValidationReport,
-  type TargetCommandEnvelope,
-  type TargetCommandResult,
 } from "@/modules/data-model/contracts"
 import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
@@ -135,7 +134,10 @@ interface RunningAgent {
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
   hotelStayState: HotelStayState
+  verifiedPlaces: Map<string, PlaceVerification>
   drafts: Map<string, PreparedAgentDraft>
+  draftRequests: Map<string, string>
+  draftHotelSelections: Map<string, HotelStaySelection>
   draftValidationAttempts: number
 }
 
@@ -153,6 +155,15 @@ export const agentToolRequestSchema = z.discriminatedUnion("type", [
       expectedRevision: z.number().int().nonnegative(),
       idempotencyKey: z.string().trim().min(1),
       commands: z.array(z.unknown()).min(1).max(40),
+      previousDraftId: z.string().trim().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.prepare_transit"),
+      previousDraftId: z.string().trim().min(1),
+      idempotencyKey: z.string().trim().min(1),
+      eventId: z.string().trim().min(1),
     })
     .strict(),
   z
@@ -246,14 +257,6 @@ function withoutRequestId<T extends { requestId: string }>(
   return output as Omit<T, "requestId">
 }
 
-function changesJourneyGraph(commandName: string) {
-  return (
-    commandName.startsWith("journey.") ||
-    commandName === "workspace.refresh" ||
-    commandName === "workspace.replay"
-  )
-}
-
 function selectedHotelStay(candidate: HotelCandidate) {
   return {
     plannedLat: candidate.coordinates.lat,
@@ -272,69 +275,129 @@ function selectedHotelStay(candidate: HotelCandidate) {
   }
 }
 
-function commandWithSelectedHotel(
+function draftCommandsWithSelectedHotel(
   running: RunningAgent,
-  command: ReturnType<typeof targetCommandBodySchema.parse>,
-  idempotencyKey: string
+  commands: Array<ReturnType<typeof targetCommandBodySchema.parse>>,
+  hasSelectedHotel: boolean
 ) {
   const state = running.hotelStayState
-  const selected =
-    state.kind === "available" ||
-    (state.kind === "consumed" && state.idempotencyKey === idempotencyKey)
-      ? state.selection
-      : null
-  const consumesSelectedHotel = state.kind === "available"
-
+  const stayCommands = commands.filter(
+    (command) =>
+      (command.name === "journey.add_event" &&
+        command.payload.event.type === "STAY") ||
+      (command.name === "journey.update_event" &&
+        command.payload.patch.type === "STAY") ||
+      (command.name === "journey.replace_event" &&
+        command.payload.successor.type === "STAY")
+  )
+  if (!stayCommands.length) return { commands, selection: undefined }
   if (
-    command.name === "journey.add_event" &&
-    command.payload.event.type === "STAY"
+    stayCommands.length > 1 ||
+    hasSelectedHotel ||
+    state.kind !== "available"
   ) {
-    if (!selected) {
-      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
-    }
-    return {
-      command: {
-        ...command,
-        payload: {
-          ...command.payload,
-          event: {
-            ...command.payload.event,
-            title: selected.candidate.name,
-            detail: { ...command.payload.event.detail, ...selected.stayDetail },
-          },
-        },
-      },
-      consumesSelectedHotel,
-    }
+    throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
   }
 
-  if (
-    command.name === "journey.update_event" &&
-    command.payload.patch.type === "STAY"
-  ) {
-    if (!selected) {
-      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
-    }
-    return {
-      command: {
-        ...command,
-        payload: {
-          ...command.payload,
-          patch: {
-            ...command.payload.patch,
-            title: selected.candidate.name,
-            detail: {
-              ...command.payload.patch.detail,
-              ...selected.stayDetail,
+  const selected = state.selection
+  return {
+    commands: commands.map((command) => {
+      if (
+        command.name === "journey.add_event" &&
+        command.payload.event.type === "STAY"
+      ) {
+        return {
+          ...command,
+          payload: {
+            ...command.payload,
+            event: {
+              ...command.payload.event,
+              title: selected.candidate.name,
+              detail: {
+                ...command.payload.event.detail,
+                ...selected.stayDetail,
+              },
             },
           },
-        },
-      },
-      consumesSelectedHotel,
-    }
+        }
+      }
+      if (
+        command.name === "journey.update_event" &&
+        command.payload.patch.type === "STAY"
+      ) {
+        return {
+          ...command,
+          payload: {
+            ...command.payload,
+            patch: {
+              ...command.payload.patch,
+              title: selected.candidate.name,
+              detail: {
+                ...command.payload.patch.detail,
+                ...selected.stayDetail,
+              },
+            },
+          },
+        }
+      }
+      if (
+        command.name === "journey.replace_event" &&
+        command.payload.successor.type === "STAY"
+      ) {
+        return {
+          ...command,
+          payload: {
+            ...command.payload,
+            successor: {
+              ...command.payload.successor,
+              title: selected.candidate.name,
+              detail: {
+                ...command.payload.successor.detail,
+                ...selected.stayDetail,
+              },
+            },
+          },
+        }
+      }
+      return command
+    }),
+    selection: selected,
   }
+}
 
-  return { command, consumesSelectedHotel: false }
+function placeVerificationKey(verification: PlaceVerification) {
+  const { ref } = verification
+  return [
+    ref.provider,
+    ref.providerId ?? "",
+    ref.canonicalName,
+    ref.lat,
+    ref.lng,
+    ref.coordinateSystem,
+  ].join(":")
+}
+
+function selectedCoverImage(result: unknown): PlaceImage | undefined {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("command" in result) ||
+    !result.command ||
+    typeof result.command !== "object" ||
+    !("payload" in result.command) ||
+    !result.command.payload ||
+    typeof result.command.payload !== "object" ||
+    !("patch" in result.command.payload) ||
+    !result.command.payload.patch ||
+    typeof result.command.payload.patch !== "object" ||
+    !("detail" in result.command.payload.patch) ||
+    !result.command.payload.patch.detail ||
+    typeof result.command.payload.patch.detail !== "object" ||
+    !("providerCoverImage" in result.command.payload.patch.detail)
+  ) {
+    return undefined
+  }
+  return result.command.payload.patch.detail.providerCoverImage as PlaceImage
 }
 
 function conversationMessages(
@@ -508,7 +571,10 @@ export class AgentGateway {
       requiresPlanValidation: false,
       lastPlanValidation: null,
       hotelStayState: { kind: "not_searched" },
+      verifiedPlaces: new Map(),
       drafts: new Map(),
+      draftRequests: new Map(),
+      draftHotelSelections: new Map(),
       draftValidationAttempts: 0,
     }
     this.runs.set(workspaceId, running)
@@ -608,6 +674,14 @@ export class AgentGateway {
   }>
   async executeTool(
     capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.prepare_transit" }>
+  ): Promise<{
+    draftId: string
+    validation: PlanValidationReport
+    repairsRemaining: number
+  }>
+  async executeTool(
+    capabilityToken: string,
     request: Extract<AgentToolRequest, { type: "workspace.command" }>
   ): Promise<{
     result: Awaited<ReturnType<WorkspaceCommandService["execute"]>>
@@ -681,7 +755,6 @@ export class AgentGateway {
       })
     }
 
-    let appliedCommandResult: TargetCommandResult | null = null
     try {
       await this.heartbeat(running)
       let output: unknown
@@ -738,11 +811,15 @@ export class AgentGateway {
         output = validation
       } else if (request.type === "workspace.validate_draft") {
         const existingDraft = running.drafts.get(request.idempotencyKey)
+        const requestFingerprint = JSON.stringify({
+          expectedRevision: request.expectedRevision,
+          previousDraftId: request.previousDraftId ?? null,
+          commands: request.commands,
+        })
         if (
           existingDraft &&
-          (existingDraft.expectedRevision !== request.expectedRevision ||
-            JSON.stringify(existingDraft.commands) !==
-              JSON.stringify(request.commands))
+          running.draftRequests.get(request.idempotencyKey) !==
+            requestFingerprint
         ) {
           throw new WorkspaceInputError(
             "Draft idempotency key was already used for a different request"
@@ -753,18 +830,79 @@ export class AgentGateway {
             "Journey draft has exhausted its two repair attempts"
           )
         }
+        let baseDraft: PreparedAgentDraft | undefined
+        if (!existingDraft && running.draftValidationAttempts > 0) {
+          if (!request.previousDraftId) {
+            throw new WorkspaceInputError(
+              "Repair draft must reference the previous invalid draft"
+            )
+          }
+          baseDraft = running.drafts.get(request.previousDraftId)
+          if (!baseDraft || baseDraft.validation.valid) {
+            throw new WorkspaceInputError(
+              "Repair draft must reference a previous invalid draft"
+            )
+          }
+          const allowed = new Set(
+            baseDraft.validation.issues
+              .filter((issue) => issue.severity === "ERROR")
+              .flatMap((issue) => issue.allowedOperations)
+          )
+          for (const command of request.commands) {
+            const parsed = targetCommandBodySchema.parse(command)
+            if (!allowed.has(parsed.name)) {
+              throw new WorkspaceInputError(
+                `Repair command ${parsed.name} is not allowed by the previous draft issues`
+              )
+            }
+          }
+        } else if (!existingDraft && request.previousDraftId) {
+          throw new WorkspaceInputError(
+            "Initial draft must not reference a previous draft"
+          )
+        }
         const draft =
           existingDraft ??
-          (await this.commands.prepareAgentDraft(running.context, {
-            workspaceId: running.workspaceId,
-            expectedRevision: request.expectedRevision,
-            idempotencyKey: request.idempotencyKey,
-            actor: { kind: "AGENT", agentRunId: running.runId },
-            commands: request.commands,
-          }))
+          (await (async () => {
+            const parsedCommands = request.commands.map((command) =>
+              targetCommandBodySchema.parse(command)
+            )
+            const hotel = draftCommandsWithSelectedHotel(
+              running,
+              parsedCommands,
+              Boolean(
+                request.previousDraftId &&
+                running.draftHotelSelections.has(request.previousDraftId)
+              )
+            )
+            const prepared = await this.commands.prepareAgentDraft(
+              running.context,
+              {
+                workspaceId: running.workspaceId,
+                expectedRevision: request.expectedRevision,
+                idempotencyKey: request.idempotencyKey,
+                actor: { kind: "AGENT", agentRunId: running.runId },
+                commands: hotel.commands,
+                baseDraft,
+                verifiedPlaces: Array.from(running.verifiedPlaces.values()),
+              }
+            )
+            const inheritedHotel = request.previousDraftId
+              ? running.draftHotelSelections.get(request.previousDraftId)
+              : undefined
+            const selection = hotel.selection ?? inheritedHotel
+            if (selection) {
+              running.draftHotelSelections.set(
+                request.idempotencyKey,
+                selection
+              )
+            }
+            return prepared
+          })())
         if (!existingDraft) {
           running.draftValidationAttempts += 1
           running.drafts.set(request.idempotencyKey, draft)
+          running.draftRequests.set(request.idempotencyKey, requestFingerprint)
         }
         const repairsUsed = Math.max(0, running.draftValidationAttempts - 1)
         await this.trace(running, {
@@ -793,10 +931,34 @@ export class AgentGateway {
             "Draft was not validated in this Agent run"
           )
         }
+        const hotelSelection = running.draftHotelSelections.get(request.draftId)
+        if (hotelSelection) {
+          const state = running.hotelStayState
+          const isReplay =
+            state.kind === "consumed" &&
+            state.idempotencyKey === request.draftId &&
+            state.selection.candidate.candidateId ===
+              hotelSelection.candidate.candidateId
+          if (
+            !isReplay &&
+            (state.kind !== "available" ||
+              state.selection.candidate.candidateId !==
+                hotelSelection.candidate.candidateId)
+          ) {
+            throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
+          }
+        }
         const result = await this.commands.commitAgentDraft(
           running.context,
           draft
         )
+        if (hotelSelection && running.hotelStayState.kind === "available") {
+          running.hotelStayState = {
+            kind: "consumed",
+            selection: hotelSelection,
+            idempotencyKey: request.draftId,
+          }
+        }
         running.requiresPlanValidation = true
         running.lastPlanValidation = draft.validation
         const document = await this.commands.getDocument(
@@ -804,79 +966,87 @@ export class AgentGateway {
           running.workspaceId
         )
         output = { result, workspace: document }
+      } else if (request.type === "workspace.prepare_transit") {
+        const existingDraft = running.drafts.get(request.idempotencyKey)
+        const requestFingerprint = JSON.stringify({
+          previousDraftId: request.previousDraftId,
+          eventId: request.eventId,
+          kind: "prepare_transit",
+        })
+        if (
+          existingDraft &&
+          running.draftRequests.get(request.idempotencyKey) !==
+            requestFingerprint
+        ) {
+          throw new WorkspaceInputError(
+            "Draft idempotency key was already used for a different request"
+          )
+        }
+        if (!existingDraft && running.draftValidationAttempts >= 3) {
+          throw new WorkspaceInputError(
+            "Journey draft has exhausted its two repair attempts"
+          )
+        }
+        const draft =
+          existingDraft ??
+          (await (async () => {
+            const previous = running.drafts.get(request.previousDraftId)
+            if (!previous || previous.validation.valid) {
+              throw new WorkspaceInputError(
+                "Transit preparation must reference a previous invalid draft"
+              )
+            }
+            const allowed = previous.validation.issues
+              .filter((issue) => issue.severity === "ERROR")
+              .some((issue) =>
+                issue.allowedOperations.includes("journey.plan_transit")
+              )
+            if (!allowed) {
+              throw new WorkspaceInputError(
+                "Transit preparation is not allowed by the previous draft issues"
+              )
+            }
+            const prepared = await this.commands.prepareAgentTransit(
+              running.context,
+              {
+                draft: previous,
+                idempotencyKey: request.idempotencyKey,
+                eventId: request.eventId,
+                verifiedPlaces: Array.from(running.verifiedPlaces.values()),
+              }
+            )
+            const selection = running.draftHotelSelections.get(
+              request.previousDraftId
+            )
+            if (selection) {
+              running.draftHotelSelections.set(
+                request.idempotencyKey,
+                selection
+              )
+            }
+            return prepared
+          })())
+        if (!existingDraft) {
+          running.draftValidationAttempts += 1
+          running.drafts.set(request.idempotencyKey, draft)
+          running.draftRequests.set(request.idempotencyKey, requestFingerprint)
+        }
+        const repairsUsed = Math.max(0, running.draftValidationAttempts - 1)
+        output = {
+          draftId: request.idempotencyKey,
+          validation: draft.validation,
+          repairsRemaining: Math.max(0, 2 - repairsUsed),
+        }
       } else if (isPlaceToolRequest(request)) {
         output = await this.executePlaceTool(running, request)
       } else if (request.type === "hotel.search") {
         output = await this.executeHotelTool(running, request)
       } else {
-        const parsedCommand = targetCommandBodySchema.parse(request.command)
-        const selectedCommand = commandWithSelectedHotel(
-          running,
-          parsedCommand,
-          request.idempotencyKey
+        throw new WorkspaceInputError(
+          "Agent direct Workspace commands are disabled; use validate_draft and commit_draft"
         )
-        const envelope: TargetCommandEnvelope = {
-          aggregateId: running.workspaceId,
-          expectedRevision: request.expectedRevision,
-          idempotencyKey: request.idempotencyKey,
-          actor: { kind: "AGENT", agentRunId: running.runId },
-          command: selectedCommand.command,
-        }
-        const result = await this.commands.execute(running.context, envelope)
-        if (selectedCommand.consumesSelectedHotel) {
-          const current = running.hotelStayState
-          if (current.kind === "available") {
-            running.hotelStayState = {
-              kind: "consumed",
-              selection: current.selection,
-              idempotencyKey: request.idempotencyKey,
-            }
-          }
-        }
-        appliedCommandResult = result
-        if (changesJourneyGraph(result.commandName)) {
-          running.requiresPlanValidation = true
-          running.lastPlanValidation = null
-        }
-        const document = await this.commands.getDocument(
-          running.context,
-          running.workspaceId
-        )
-        output = { result, workspace: document }
       }
 
-      if (request.type === "workspace.command" && commandSpanId) {
-        const result = appliedCommandResult
-        if (!result) throw new Error("Command result was not captured")
-        if (!result.replayedFromIdempotencyKey) {
-          await this.trace(running, {
-            type: "state.diff.recorded",
-            spanId: commandSpanId,
-            parentSpanId: toolSpanId,
-            commandId,
-            revisionBefore: request.expectedRevision,
-            revisionAfter: result.newRevision,
-            status: "OK",
-            payload: {
-              changedEventIds: result.changedEventIds,
-              projectionInvalidationScopes: result.projectionInvalidationScopes,
-            },
-          })
-        }
-        await this.trace(running, {
-          type: "command.applied",
-          spanId: commandSpanId,
-          parentSpanId: toolSpanId,
-          commandId,
-          revisionBefore: request.expectedRevision,
-          revisionAfter: result.newRevision,
-          status: "OK",
-          payload: {
-            commandName: result.commandName,
-            replayedFromIdempotencyKey: result.replayedFromIdempotencyKey,
-          },
-        })
-      }
       if (isEvidenceToolRequest(request)) {
         await this.trace(running, {
           type: "evidence.recorded",
@@ -911,53 +1081,20 @@ export class AgentGateway {
       return output
     } catch (error) {
       if (request.type === "workspace.command" && commandSpanId) {
-        if (appliedCommandResult) {
-          if (!appliedCommandResult.replayedFromIdempotencyKey) {
-            await this.trace(running, {
-              type: "state.diff.recorded",
-              spanId: commandSpanId,
-              parentSpanId: toolSpanId,
-              commandId,
-              revisionBefore: request.expectedRevision,
-              revisionAfter: appliedCommandResult.newRevision,
-              status: "OK",
-              payload: {
-                changedEventIds: appliedCommandResult.changedEventIds,
-                projectionInvalidationScopes:
-                  appliedCommandResult.projectionInvalidationScopes,
-              },
-            })
-          }
-          await this.trace(running, {
-            type: "command.applied",
-            spanId: commandSpanId,
-            parentSpanId: toolSpanId,
-            commandId,
-            revisionBefore: request.expectedRevision,
-            revisionAfter: appliedCommandResult.newRevision,
-            status: "OK",
-            payload: {
-              commandName: appliedCommandResult.commandName,
-              replayedFromIdempotencyKey:
-                appliedCommandResult.replayedFromIdempotencyKey,
-            },
-          })
-        } else {
-          await this.trace(running, {
-            type: "command.rejected",
-            spanId: commandSpanId,
-            parentSpanId: toolSpanId,
-            commandId,
-            revisionBefore: request.expectedRevision,
-            status: "ERROR",
-            payload: {
-              commandName: commandName ?? "invalid",
-              errorName: error instanceof Error ? error.name : "Error",
-              errorMessage:
-                error instanceof Error ? error.message : "Command failed",
-            },
-          })
-        }
+        await this.trace(running, {
+          type: "command.rejected",
+          spanId: commandSpanId,
+          parentSpanId: toolSpanId,
+          commandId,
+          revisionBefore: request.expectedRevision,
+          status: "ERROR",
+          payload: {
+            commandName: commandName ?? "invalid",
+            errorName: error instanceof Error ? error.name : "Error",
+            errorMessage:
+              error instanceof Error ? error.message : "Command failed",
+          },
+        })
       }
       await this.trace(running, {
         type: "tool.failed",
@@ -1029,7 +1166,15 @@ export class AgentGateway {
           requestId: request.requestId,
         })
       )
-      return this.placeService.resolvePlace(input, usageContext)
+      const result = await this.placeService.resolvePlace(input, usageContext)
+      if (result.status === "resolved") {
+        const verification = { ref: result.placeRef }
+        running.verifiedPlaces.set(
+          placeVerificationKey(verification),
+          verification
+        )
+      }
+      return result
     }
     if (request.type === "place.enrich") {
       const input = withoutRequestId(
@@ -1074,11 +1219,23 @@ export class AgentGateway {
         "Place target must be a VISIT, STAY, MEAL, or ACTIVITY event"
       )
     }
-    return this.placeService.resolvePlaceForJourneyEvent(
+    const result = await this.placeService.resolvePlaceForJourneyEvent(
       input,
       event.type,
       usageContext
     )
+    if (result.status === "ready") {
+      const coverImage = selectedCoverImage(result)
+      const verification = {
+        ref: result.placeRef,
+        ...(coverImage ? { coverImage } : {}),
+      }
+      running.verifiedPlaces.set(
+        placeVerificationKey(verification),
+        verification
+      )
+    }
+    return result
   }
 
   private async executeHotelTool(
@@ -1292,9 +1449,7 @@ export class AgentGateway {
         const passed =
           lastValidation?.valid === true &&
           finalValidation.valid &&
-          lastValidation.workspaceRevision ===
-            finalValidation.workspaceRevision &&
-          lastValidation.projectionHash === finalValidation.projectionHash
+          lastValidation.workspaceRevision === finalValidation.workspaceRevision
         await this.trace(running, {
           type: "validator.completed",
           spanId: randomUUID(),

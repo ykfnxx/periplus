@@ -22,8 +22,10 @@ import {
   type TargetTransitPlanningRun,
   type TargetWorkspaceDocument,
   type TargetWorkspaceRevision,
+  type PlanValidationIssue,
   type PlanValidationReport,
 } from "@/modules/data-model/contracts"
+import type { PlaceVerification } from "@/lib/places/types"
 import { prisma } from "@/modules/data/db/prisma"
 import { getAsset } from "@/modules/data/content/content-repository"
 import {
@@ -68,7 +70,6 @@ const DRAFT_COMMAND_NAMES = new Set<JourneyCommand["name"]>([
   "journey.add_link",
   "journey.retire_link",
   "journey.select_branch",
-  "journey.plan_transit",
   "journey.select_transit_plan",
 ])
 
@@ -2444,6 +2445,149 @@ function normalizeAtomicDraftRevision(
   return after
 }
 
+type PlaceBoundEvent = Extract<
+  TargetJourneyEvent,
+  { type: "VISIT" | "MEAL" | "ACTIVITY" }
+>
+
+function isPlaceBoundEvent(
+  event: TargetJourneyEvent
+): event is PlaceBoundEvent {
+  return ["VISIT", "MEAL", "ACTIVITY"].includes(event.type)
+}
+
+function activeAt(event: TargetJourneyEvent, revision: number) {
+  return event.retiredRevision == null || event.retiredRevision > revision
+}
+
+function normalizedCity(value: string) {
+  return value.trim().replace(/市$/, "")
+}
+
+function matchingPlaceVerification(
+  event: PlaceBoundEvent,
+  verifications: readonly PlaceVerification[]
+) {
+  return verifications.find(
+    ({ ref }) =>
+      ref.canonicalName === event.title &&
+      ref.provider === event.detail.coordinateProvider &&
+      ref.providerId === event.detail.providerPlaceId &&
+      ref.lat === event.detail.plannedLat &&
+      ref.lng === event.detail.plannedLng &&
+      ref.coordinateSystem === event.detail.coordinateSystem
+  )
+}
+
+function placeBindingChanged(
+  before: PlaceBoundEvent | undefined,
+  after: PlaceBoundEvent
+) {
+  if (!before || before.type !== after.type) return true
+  return (
+    before.title !== after.title ||
+    before.parentSectionEventId !== after.parentSectionEventId ||
+    before.detail.plannedLat !== after.detail.plannedLat ||
+    before.detail.plannedLng !== after.detail.plannedLng ||
+    before.detail.coordinateSystem !== after.detail.coordinateSystem ||
+    before.detail.coordinateProvider !== after.detail.coordinateProvider ||
+    before.detail.providerPlaceId !== after.detail.providerPlaceId
+  )
+}
+
+function validateDraftPlaceBindings(
+  before: TargetJourneyGraphSnapshot,
+  after: TargetJourneyGraphSnapshot,
+  verifications: readonly PlaceVerification[]
+): PlanValidationIssue[] {
+  const beforeById = new Map(before.events.map((event) => [event.id, event]))
+  const afterById = new Map(after.events.map((event) => [event.id, event]))
+  const issues: PlanValidationIssue[] = []
+
+  for (const event of after.events) {
+    if (!activeAt(event, after.revision) || !isPlaceBoundEvent(event)) continue
+    const previous = beforeById.get(event.id)
+    if (
+      previous &&
+      isPlaceBoundEvent(previous) &&
+      !placeBindingChanged(previous, event)
+    ) {
+      continue
+    }
+
+    const verification = matchingPlaceVerification(event, verifications)
+    if (!verification) {
+      issues.push({
+        code: "PLACE_UNVERIFIED",
+        severity: "ERROR",
+        path: event.id,
+        eventIds: [event.id],
+        message: `Place event ${event.id} is not bound to a verified resolve result`,
+        repairability: "AGENT",
+        allowedOperations: [
+          "place.resolve",
+          "place.resolve_for_journey_event",
+          "journey.add_event",
+          "journey.update_event",
+          "journey.replace_event",
+        ],
+        suggestion:
+          "Resolve the place first, then use the returned provider identity and coordinates in the repair draft.",
+      })
+      continue
+    }
+
+    const parent = event.parentSectionEventId
+      ? afterById.get(event.parentSectionEventId)
+      : undefined
+    if (
+      verification.ref.city &&
+      parent?.type === "SECTION" &&
+      normalizedCity(verification.ref.city) !== normalizedCity(parent.title)
+    ) {
+      issues.push({
+        code: "PLACE_UNVERIFIED",
+        severity: "ERROR",
+        path: event.id,
+        eventIds: [event.id, parent.id],
+        message: `Place event ${event.id} does not belong to City ${parent.title}`,
+        repairability: "AGENT",
+        allowedOperations: ["journey.move_event", "journey.update_event"],
+        suggestion:
+          "Move the verified place into its matching City Scope or resolve a place in the current City.",
+      })
+    }
+
+    if (event.type === "VISIT" && event.detail.providerCoverImage) {
+      const cover = verification.coverImage
+      if (
+        !cover ||
+        cover.provider !== event.detail.providerCoverImage.provider ||
+        cover.url !== event.detail.providerCoverImage.url ||
+        cover.fetchedAt !== event.detail.providerCoverImage.fetchedAt
+      ) {
+        issues.push({
+          code: "PLACE_UNVERIFIED",
+          severity: "ERROR",
+          path: event.id,
+          eventIds: [event.id],
+          message: `Visit ${event.id} has an image not returned by its verified place`,
+          repairability: "AGENT",
+          allowedOperations: [
+            "place.resolve_for_journey_event",
+            "place.enrich",
+            "journey.update_event",
+          ],
+          suggestion:
+            "Keep only the provider cover image returned by the verified place result.",
+        })
+      }
+    }
+  }
+
+  return issues
+}
+
 export class WorkspaceCommandService {
   private readonly transitPlanning: WorkspaceCommandDependencies["transitPlanning"]
   private readonly inFlight = new Map<
@@ -2464,10 +2608,12 @@ export class WorkspaceCommandService {
       idempotencyKey: string
       actor: TargetCommandEnvelope["actor"]
       commands: unknown[]
+      baseDraft?: PreparedAgentDraft
+      verifiedPlaces?: readonly PlaceVerification[]
     },
     options: ExecuteOptions = {}
   ): Promise<PreparedAgentDraft> {
-    const commands = input.commands.map((command) => {
+    const repairCommands = input.commands.map((command) => {
       const parsed = targetCommandBodySchema.parse(command)
       if (
         !parsed.name.startsWith("journey.") ||
@@ -2479,7 +2625,7 @@ export class WorkspaceCommandService {
       }
       return parsed as JourneyCommand
     })
-    if (!commands.length) {
+    if (!repairCommands.length) {
       throw new WorkspaceInputError("Draft must contain at least one command")
     }
 
@@ -2514,14 +2660,29 @@ export class WorkspaceCommandService {
       )
     }
 
+    if (
+      input.baseDraft &&
+      (input.baseDraft.workspaceId !== input.workspaceId ||
+        input.baseDraft.expectedRevision !== input.expectedRevision ||
+        input.baseDraft.actor.kind !== "AGENT" ||
+        input.baseDraft.actor.agentRunId !== agentRunId)
+    ) {
+      throw new WorkspaceInputError(
+        "Repair draft does not belong to this Agent run"
+      )
+    }
+
     const before = document.session.headGraph
-    let after = clone(before)
+    let after = clone(input.baseDraft?.after ?? before)
+    const commands = input.baseDraft
+      ? [...input.baseDraft.commands, ...repairCommands]
+      : repairCommands
     const now = (options.now ?? new Date()).toISOString()
-    for (const [index, command] of commands.entries()) {
+    for (const [index, command] of repairCommands.entries()) {
       const envelope = targetCommandEnvelopeSchema.parse({
         aggregateId: input.workspaceId,
         expectedRevision: input.expectedRevision,
-        idempotencyKey: `${input.idempotencyKey}:draft:${index}`,
+        idempotencyKey: `${input.idempotencyKey}:draft:${(input.baseDraft?.commands.length ?? 0) + index}`,
         actor: input.actor,
         command,
       })
@@ -2529,17 +2690,7 @@ export class WorkspaceCommandService {
         ...document,
         session: { ...document.session, headGraph: after },
       }
-      after =
-        command.name === "journey.plan_transit"
-          ? await planTransit(
-              context,
-              draftDocument,
-              envelope,
-              this.transitPlanning,
-              now,
-              false
-            )
-          : applyJourneyCommand(draftDocument, envelope, now, false)
+      after = applyJourneyCommand(draftDocument, envelope, now, false)
     }
     after = normalizeAtomicDraftRevision(before, after)
     const changedEventIds = projectionDiffEventIds(before, after)
@@ -2548,10 +2699,19 @@ export class WorkspaceCommandService {
       after,
       changedEventIds
     )
-    const validation = validateJourneyPlan({
+    const planValidation = validateJourneyPlan({
       graph: after,
       workspaceRevision: input.expectedRevision + 1,
     })
+    const issues = [
+      ...planValidation.issues,
+      ...validateDraftPlaceBindings(before, after, input.verifiedPlaces ?? []),
+    ]
+    const validation: PlanValidationReport = {
+      ...planValidation,
+      valid: issues.every((issue) => issue.severity !== "ERROR"),
+      issues,
+    }
     return {
       workspaceId: input.workspaceId,
       expectedRevision: input.expectedRevision,
@@ -2561,6 +2721,102 @@ export class WorkspaceCommandService {
       before,
       after,
       validation,
+      changedEventIds,
+      projectionInvalidationScopes,
+    }
+  }
+
+  async prepareAgentTransit(
+    context: AuthContext,
+    input: {
+      draft: PreparedAgentDraft
+      idempotencyKey: string
+      eventId: string
+      verifiedPlaces?: readonly PlaceVerification[]
+    },
+    options: ExecuteOptions = {}
+  ): Promise<PreparedAgentDraft> {
+    if (input.draft.actor.kind !== "AGENT") {
+      throw new WorkspaceInputError(
+        "Transit preparation requires an Agent draft"
+      )
+    }
+    const agentRunId = input.draft.actor.agentRunId
+    const document = await getWorkspaceDocument(
+      context,
+      input.draft.workspaceId,
+      options.now
+    )
+    if (!document) throw new WorkspaceInputError("Workspace was not found")
+    if (
+      document.session.headWorkspaceRevision !== input.draft.expectedRevision
+    ) {
+      throw new WorkspaceRevisionConflictError()
+    }
+    if (
+      !document.agentRuns.some(
+        (run) => run.id === agentRunId && run.status === "RUNNING"
+      )
+    ) {
+      throw new WorkspaceInputError(
+        "Workspace AGENT actor requires a running same-Workspace Agent run"
+      )
+    }
+
+    const command = targetCommandBodySchema.parse({
+      name: "journey.plan_transit",
+      payload: { eventId: input.eventId },
+    }) as JourneyCommand
+    const envelope = targetCommandEnvelopeSchema.parse({
+      aggregateId: input.draft.workspaceId,
+      expectedRevision: input.draft.expectedRevision,
+      idempotencyKey: `${input.idempotencyKey}:transit`,
+      actor: input.draft.actor,
+      command,
+    })
+    const now = (options.now ?? new Date()).toISOString()
+    const after = normalizeAtomicDraftRevision(
+      input.draft.before,
+      await planTransit(
+        context,
+        {
+          ...document,
+          session: { ...document.session, headGraph: input.draft.after },
+        },
+        envelope,
+        this.transitPlanning,
+        now,
+        false
+      )
+    )
+    const changedEventIds = projectionDiffEventIds(input.draft.before, after)
+    const projectionInvalidationScopes = invalidationScopes(
+      input.draft.before,
+      after,
+      changedEventIds
+    )
+    const planValidation = validateJourneyPlan({
+      graph: after,
+      workspaceRevision: input.draft.expectedRevision + 1,
+    })
+    const issues = [
+      ...planValidation.issues,
+      ...validateDraftPlaceBindings(
+        input.draft.before,
+        after,
+        input.verifiedPlaces ?? []
+      ),
+    ]
+    return {
+      ...input.draft,
+      idempotencyKey: input.idempotencyKey,
+      commands: [...input.draft.commands, command],
+      after,
+      validation: {
+        ...planValidation,
+        valid: issues.every((issue) => issue.severity !== "ERROR"),
+        issues,
+      },
       changedEventIds,
       projectionInvalidationScopes,
     }

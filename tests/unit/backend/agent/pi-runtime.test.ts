@@ -138,9 +138,10 @@ describe("PiRuntime", () => {
     expect(command.message).toContain("periplus_workspace_get")
     expect(command.message).toContain("periplus_workspace_validate_draft")
     expect(command.message).toContain("periplus_workspace_commit_draft")
-    expect(runConfig.toolNames).toContain("periplus_workspace_command")
+    expect(runConfig.toolNames).not.toContain("periplus_workspace_command")
     expect(runConfig.toolNames).toContain("periplus_workspace_validate_draft")
     expect(runConfig.toolNames).toContain("periplus_workspace_commit_draft")
+    expect(runConfig.toolNames).toContain("periplus_workspace_prepare_transit")
     expect(runConfig.webSearchEnabled).toBe(true)
 
     await finished

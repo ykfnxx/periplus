@@ -17,7 +17,7 @@ const PERIPLUS_TOOL_NAMES = [
   "periplus_workspace_validate_plan",
   "periplus_workspace_validate_draft",
   "periplus_workspace_commit_draft",
-  "periplus_workspace_command",
+  "periplus_workspace_prepare_transit",
   "periplus_place_search",
   "periplus_place_resolve",
   "periplus_place_resolve_for_journey_event",
@@ -31,7 +31,7 @@ const PI_TOOL_NAME_MAP = [
   ["periplus.workspace.validate_plan", "periplus_workspace_validate_plan"],
   ["periplus.workspace.validate_draft", "periplus_workspace_validate_draft"],
   ["periplus.workspace.commit_draft", "periplus_workspace_commit_draft"],
-  ["periplus.workspace.command", "periplus_workspace_command"],
+  ["periplus.workspace.prepare_transit", "periplus_workspace_prepare_transit"],
   ["periplus.place.search", "periplus_place_search"],
   [
     "periplus.place.resolve_for_journey_event",

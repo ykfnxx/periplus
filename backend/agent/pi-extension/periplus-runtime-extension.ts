@@ -171,6 +171,7 @@ export default function periplusRuntimeExtension(pi: ExtensionAPI) {
       expectedRevision: Type.Number(),
       idempotencyKey: Type.String(),
       commands: Type.Array(Type.Object({}, { additionalProperties: true })),
+      previousDraftId: Type.Optional(Type.String()),
     }),
     (params) => ({ type: "workspace.validate_draft", ...params }),
     "sequential"
@@ -184,15 +185,15 @@ export default function periplusRuntimeExtension(pi: ExtensionAPI) {
     "sequential"
   )
   register(
-    "periplus_workspace_command",
-    "Execute Workspace command",
-    "Execute one typed Periplus Workspace command with expectedRevision and idempotencyKey.",
+    "periplus_workspace_prepare_transit",
+    "Prepare transit for a draft",
+    "Fetch one Transit result for a previous invalid draft, then return a new draft for deterministic validation and commit.",
     Type.Object({
-      expectedRevision: Type.Number(),
+      previousDraftId: Type.String(),
       idempotencyKey: Type.String(),
-      command: Type.Object({}, { additionalProperties: true }),
+      eventId: Type.String(),
     }),
-    (params) => ({ type: "workspace.command", ...params }),
+    (params) => ({ type: "workspace.prepare_transit", ...params }),
     "sequential"
   )
 

@@ -18,6 +18,8 @@ function catalogCandidate(): PlaceCandidate {
         provider: "amap",
         url: "https://images.example/palace.jpg",
         fetchedAt: "2026-08-03T00:00:00.000Z",
+        width: 1200,
+        height: 800,
       },
     ],
     coordinates: [],
@@ -74,11 +76,18 @@ function serviceFor(confidenceSource = catalogCandidate()) {
       .mockResolvedValue({ candidates: [amapCandidate()], warnings: [] }),
   }
   const logUsage = vi.fn().mockResolvedValue(undefined)
+  const imageProbe = vi.fn().mockResolvedValue(true)
   return {
-    service: new PlaceIntelligenceService(repository, provider, logUsage),
+    service: new PlaceIntelligenceService(
+      repository,
+      provider,
+      logUsage,
+      imageProbe
+    ),
     repository,
     provider,
     logUsage,
+    imageProbe,
   }
 }
 
@@ -169,6 +178,36 @@ describe("PlaceIntelligenceService", () => {
       "success",
       undefined,
       { requestId: "enrich-request-1" }
+    )
+  })
+
+  it("degrades a 404 attraction image to a warning without blocking place resolution", async () => {
+    const { service, imageProbe } = serviceFor()
+    imageProbe.mockResolvedValue(false)
+
+    const result = await service.resolvePlaceForJourneyEvent(
+      { text: "故宫博物院", city: "北京", eventId: "event-1" },
+      "VISIT"
+    )
+
+    expect(result).toMatchObject({
+      status: "ready",
+      warnings: [
+        expect.objectContaining({
+          code: "provider_error",
+          image: expect.objectContaining({
+            provider: "amap",
+            url: "https://images.example/palace.jpg",
+            fetchedAt: "2026-08-03T00:00:00.000Z",
+            width: 1200,
+            height: 800,
+          }),
+        }),
+      ],
+    })
+    if (result.status !== "ready") throw new Error("expected ready result")
+    expect(result.command.payload.patch.detail).not.toHaveProperty(
+      "providerCoverImage"
     )
   })
 

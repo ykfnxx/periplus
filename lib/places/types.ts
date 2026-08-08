@@ -92,6 +92,8 @@ export interface PlaceImage {
   url: string
   title?: string
   fetchedAt: string
+  width?: number
+  height?: number
 }
 
 export interface PlaceSearchResult {
@@ -135,10 +137,16 @@ export interface PlaceRef {
   }>
 }
 
+export interface PlaceVerification {
+  ref: PlaceRef
+  coverImage?: PlaceImage
+}
+
 export interface ProviderWarning {
   provider: PlaceProvider
   code: "timeout" | "quota_exceeded" | "provider_error" | "low_confidence"
   message: string
+  image?: PlaceImage
 }
 
 export interface PlaceSearchResponse {
@@ -183,6 +191,8 @@ export type PlaceResolveForJourneyEventResult =
                 provider: "amap"
                 url: string
                 fetchedAt: string
+                width?: number
+                height?: number
               }
             }
           }

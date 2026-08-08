@@ -52,6 +52,8 @@ const targetProviderCoverImageSchema = z
     provider: z.literal("amap"),
     url: z.string().url(),
     fetchedAt: dateTimeSchema,
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
   })
   .strict()
 
