@@ -20,7 +20,7 @@ describe("target Workspace route preview", () => {
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
   })
 
-  it("derives the overview duration across nested CITY and DAY scopes", () => {
+  it("derives the overview duration across CITY event chains", () => {
     act(() => {
       useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())
     })
@@ -347,12 +347,12 @@ describe("target Workspace route preview", () => {
     )
   })
 
-  it("drills from CITY to DAY to events and returns to the parent scope", () => {
+  it("shows a CITY event chain without a nested date scope", () => {
     const fixture = TARGET_CONTRACT_FIXTURES.find(
-      (candidate) => candidate.id === "02-city-day-event-drilldown"
+      (candidate) => candidate.id === "02-city-derived-day-groups"
     )
     const graph = fixture?.cases[0]?.input.graph
-    if (!graph) throw new Error("nested scope fixture is missing")
+    if (!graph) throw new Error("city event chain fixture is missing")
     act(() => {
       useWorkspaceStore
         .getState()
@@ -366,24 +366,9 @@ describe("target Workspace route preview", () => {
       "aria-selected",
       "true"
     )
-    expect(screen.getByRole("tab", { name: "第一天" })).toHaveAttribute(
-      "aria-selected",
-      "false"
-    )
-
-    fireEvent.click(screen.getByRole("button", { name: "进入分组 第一天" }))
-    expect(useWorkspaceStore.getState().activeSectionEventId).toBe("day")
-    expect(screen.getByRole("tab", { name: "第一天" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    )
     expect(screen.getByRole("button", { name: "选择事件 西湖" })).toBeVisible()
-
-    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }))
-    expect(useWorkspaceStore.getState().activeSectionEventId).toBe("city")
-    expect(
-      screen.getByRole("button", { name: "进入分组 第一天" })
-    ).toBeVisible()
+    expect(screen.getByRole("button", { name: "选择事件 良渚" })).toBeVisible()
+    expect(screen.queryByRole("tab", { name: "第一天" })).toBeNull()
   })
 
   it("shows the authoritative Workspace draft state", () => {

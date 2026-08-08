@@ -146,10 +146,9 @@ describe("GET /api/agent/session", () => {
     expect(issueWorkspaceTicket).not.toHaveBeenCalled()
   })
 
-  it("returns 410 without a ticket for an expired Workspace", async () => {
+  it("returns 410 without a ticket for an archived Workspace", async () => {
     const workspace = document()
-    workspace.accessState = "EXPIRED"
-    workspace.session.status = "EXPIRED"
+    workspace.session.status = "ARCHIVED"
     vi.mocked(getWorkspaceDocument).mockResolvedValue(workspace)
 
     const response = await GET(
@@ -161,8 +160,8 @@ describe("GET /api/agent/session", () => {
     expect(response.status).toBe(410)
     expect(await response.json()).toEqual({
       error: {
-        code: "workspace_expired",
-        message: "Workspace is no longer active",
+        code: "workspace_archived",
+        message: "Workspace is archived",
       },
     })
     expect(issueWorkspaceTicket).not.toHaveBeenCalled()

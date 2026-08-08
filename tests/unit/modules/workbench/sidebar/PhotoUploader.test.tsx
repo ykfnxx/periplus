@@ -34,8 +34,8 @@ describe("PhotoUploader", () => {
     expect(storeState.setUploadModalOpen).toHaveBeenCalledWith(true)
   })
 
-  it("disables the upload entry for an expired Workspace", () => {
-    storeState.workspaceDocument.accessState = "EXPIRED"
+  it("disables the upload entry for an archived Workspace", () => {
+    storeState.workspaceDocument.session.status = "ARCHIVED"
     render(<PhotoUploader />)
 
     const button = screen.getByRole("button", { name: "添加照片素材" })

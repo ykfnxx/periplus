@@ -6,6 +6,7 @@ import {
 } from "@/lib/journeys/projections"
 import { locationCount } from "@/lib/journeys/summary"
 import { buildTransitPlanRequest } from "@/lib/journeys/planning"
+import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import { targetJourneyGraphSnapshotSchema } from "@/modules/data-model/contracts"
 
 describe("Silk Road debug preset", () => {
@@ -63,33 +64,36 @@ describe("Silk Road debug preset", () => {
     })
   })
 
-  it("supports CITY to DAY to Event navigation with one and two-day cities", () => {
+  it("derives local-day groups for one- and two-day CITY event chains", () => {
     const graph = createSilkRoadJourney({ id: "journey", ownerId: "owner" })
-    const lanzhou = getJourneyScopeProjection(
-      graph,
-      "section",
-      "section-lanzhou"
+    const eventTypeById = new Map(
+      graph.events.map((event) => [event.id, event.type])
     )
-    expect(lanzhou.events.map((event) => event.title)).toEqual([
-      "第 3 天 · 兰州",
+    const lanzhou = resolveJourneyProjection({
+      graph,
+      mode: "PLANNER",
+      scopeSectionEventId: "section-lanzhou",
+    })
+    expect(
+      new Set(lanzhou.events.map((event) => eventTypeById.get(event.eventId)))
+    ).toEqual(new Set(["VISIT", "TRANSIT", "MEAL", "ACTIVITY", "STAY"]))
+    expect(lanzhou.dayGroups).toBeDefined()
+    expect(lanzhou.dayGroups!.map((group) => group.localDate)).toEqual([
+      "2026-10-03",
     ])
-    const lanzhouDay = getJourneyScopeProjection(
-      graph,
-      "section",
-      "day-lanzhou-2026-10-03"
-    )
-    expect(new Set(lanzhouDay.events.map((event) => event.type))).toEqual(
-      new Set(["VISIT", "TRANSIT", "MEAL", "ACTIVITY", "STAY"])
-    )
 
-    const dunhuang = getJourneyScopeProjection(
+    const dunhuang = resolveJourneyProjection({
       graph,
-      "section",
-      "section-dunhuang"
-    )
-    expect(dunhuang.events.map((event) => event.title)).toEqual([
-      "第 6 天 · 莫高窟",
-      "第 7 天 · 鸣沙山",
+      mode: "PLANNER",
+      scopeSectionEventId: "section-dunhuang",
+    })
+    expect(
+      new Set(dunhuang.events.map((event) => eventTypeById.get(event.eventId)))
+    ).toEqual(new Set(["VISIT", "MEAL", "STAY", "ACTIVITY"]))
+    expect(dunhuang.dayGroups).toBeDefined()
+    expect(dunhuang.dayGroups!.map((group) => group.localDate)).toEqual([
+      "2026-10-06",
+      "2026-10-07",
     ])
   })
 })

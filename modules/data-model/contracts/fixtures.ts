@@ -57,21 +57,6 @@ function cityEvent(
   }
 }
 
-function dayEvent(
-  id: string,
-  journeyId: string,
-  parentSectionEventId: string | null,
-  title: string,
-  localDate = "2026-08-01"
-): TargetJourneyEvent {
-  return {
-    ...eventIdentity(id, journeyId, parentSectionEventId),
-    type: "SECTION",
-    title,
-    detail: { kind: "DAY", localDate, timezone: "Asia/Shanghai" },
-  }
-}
-
 function visitEvent(
   id: string,
   journeyId: string,
@@ -292,8 +277,8 @@ function readyTransitGraph(journeyId: string): TargetJourneyGraphSnapshot {
   )
 }
 
-const nestedScopeGraph = (() => {
-  const journeyId = "fixture-01-nested-scope"
+const rootCityChainGraph = (() => {
+  const journeyId = "fixture-01-root-city-chain"
   return graph(
     journeyId,
     [
@@ -315,17 +300,20 @@ const nestedScopeGraph = (() => {
   )
 })()
 
-const nestedDayGraph = (() => {
-  const journeyId = "fixture-02-city-day"
+const cityDayGroupsGraph = (() => {
+  const journeyId = "fixture-02-city-day-groups"
+  const afternoon = visitEvent("afternoon", journeyId, "良渚", "city")
+  if (afternoon.type !== "VISIT") throw new Error("fixture invariant")
+  afternoon.plannedStartAt = "2026-08-02T01:00:00.000Z"
+  afternoon.plannedEndAt = "2026-08-02T03:00:00.000Z"
   return graph(
     journeyId,
     [
       cityEvent("city", journeyId, "杭州"),
-      dayEvent("day", journeyId, "city", "第一天"),
-      visitEvent("morning", journeyId, "西湖", "day"),
-      visitEvent("afternoon", journeyId, "良渚", "day"),
+      visitEvent("morning", journeyId, "西湖", "city"),
+      afternoon,
     ],
-    [link("day-sequence", journeyId, "morning", "afternoon", 1024)]
+    [link("city-sequence", journeyId, "morning", "afternoon", 1024)]
   )
 })()
 
@@ -565,7 +553,7 @@ const unscheduledBefore = (() => {
   const journeyId = "fixture-07-unscheduled"
   const inbox = visitEvent("inbox-event", journeyId, "待安排景点")
   inbox.placementStatus = "UNSCHEDULED"
-  return graph(journeyId, [dayEvent("day", journeyId, null, "第一天"), inbox])
+  return graph(journeyId, [cityEvent("city", journeyId, "杭州"), inbox])
 })()
 const unscheduledAfter = clone(unscheduledBefore)
 unscheduledAfter.revision = 2
@@ -574,7 +562,7 @@ const placedEvent = unscheduledAfter.events.find(
 )
 if (!placedEvent) throw new Error("fixture invariant")
 placedEvent.placementStatus = "SCHEDULED"
-placedEvent.parentSectionEventId = "day"
+placedEvent.parentSectionEventId = "city"
 
 const moveBefore = (() => {
   const journeyId = "fixture-08-move"
@@ -851,7 +839,6 @@ const workspaceDocument: TargetWorkspaceDocument = {
     headWorkspaceRevision: 1,
     status: "ACTIVE",
     headGraph: workspaceGraph,
-    expiresAt: "2026-08-31T00:00:00.000Z",
     lastAccessAt: NOW,
     createdAt: NOW,
     updatedAt: NOW,
@@ -874,9 +861,9 @@ const workspaceDocument: TargetWorkspaceDocument = {
 }
 const workspaceNoAccess = clone(workspaceDocument)
 workspaceNoAccess.accessState = "NO_ACCESS"
-const workspaceExpired = clone(workspaceDocument)
-workspaceExpired.session.status = "EXPIRED"
-workspaceExpired.accessState = "EXPIRED"
+const workspaceArchived = clone(workspaceDocument)
+workspaceArchived.session.status = "ARCHIVED"
+workspaceArchived.session.archivedAt = LATER
 const workspaceStale = clone(workspaceDocument)
 workspaceStale.draftState = "STALE"
 const workspaceConflict = clone(workspaceDocument)
@@ -1058,12 +1045,12 @@ const contentJourneyRevision = journeyRevision(
 
 const deletedSectionGraph = (() => {
   const journeyId = "fixture-12-delete-history"
-  const day = dayEvent("day", journeyId, null, "第一天")
+  const city = cityEvent("city", journeyId, "杭州")
   const start = visitEvent(
     "delete-start",
     journeyId,
     "起点",
-    "day",
+    "city",
     "CONFIRMED"
   )
   if (start.type !== "VISIT") throw new Error("fixture invariant")
@@ -1074,7 +1061,7 @@ const deletedSectionGraph = (() => {
     journeyId,
     "delete-start",
     "delete-end",
-    "day"
+    "city"
   )
   if (transit.type !== "TRANSIT") throw new Error("fixture invariant")
   transit.executionStatus = "CONFIRMED"
@@ -1085,13 +1072,13 @@ const deletedSectionGraph = (() => {
   transit.detail.routeState = "READY"
   transit.detail.activePlanningRunId = "run-ready"
   transit.detail.selectedPlanId = "plan-recommended"
-  const end = visitEvent("delete-end", journeyId, "终点", "day", "CONFIRMED")
+  const end = visitEvent("delete-end", journeyId, "终点", "city", "CONFIRMED")
   if (end.type !== "VISIT") throw new Error("fixture invariant")
   end.actualStartAt = LATER
   end.actualEndAt = LATER
   const result = graph(
     journeyId,
-    [day, start, transit, end],
+    [city, start, transit, end],
     [
       link("delete-link-1", journeyId, "delete-start", "delete-transit", 1024),
       link("delete-link-2", journeyId, "delete-transit", "delete-end", 2048),
@@ -1129,7 +1116,7 @@ const deletedJourneyRevision = journeyRevision(
 const deletedProjection: TargetResolvedJourneyProjection = {
   journeyId: deletedSectionGraph.id,
   revision: 2,
-  scopeSectionEventId: "day",
+  scopeSectionEventId: "city",
   mode: "TRAVELOGUE",
   events: [
     {
@@ -1161,6 +1148,9 @@ const deletedProjection: TargetResolvedJourneyProjection = {
       valueSource: "ACTUAL",
     },
   ],
+  dayGroups: [
+    { localDate: "2026-08-01", eventIds: ["delete-start", "delete-end"] },
+  ],
 }
 const deletedRootPlannerProjection: TargetResolvedJourneyProjection = {
   journeyId: deletedSectionGraph.id,
@@ -1169,9 +1159,9 @@ const deletedRootPlannerProjection: TargetResolvedJourneyProjection = {
   mode: "PLANNER",
   events: [
     {
-      eventId: "day",
+      eventId: "city",
       resolvedPosition: 0,
-      title: "第一天",
+      title: "杭州",
       startAt: NOW,
       endAt: LATER,
       valueSource: "PLANNED",
@@ -1185,9 +1175,9 @@ const deletedRootExecutionProjection: TargetResolvedJourneyProjection = {
   mode: "EXECUTION",
   events: [
     {
-      eventId: "day",
+      eventId: "city",
       resolvedPosition: 0,
-      title: "第一天",
+      title: "杭州",
       startAt: SOON,
       endAt: LATER,
       valueSource: "ACTUAL",
@@ -1201,9 +1191,9 @@ const deletedRootTravelogueProjection: TargetResolvedJourneyProjection = {
   mode: "TRAVELOGUE",
   events: [
     {
-      eventId: "day",
+      eventId: "city",
       resolvedPosition: 0,
-      title: "第一天",
+      title: "杭州",
       startAt: SOON,
       endAt: LATER,
       valueSource: "ACTUAL",
@@ -1252,20 +1242,21 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
     purpose: "root CITY to TRANSIT to CITY plus CITY-local route",
     cases: [
       {
-        id: "nested-scopes",
-        input: { graph: nestedScopeGraph },
-        expected: { state: { graph: nestedScopeGraph } },
+        id: "root-city-chain",
+        input: { graph: rootCityChainGraph },
+        expected: { state: { graph: rootCityChainGraph } },
       },
     ],
   },
   {
-    id: "02-city-day-event-drilldown",
-    purpose: "CITY to DAY to Event uses one containment and scope-link model",
+    id: "02-city-derived-day-groups",
+    purpose:
+      "CITY directly owns events while local dates are derived from event times",
     cases: [
       {
-        id: "city-day-drilldown",
-        input: { graph: nestedDayGraph },
-        expected: { state: { graph: nestedDayGraph } },
+        id: "city-derived-day-groups",
+        input: { graph: cityDayGroupsGraph },
+        expected: { state: { graph: cityDayGroupsGraph } },
       },
     ],
   },
@@ -1378,7 +1369,7 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
           name: "journey.place_event",
           payload: {
             eventId: "inbox-event",
-            position: { placement: "END", parentSectionEventId: "day" },
+            position: { placement: "END", parentSectionEventId: "city" },
           },
         }),
         expected: { state: { graph: unscheduledAfter } },
@@ -1497,9 +1488,9 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
         expected: { error: { code: "WORKSPACE_NO_ACCESS" } },
       },
       {
-        id: "expired",
-        input: { workspace: workspaceExpired },
-        expected: { error: { code: "WORKSPACE_EXPIRED" } },
+        id: "archived",
+        input: { workspace: workspaceArchived },
+        expected: { error: { code: "WORKSPACE_ARCHIVED" } },
       },
       {
         id: "stale",
@@ -1703,7 +1694,7 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
             deletedRootTravelogueProjection,
           ],
           evidence: {
-            sectionEventId: "day",
+            sectionEventId: "city",
             derivedStartAt: SOON,
             derivedEndAt: LATER,
             coordinateSystem: "WGS84",

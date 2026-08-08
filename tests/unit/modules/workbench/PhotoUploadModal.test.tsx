@@ -153,8 +153,8 @@ describe("PhotoUploadModal", () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it("keeps upload mutations disabled for an expired Workspace", () => {
-    storeState.workspaceDocument.accessState = "EXPIRED"
+  it("keeps upload mutations disabled for an archived Workspace", () => {
+    storeState.workspaceDocument.session.status = "ARCHIVED"
     storeState.uploadPhotos = [
       photoFixture({ lat: 39.9042, lng: 116.4074, caption: "北京" }),
     ]

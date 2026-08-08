@@ -6,7 +6,6 @@ import {
   TARGET_IDEMPOTENCY_POLICY,
   TARGET_MANDATORY_RELATION_IDS,
   TARGET_MODEL_RELATIONS,
-  WORKSPACE_ACTIVE_LEASE_DAYS,
   WORKSPACE_WEBSOCKET_TICKET_SECONDS,
   targetCommandBodySchema,
   targetCommandEnvelopeSchema,
@@ -137,12 +136,12 @@ describe("breaking data-model target contracts", () => {
   })
 
   it("makes every second-gate fixture row executable", () => {
-    const nestedScope = scenario(
+    const rootCityChain = scenario(
       "01-root-city-and-local-scope",
-      "nested-scopes"
+      "root-city-chain"
     ).input.graph!
     expect(
-      nestedScope.events.some(
+      rootCityChain.events.some(
         (event) =>
           event.type === "MEAL" && event.parentSectionEventId === "city-a"
       )
@@ -190,7 +189,7 @@ describe("breaking data-model target contracts", () => {
 
   it("rejects all five invalid graph states from the independent parse probes", () => {
     const activeLinkToRetiredEvent = cloneGraph(
-      scenario("01-root-city-and-local-scope", "nested-scopes").input.graph!
+      scenario("01-root-city-and-local-scope", "root-city-chain").input.graph!
     )
     activeLinkToRetiredEvent.events.find(
       (event) => event.id === "city-a"
@@ -216,7 +215,7 @@ describe("breaking data-model target contracts", () => {
     })
 
     const unknownTransitEndpoint = cloneGraph(
-      scenario("01-root-city-and-local-scope", "nested-scopes").input.graph!
+      scenario("01-root-city-and-local-scope", "root-city-chain").input.graph!
     )
     const transit = unknownTransitEndpoint.events.find(
       (event) => event.id === "root-transit"
@@ -247,7 +246,7 @@ describe("breaking data-model target contracts", () => {
 
   it("enforces revision bounds and branch supersession causality", () => {
     const introducedAfterHead = cloneGraph(
-      scenario("01-root-city-and-local-scope", "nested-scopes").input.graph!
+      scenario("01-root-city-and-local-scope", "root-city-chain").input.graph!
     )
     introducedAfterHead.events[0]!.introducedRevision = 2
 
@@ -425,7 +424,7 @@ describe("breaking data-model target contracts", () => {
     document.links.push({
       id: "invalid-unscheduled-link",
       journeyId: document.id,
-      fromEventId: "day",
+      fromEventId: "city",
       toEventId: "inbox-event",
       kind: "MAIN",
       rank: 1024,
@@ -442,20 +441,27 @@ describe("breaking data-model target contracts", () => {
     }
   })
 
-  it("keeps DAY date as input while SECTION time remains derived", () => {
+  it("keeps local dates derived from direct CITY event start times", () => {
     const document = scenario(
-      "02-city-day-event-drilldown",
-      "city-day-drilldown"
+      "02-city-derived-day-groups",
+      "city-derived-day-groups"
     ).input.graph!
-    const day = document.events.find((event) => event.id === "day")!
-    expect(day.type).toBe("SECTION")
-    if (day.type !== "SECTION" || day.detail.kind !== "DAY") return
-    expect(day.detail).toMatchObject({
-      localDate: "2026-08-01",
-      timezone: "Asia/Shanghai",
+    const city = document.events.find((event) => event.id === "city")!
+    const morning = document.events.find((event) => event.id === "morning")!
+    const afternoon = document.events.find((event) => event.id === "afternoon")!
+    expect(city.type).toBe("SECTION")
+    if (city.type !== "SECTION") return
+    expect(city.detail).toMatchObject({
+      kind: "CITY",
+      timeZone: "Asia/Shanghai",
     })
-    expect(day).not.toHaveProperty("plannedStartAt")
-    expect(day).not.toHaveProperty("actualStartAt")
+    expect(morning.parentSectionEventId).toBe(city.id)
+    expect(afternoon.parentSectionEventId).toBe(city.id)
+    if (morning.type !== "VISIT" || afternoon.type !== "VISIT") {
+      throw new Error("fixture invariant")
+    }
+    expect(morning.plannedStartAt).toBe("2026-08-01T00:00:00.000Z")
+    expect(afternoon.plannedStartAt).toBe("2026-08-02T01:00:00.000Z")
   })
 
   it("retains the READY transit selection when a refresh run fails", () => {
@@ -756,7 +762,7 @@ describe("breaking data-model target contracts", () => {
     expect(item.cases.map((entry) => entry.id)).toEqual([
       "owner-dirty",
       "no-access",
-      "expired",
+      "archived",
       "stale",
       "conflict",
       "refresh-after-reauth",
@@ -965,15 +971,14 @@ describe("breaking data-model target contracts", () => {
     ])
     expect(entry.input.journeyRevisions?.[1]?.snapshot.deletedAt).toBeDefined()
     expect(entry.expected.evidence).toMatchObject({
-      sectionEventId: "day",
+      sectionEventId: "city",
       coordinateSystem: "WGS84",
       derivedStartAt: "2026-08-01T01:00:00.000Z",
       derivedEndAt: "2026-08-02T00:00:00.000Z",
     })
   })
 
-  it("freezes workspace lease and scoped WebSocket ticket lifetimes", () => {
-    expect(WORKSPACE_ACTIVE_LEASE_DAYS).toBe(30)
+  it("freezes scoped WebSocket ticket lifetimes independently of Workspace history", () => {
     expect(WORKSPACE_WEBSOCKET_TICKET_SECONDS).toBe(300)
     const claims = {
       subjectUserId: "user",

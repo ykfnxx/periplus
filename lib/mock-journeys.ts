@@ -76,21 +76,6 @@ function citySection(
   }
 }
 
-function daySection(
-  journeyId: string,
-  id: string,
-  parentSectionEventId: string,
-  title: string,
-  localDate: string,
-  description: string
-): TargetJourneyEvent {
-  return {
-    ...eventIdentity(journeyId, id, parentSectionEventId, title, description),
-    type: "SECTION",
-    detail: { kind: "DAY", localDate, timezone },
-  }
-}
-
 function locationEvent(
   journeyId: string,
   id: string,
@@ -591,20 +576,11 @@ export function createSilkRoadJourney(
     "link-xian"
   )
 
-  // 兰州：CITY -> DAY -> Event，作为嵌套 scope 的完整调试样本。
-  const lanzhouDay = daySection(
-    journeyId,
-    "day-lanzhou-2026-10-03",
-    lanzhou.id,
-    "第 3 天 · 兰州",
-    "2026-10-03",
-    "黄河沿线慢游，晚间入住市中心"
-  )
-  addScope([lanzhouDay], "link-lanzhou-days")
+  // 兰州事件直接归属 CITY；每日视图由 plannedStartAt 在城市时区内派生。
   const lanzhouBridge = locationEvent(
     journeyId,
     "visit-lanzhou-zhongshan-bridge",
-    lanzhouDay.id,
+    lanzhou.id,
     "VISIT",
     {
       title: "中山桥",
@@ -617,7 +593,7 @@ export function createSilkRoadJourney(
   const lanzhouMeal = locationEvent(
     journeyId,
     "meal-lanzhou-beef-noodles",
-    lanzhouDay.id,
+    lanzhou.id,
     "MEAL",
     {
       title: "马子禄牛肉面",
@@ -633,7 +609,7 @@ export function createSilkRoadJourney(
     "transit-lanzhou-1",
     lanzhouBridge,
     lanzhouMeal,
-    lanzhouDay.id,
+    lanzhou.id,
     "WALK",
     schedule("2026-10-03T07:20:00.000Z", "2026-10-03T07:48:00.000Z", 28),
     [
@@ -658,7 +634,7 @@ export function createSilkRoadJourney(
   const lanzhouActivity = locationEvent(
     journeyId,
     "activity-lanzhou-yellow-river",
-    lanzhouDay.id,
+    lanzhou.id,
     "ACTIVITY",
     {
       title: "黄河夜游",
@@ -672,7 +648,7 @@ export function createSilkRoadJourney(
   const lanzhouStay = locationEvent(
     journeyId,
     "stay-lanzhou-center",
-    lanzhouDay.id,
+    lanzhou.id,
     "STAY",
     {
       title: "兰州中心酒店",
@@ -688,8 +664,7 @@ export function createSilkRoadJourney(
     "link-lanzhou-day"
   )
 
-  // 张掖、嘉峪关、吐鲁番和乌鲁木齐采用直接 CITY scope，方便比较
-  // “无 DAY 层”与“有 DAY 层”的通用渲染。
+  // 张掖、嘉峪关、吐鲁番和乌鲁木齐均采用直接 CITY scope。
   const zhangyeTemple = locationEvent(
     journeyId,
     "visit-zhangye-dafo",
@@ -793,29 +768,11 @@ export function createSilkRoadJourney(
   )
   addScope([jiayuguanPass, jiayuguanMeal, jiayuguanStay], "link-jiayuguan")
 
-  // 敦煌：两个 DAY section，覆盖多日嵌套导航。
-  const dunhuangDay1 = daySection(
-    journeyId,
-    "day-dunhuang-2026-10-06",
-    dunhuang.id,
-    "第 6 天 · 莫高窟",
-    "2026-10-06",
-    "预约参观莫高窟，晚间沙洲夜市"
-  )
-  const dunhuangDay2 = daySection(
-    journeyId,
-    "day-dunhuang-2026-10-07",
-    dunhuang.id,
-    "第 7 天 · 鸣沙山",
-    "2026-10-07",
-    "鸣沙山月牙泉与沙漠日落"
-  )
-  addScope([dunhuangDay1, dunhuangDay2], "link-dunhuang-days")
-
+  // 敦煌跨两日，但仍是一条 CITY 内事件链。
   const mogao = locationEvent(
     journeyId,
     "visit-dunhuang-mogao",
-    dunhuangDay1.id,
+    dunhuang.id,
     "VISIT",
     {
       title: "莫高窟",
@@ -828,7 +785,7 @@ export function createSilkRoadJourney(
   const dunhuangMeal = locationEvent(
     journeyId,
     "meal-dunhuang-noodles",
-    dunhuangDay1.id,
+    dunhuang.id,
     "MEAL",
     {
       title: "达记驴肉黄面",
@@ -842,7 +799,7 @@ export function createSilkRoadJourney(
   const dunhuangStay1 = locationEvent(
     journeyId,
     "stay-dunhuang-1",
-    dunhuangDay1.id,
+    dunhuang.id,
     "STAY",
     {
       title: "敦煌山庄",
@@ -853,12 +810,10 @@ export function createSilkRoadJourney(
       ...schedule("2026-10-06T13:30:00.000Z", "2026-10-07T00:00:00.000Z", 630),
     }
   )
-  addScope([mogao, dunhuangMeal, dunhuangStay1], "link-dunhuang-day-1")
-
   const mingsha = locationEvent(
     journeyId,
     "visit-dunhuang-mingsha",
-    dunhuangDay2.id,
+    dunhuang.id,
     "VISIT",
     {
       title: "鸣沙山月牙泉",
@@ -871,7 +826,7 @@ export function createSilkRoadJourney(
   const desertActivity = locationEvent(
     journeyId,
     "activity-dunhuang-sunset",
-    dunhuangDay2.id,
+    dunhuang.id,
     "ACTIVITY",
     {
       title: "沙漠日落与星空",
@@ -885,7 +840,7 @@ export function createSilkRoadJourney(
   const dunhuangStay2 = locationEvent(
     journeyId,
     "stay-dunhuang-2",
-    dunhuangDay2.id,
+    dunhuang.id,
     "STAY",
     {
       title: "敦煌山庄 · 续住",
@@ -896,7 +851,17 @@ export function createSilkRoadJourney(
       ...schedule("2026-10-07T13:30:00.000Z", "2026-10-08T00:00:00.000Z", 630),
     }
   )
-  addScope([mingsha, desertActivity, dunhuangStay2], "link-dunhuang-day-2")
+  addScope(
+    [
+      mogao,
+      dunhuangMeal,
+      dunhuangStay1,
+      mingsha,
+      desertActivity,
+      dunhuangStay2,
+    ],
+    "link-dunhuang"
+  )
 
   const turpanGrapes = locationEvent(
     journeyId,

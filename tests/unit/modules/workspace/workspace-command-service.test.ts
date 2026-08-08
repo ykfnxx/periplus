@@ -162,10 +162,10 @@ function command(
   }
 }
 
-function nestedSectionGraph() {
+function cityEventChainGraph() {
   const fixture = TARGET_CONTRACT_FIXTURES.find(
-    (candidate) => candidate.id === "02-city-day-event-drilldown"
-  )!.cases.find((candidate) => candidate.id === "city-day-drilldown")!
+    (candidate) => candidate.id === "02-city-derived-day-groups"
+  )!.cases.find((candidate) => candidate.id === "city-derived-day-groups")!
   const input = structuredClone(fixture.input.graph!)
   input.ownerId = ownerId
   return input
@@ -240,15 +240,15 @@ function transitSectionGraph(id: string): TargetJourneyGraphSnapshot {
     parentSectionEventId: null,
     placementStatus: "SCHEDULED",
     origin: "ORIGINAL",
-    title: "Transit day",
+    title: "Transit city",
     introducedRevision: 1,
     createdAt: now,
     updatedAt: now,
     type: "SECTION",
     detail: {
-      kind: "DAY",
-      localDate: "2026-08-01",
-      timezone: "Asia/Shanghai",
+      kind: "CITY",
+      timeZone: "Asia/Shanghai",
+      coordinateSystem: "GCJ02",
     },
   })
   return result
@@ -266,15 +266,15 @@ function sectionGraph(
     parentSectionEventId: null,
     placementStatus: "SCHEDULED" as const,
     origin: "ORIGINAL" as const,
-    title: "Day 1",
+    title: "City",
     introducedRevision: 1,
     createdAt: now,
     updatedAt: now,
     type: "SECTION" as const,
     detail: {
-      kind: "DAY" as const,
-      localDate: "2026-08-01",
-      timezone: "Asia/Shanghai",
+      kind: "CITY" as const,
+      timeZone: "Asia/Shanghai",
+      coordinateSystem: "GCJ02" as const,
     },
   }
   for (const event of result.events) {
@@ -710,11 +710,11 @@ describe.sequential("P3 persistent Workspace command bus", () => {
           successor: {
             id: `${sectionInput.id}-section-2`,
             type: "SECTION",
-            title: "Day 1 revised",
+            title: "City revised",
             detail: {
-              kind: "DAY",
-              localDate: "2026-08-01",
-              timezone: "Asia/Shanghai",
+              kind: "CITY",
+              timeZone: "Asia/Shanghai",
+              coordinateSystem: "GCJ02",
             },
           },
           reason: "replace section",
@@ -1867,83 +1867,28 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     )
   })
 
-  it("atomically expires the Workspace and active Agent when TTL lapses during a provider call", async () => {
-    const input = transitGraph(`workspace-provider-expiry-${randomUUID()}`)
+  it("keeps a Workspace available beyond the former inactivity TTL", async () => {
+    const input = transitGraph(`workspace-long-lived-${randomUUID()}`)
     const workspace = await createWorkspace(context, {
       graph: input,
       now: new Date(now),
     })
-    const run = await startWorkspaceAgentRun(
-      context,
-      workspace.id,
-      new Date(now),
-      `runtime-${randomUUID()}`
-    )
-    const plan = vi.fn(async (request: TransitPlanRequest) => {
-      await prisma.workspaceSession.update({
-        where: { id: workspace.id },
-        data: { expiresAt: new Date("2026-08-01T00:01:00.000Z") },
-      })
-      return {
-        transitEventId: request.transitEventId,
-        requestFingerprint: transitPlanFingerprint(request),
-        plans: [
-          {
-            id: "provider-expiry-plan",
-            provider: "mock" as const,
-            rank: 0,
-            label: "推荐",
-            strategy: "recommended",
-            distanceMeters: 1_000,
-            durationSeconds: 300,
-            trafficBasis: "TYPICAL" as const,
-            calculatedAt: now,
-            requestFingerprint: transitPlanFingerprint(request),
-            segments: [],
-          },
-        ],
-      }
-    })
-    const service = new WorkspaceCommandService({
-      transitPlanning: { plan },
-    })
     await expect(
-      service.execute(
+      new WorkspaceCommandService().execute(
         context,
-        command(
-          workspace.id,
-          0,
-          "provider-expiry-command",
-          {
-            name: "journey.plan_transit",
-            payload: {
-              eventId: `${input.id}-transit`,
-              forceRefresh: false,
-            },
+        command(workspace.id, 0, "long-lived-edit", {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${input.id}-a`,
+            patch: { type: "VISIT", title: "Still available" },
           },
-          { kind: "AGENT", agentRunId: run!.id }
-        ),
-        { now: new Date("2026-08-01T00:02:00.000Z") }
+        }),
+        { now: new Date("2026-09-02T00:00:00.000Z") }
       )
-    ).rejects.toThrow("Workspace is not active")
+    ).resolves.toMatchObject({ newRevision: 1 })
     await expect(
-      prisma.workspaceSession.findUniqueOrThrow({
-        where: { id: workspace.id },
-      })
-    ).resolves.toMatchObject({ status: "EXPIRED" })
-    await expect(
-      prisma.workspaceAgentRun.findUniqueOrThrow({ where: { id: run!.id } })
-    ).resolves.toMatchObject({
-      status: "FAILED",
-      errorCode: "WORKSPACE_EXPIRED",
-      completedAt: expect.any(Date),
-      leaseExpiresAt: null,
-    })
-    expect(
-      await prisma.workspaceRevision.count({
-        where: { workspaceId: workspace.id },
-      })
-    ).toBe(0)
+      prisma.workspaceSession.findUniqueOrThrow({ where: { id: workspace.id } })
+    ).resolves.toMatchObject({ status: "ACTIVE" })
   })
 
   it("plans between CITY sections using their canonical coordinates", async () => {
@@ -2967,17 +2912,17 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     expect(recovered?.session.headGraph.observations).toHaveLength(1)
   })
 
-  it("invalidates every before/after SECTION ancestor scope through root", async () => {
+  it("invalidates the current CITY scope and root", async () => {
     const service = new WorkspaceCommandService()
 
     const updateWorkspace = await createWorkspace(context, {
-      graph: nestedSectionGraph(),
+      graph: cityEventChainGraph(),
       now: new Date(now),
     })
     await expect(
       service.execute(
         context,
-        command(updateWorkspace.id, 0, "nested-time-update", {
+        command(updateWorkspace.id, 0, "city-time-update", {
           name: "journey.update_event",
           payload: {
             eventId: "morning",
@@ -2989,21 +2934,21 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         })
       )
     ).resolves.toMatchObject({
-      projectionInvalidationScopes: [null, "city", "day"],
+      projectionInvalidationScopes: [null, "city"],
     })
 
     const moveWorkspace = await createWorkspace(context, {
-      graph: nestedSectionGraph(),
+      graph: cityEventChainGraph(),
       now: new Date(now),
     })
     await expect(
       service.execute(
         context,
-        command(moveWorkspace.id, 0, "move-section-scope", {
+        command(moveWorkspace.id, 0, "move-city-event", {
           name: "journey.move_event",
           payload: {
-            eventId: "day",
-            position: { placement: "START", parentSectionEventId: null },
+            eventId: "afternoon",
+            position: { placement: "START", parentSectionEventId: "city" },
           },
         })
       )
@@ -3012,7 +2957,7 @@ describe.sequential("P3 persistent Workspace command bus", () => {
     })
 
     const retireWorkspace = await createWorkspace(context, {
-      graph: nestedSectionGraph(),
+      graph: cityEventChainGraph(),
       now: new Date(now),
     })
     await expect(
@@ -3027,36 +2972,36 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         })
       )
     ).resolves.toMatchObject({
-      projectionInvalidationScopes: [null, "city", "day"],
+      projectionInvalidationScopes: [null, "city"],
     })
 
     const replaceWorkspace = await createWorkspace(context, {
-      graph: nestedSectionGraph(),
+      graph: cityEventChainGraph(),
       now: new Date(now),
     })
     await expect(
       service.execute(
         context,
-        command(replaceWorkspace.id, 0, "replace-section-subtree", {
+        command(replaceWorkspace.id, 0, "replace-city", {
           name: "journey.replace_event",
           payload: {
-            predecessorEventId: "day",
+            predecessorEventId: "city",
             successor: {
-              id: "day-successor",
+              id: "city-successor",
               type: "SECTION",
-              title: "第一天（新）",
+              title: "杭州（新）",
               detail: {
-                kind: "DAY",
-                localDate: "2026-08-01",
-                timezone: "Asia/Shanghai",
+                kind: "CITY",
+                timeZone: "Asia/Shanghai",
+                coordinateSystem: "GCJ02",
               },
             },
-            reason: "replace day",
+            reason: "replace city",
           },
         })
       )
     ).resolves.toMatchObject({
-      projectionInvalidationScopes: [null, "city", "day", "day-successor"],
+      projectionInvalidationScopes: [null, "city", "city-successor"],
     })
   })
 

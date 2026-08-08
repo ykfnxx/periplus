@@ -597,39 +597,13 @@ function locationDetailData(
 function sectionDetailData(
   detail: Extract<TargetJourneyEvent, { type: "SECTION" }>["detail"]
 ) {
-  if (detail.kind === "DAY") {
-    return {
-      kind: detail.kind,
-      localDate: detail.localDate,
-      timezone: detail.timezone,
-      placeId: null,
-      lat: null,
-      lng: null,
-      coordinateSystem: null,
-      sourcePackId: null,
-    }
-  }
-  if (detail.kind === "CITY") {
-    return {
-      kind: detail.kind,
-      localDate: null,
-      timezone: detail.timeZone,
-      placeId: detail.placeId ?? null,
-      lat: detail.lat ?? null,
-      lng: detail.lng ?? null,
-      coordinateSystem: detail.coordinateSystem ?? null,
-      sourcePackId: null,
-    }
-  }
   return {
     kind: detail.kind,
-    localDate: null,
-    timezone: null,
-    placeId: null,
-    lat: null,
-    lng: null,
-    coordinateSystem: null,
-    sourcePackId: detail.sourcePackId ?? null,
+    timezone: detail.timeZone,
+    placeId: detail.placeId ?? null,
+    lat: detail.lat ?? null,
+    lng: detail.lng ?? null,
+    coordinateSystem: detail.coordinateSystem ?? null,
   }
 }
 

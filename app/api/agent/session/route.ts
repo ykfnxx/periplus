@@ -106,15 +106,12 @@ export async function GET(request: Request) {
       )
     }
 
-    if (
-      workspace.accessState === "EXPIRED" ||
-      workspace.session.status !== "ACTIVE"
-    ) {
+    if (workspace.session.status !== "ACTIVE") {
       return NextResponse.json(
         {
           error: {
-            code: "workspace_expired",
-            message: "Workspace is no longer active",
+            code: "workspace_archived",
+            message: "Workspace is archived",
           },
         },
         { status: 410 }

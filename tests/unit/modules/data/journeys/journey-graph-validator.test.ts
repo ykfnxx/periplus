@@ -38,10 +38,10 @@ describe("P2A Journey graph validator", () => {
     }
   })
 
-  it("accepts P0 nested scopes, unscheduled Events, and stable-identity moves", () => {
+  it("accepts root CITY chains, unscheduled Events, and stable-identity moves", () => {
     expect(
       validateJourneyGraph(
-        fixtureGraph("01-root-city-and-local-scope", "nested-scopes")
+        fixtureGraph("01-root-city-and-local-scope", "root-city-chain")
       )
     ).toBeDefined()
     expect(
@@ -66,13 +66,16 @@ describe("P2A Journey graph validator", () => {
   it("rejects disconnected scopes, active cycles, and invalid Link shapes", () => {
     const disconnected = fixtureGraph(
       "01-root-city-and-local-scope",
-      "nested-scopes"
+      "root-city-chain"
     )
     disconnected.links = disconnected.links.filter(
       (link) => link.id !== "city-a-3"
     )
 
-    const cycle = fixtureGraph("01-root-city-and-local-scope", "nested-scopes")
+    const cycle = fixtureGraph(
+      "01-root-city-and-local-scope",
+      "root-city-chain"
+    )
     cycle.links.push({
       id: "cycle",
       journeyId: cycle.id,
@@ -86,7 +89,7 @@ describe("P2A Journey graph validator", () => {
 
     const malformed = fixtureGraph(
       "01-root-city-and-local-scope",
-      "nested-scopes"
+      "root-city-chain"
     )
     malformed.links[0]!.branchKey = "not-main"
 

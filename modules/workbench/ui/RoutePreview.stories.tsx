@@ -45,29 +45,25 @@ export const Empty: Story = {
   decorators: [withWorkspaceState({ workspaceDocument: null })],
 }
 
-const nestedGraph = TARGET_CONTRACT_FIXTURES.find(
-  (fixture) => fixture.id === "02-city-day-event-drilldown"
+const cityGraph = TARGET_CONTRACT_FIXTURES.find(
+  (fixture) => fixture.id === "02-city-derived-day-groups"
 )?.cases[0]?.input.graph
-if (!nestedGraph) throw new Error("nested scope fixture is missing")
+if (!cityGraph) throw new Error("city fixture is missing")
 
-export const NestedSectionDrilldown: Story = {
+export const CityEventChain: Story = {
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(nestedGraph),
+      workspaceDocument: workspaceDocumentForStory(cityGraph),
     }),
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole("button", { name: "查看城市 杭州" }))
-    await userEvent.click(
-      canvas.getByRole("button", { name: "进入分组 第一天" })
-    )
     await expect(
       canvas.getByRole("button", { name: "选择事件 西湖" })
     ).toBeVisible()
-    await userEvent.click(canvas.getByRole("button", { name: "返回上一级" }))
     await expect(
-      canvas.getByRole("button", { name: "进入分组 第一天" })
+      canvas.getByRole("button", { name: "选择事件 良渚" })
     ).toBeVisible()
   },
 }

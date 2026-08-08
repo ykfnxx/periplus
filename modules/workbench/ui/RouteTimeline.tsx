@@ -182,7 +182,7 @@ export default function RouteTimeline({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[10px] font-black tracking-[0.08em] text-teak">
-                      {sectionKindLabel(event.detail.kind)} · 子行程
+                      {sectionKindLabel()} · 子行程
                     </span>
                     <span className="mt-1 block truncate text-base font-black text-ink">
                       {resolved.title}
@@ -760,8 +760,6 @@ function executionStatusLabel(status: LocationJourneyEvent["executionStatus"]) {
   return "计划中"
 }
 
-function sectionKindLabel(kind: "CITY" | "DAY" | "THEME") {
-  if (kind === "DAY") return "日期"
-  if (kind === "CITY") return "城市"
-  return "主题"
+function sectionKindLabel() {
+  return "城市"
 }

@@ -7,7 +7,7 @@ function formatConversationMessage(message: AgentConversationMessage) {
 
 const journeyPlanningProtocol = [
   "行程图只允许两级 Scope：Root Scope 与 City Scope。",
-  "Root Scope 必须由 CITY 与跨城 TRANSIT 交替组成；不得创建 DAY Section。",
+  "Root Scope 必须由 CITY 与跨城 TRANSIT 交替组成；CITY 内事件直接归属该城市，日期由 plannedStartAt 自动派生。",
   "City Scope 直接包含该城市全部日期的 VISIT、MEAL、ACTIVITY 与市内 TRANSIT；日期由后端依据 CITY.detail.timeZone 和 plannedStartAt 切分。",
   "每个地点事件必须填写 plannedStartAt；CITY.detail.timeZone 必须使用 IANA 时区名称。",
   "同一天相邻地点必须通过显式 TRANSIT 及前后 Link 串联，并调用 journey.plan_transit 得到 READY 路线。",
