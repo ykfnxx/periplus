@@ -433,11 +433,81 @@ function positionTouchesIssue(
   return false
 }
 
+function isRootCityInsertion(
+  command: ReturnType<typeof targetCommandBodySchema.parse>
+) {
+  if (
+    command.name !== "journey.add_event" ||
+    command.payload.event.type !== "SECTION" ||
+    command.payload.event.detail.kind !== "CITY"
+  ) {
+    return false
+  }
+  const { position } = command.payload
+  return (
+    (position.placement === "START" || position.placement === "END") &&
+    position.parentSectionEventId === null
+  )
+}
+
+function isScopeEvent(
+  draft: PreparedAgentDraft,
+  eventId: string,
+  scopeEventId: string
+) {
+  return (
+    draft.after.events.find((event) => event.id === eventId)
+      ?.parentSectionEventId === scopeEventId
+  )
+}
+
+function isScopeLink(
+  draft: PreparedAgentDraft,
+  linkId: string,
+  scopeEventId: string
+) {
+  const link = draft.after.links.find((candidate) => candidate.id === linkId)
+  return Boolean(
+    link &&
+    isScopeEvent(draft, link.fromEventId, scopeEventId) &&
+    isScopeEvent(draft, link.toEventId, scopeEventId)
+  )
+}
+
+function projectionRepairTargetsScope(
+  command: ReturnType<typeof targetCommandBodySchema.parse>,
+  draft: PreparedAgentDraft,
+  scopeEventId: string
+) {
+  switch (command.name) {
+    case "journey.add_link":
+      return (
+        isScopeEvent(draft, command.payload.link.fromEventId, scopeEventId) &&
+        isScopeEvent(draft, command.payload.link.toEventId, scopeEventId)
+      )
+    case "journey.retire_link":
+      return isScopeLink(draft, command.payload.linkId, scopeEventId)
+    case "journey.select_branch":
+      return (
+        isScopeEvent(draft, command.payload.forkEventId, scopeEventId) &&
+        isScopeLink(draft, command.payload.selectedLinkId, scopeEventId)
+      )
+    default:
+      return false
+  }
+}
+
 function repairTargetsIssue(
   command: ReturnType<typeof targetCommandBodySchema.parse>,
   issue: PlanValidationReport["issues"][number],
   draft: PreparedAgentDraft
 ) {
+  if (issue.code === "ROOT_ROUTE_DISCONNECTED" && issue.eventIds.length === 0) {
+    return isRootCityInsertion(command)
+  }
+  if (issue.code === "PROJECTION_INVALID" && issue.cityEventId) {
+    return projectionRepairTargetsScope(command, draft, issue.cityEventId)
+  }
   const eventIds = new Set(issue.eventIds)
   const touchesEvent = (eventId: string) => eventIds.has(eventId)
   const touchesLink = (linkId: string) => {

@@ -18,6 +18,7 @@ import type {
 import type { AgentEvent } from "@/backend/types"
 import {
   TARGET_CONTRACT_FIXTURES,
+  type PlanValidationReport,
   type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
@@ -142,6 +143,38 @@ function graph(id: string): TargetJourneyGraphSnapshot {
     observations: [],
     eventSourceLinks: [],
   }
+}
+
+function emptyRootGraph(id: string): TargetJourneyGraphSnapshot {
+  return { ...graph(id), events: [] }
+}
+
+function cityRouteGraph(id: string): TargetJourneyGraphSnapshot {
+  const snapshot = graph(id)
+  const visit = snapshot.events.find((event) => event.type === "VISIT")
+  if (!visit) throw new Error("expected visit fixture")
+  const secondVisit = {
+    ...visit,
+    id: `${id}-visit-2`,
+    title: "灵隐寺",
+    plannedStartAt: "2026-08-02T00:00:00.000Z",
+    detail: {
+      ...visit.detail,
+      plannedLat: 30.24,
+      plannedLng: 120.1,
+    },
+  }
+  snapshot.events.push(secondVisit)
+  snapshot.links.push({
+    id: `${id}-city-main`,
+    journeyId: id,
+    fromEventId: visit.id,
+    toEventId: secondVisit.id,
+    kind: "MAIN",
+    rank: 1024,
+    introducedRevision: 1,
+  })
+  return snapshot
 }
 
 async function setup(evalTrace?: { scenarioId: string; sink: EvalTraceSink }) {
@@ -887,6 +920,152 @@ describe.sequential("P3 persistent AgentGateway", () => {
         ],
       })
     ).rejects.toThrow("does not target a previous draft issue")
+    runtime.exit(0)
+  })
+
+  it("allows the first CITY to repair an empty root route", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: emptyRootGraph(`empty-root-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await gateway.start(context, workspace.id, "补齐首个城市", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "empty-root-initial",
+      commands: [
+        {
+          name: "journey.add_event",
+          payload: {
+            event: { type: "NOTE", title: "暂存", detail: { body: "暂存" } },
+            position: { placement: "UNSCHEDULED" },
+          },
+        },
+      ],
+    })
+    expect(initial.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "ROOT_ROUTE_DISCONNECTED" })
+    )
+
+    const repaired = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "empty-root-first-city",
+      previousDraftId: initial.draftId,
+      commands: [
+        {
+          name: "journey.add_event",
+          payload: {
+            event: {
+              type: "SECTION",
+              title: "杭州",
+              detail: {
+                kind: "CITY",
+                timeZone: "Asia/Shanghai",
+                lat: 30.2741,
+                lng: 120.1551,
+                coordinateSystem: "GCJ02",
+              },
+            },
+            position: { placement: "START", parentSectionEventId: null },
+          },
+        },
+      ],
+    })
+    expect(repaired.validation.issues).not.toContainEqual(
+      expect.objectContaining({ code: "ROOT_ROUTE_DISCONNECTED" })
+    )
+    runtime.exit(0)
+  })
+
+  it("allows a projection repair to add a link within its CITY scope", async () => {
+    const journeyId = `city-projection-${randomUUID()}`
+    const workspace = await createWorkspace(context, {
+      graph: cityRouteGraph(journeyId),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await gateway.start(context, workspace.id, "修复城市拓扑", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "city-projection-initial",
+      commands: [
+        visitDescriptionCommand(journeyId, "保留可修复的城市拓扑草稿"),
+      ],
+    })
+    expect(initial.validation.valid).toBe(true)
+
+    const running = (
+      gateway as unknown as {
+        runs: Map<
+          string,
+          { drafts: Map<string, { validation: PlanValidationReport }> }
+        >
+      }
+    ).runs.get(workspace.id)
+    const previous = running?.drafts.get(initial.draftId)
+    if (!previous) throw new Error("expected stored draft")
+    const cityEventId = `${journeyId}-city`
+    previous.validation = {
+      ...previous.validation,
+      valid: false,
+      issues: [
+        {
+          code: "PROJECTION_INVALID",
+          cityEventId,
+          eventIds: [cityEventId],
+          severity: "ERROR",
+          path: cityEventId,
+          message: "City route needs a scoped link repair",
+          repairability: "AGENT",
+          allowedOperations: [
+            "journey.add_link",
+            "journey.retire_link",
+            "journey.select_branch",
+          ],
+          suggestion: "Repair only topology inside the CITY scope.",
+        },
+      ],
+    }
+
+    const repaired = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "city-projection-link-repair",
+      previousDraftId: initial.draftId,
+      commands: [
+        {
+          name: "journey.add_link",
+          payload: {
+            link: {
+              id: "city-scope-alternative",
+              fromEventId: `${journeyId}-visit`,
+              toEventId: `${journeyId}-visit-2`,
+              kind: "ALTERNATIVE",
+              branchKey: "city-scope-repair",
+              rank: 2048,
+            },
+          },
+        },
+      ],
+    })
+    expect(repaired.validation.valid).toBe(true)
     runtime.exit(0)
   })
 
