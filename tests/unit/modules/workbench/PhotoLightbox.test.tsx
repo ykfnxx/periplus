@@ -44,9 +44,8 @@ describe("PhotoLightbox", () => {
     storeState.workspaceDocument.session.status = "ACTIVE"
   })
 
-  it("blocks photo deletion when the Workspace is expired", () => {
-    storeState.workspaceDocument.accessState = "EXPIRED"
-    storeState.workspaceDocument.session.status = "EXPIRED"
+  it("blocks photo deletion when the Workspace is archived", () => {
+    storeState.workspaceDocument.session.status = "ARCHIVED"
 
     render(<PhotoLightbox />)
 

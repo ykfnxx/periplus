@@ -62,34 +62,4 @@ describe("Silk Road debug preset", () => {
       alternatives: 3,
     })
   })
-
-  it("supports CITY to DAY to Event navigation with one and two-day cities", () => {
-    const graph = createSilkRoadJourney({ id: "journey", ownerId: "owner" })
-    const lanzhou = getJourneyScopeProjection(
-      graph,
-      "section",
-      "section-lanzhou"
-    )
-    expect(lanzhou.events.map((event) => event.title)).toEqual([
-      "第 3 天 · 兰州",
-    ])
-    const lanzhouDay = getJourneyScopeProjection(
-      graph,
-      "section",
-      "day-lanzhou-2026-10-03"
-    )
-    expect(new Set(lanzhouDay.events.map((event) => event.type))).toEqual(
-      new Set(["VISIT", "TRANSIT", "MEAL", "ACTIVITY", "STAY"])
-    )
-
-    const dunhuang = getJourneyScopeProjection(
-      graph,
-      "section",
-      "section-dunhuang"
-    )
-    expect(dunhuang.events.map((event) => event.title)).toEqual([
-      "第 6 天 · 莫高窟",
-      "第 7 天 · 鸣沙山",
-    ])
-  })
 })

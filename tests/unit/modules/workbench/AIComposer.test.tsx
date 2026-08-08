@@ -172,17 +172,17 @@ describe("AIComposer", () => {
     expect(screen.getByRole("button", { name: "派生副本" })).toBeEnabled()
   })
 
-  it("makes every Agent mutation control read-only when access is expired", () => {
+  it("makes every Agent mutation control read-only when the Workspace is archived", () => {
     mockStore({
       composerInput: "should not send",
       workspaceDocument: {
-        accessState: "EXPIRED",
+        accessState: "OWNER",
         draftState: "DIRTY",
         session: {
           id: "workspace-1",
           headWorkspaceRevision: 4,
           baseJourneyRevision: 2,
-          status: "EXPIRED",
+          status: "ARCHIVED",
         },
         agentRuns: [],
       },
@@ -192,7 +192,6 @@ describe("AIComposer", () => {
     expect(screen.getByLabelText("AI 输入")).toBeDisabled()
     expect(screen.getByLabelText("保存")).toBeDisabled()
     expect(screen.getByLabelText("发送")).toBeDisabled()
-    expect(screen.getByText(/只读状态/)).toBeVisible()
   })
 
   it("disables send button when input is empty", () => {

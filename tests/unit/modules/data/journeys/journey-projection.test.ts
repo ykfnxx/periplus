@@ -203,7 +203,7 @@ describe("P3 Journey projection resolver", () => {
     ).toEqual(expected)
   })
 
-  it("derives SECTION time recursively with deterministic source fallback", () => {
+  it("derives CITY time with deterministic source fallback", () => {
     const deleted = scenario(
       "12-coordinate-section-delete-history",
       "read-soft-deleted-history"
@@ -217,24 +217,6 @@ describe("P3 Journey projection resolver", () => {
         })
       ).toEqual(expected)
     }
-
-    const nested = graph("02-city-day-event-drilldown", "city-day-drilldown")
-    expect(
-      resolveJourneyProjection({
-        graph: nested,
-        scopeSectionEventId: null,
-        mode: "PLANNER",
-      }).events
-    ).toEqual([
-      {
-        eventId: "city",
-        resolvedPosition: 0,
-        title: "杭州",
-        startAt: "2026-08-01T00:00:00.000Z",
-        endAt: "2026-08-02T00:00:00.000Z",
-        valueSource: "PLANNED",
-      },
-    ])
 
     const mixed = structuredClone(deleted.input.graph!)
     const mixedEnd = mixed.events.find((event) => event.id === "delete-end")!
@@ -251,28 +233,10 @@ describe("P3 Journey projection resolver", () => {
       endAt: "2026-08-02T00:00:00.000Z",
       valueSource: "PLANNED",
     })
-
-    const empty = structuredClone(nested)
-    empty.events = empty.events.filter((event) => event.id === "city")
-    empty.links = []
-    expect(
-      resolveJourneyProjection({
-        graph: empty,
-        scopeSectionEventId: null,
-        mode: "EXECUTION",
-      }).events
-    ).toEqual([
-      {
-        eventId: "city",
-        resolvedPosition: 0,
-        title: "杭州",
-        valueSource: "PLANNED",
-      },
-    ])
   })
 
   it("assigns authoritative ordinals to mappable CITY sections", () => {
-    const input = graph("01-root-city-and-local-scope", "nested-scopes")
+    const input = graph("01-root-city-and-local-scope", "root-city-chain")
     const cities = input.events.filter(
       (event) => event.type === "SECTION" && event.detail.kind === "CITY"
     )

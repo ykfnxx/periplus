@@ -57,8 +57,6 @@ enum JourneyEventLinkKind {
 
 enum JourneySectionKind {
   CITY
-  DAY
-  THEME
 }
 
 enum ActorKind {
@@ -138,7 +136,6 @@ enum TrafficBasis {
 
 enum WorkspaceStatus {
   ACTIVE
-  EXPIRED
   ARCHIVED
 }
 
@@ -550,13 +547,11 @@ model JourneyBranchSelection {
 model SectionEventDetail {
   eventId          String             @id
   kind             JourneySectionKind
-  localDate        String?
   timezone         String?
   placeId          String?
   lat              Float?
   lng              Float?
   coordinateSystem CoordinateSystem?
-  sourcePackId     String?
 
   event JourneyEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   place Place?       @relation("SectionEventPlace", fields: [placeId], references: [id], onDelete: SetNull)
@@ -782,7 +777,6 @@ model WorkspaceSession {
   headWorkspaceRevision Int             @default(0)
   status                WorkspaceStatus @default(ACTIVE)
   headGraphJson         String
-  expiresAt             DateTime
   lastAccessAt          DateTime
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
@@ -799,7 +793,6 @@ model WorkspaceSession {
 
   @@index([ownerId, status])
   @@index([sourceJourneyId])
-  @@index([expiresAt])
 }
 
 model WorkspaceRevision {

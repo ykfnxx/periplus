@@ -23,11 +23,6 @@ export const TARGET_FIELD_AUTHORITY = [
     source: "place or unschedule command",
   },
   {
-    field: "SectionEventDetail.localDate",
-    authority: "TARGET",
-    source: "DAY scheduling input",
-  },
-  {
     field: "CITY SectionEventDetail.timeZone",
     authority: "TARGET",
     source: "local-day planning scope",
@@ -85,7 +80,7 @@ export const TARGET_FIELD_AUTHORITY = [
   {
     field: "WorkspaceDocument.accessState",
     authority: "DERIVED",
-    source: "authenticated user, immutable owner, expiry",
+    source: "authenticated user and immutable owner",
   },
   {
     field: "WorkspaceDocument.draftState",

@@ -112,7 +112,6 @@ export default function DebugPanel() {
           headWorkspaceRevision: 0,
           status: "ACTIVE",
           headGraph: graph,
-          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
           lastAccessAt: now,
           createdAt: now,
           updatedAt: now,

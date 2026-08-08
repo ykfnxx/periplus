@@ -30,7 +30,7 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("用户：\n把喀纳斯提前")
     expect(prompt).toContain("只执行最后一条用户需求")
     expect(prompt).toContain("Root Scope 必须由 CITY 与跨城 TRANSIT 交替组成")
-    expect(prompt).toContain("不得创建 DAY Section")
+    expect(prompt).toContain("CITY 内事件直接归属该城市")
     expect(prompt).toContain("periplus.hotel.search")
     expect(prompt).toContain("firstCandidate")
     expect(prompt).toContain("periplus.workspace.validate_plan")
@@ -39,7 +39,7 @@ describe("buildPrompt", () => {
   it("keeps validation execution out of suggest mode", () => {
     const prompt = buildPrompt([message("user", "给出路线建议")], "suggest")
 
-    expect(prompt).toContain("不得创建 DAY Section")
+    expect(prompt).toContain("CITY 内事件直接归属该城市")
     expect(prompt).not.toContain("完成全部修改后必须调用")
   })
 })

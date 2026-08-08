@@ -8,11 +8,27 @@ import {
   TARGET_MODEL_RELATIONS,
 } from "@/modules/data-model/contracts"
 
-const migrationPath = resolve(
-  process.cwd(),
-  "prisma/migrations/20260801070000_schema_baseline/migration.sql"
-)
-const migrationSql = readFileSync(migrationPath, "utf8")
+const migrationNames = [
+  "20260801070000_schema_baseline",
+  "20260803163000_hotel_search_cards",
+  "20260803170000_visit_provider_cover",
+  "20260808170000_city_chain_workspace_history",
+]
+
+function migrationSqlFor(names: readonly string[]) {
+  return names
+    .map((migration) =>
+      readFileSync(
+        resolve(process.cwd(), `prisma/migrations/${migration}/migration.sql`),
+        "utf8"
+      )
+    )
+    .join("\n")
+}
+
+const migrationSql = migrationSqlFor(migrationNames)
+const preCutoverMigrationSql = migrationSqlFor(migrationNames.slice(0, -1))
+const cityChainMigrationSql = migrationSqlFor(migrationNames.slice(-1))
 
 const NOW = "2026-08-02T00:00:00.000Z"
 const graph = (id: string, ownerId: string, revision: number) =>
@@ -27,6 +43,22 @@ function sqlite(sql: string): string {
     input: `.bail on\nPRAGMA foreign_keys = ON;\n${sql}`,
     maxBuffer: 8 * 1024 * 1024,
   })
+}
+
+function sqliteAt(path: string, sql: string): string {
+  return execFileSync("sqlite3", [path], {
+    encoding: "utf8",
+    input: `.bail on\nPRAGMA foreign_keys = ON;\n${sql}`,
+    maxBuffer: 8 * 1024 * 1024,
+  })
+}
+
+function sqliteJsonAt<T>(path: string, sql: string): T[] {
+  const output = execFileSync("sqlite3", ["-json", path, sql], {
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
+  }).trim()
+  return output ? (JSON.parse(output) as T[]) : []
 }
 
 function sqliteJson<T>(sql: string): T[] {
@@ -92,6 +124,148 @@ afterEach(() => {
 })
 
 describe("P1 SQLite schema baseline", () => {
+  it("purges incompatible JOURNEY and Workspace aggregates during the CITY-only cutover", () => {
+    const upgradeDatabasePath = join(temporaryDirectory, "legacy-upgrade.db")
+    const legacyGraph = JSON.stringify({
+      id: "legacy-relational",
+      ownerId: "owner",
+      revision: 1,
+      events: [
+        {
+          id: "legacy-city",
+          type: "SECTION",
+          parentSectionEventId: null,
+          detail: { kind: "CITY", timeZone: "Asia/Shanghai" },
+        },
+        {
+          id: "legacy-day",
+          type: "SECTION",
+          parentSectionEventId: "legacy-city",
+          detail: { kind: "DAY", timeZone: "Asia/Shanghai" },
+        },
+      ],
+    })
+    const snapshotOnlyLegacyGraph = JSON.stringify({
+      id: "snapshot-legacy",
+      ownerId: "owner",
+      revision: 1,
+      events: [
+        {
+          id: "snapshot-city",
+          type: "SECTION",
+          parentSectionEventId: null,
+          detail: { kind: "CITY", timeZone: "Asia/Shanghai" },
+        },
+        {
+          id: "snapshot-day",
+          type: "SECTION",
+          parentSectionEventId: "snapshot-city",
+          detail: { kind: "DAY", timeZone: "Asia/Shanghai" },
+        },
+      ],
+    })
+    const validGraph = JSON.stringify({
+      id: "valid-city",
+      ownerId: "owner",
+      revision: 1,
+      events: [
+        {
+          id: "valid-city-section",
+          type: "SECTION",
+          parentSectionEventId: null,
+          detail: { kind: "CITY", timeZone: "Asia/Shanghai" },
+        },
+      ],
+    })
+
+    sqliteAt(
+      upgradeDatabasePath,
+      `${preCutoverMigrationSql}
+      INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt")
+      VALUES ('owner', 'Owner', 'owner@example.test', 1, '${NOW}', '${NOW}');
+
+      INSERT INTO "Journey" ("id", "ownerId", "revision", "status", "visibility", "title", "createdAt", "updatedAt")
+      VALUES
+        ('legacy-relational', 'owner', 1, 'DRAFT', 'PRIVATE', 'Legacy relational', '${NOW}', '${NOW}'),
+        ('snapshot-legacy', 'owner', 1, 'DRAFT', 'PRIVATE', 'Legacy snapshot', '${NOW}', '${NOW}'),
+        ('valid-city', 'owner', 1, 'DRAFT', 'PRIVATE', 'Valid city', '${NOW}', '${NOW}');
+
+      INSERT INTO "JourneyRevision" ("id", "journeyId", "revision", "operation", "snapshotJson", "patchJson", "inversePatchJson", "actorKind", "idempotencyKey", "createdAt")
+      VALUES
+        ('legacy-relational-r1', 'legacy-relational', 1, 'create', '${legacyGraph}', '[]', '[]', 'SYSTEM', 'legacy-relational-r1', '${NOW}'),
+        ('snapshot-legacy-r1', 'snapshot-legacy', 1, 'create', '${snapshotOnlyLegacyGraph}', '[]', '[]', 'SYSTEM', 'snapshot-legacy-r1', '${NOW}'),
+        ('valid-city-r1', 'valid-city', 1, 'create', '${validGraph}', '[]', '[]', 'SYSTEM', 'valid-city-r1', '${NOW}');
+
+      INSERT INTO "JourneyEvent" ("id", "journeyId", "parentSectionEventId", "type", "placementStatus", "origin", "title", "introducedRevision", "createdAt", "updatedAt")
+      VALUES
+        ('legacy-city', 'legacy-relational', NULL, 'SECTION', 'SCHEDULED', 'ORIGINAL', '杭州', 1, '${NOW}', '${NOW}'),
+        ('legacy-day', 'legacy-relational', 'legacy-city', 'SECTION', 'SCHEDULED', 'ORIGINAL', '第一天', 1, '${NOW}', '${NOW}'),
+        ('snapshot-city', 'snapshot-legacy', NULL, 'SECTION', 'SCHEDULED', 'ORIGINAL', '苏州', 1, '${NOW}', '${NOW}'),
+        ('valid-city-section', 'valid-city', NULL, 'SECTION', 'SCHEDULED', 'ORIGINAL', '上海', 1, '${NOW}', '${NOW}');
+
+      INSERT INTO "SectionEventDetail" ("eventId", "kind", "localDate", "timezone")
+      VALUES
+        ('legacy-city', 'CITY', NULL, 'Asia/Shanghai'),
+        ('legacy-day', 'DAY', '2026-08-02', 'Asia/Shanghai'),
+        ('snapshot-city', 'CITY', NULL, 'Asia/Shanghai'),
+        ('valid-city-section', 'CITY', NULL, 'Asia/Shanghai');
+
+      INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
+      VALUES
+        ('legacy-workspace', 'owner', 'legacy-relational', 1, 0, 'ACTIVE', '${legacyGraph}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}'),
+        ('legacy-graph-workspace', 'owner', NULL, NULL, 0, 'ACTIVE', '${legacyGraph}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}'),
+        ('valid-workspace', 'owner', 'valid-city', 1, 0, 'ACTIVE', '${validGraph}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceAgentRun" ("id", "workspaceId", "status", "runtimeOwnerId", "heartbeatAt", "leaseExpiresAt", "startedAt", "createdAt", "updatedAt")
+      VALUES ('legacy-run', 'legacy-workspace', 'RUNNING', 'legacy-runtime', '${NOW}', '2026-08-02T00:01:00.000Z', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceMessage" ("id", "workspaceId", "role", "content", "agentRunId", "createdAt", "updatedAt")
+      VALUES ('legacy-message', 'legacy-workspace', 'ASSISTANT', 'partial text', 'legacy-run', '${NOW}', '${NOW}');
+      INSERT INTO "ProviderUsageLog" ("id", "provider", "purpose", "status", "workspaceId", "agentRunId", "createdAt")
+      VALUES ('legacy-usage', 'test', 'route', 'ok', 'legacy-workspace', 'legacy-run', '${NOW}');
+      ${cityChainMigrationSql}`
+    )
+
+    expect(
+      sqliteJsonAt<{
+        legacyJourneyCount: number
+        snapshotJourneyCount: number
+        validJourneyCount: number
+        legacyWorkspaceCount: number
+        validWorkspaceCount: number
+        messageCount: number
+        runCount: number
+        workspaceId: string | null
+        agentRunId: string | null
+      }>(
+        upgradeDatabasePath,
+        `SELECT
+           (SELECT count(*) FROM "Journey" WHERE "id" = 'legacy-relational') AS legacyJourneyCount,
+           (SELECT count(*) FROM "Journey" WHERE "id" = 'snapshot-legacy') AS snapshotJourneyCount,
+           (SELECT count(*) FROM "Journey" WHERE "id" = 'valid-city') AS validJourneyCount,
+           (SELECT count(*) FROM "WorkspaceSession" WHERE "id" IN ('legacy-workspace', 'legacy-graph-workspace')) AS legacyWorkspaceCount,
+           (SELECT count(*) FROM "WorkspaceSession" WHERE "id" = 'valid-workspace') AS validWorkspaceCount,
+           (SELECT count(*) FROM "WorkspaceMessage" WHERE "id" = 'legacy-message') AS messageCount,
+           (SELECT count(*) FROM "WorkspaceAgentRun" WHERE "id" = 'legacy-run') AS runCount,
+           "workspaceId",
+           "agentRunId"
+         FROM "ProviderUsageLog"
+         WHERE "id" = 'legacy-usage'`
+      )[0]
+    ).toEqual({
+      legacyJourneyCount: 0,
+      snapshotJourneyCount: 0,
+      validJourneyCount: 1,
+      legacyWorkspaceCount: 0,
+      validWorkspaceCount: 1,
+      messageCount: 0,
+      runCount: 0,
+      workspaceId: null,
+      agentRunId: null,
+    })
+    expect(
+      sqliteJsonAt(upgradeDatabasePath, "PRAGMA foreign_key_check;")
+    ).toEqual([])
+  })
+
   it("materializes exactly the mandatory P0 physical relations", () => {
     type ForeignKeyRow = {
       tableName: string
@@ -214,7 +388,7 @@ describe("P1 SQLite schema baseline", () => {
     expectSqlFailure(
       `INSERT INTO "JourneyEvent" ("id", "journeyId", "parentSectionEventId", "type", "executionStatus", "placementStatus", "origin", "title", "introducedRevision", "createdAt", "updatedAt")
        VALUES ('bad-child', 'j1', 'a', 'VISIT', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Bad child', 1, '${NOW}', '${NOW}');`,
-      /active SECTION/
+      /active SECTION|only non-SECTION Events/
     )
   })
 
@@ -327,6 +501,11 @@ describe("P1 SQLite schema baseline", () => {
       /CHECK/
     )
     expectSqlFailure(
+      `INSERT INTO "JourneyEvent" ("id", "journeyId", "parentSectionEventId", "type", "placementStatus", "origin", "title", "introducedRevision", "createdAt", "updatedAt")
+       VALUES ('nested-section', 'j1', 'section', 'SECTION', 'SCHEDULED', 'ORIGINAL', 'Nested', 1, '${NOW}', '${NOW}');`,
+      /only non-SECTION Events/
+    )
+    expectSqlFailure(
       `UPDATE "JourneyEvent" SET "type" = 'MEAL' WHERE "id" = 'a';
        INSERT INTO "VisitEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('a', 30, 120, 'GCJ02');`,
       /requires a VISIT/
@@ -339,7 +518,7 @@ describe("P1 SQLite schema baseline", () => {
         ('detail-meal', 'j1', 'section', 'MEAL', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Meal detail', 1, '${NOW}', '${NOW}'),
         ('detail-activity', 'j1', 'section', 'ACTIVITY', 'PLANNED', 'SCHEDULED', 'ORIGINAL', 'Activity detail', 1, '${NOW}', '${NOW}'),
         ('detail-note', 'j1', 'section', 'NOTE', NULL, 'SCHEDULED', 'ORIGINAL', 'Note detail', 1, '${NOW}', '${NOW}');
-      INSERT INTO "SectionEventDetail" ("eventId", "kind") VALUES ('section', 'THEME');
+      INSERT INTO "SectionEventDetail" ("eventId", "kind", "timezone") VALUES ('section', 'CITY', 'Asia/Shanghai');
       INSERT INTO "VisitEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('detail-visit', 30, 120, 'GCJ02');
       INSERT INTO "StayEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('detail-stay', 30, 120, 'GCJ02');
       INSERT INTO "MealEventDetail" ("eventId", "plannedLat", "plannedLng", "coordinateSystem") VALUES ('detail-meal', 30, 120, 'GCJ02');
@@ -592,18 +771,18 @@ describe("P1 SQLite schema baseline", () => {
 
   it("enforces Observation and Workspace append-only lineage", () => {
     expectSqlFailure(
-      `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
-       VALUES ('bad-workspace', 'owner', 'j1', 1, 0, 'ACTIVE', '{}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');`,
+      `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "lastAccessAt", "createdAt", "updatedAt")
+       VALUES ('bad-workspace', 'owner', 'j1', 1, 0, 'ACTIVE', '{}', '${NOW}', '${NOW}', '${NOW}');`,
       /CHECK/
     )
     expectSqlFailure(
-      `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
-       VALUES ('forged-head-workspace', 'owner', 'j1', 1, 99, 'ACTIVE', '${graph("j1", "owner", 1)}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');`,
+      `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "lastAccessAt", "createdAt", "updatedAt")
+       VALUES ('forged-head-workspace', 'owner', 'j1', 1, 99, 'ACTIVE', '${graph("j1", "owner", 1)}', '${NOW}', '${NOW}', '${NOW}');`,
       /start at head revision 0/
     )
     expectSqlFailure(
-      `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
-       VALUES ('wrong-owner-workspace', 'owner', 'j2', 1, 0, 'ACTIVE', '${graph("j2", "owner", 1)}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');`,
+      `INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "lastAccessAt", "createdAt", "updatedAt")
+       VALUES ('wrong-owner-workspace', 'owner', 'j2', 1, 0, 'ACTIVE', '${graph("j2", "owner", 1)}', '${NOW}', '${NOW}', '${NOW}');`,
       /must belong to its owner/
     )
     sqlite(`
@@ -611,8 +790,8 @@ describe("P1 SQLite schema baseline", () => {
       VALUES ('observation-1', 'a', 'NOTE', 'ACTUAL', 'First', '${NOW}', 'USER', 'owner', 'JOURNEY', '${NOW}');
       INSERT INTO "EventObservation" ("id", "eventId", "kind", "phase", "body", "observedAt", "actorKind", "actorUserId", "supersedesId", "visibility", "createdAt")
       VALUES ('observation-2', 'a', 'NOTE', 'ACTUAL', 'Second', '2026-08-02T00:01:00.000Z', 'USER', 'owner', 'observation-1', 'JOURNEY', '2026-08-02T00:01:00.000Z');
-      INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
-      VALUES ('workspace-1', 'owner', 'j1', 1, 0, 'ACTIVE', '${graph("j1", "owner", 1)}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "lastAccessAt", "createdAt", "updatedAt")
+      VALUES ('workspace-1', 'owner', 'j1', 1, 0, 'ACTIVE', '${graph("j1", "owner", 1)}', '${NOW}', '${NOW}', '${NOW}');
       INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
       VALUES ('workspace-r1', 'workspace-1', 1, 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'workspace-r1-key', '${NOW}');
       UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 1 WHERE "id" = 'workspace-1';
@@ -679,8 +858,8 @@ describe("P1 SQLite schema baseline", () => {
       /attributed Workspace/
     )
     sqlite(`
-      INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "expiresAt", "lastAccessAt", "createdAt", "updatedAt")
-      VALUES ('gc-workspace', 'owner', 'j1', 1, 0, 'ACTIVE', '${graph("j1", "owner", 1)}', '2026-09-01T00:00:00.000Z', '${NOW}', '${NOW}', '${NOW}');
+      INSERT INTO "WorkspaceSession" ("id", "ownerId", "sourceJourneyId", "baseJourneyRevision", "headWorkspaceRevision", "status", "headGraphJson", "lastAccessAt", "createdAt", "updatedAt")
+      VALUES ('gc-workspace', 'owner', 'j1', 1, 0, 'ACTIVE', '${graph("j1", "owner", 1)}', '${NOW}', '${NOW}', '${NOW}');
       INSERT INTO "WorkspaceRevision" ("id", "workspaceId", "revision", "commandName", "beforeGraphJson", "afterGraphJson", "patchJson", "inversePatchJson", "actorKind", "actorUserId", "idempotencyKey", "createdAt")
       VALUES ('gc-workspace-r1', 'gc-workspace', 1, 'workspace.refresh', '${graph("j1", "owner", 1)}', '${graph("j1", "owner", 1)}', '[]', '[]', 'USER', 'owner', 'gc-workspace-r1-key', '${NOW}');
       UPDATE "WorkspaceSession" SET "headWorkspaceRevision" = 1 WHERE "id" = 'gc-workspace';

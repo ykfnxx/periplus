@@ -13,7 +13,6 @@ import {
 } from "./common"
 import { targetJourneyGraphSnapshotSchema } from "./journey"
 
-export const WORKSPACE_ACTIVE_LEASE_DAYS = 30
 export const WORKSPACE_WEBSOCKET_TICKET_SECONDS = 300
 export const WORKSPACE_AGENT_RUN_LEASE_SECONDS = 60
 
@@ -26,7 +25,6 @@ export const targetWorkspaceSessionSchema = z
     headWorkspaceRevision: z.number().int().nonnegative(),
     status: z.enum(TARGET_WORKSPACE_STATUSES),
     headGraph: targetJourneyGraphSnapshotSchema,
-    expiresAt: dateTimeSchema,
     lastAccessAt: dateTimeSchema,
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
@@ -213,6 +211,14 @@ export const targetWorkspaceDocumentSchema = z.object({
   agentRuns: z.array(targetWorkspaceAgentRunSchema),
 })
 
+export const targetWorkspaceHistoryEntrySchema = z.object({
+  id: idSchema,
+  sourceJourneyId: idSchema.nullable(),
+  title: z.string().trim().min(1),
+  preview: z.string(),
+  updatedAt: dateTimeSchema,
+})
+
 export const targetWorkspaceWebSocketTicketClaimsSchema = z
   .object({
     subjectUserId: idSchema,
@@ -246,4 +252,7 @@ export type TargetWorkspaceMessage = z.infer<
 >
 export type TargetWorkspaceDocument = z.infer<
   typeof targetWorkspaceDocumentSchema
+>
+export type TargetWorkspaceHistoryEntry = z.infer<
+  typeof targetWorkspaceHistoryEntrySchema
 >

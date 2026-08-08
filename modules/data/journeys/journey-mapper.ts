@@ -199,17 +199,6 @@ function mapTransitRun(
 function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
   if (event.type === "SECTION" && event.sectionDetail) {
     const detail = event.sectionDetail
-    if (detail.kind === "DAY" && detail.localDate && detail.timezone) {
-      return {
-        ...eventBase(event),
-        type: "SECTION",
-        detail: {
-          kind: "DAY",
-          localDate: detail.localDate,
-          timezone: detail.timezone,
-        },
-      }
-    }
     if (detail.kind === "CITY" && detail.timezone) {
       return {
         ...eventBase(event),
@@ -221,16 +210,6 @@ function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
           lat: detail.lat ?? undefined,
           lng: detail.lng ?? undefined,
           coordinateSystem: detail.coordinateSystem ?? undefined,
-        },
-      }
-    }
-    if (detail.kind === "THEME") {
-      return {
-        ...eventBase(event),
-        type: "SECTION",
-        detail: {
-          kind: "THEME",
-          sourcePackId: detail.sourcePackId ?? undefined,
         },
       }
     }

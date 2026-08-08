@@ -845,7 +845,7 @@ describe("P2A Journey core repository", () => {
     ).toBe(6)
   })
 
-  it("retires and restores nested SECTION trees in either Event id order", async () => {
+  it("retires and restores CITY event chains in either Event id order", async () => {
     for (const [parentSuffix, childSuffix] of [
       ["z-parent", "a-child"],
       ["a-parent", "z-child"],
@@ -864,7 +864,7 @@ describe("P2A Journey core repository", () => {
       }
       const created = await createJourney(
         context,
-        write(initial, "create nested journey", "create")
+        write(initial, "create city event chain", "create")
       )
 
       const retired = structuredClone(created)
@@ -873,7 +873,7 @@ describe("P2A Journey core repository", () => {
       const retiredResult = await commitJourneyGraph(
         context,
         journeyId,
-        write(retired, "retire nested tree", "retire"),
+        write(retired, "retire city event chain", "retire"),
         1
       )
       expect(
@@ -886,7 +886,7 @@ describe("P2A Journey core repository", () => {
       const restoredResult = await commitJourneyGraph(
         context,
         journeyId,
-        write(restored, "restore nested tree", "restore"),
+        write(restored, "restore city event chain", "restore"),
         2
       )
       expect(
@@ -1590,7 +1590,6 @@ describe("P2A Journey core repository", () => {
           id: workspaceId,
           ownerId: runOwnerId,
           headGraphJson: JSON.stringify({ ownerId: runOwnerId }),
-          expiresAt: new Date(createdAt.getTime() + 60 * 60 * 1000),
           lastAccessAt: createdAt,
           createdAt,
         },
@@ -1659,9 +1658,6 @@ describe("P2A Journey core repository", () => {
         id: crossOwnerWorkspaceId,
         ownerId: otherUserId,
         headGraphJson: JSON.stringify(crossOwnerGraphIdentity),
-        expiresAt: new Date(
-          crossOwnerWorkspaceCreatedAt.getTime() + 60 * 60 * 1000
-        ),
         lastAccessAt: crossOwnerWorkspaceCreatedAt,
         createdAt: crossOwnerWorkspaceCreatedAt,
       },

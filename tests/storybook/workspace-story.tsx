@@ -21,7 +21,6 @@ export function workspaceDocumentForStory(
       headWorkspaceRevision: 0,
       status: "ACTIVE",
       headGraph: graph,
-      expiresAt: "2026-08-29T00:00:00.000Z",
       lastAccessAt: storyTimestamp,
       createdAt: storyTimestamp,
       updatedAt: storyTimestamp,

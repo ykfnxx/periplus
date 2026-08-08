@@ -116,19 +116,13 @@ describe("validateJourneyPlan", () => {
     expect(report.issues).toEqual([])
   })
 
-  it("rejects Agent-authored DAY at root", () => {
-    const day: TargetJourneyEvent = {
-      ...identity("day", null),
-      type: "SECTION",
-      title: "第一天",
-      detail: {
-        kind: "DAY",
-        localDate: "2026-08-01",
-        timezone: "Asia/Shanghai",
-      },
+  it("rejects a non-CITY root event", () => {
+    const rootVisit: TargetJourneyEvent = {
+      ...visit("wall", NOW),
+      parentSectionEventId: null,
     }
     const report = validateJourneyPlan({
-      graph: graph([day]),
+      graph: graph([rootVisit]),
       workspaceRevision: 0,
     })
 

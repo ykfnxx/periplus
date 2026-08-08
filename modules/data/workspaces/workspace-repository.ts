@@ -8,15 +8,16 @@ import {
   targetJourneyGraphSnapshotSchema,
   targetWorkspaceAgentRunSchema,
   targetWorkspaceDocumentSchema,
+  targetWorkspaceHistoryEntrySchema,
   targetWorkspaceMessageSchema,
   targetWorkspaceRevisionSchema,
   targetWorkspaceSessionSchema,
   targetWorkspaceSuggestionSchema,
-  WORKSPACE_ACTIVE_LEASE_DAYS,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type TargetActorReference,
   type TargetJourneyGraphSnapshot,
   type TargetWorkspaceDocument,
+  type TargetWorkspaceHistoryEntry,
   type TargetWorkspaceRevision,
   type TargetWorkspaceSession,
 } from "@/modules/data-model/contracts"
@@ -111,12 +112,6 @@ const contractCommandNames = Object.fromEntries(
   Prisma.WorkspaceRevisionUncheckedCreateInput["commandName"],
   TargetWorkspaceRevision["commandName"]
 >
-
-function leaseExpiry(now: Date) {
-  return new Date(
-    now.getTime() + WORKSPACE_ACTIVE_LEASE_DAYS * 24 * 60 * 60 * 1000
-  )
-}
 
 function json(value: unknown) {
   return JSON.stringify(value)
@@ -266,7 +261,6 @@ function mapSession(record: WorkspaceRecord): TargetWorkspaceSession {
     headWorkspaceRevision: record.headWorkspaceRevision,
     status: record.status,
     headGraph: parseGraph(record.headGraphJson, `Workspace ${record.id} head`),
-    expiresAt: record.expiresAt.toISOString(),
     lastAccessAt: record.lastAccessAt.toISOString(),
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
@@ -355,29 +349,6 @@ function assertOwner(context: AuthContext, ownerId: string) {
   }
 }
 
-async function expireWorkspaceIfDue(
-  tx: Prisma.TransactionClient,
-  workspaceId: string,
-  now: Date
-) {
-  const expired = await tx.workspaceSession.updateMany({
-    where: { id: workspaceId, status: "ACTIVE", expiresAt: { lte: now } },
-    data: { status: "EXPIRED" },
-  })
-  if (expired.count === 0) return false
-  await tx.workspaceAgentRun.updateMany({
-    where: { workspaceId, status: "RUNNING" },
-    data: {
-      status: "FAILED",
-      completedAt: now,
-      leaseExpiresAt: null,
-      errorCode: "WORKSPACE_EXPIRED",
-      errorMessage: "Workspace expired while the Agent run was active",
-    },
-  })
-  return true
-}
-
 async function assertWorkspaceSourceCurrent(
   tx: Prisma.TransactionClient,
   record: Pick<
@@ -420,21 +391,12 @@ async function ownedWorkspace(
   return record
 }
 
-async function touchOrExpire(record: WorkspaceRecord, now: Date) {
+async function touchWorkspace(record: WorkspaceRecord, now: Date) {
   if (record.status !== "ACTIVE") return record
-  if (record.expiresAt <= now) {
-    return prisma.$transaction(async (tx) => {
-      await expireWorkspaceIfDue(tx, record.id, now)
-      return tx.workspaceSession.findUniqueOrThrow({
-        where: { id: record.id },
-        include: workspaceInclude,
-      })
-    })
-  }
   if (record.lastAccessAt >= now) return record
   return prisma.workspaceSession.update({
     where: { id: record.id },
-    data: { lastAccessAt: now, expiresAt: leaseExpiry(now) },
+    data: { lastAccessAt: now },
     include: workspaceInclude,
   })
 }
@@ -443,23 +405,17 @@ async function requireActiveWorkspace(
   record: {
     id: string
     status: TargetWorkspaceSession["status"]
-    expiresAt: Date
     lastAccessAt: Date
   },
   now: Date
 ) {
-  if (record.status !== "ACTIVE" || record.expiresAt <= now) {
-    if (record.status === "ACTIVE") {
-      await prisma.$transaction(async (tx) => {
-        await expireWorkspaceIfDue(tx, record.id, now)
-      })
-    }
+  if (record.status !== "ACTIVE") {
     throw new WorkspaceInputError("Workspace is not active")
   }
   if (record.lastAccessAt < now) {
     await prisma.workspaceSession.updateMany({
-      where: { id: record.id, status: "ACTIVE", expiresAt: { gt: now } },
-      data: { lastAccessAt: now, expiresAt: leaseExpiry(now) },
+      where: { id: record.id, status: "ACTIVE" },
+      data: { lastAccessAt: now },
     })
   }
 }
@@ -527,7 +483,6 @@ export async function createWorkspace(
       sourceJourneyId: input.sourceJourneyId ?? null,
       baseJourneyRevision: input.baseJourneyRevision ?? null,
       headGraphJson: json(graph),
-      expiresAt: leaseExpiry(now),
       lastAccessAt: now,
       createdAt: now,
     },
@@ -543,7 +498,7 @@ export async function getWorkspaceDocument(
 ): Promise<TargetWorkspaceDocument | null> {
   const found = await ownedWorkspace(context, workspaceId)
   if (!found) return null
-  const record = await touchOrExpire(found as WorkspaceRecord, now)
+  const record = await touchWorkspace(found as WorkspaceRecord, now)
   const session = mapSession(record)
   const sourceJourney = session.sourceJourneyId
     ? await prisma.journey.findUnique({
@@ -589,11 +544,44 @@ export async function getWorkspaceDocument(
 
   return targetWorkspaceDocumentSchema.parse({
     session,
-    accessState: session.status === "EXPIRED" ? "EXPIRED" : "OWNER",
+    accessState: "OWNER",
     draftState,
     messages: record.messages.map(mapMessage),
     suggestions: record.suggestions.map(mapSuggestion),
     agentRuns: record.agentRuns.map(mapAgentRun),
+  })
+}
+
+export async function listWorkspaceHistory(
+  context: AuthContext
+): Promise<TargetWorkspaceHistoryEntry[]> {
+  const records = await prisma.workspaceSession.findMany({
+    where: { ownerId: context.userId, status: "ACTIVE" },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      sourceJourneyId: true,
+      updatedAt: true,
+      messages: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { role: true, content: true },
+      },
+    },
+  })
+  return records.map((record) => {
+    const firstUserMessage = record.messages.find(
+      (message) => message.role === "USER" && message.content.trim()
+    )
+    const latestMessage = [...record.messages]
+      .reverse()
+      .find((message) => message.content.trim())
+    return targetWorkspaceHistoryEntrySchema.parse({
+      id: record.id,
+      sourceJourneyId: record.sourceJourneyId,
+      title: firstUserMessage?.content.trim().slice(0, 48) ?? "新对话",
+      preview: latestMessage?.content.trim().slice(0, 96) ?? "",
+      updatedAt: record.updatedAt.toISOString(),
+    })
   })
 }
 
@@ -626,7 +614,6 @@ export async function appendWorkspaceRevision(
   }
   const now = input.now ?? new Date()
 
-  let expired = false
   const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
@@ -665,12 +652,7 @@ export async function appendWorkspaceRevision(
         replayedFromIdempotencyKey: true,
       }
     }
-    if (record.status !== "ACTIVE" || record.expiresAt <= now) {
-      if (record.status === "ACTIVE" && record.expiresAt <= now) {
-        await expireWorkspaceIfDue(tx, workspaceId, now)
-        expired = true
-        return null
-      }
+    if (record.status !== "ACTIVE") {
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (record.headWorkspaceRevision !== input.expectedRevision) {
@@ -774,7 +756,6 @@ export async function appendWorkspaceRevision(
           ? { baseJourneyRevision: input.baseJourneyRevision }
           : {}),
         lastAccessAt: now,
-        expiresAt: leaseExpiry(now),
       },
     })
     if (updated.count !== 1) throw new WorkspaceRevisionConflictError()
@@ -783,7 +764,6 @@ export async function appendWorkspaceRevision(
       replayedFromIdempotencyKey: false,
     }
   })
-  if (expired) throw new WorkspaceInputError("Workspace is not active")
   return result
 }
 
@@ -867,8 +847,8 @@ export async function appendWorkspaceMessage(
   }
   const record = await prisma.$transaction(async (tx) => {
     const active = await tx.workspaceSession.updateMany({
-      where: { id: workspaceId, status: "ACTIVE", expiresAt: { gt: now } },
-      data: { lastAccessAt: now, expiresAt: leaseExpiry(now) },
+      where: { id: workspaceId, status: "ACTIVE" },
+      data: { lastAccessAt: now },
     })
     if (active.count !== 1) {
       throw new WorkspaceInputError("Workspace is not active")
@@ -896,6 +876,55 @@ export async function appendWorkspaceMessage(
   })
   return targetWorkspaceMessageSchema.parse({
     ...record,
+    blocks: JSON.parse(record.blocksJson),
+    agentRunId: record.agentRunId ?? undefined,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+  })
+}
+
+export async function appendWorkspaceMessageDelta(
+  context: AuthContext,
+  workspaceId: string,
+  messageId: string,
+  agentRunId: string,
+  text: string,
+  now = new Date()
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  await requireActiveWorkspace(workspace, now)
+  const record = await prisma.$transaction(async (tx) => {
+    const active = await tx.workspaceSession.updateMany({
+      where: { id: workspaceId, status: "ACTIVE" },
+      data: { lastAccessAt: now },
+    })
+    if (active.count !== 1) {
+      throw new WorkspaceInputError("Workspace is not active")
+    }
+    const message = await tx.workspaceMessage.findFirst({
+      where: {
+        id: messageId,
+        workspaceId,
+        agentRunId,
+        role: "ASSISTANT",
+      },
+    })
+    if (!message) {
+      throw new WorkspaceInputError(
+        "Assistant message does not belong to Agent run"
+      )
+    }
+    return tx.workspaceMessage.update({
+      where: { id: messageId },
+      data: { content: `${message.content}${text}` },
+    })
+  })
+  return targetWorkspaceMessageSchema.parse({
+    id: record.id,
+    workspaceId: record.workspaceId,
+    role: record.role,
+    content: record.content,
     blocks: JSON.parse(record.blocksJson),
     agentRunId: record.agentRunId ?? undefined,
     createdAt: record.createdAt.toISOString(),
@@ -951,8 +980,8 @@ export async function startWorkspaceAgentRun(
   try {
     record = await prisma.$transaction(async (tx) => {
       const active = await tx.workspaceSession.updateMany({
-        where: { id: workspaceId, status: "ACTIVE", expiresAt: { gt: now } },
-        data: { lastAccessAt: now, expiresAt: leaseExpiry(now) },
+        where: { id: workspaceId, status: "ACTIVE" },
+        data: { lastAccessAt: now },
       })
       if (active.count !== 1) {
         throw new WorkspaceInputError("Workspace is not active")
@@ -1162,7 +1191,6 @@ export async function forkWorkspace(
         sourceJourneyId: document.session.sourceJourneyId,
         baseJourneyRevision: document.session.baseJourneyRevision,
         headGraphJson: json(baseGraph),
-        expiresAt: leaseExpiry(now),
         lastAccessAt: now,
         createdAt: now,
       },
@@ -1223,7 +1251,6 @@ export async function forkWorkspaceRevisionChain(
   }
 ) {
   const now = input.now ?? new Date()
-  let expired = false
   const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
@@ -1263,12 +1290,7 @@ export async function forkWorkspaceRevisionChain(
         replayedFromIdempotencyKey: true,
       }
     }
-    if (record.status !== "ACTIVE" || record.expiresAt <= now) {
-      if (record.status === "ACTIVE" && record.expiresAt <= now) {
-        await expireWorkspaceIfDue(tx, workspaceId, now)
-        expired = true
-        return null
-      }
+    if (record.status !== "ACTIVE") {
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (record.headWorkspaceRevision !== input.expectedRevision) {
@@ -1353,7 +1375,6 @@ export async function forkWorkspaceRevisionChain(
         sourceJourneyId: record.sourceJourneyId,
         baseJourneyRevision: forkBaseJourneyRevision,
         headGraphJson: json(baseGraph),
-        expiresAt: leaseExpiry(now),
         lastAccessAt: now,
         createdAt: now,
       },
@@ -1474,7 +1495,6 @@ export async function forkWorkspaceRevisionChain(
       data: {
         headWorkspaceRevision: input.expectedRevision + 1,
         lastAccessAt: now,
-        expiresAt: leaseExpiry(now),
       },
     })
     if (advanced.count !== 1) throw new WorkspaceRevisionConflictError()
@@ -1488,7 +1508,6 @@ export async function forkWorkspaceRevisionChain(
       replayedFromIdempotencyKey: false,
     }
   })
-  if (expired) throw new WorkspaceInputError("Workspace is not active")
   return result
 }
 
@@ -1516,7 +1535,6 @@ export async function refreshWorkspaceRevisionChain(
 ) {
   const now = input.now ?? new Date()
   const canonicalBase = validateJourneyGraph(input.canonicalBase)
-  let expired = false
   const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
@@ -1545,12 +1563,7 @@ export async function refreshWorkspaceRevisionChain(
         replayedFromIdempotencyKey: true,
       }
     }
-    if (record.status !== "ACTIVE" || record.expiresAt <= now) {
-      if (record.status === "ACTIVE" && record.expiresAt <= now) {
-        await expireWorkspaceIfDue(tx, workspaceId, now)
-        expired = true
-        return null
-      }
+    if (record.status !== "ACTIVE") {
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (
@@ -1683,7 +1696,6 @@ export async function refreshWorkspaceRevisionChain(
       data: {
         baseJourneyRevision: canonicalBase.revision,
         lastAccessAt: now,
-        expiresAt: leaseExpiry(now),
       },
     })
     return {
@@ -1691,7 +1703,6 @@ export async function refreshWorkspaceRevisionChain(
       replayedFromIdempotencyKey: false,
     }
   })
-  if (expired) throw new WorkspaceInputError("Workspace is not active")
   return result
 }
 
@@ -1709,7 +1720,6 @@ export async function commitWorkspaceRevisionChain(
   }
 ) {
   const now = input.now ?? new Date()
-  let expired = false
   const result = await prisma.$transaction(async (tx) => {
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
@@ -1739,12 +1749,7 @@ export async function commitWorkspaceRevisionChain(
         replayedFromIdempotencyKey: true,
       }
     }
-    if (record.status !== "ACTIVE" || record.expiresAt <= now) {
-      if (record.status === "ACTIVE" && record.expiresAt <= now) {
-        await expireWorkspaceIfDue(tx, workspaceId, now)
-        expired = true
-        return null
-      }
+    if (record.status !== "ACTIVE") {
       throw new WorkspaceInputError("Workspace is not active")
     }
     if (record.headWorkspaceRevision !== input.expectedRevision) {
@@ -1931,7 +1936,6 @@ export async function commitWorkspaceRevisionChain(
         baseJourneyRevision: committed.revision,
         headGraphJson: committedHeadJson,
         lastAccessAt: now,
-        expiresAt: leaseExpiry(now),
       },
     })
     if (advanced.count !== 1) throw new WorkspaceRevisionConflictError()
@@ -1940,7 +1944,6 @@ export async function commitWorkspaceRevisionChain(
       replayedFromIdempotencyKey: false,
     }
   })
-  if (expired) throw new WorkspaceInputError("Workspace is not active")
   return result
 }
 
@@ -1968,34 +1971,4 @@ export async function archiveWorkspace(
     })
   })
   return true
-}
-
-export async function expireInactiveWorkspaces(now = new Date()) {
-  return prisma.$transaction(async (tx) => {
-    const candidates = await tx.workspaceSession.findMany({
-      where: { status: "ACTIVE", expiresAt: { lte: now } },
-      select: { id: true },
-    })
-    const workspaceIds = candidates.map((candidate) => candidate.id)
-    if (workspaceIds.length === 0) return { count: 0 }
-    const expired = await tx.workspaceSession.updateMany({
-      where: {
-        id: { in: workspaceIds },
-        status: "ACTIVE",
-        expiresAt: { lte: now },
-      },
-      data: { status: "EXPIRED" },
-    })
-    await tx.workspaceAgentRun.updateMany({
-      where: { workspaceId: { in: workspaceIds }, status: "RUNNING" },
-      data: {
-        status: "FAILED",
-        completedAt: now,
-        leaseExpiresAt: null,
-        errorCode: "WORKSPACE_EXPIRED",
-        errorMessage: "Workspace expired while the Agent run was active",
-      },
-    })
-    return expired
-  })
 }

@@ -413,22 +413,11 @@ async function seedJourney(graph: TargetJourneyGraphSnapshot) {
           data: {
             eventId: event.id,
             kind: event.detail.kind,
-            timezone:
-              event.detail.kind === "CITY"
-                ? event.detail.timeZone
-                : event.detail.kind === "DAY"
-                  ? event.detail.timezone
-                  : undefined,
-            localDate:
-              event.detail.kind === "DAY" ? event.detail.localDate : undefined,
-            placeId:
-              event.detail.kind === "CITY" ? event.detail.placeId : undefined,
-            lat: event.detail.kind === "CITY" ? event.detail.lat : undefined,
-            lng: event.detail.kind === "CITY" ? event.detail.lng : undefined,
-            coordinateSystem:
-              event.detail.kind === "CITY"
-                ? event.detail.coordinateSystem
-                : undefined,
+            timezone: event.detail.timeZone,
+            placeId: event.detail.placeId,
+            lat: event.detail.lat,
+            lng: event.detail.lng,
+            coordinateSystem: event.detail.coordinateSystem,
           },
         })
         break
@@ -640,7 +629,6 @@ async function seedWorkspace(graph: TargetJourneyGraphSnapshot) {
       headWorkspaceRevision: 0,
       status: "ACTIVE",
       headGraphJson: graphJson,
-      expiresAt: new Date("2026-09-01T00:00:00.000Z"),
       lastAccessAt: new Date(NOW),
       createdAt: new Date(NOW),
     },

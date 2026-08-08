@@ -28,9 +28,6 @@ import {
   targetEventSourceLinkSchema,
 } from "./content"
 
-const localDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "localDate must use YYYY-MM-DD")
 const revisionSchema = z.number().int().positive()
 const optionalRevisionSchema = revisionSchema.nullable().optional()
 
@@ -84,31 +81,16 @@ const targetExecutableEventFields = {
   actualEndAt: dateTimeSchema.optional(),
 }
 
-export const targetSectionDetailSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("DAY"),
-      localDate: localDateSchema,
-      timezone: z.string().trim().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("CITY"),
-      timeZone: z.string().trim().min(1),
-      placeId: idSchema.optional(),
-      lat: z.number().min(-90).max(90).optional(),
-      lng: z.number().min(-180).max(180).optional(),
-      coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("THEME"),
-      sourcePackId: idSchema.optional(),
-    })
-    .strict(),
-])
+export const targetSectionDetailSchema = z
+  .object({
+    kind: z.literal("CITY"),
+    timeZone: z.string().trim().min(1),
+    placeId: idSchema.optional(),
+    lat: z.number().min(-90).max(90).optional(),
+    lng: z.number().min(-180).max(180).optional(),
+    coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS).optional(),
+  })
+  .strict()
 
 const targetSectionEventSchema = targetEventIdentitySchema.extend({
   type: z.literal("SECTION"),
@@ -923,12 +905,22 @@ export const targetJourneyGraphSnapshotSchema = z
           `event ${event.id} actual coordinates must be provided together`
         )
       }
+      if (event.type === "SECTION" && event.parentSectionEventId) {
+        addIssue(
+          ["events"],
+          `city section ${event.id} cannot be nested inside another section`
+        )
+      }
       if (event.parentSectionEventId) {
         const parent = events.get(event.parentSectionEventId)
-        if (!parent || parent.type !== "SECTION") {
+        if (
+          !parent ||
+          parent.type !== "SECTION" ||
+          parent.detail.kind !== "CITY"
+        ) {
           addIssue(
             ["events"],
-            `event ${event.id} requires an existing SECTION parent`
+            `event ${event.id} requires an existing CITY parent`
           )
         } else if (!event.retiredRevision && parent.retiredRevision) {
           addIssue(

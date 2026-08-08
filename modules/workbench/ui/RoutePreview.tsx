@@ -49,20 +49,7 @@ export default function RoutePreview({
   const durationDays = totalDurationDays(
     getJourneyScopeTreeEvents(graph, viewLevel, activeSectionEventId)
   )
-  const activeSection =
-    view.level === "section"
-      ? graph.events.find(
-          (event) =>
-            event.id === activeSectionEventId && event.type === "SECTION"
-        )
-      : null
-  const scopeLabel =
-    activeSection?.type === "SECTION" && activeSection.detail.kind === "DAY"
-      ? "每日行程"
-      : activeSection?.type === "SECTION" &&
-          activeSection.detail.kind === "THEME"
-        ? "主题行程"
-        : "城市行程"
+  const scopeLabel = "城市行程"
   const title =
     view.level === "overview"
       ? `${graph.title}${durationDays ? ` · ${durationDays} 天` : ""}`

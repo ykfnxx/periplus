@@ -49,7 +49,6 @@ import {
   archiveWorkspace,
   createWorkspaceSuggestion,
   createWorkspace,
-  expireInactiveWorkspaces,
   finishWorkspaceAgentRun,
   forkWorkspace,
   getWorkspaceDocument,
@@ -390,7 +389,7 @@ describe.sequential("P2B-P2D repositories", () => {
     ).toThrow("between 1 and 300")
   })
 
-  it("atomically terminalizes Agent runs across archive, TTL expiry, and recovery", async () => {
+  it("atomically terminalizes Agent runs when a Workspace is archived", async () => {
     const archiveNow = new Date("2026-08-01T11:00:00.000Z")
     const archived = await createWorkspace(context, {
       id: `workspace-archive-${randomUUID()}`,
@@ -422,57 +421,6 @@ describe.sequential("P2B-P2D repositories", () => {
     expect(
       await prisma.workspaceSession.findUnique({ where: { id: archived.id } })
     ).toMatchObject({ status: "ARCHIVED" })
-
-    const expiring = await createWorkspace(context, {
-      id: `workspace-expire-${randomUUID()}`,
-      graph: graph(),
-      now: archiveNow,
-    })
-    const expiringRun = await startWorkspaceAgentRun(
-      context,
-      expiring.id,
-      archiveNow,
-      `runtime-${randomUUID()}`
-    )
-    const expiresAt = new Date("2026-08-01T11:02:00.000Z")
-    await prisma.workspaceSession.update({
-      where: { id: expiring.id },
-      data: { expiresAt },
-    })
-    await Promise.allSettled([
-      expireInactiveWorkspaces(expiresAt),
-      finishWorkspaceAgentRun(context, expiring.id, expiringRun!.id, {
-        status: "SUCCEEDED",
-        now: expiresAt,
-      }),
-    ])
-    expect(
-      await prisma.workspaceAgentRun.count({
-        where: { workspaceId: expiring.id, status: "RUNNING" },
-      })
-    ).toBe(0)
-    expect(
-      await prisma.workspaceSession.findUnique({ where: { id: expiring.id } })
-    ).toMatchObject({ status: "EXPIRED" })
-
-    const recoveredAt = new Date("2026-08-01T11:03:00.000Z")
-    await prisma.workspaceSession.update({
-      where: { id: expiring.id },
-      data: {
-        status: "ACTIVE",
-        archivedAt: null,
-        lastAccessAt: recoveredAt,
-        expiresAt: new Date("2026-08-02T11:03:00.000Z"),
-      },
-    })
-    await expect(
-      startWorkspaceAgentRun(
-        context,
-        expiring.id,
-        recoveredAt,
-        `runtime-${randomUUID()}`
-      )
-    ).resolves.toMatchObject({ status: "RUNNING" })
   })
 
   it("persists stable READY and FAILED Transit runs with lossless geometry", async () => {
@@ -1031,24 +979,24 @@ describe.sequential("P2B-P2D repositories", () => {
         )
       )?.draftState
     ).toBe("STALE")
-    const expired = await getWorkspaceDocument(
+    const resumed = await getWorkspaceDocument(
       context,
       workspaceId,
       new Date("2026-10-01T00:00:00.000Z")
     )
-    expect(expired?.session.status).toBe("EXPIRED")
-    expect(expired?.accessState).toBe("EXPIRED")
+    expect(resumed?.session.status).toBe("ACTIVE")
+    expect(resumed?.accessState).toBe("OWNER")
     await expect(
       appendWorkspaceMessage(
         context,
         workspaceId,
-        { role: "USER", content: "too late" },
+        { role: "USER", content: "continued conversation" },
         new Date("2026-10-01T00:00:01.000Z")
       )
-    ).rejects.toThrow("not active")
+    ).resolves.toMatchObject({ content: "continued conversation" })
     await expect(
       forkWorkspace(context, workspaceId, new Date("2026-10-01T00:00:01.000Z"))
-    ).rejects.toThrow("Inactive Workspace")
+    ).resolves.toMatchObject({ status: "ACTIVE" })
   })
 
   it("adapts the existing Photo API boundary to owned IMAGE Assets", async () => {

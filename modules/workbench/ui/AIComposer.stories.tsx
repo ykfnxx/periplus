@@ -78,14 +78,13 @@ export const SaveFailed: Story = {
   ],
 }
 
-const expiredDocument = workspaceDocumentForStory(silkRoadJourney)
-expiredDocument.accessState = "EXPIRED"
-expiredDocument.session.status = "EXPIRED"
+const archivedDocument = workspaceDocumentForStory(silkRoadJourney)
+archivedDocument.session.status = "ARCHIVED"
 
-export const ExpiredReadOnly: Story = {
+export const ArchivedReadOnly: Story = {
   decorators: [
     withWorkspaceState({
-      workspaceDocument: expiredDocument,
+      workspaceDocument: archivedDocument,
       composerInput: "尝试修改行程",
       sendAgentEvent: fn(),
     }),
@@ -97,8 +96,5 @@ export const ExpiredReadOnly: Story = {
     ).toBeDisabled()
     await expect(canvas.getByRole("button", { name: "保存" })).toBeDisabled()
     await expect(canvas.getByRole("button", { name: "发送" })).toBeDisabled()
-    await expect(
-      canvas.getByText("Workspace 已过期或无写权限，当前为只读状态。")
-    ).toBeVisible()
   },
 }

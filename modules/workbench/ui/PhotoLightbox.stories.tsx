@@ -15,9 +15,8 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const expiredDocument = workspaceDocumentForStory(silkRoadJourney)
-expiredDocument.accessState = "EXPIRED"
-expiredDocument.session.status = "EXPIRED"
+const archivedDocument = workspaceDocumentForStory(silkRoadJourney)
+archivedDocument.session.status = "ARCHIVED"
 
 const lightboxPhotoShare = {
   id: "photo-lanzhou",
@@ -33,10 +32,10 @@ const lightboxPhotoShare = {
   canDelete: true,
 }
 
-export const ExpiredDeleteDisabled: Story = {
+export const ArchivedDeleteDisabled: Story = {
   decorators: [
     withWorkspaceState({
-      workspaceDocument: expiredDocument,
+      workspaceDocument: archivedDocument,
       lightboxPhotoShare,
     }),
   ],

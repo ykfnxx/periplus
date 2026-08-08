@@ -39,7 +39,7 @@ export const TARGET_EVENT_PLACEMENT_STATUSES = [
 
 export const TARGET_LINK_KINDS = ["MAIN", "ALTERNATIVE"] as const
 
-export const TARGET_SECTION_KINDS = ["CITY", "DAY", "THEME"] as const
+export const TARGET_SECTION_KINDS = ["CITY"] as const
 
 export const TARGET_ACTOR_KINDS = ["USER", "AGENT", "SYSTEM"] as const
 
@@ -114,16 +114,11 @@ export const TARGET_TRAFFIC_BASES = [
   "UNKNOWN",
 ] as const
 
-export const TARGET_WORKSPACE_STATUSES = [
-  "ACTIVE",
-  "EXPIRED",
-  "ARCHIVED",
-] as const
+export const TARGET_WORKSPACE_STATUSES = ["ACTIVE", "ARCHIVED"] as const
 
 export const TARGET_WORKSPACE_ACCESS_STATES = [
   "OWNER",
   "NO_ACCESS",
-  "EXPIRED",
   "REAUTH_REQUIRED",
 ] as const
 

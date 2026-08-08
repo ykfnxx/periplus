@@ -35,6 +35,7 @@ import {
 } from "@/modules/data/hotels/hotel-search-service"
 import {
   appendWorkspaceMessage,
+  appendWorkspaceMessageDelta,
   createWorkspaceSuggestion,
   finishWorkspaceAgentRun,
   heartbeatWorkspaceAgentRun,
@@ -123,6 +124,8 @@ interface RunningAgent {
   finished: boolean
   runtimeFailed: boolean
   stdout: string
+  assistantMessageId: string
+  outputWrite: Promise<void>
   heartbeatTimer: ReturnType<typeof setInterval> | null
   traceRunSpanId: string
   traceFailure: Error | null
@@ -433,11 +436,25 @@ export class AgentGateway {
       this.agentRunLeaseSeconds
     )
     if (!persistedRun) throw new WorkspaceInputError("Workspace was not found")
+    let assistantMessageId: string
     try {
       await appendWorkspaceMessage(context, workspaceId, {
         role: "USER",
         content: prompt,
       })
+      const assistantMessage = await appendWorkspaceMessage(
+        context,
+        workspaceId,
+        {
+          role: "ASSISTANT",
+          content: "",
+          agentRunId: persistedRun.id,
+        }
+      )
+      if (!assistantMessage) {
+        throw new WorkspaceInputError("Assistant message could not be created")
+      }
+      assistantMessageId = assistantMessage.id
     } catch (error) {
       try {
         await finishWorkspaceAgentRun(context, workspaceId, persistedRun.id, {
@@ -449,8 +466,7 @@ export class AgentGateway {
           now: this.now(),
         })
       } catch {
-        // Preserve the original persistence failure. The expired lease is
-        // reclaimable by the next runtime even if terminalization also fails.
+        // Preserve the original persistence failure if terminalization fails.
       }
       throw error
     }
@@ -465,6 +481,8 @@ export class AgentGateway {
       finished: false,
       runtimeFailed: false,
       stdout: "",
+      assistantMessageId,
+      outputWrite: Promise.resolve(),
       heartbeatTimer: null,
       traceRunSpanId: randomUUID(),
       traceFailure: null,
@@ -498,12 +516,7 @@ export class AgentGateway {
         },
         {
           onStdout: (text) => {
-            running.stdout += text
-            this.heartbeatInBackground(running)
-            emit(workspaceId, {
-              type: "agent.message.delta",
-              payload: { runId: running.runId, stream: "stdout", text },
-            })
+            this.persistStdout(running, text, emit)
           },
           onStderr: (text) => {
             this.heartbeatInBackground(running)
@@ -1049,6 +1062,48 @@ export class AgentGateway {
     ]
   }
 
+  private persistStdout(
+    running: RunningAgent,
+    text: string,
+    emit: AgentEventEmitter
+  ) {
+    running.outputWrite = running.outputWrite
+      .then(async () => {
+        await appendWorkspaceMessageDelta(
+          running.context,
+          running.workspaceId,
+          running.assistantMessageId,
+          running.runId,
+          text,
+          this.now()
+        )
+        running.stdout += text
+        await this.heartbeat(running)
+        emit(running.workspaceId, {
+          type: "agent.message.delta",
+          payload: {
+            runId: running.runId,
+            messageId: running.assistantMessageId,
+            stream: "stdout",
+            text,
+          },
+        })
+      })
+      .catch((error) => {
+        running.runtimeFailed = true
+        running.cancelled = true
+        running.runtimeRun?.cancel()
+        emit(running.workspaceId, {
+          type: "agent.run.failed",
+          payload: {
+            runId: running.runId,
+            message:
+              error instanceof Error ? error.message : "Agent output failed",
+          },
+        })
+      })
+  }
+
   private startHeartbeat(running: RunningAgent) {
     if (this.heartbeatIntervalMs === null) return
     running.heartbeatTimer = setInterval(() => {
@@ -1099,16 +1154,12 @@ export class AgentGateway {
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
 
-    let failed = running.runtimeFailed || result.code !== 0
+    let failed =
+      running.runtimeFailed || (!running.cancelled && result.code !== 0)
     let validationErrorCode: string | undefined
     try {
-      if (running.stdout) {
-        await appendWorkspaceMessage(running.context, running.workspaceId, {
-          role: "ASSISTANT",
-          content: running.stdout,
-          agentRunId: running.runId,
-        })
-      }
+      await running.outputWrite
+      failed ||= running.runtimeFailed
       if (mode === "suggest" && result.code === 0 && !running.cancelled) {
         const suggestion = parseSuggestion(running.stdout)
         await createWorkspaceSuggestion(running.context, running.workspaceId, {
@@ -1186,10 +1237,10 @@ export class AgentGateway {
         running.workspaceId,
         running.runId,
         {
-          status: running.cancelled
-            ? "CANCELLED"
-            : failed
-              ? "FAILED"
+          status: failed
+            ? "FAILED"
+            : running.cancelled
+              ? "CANCELLED"
               : "SUCCEEDED",
           errorCode: failed
             ? (validationErrorCode ?? "AGENT_RUNTIME_FAILED")
@@ -1200,9 +1251,9 @@ export class AgentGateway {
         }
       )
       await this.trace(running, {
-        type: running.cancelled || failed ? "run.failed" : "run.completed",
+        type: failed || running.cancelled ? "run.failed" : "run.completed",
         spanId: running.traceRunSpanId,
-        status: running.cancelled || failed ? "ERROR" : "OK",
+        status: failed || running.cancelled ? "ERROR" : "OK",
         payload: {
           cancelled: running.cancelled,
           exitCode: result.code,
@@ -1228,10 +1279,10 @@ export class AgentGateway {
     )
     emit(running.workspaceId, { type: "workspace.unlocked", payload: document })
     emit(running.workspaceId, {
-      type: running.cancelled
-        ? "agent.run.cancelled"
-        : failed
-          ? "agent.run.failed"
+      type: failed
+        ? "agent.run.failed"
+        : running.cancelled
+          ? "agent.run.cancelled"
           : "agent.run.completed",
       payload: { runId: running.runId, code: result.code, ...result.metadata },
     })

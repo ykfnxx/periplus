@@ -344,8 +344,8 @@ export function resolveJourneyProjection({
   const revision = graph.revision
   if (scopeSectionEventId !== null) {
     const scope = graph.events.find((event) => event.id === scopeSectionEventId)
-    if (!scope || scope.type !== "SECTION") {
-      fail("INVALID_SCOPE", `${scopeSectionEventId} is not a SECTION event`)
+    if (!scope || scope.type !== "SECTION" || scope.detail.kind !== "CITY") {
+      fail("INVALID_SCOPE", `${scopeSectionEventId} is not a CITY event`)
     }
   }
 

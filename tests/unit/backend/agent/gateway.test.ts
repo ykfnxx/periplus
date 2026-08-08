@@ -334,6 +334,15 @@ describe.sequential("P3 persistent AgentGateway", () => {
         expect.objectContaining({ type: "agent.run.started" }),
       ])
     )
+    const started = await commands.getDocument(context, workspace.id)
+    const assistantMessage = started?.messages.find(
+      (message) => message.role === "ASSISTANT"
+    )
+    expect(started?.messages).toMatchObject([
+      { role: "USER", content: "规划杭州路线" },
+      { role: "ASSISTANT", content: "" },
+    ])
+    expect(assistantMessage?.agentRunId).toBe(started?.agentRuns.at(-1)?.id)
 
     const token = capabilityToken(runtime)
     const mutation = await gateway.executeTool(token, {
@@ -375,6 +384,17 @@ describe.sequential("P3 persistent AgentGateway", () => {
       { role: "USER", content: "规划杭州路线" },
       { role: "ASSISTANT", content: "已完成" },
     ])
+    expect(restarted?.messages).toHaveLength(2)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "agent.message.delta",
+        payload: expect.objectContaining({
+          messageId: assistantMessage?.id,
+          stream: "stdout",
+          text: "已完成",
+        }),
+      })
+    )
     expect(restarted?.session.headGraph.events[0]?.title).toBe("西湖（Agent）")
     await expect(
       gateway.executeTool(token, { type: "workspace.get" })
@@ -561,6 +581,23 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
   })
 
+  it("keeps a user-cancelled run cancelled when the runtime exits without a code", async () => {
+    const { workspace, commands, runtime, gateway, events, emit } =
+      await setup()
+    await gateway.start(context, workspace.id, "取消本次运行", "auto", emit)
+
+    gateway.cancel(workspace.id)
+    expect(runtime.cancel).toHaveBeenCalledOnce()
+    runtime.exit(null)
+
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+      ).toMatchObject({ status: "CANCELLED" })
+      expect(events.at(-1)).toMatchObject({ type: "agent.run.cancelled" })
+    })
+  })
+
   it("invalidates a successful report after another graph mutation", async () => {
     const { workspace, commands, runtime, gateway, emit } = await setup()
     await gateway.start(context, workspace.id, "连续更新路线", "auto", emit)
@@ -738,7 +775,7 @@ describe.sequential("P3 persistent AgentGateway", () => {
         scopeSectionEventId: "missing-section",
         mode: "PLANNER",
       })
-    ).rejects.toThrow("not a SECTION")
+    ).rejects.toThrow("not a CITY event")
     await expect(
       gateway.executeTool(token, {
         type: "workspace.project",
@@ -764,8 +801,8 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
 
     const sectionFixture = TARGET_CONTRACT_FIXTURES.find(
-      (candidate) => candidate.id === "02-city-day-event-drilldown"
-    )!.cases.find((candidate) => candidate.id === "city-day-drilldown")!
+      (candidate) => candidate.id === "01-root-city-and-local-scope"
+    )!.cases.find((candidate) => candidate.id === "root-city-chain")!
     const sectionGraph = structuredClone(sectionFixture.input.graph!)
     sectionGraph.ownerId = ownerId
     const sectionWorkspace = await createWorkspace(context, {
@@ -789,13 +826,15 @@ describe.sequential("P3 persistent AgentGateway", () => {
       capabilityToken(sectionRuntime),
       {
         type: "workspace.project",
-        scopeSectionEventId: "day",
+        scopeSectionEventId: "city-a",
         mode: "PLANNER",
       }
     )
     expect(section.projection!.events.map((event) => event.eventId)).toEqual([
-      "morning",
-      "afternoon",
+      "visit-a",
+      "local-transit",
+      "visit-b",
+      "meal-a",
     ])
     sectionRuntime.exit(0)
   })
@@ -929,7 +968,13 @@ describe.sequential("P3 persistent AgentGateway", () => {
         },
       },
     })
-    runtime1.observer?.onStdout("partial stdout is intentionally not durable")
+    runtime1.observer?.onStdout("partial stdout is durable")
+    await vi.waitFor(async () => {
+      const document = await commands.getDocument(context, workspace.id, clock)
+      expect(document?.messages.at(-1)?.content).toBe(
+        "partial stdout is durable"
+      )
+    })
 
     clock = new Date("2026-08-01T00:00:11.000Z")
     const runtime2 = new FakeRuntime()
@@ -951,7 +996,9 @@ describe.sequential("P3 persistent AgentGateway", () => {
     ])
     expect(recovered?.messages.map((message) => message.content)).toEqual([
       "first prompt",
+      "partial stdout is durable",
       "resume prompt",
+      "",
     ])
     expect(recovered?.session.headGraph.events[0]?.title).toBe(
       "persisted before crash"
