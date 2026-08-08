@@ -581,6 +581,23 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
   })
 
+  it("keeps a user-cancelled run cancelled when the runtime exits without a code", async () => {
+    const { workspace, commands, runtime, gateway, events, emit } =
+      await setup()
+    await gateway.start(context, workspace.id, "取消本次运行", "auto", emit)
+
+    gateway.cancel(workspace.id)
+    expect(runtime.cancel).toHaveBeenCalledOnce()
+    runtime.exit(null)
+
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+      ).toMatchObject({ status: "CANCELLED" })
+      expect(events.at(-1)).toMatchObject({ type: "agent.run.cancelled" })
+    })
+  })
+
   it("invalidates a successful report after another graph mutation", async () => {
     const { workspace, commands, runtime, gateway, emit } = await setup()
     await gateway.start(context, workspace.id, "连续更新路线", "auto", emit)
@@ -784,8 +801,8 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
 
     const sectionFixture = TARGET_CONTRACT_FIXTURES.find(
-      (candidate) => candidate.id === "02-city-derived-day-groups"
-    )!.cases.find((candidate) => candidate.id === "city-derived-day-groups")!
+      (candidate) => candidate.id === "01-root-city-and-local-scope"
+    )!.cases.find((candidate) => candidate.id === "root-city-chain")!
     const sectionGraph = structuredClone(sectionFixture.input.graph!)
     sectionGraph.ownerId = ownerId
     const sectionWorkspace = await createWorkspace(context, {
@@ -809,17 +826,15 @@ describe.sequential("P3 persistent AgentGateway", () => {
       capabilityToken(sectionRuntime),
       {
         type: "workspace.project",
-        scopeSectionEventId: "city",
+        scopeSectionEventId: "city-a",
         mode: "PLANNER",
       }
     )
     expect(section.projection!.events.map((event) => event.eventId)).toEqual([
-      "morning",
-      "afternoon",
-    ])
-    expect(section.projection!.dayGroups).toEqual([
-      { localDate: "2026-08-01", eventIds: ["morning"] },
-      { localDate: "2026-08-02", eventIds: ["afternoon"] },
+      "visit-a",
+      "local-transit",
+      "visit-b",
+      "meal-a",
     ])
     sectionRuntime.exit(0)
   })

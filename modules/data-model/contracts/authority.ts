@@ -73,11 +73,6 @@ export const TARGET_FIELD_AUTHORITY = [
     source: "location events in resolved order",
   },
   {
-    field: "ResolvedJourneyProjection.dayGroups",
-    authority: "DERIVED",
-    source: "CITY time zone plus planned event start times",
-  },
-  {
     field: "WorkspaceSession.headGraph",
     authority: "TARGET",
     source: "persistent workspace command head",

@@ -164,8 +164,8 @@ function command(
 
 function cityEventChainGraph() {
   const fixture = TARGET_CONTRACT_FIXTURES.find(
-    (candidate) => candidate.id === "02-city-derived-day-groups"
-  )!.cases.find((candidate) => candidate.id === "city-derived-day-groups")!
+    (candidate) => candidate.id === "01-root-city-and-local-scope"
+  )!.cases.find((candidate) => candidate.id === "root-city-chain")!
   const input = structuredClone(fixture.input.graph!)
   input.ownerId = ownerId
   return input
@@ -2925,7 +2925,7 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         command(updateWorkspace.id, 0, "city-time-update", {
           name: "journey.update_event",
           payload: {
-            eventId: "morning",
+            eventId: "visit-a",
             patch: {
               type: "VISIT",
               plannedStartAt: "2026-08-01T01:00:00.000Z",
@@ -2934,7 +2934,7 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         })
       )
     ).resolves.toMatchObject({
-      projectionInvalidationScopes: [null, "city"],
+      projectionInvalidationScopes: [null, "city-a"],
     })
 
     const moveWorkspace = await createWorkspace(context, {
@@ -2947,17 +2947,24 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         command(moveWorkspace.id, 0, "move-city-event", {
           name: "journey.move_event",
           payload: {
-            eventId: "afternoon",
-            position: { placement: "START", parentSectionEventId: "city" },
+            eventId: "visit-b",
+            position: { placement: "START", parentSectionEventId: "city-a" },
           },
         })
       )
     ).resolves.toMatchObject({
-      projectionInvalidationScopes: [null, "city"],
+      projectionInvalidationScopes: [null, "city-a"],
     })
 
+    const retireGraph = cityEventChainGraph()
+    retireGraph.events = retireGraph.events.filter(
+      (event) => event.id !== "root-transit" && event.id !== "city-b"
+    )
+    retireGraph.links = retireGraph.links.filter(
+      (link) => link.id !== "root-1" && link.id !== "root-2"
+    )
     const retireWorkspace = await createWorkspace(context, {
-      graph: cityEventChainGraph(),
+      graph: retireGraph,
       now: new Date(now),
     })
     await expect(
@@ -2966,17 +2973,24 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         command(retireWorkspace.id, 0, "retire-section-subtree", {
           name: "journey.retire_event",
           payload: {
-            eventId: "city",
+            eventId: "city-a",
             sectionChildren: "RECURSIVE_RETIRE",
           },
         })
       )
     ).resolves.toMatchObject({
-      projectionInvalidationScopes: [null, "city"],
+      projectionInvalidationScopes: [null, "city-a"],
     })
 
+    const replaceGraph = cityEventChainGraph()
+    replaceGraph.events = replaceGraph.events.filter(
+      (event) => event.id !== "root-transit" && event.id !== "city-b"
+    )
+    replaceGraph.links = replaceGraph.links.filter(
+      (link) => link.id !== "root-1" && link.id !== "root-2"
+    )
     const replaceWorkspace = await createWorkspace(context, {
-      graph: cityEventChainGraph(),
+      graph: replaceGraph,
       now: new Date(now),
     })
     await expect(
@@ -2985,7 +2999,7 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         command(replaceWorkspace.id, 0, "replace-city", {
           name: "journey.replace_event",
           payload: {
-            predecessorEventId: "city",
+            predecessorEventId: "city-a",
             successor: {
               id: "city-successor",
               type: "SECTION",
@@ -3001,7 +3015,7 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         })
       )
     ).resolves.toMatchObject({
-      projectionInvalidationScopes: [null, "city", "city-successor"],
+      projectionInvalidationScopes: [null, "city-a", "city-successor"],
     })
   })
 

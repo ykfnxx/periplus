@@ -347,30 +347,6 @@ describe("target Workspace route preview", () => {
     )
   })
 
-  it("shows a CITY event chain without a nested date scope", () => {
-    const fixture = TARGET_CONTRACT_FIXTURES.find(
-      (candidate) => candidate.id === "02-city-derived-day-groups"
-    )
-    const graph = fixture?.cases[0]?.input.graph
-    if (!graph) throw new Error("city event chain fixture is missing")
-    act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(workspaceDocumentForStory(graph))
-    })
-    render(<RoutePreview />)
-
-    fireEvent.click(screen.getByRole("button", { name: "查看城市 杭州" }))
-    expect(useWorkspaceStore.getState().activeSectionEventId).toBe("city")
-    expect(screen.getByRole("tab", { name: "杭州" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    )
-    expect(screen.getByRole("button", { name: "选择事件 西湖" })).toBeVisible()
-    expect(screen.getByRole("button", { name: "选择事件 良渚" })).toBeVisible()
-    expect(screen.queryByRole("tab", { name: "第一天" })).toBeNull()
-  })
-
   it("shows the authoritative Workspace draft state", () => {
     const document = workspaceDocument()
     act(() => {

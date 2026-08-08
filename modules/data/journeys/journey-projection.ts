@@ -56,19 +56,6 @@ type ResolvedTimes = {
   usesPlannedFallback: boolean
 }
 
-function localDate(instant: string, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(instant))
-  const values = Object.fromEntries(
-    parts.map((part) => [part.type, part.value])
-  )
-  return `${values.year}-${values.month}-${values.day}`
-}
-
 function fail(code: JourneyProjectionErrorCode, message: string): never {
   throw new JourneyProjectionError(code, message)
 }
@@ -355,7 +342,6 @@ export function resolveJourneyProjection({
     )
   }
   const revision = graph.revision
-  const eventById = new Map(graph.events.map((event) => [event.id, event]))
   if (scopeSectionEventId !== null) {
     const scope = graph.events.find((event) => event.id === scopeSectionEventId)
     if (!scope || scope.type !== "SECTION" || scope.detail.kind !== "CITY") {
@@ -422,40 +408,11 @@ export function resolveJourneyProjection({
     return resolved
   })
 
-  const city =
-    scopeSectionEventId === null
-      ? null
-      : graph.events.find(
-          (event) =>
-            event.id === scopeSectionEventId && event.type === "SECTION"
-        )
-  const dayGroups =
-    city?.type === "SECTION" && city.detail.kind === "CITY"
-      ? Object.values(
-          events.reduce<
-            Record<string, { localDate: string; eventIds: string[] }>
-          >((groups, resolved) => {
-            const event = eventById.get(resolved.eventId)
-            const plannedStartAt =
-              event && event.type !== "SECTION" && event.type !== "NOTE"
-                ? event.plannedStartAt
-                : undefined
-            if (!plannedStartAt) return groups
-            const date = localDate(plannedStartAt, city.detail.timeZone)
-            const group = groups[date] ?? { localDate: date, eventIds: [] }
-            group.eventIds.push(resolved.eventId)
-            groups[date] = group
-            return groups
-          }, {})
-        ).sort((left, right) => left.localDate.localeCompare(right.localDate))
-      : undefined
-
   return targetResolvedJourneyProjectionSchema.parse({
     journeyId: graph.id,
     revision,
     scopeSectionEventId,
     mode,
     events,
-    ...(dayGroups ? { dayGroups } : {}),
   })
 }

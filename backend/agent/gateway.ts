@@ -1154,7 +1154,8 @@ export class AgentGateway {
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
 
-    let failed = running.runtimeFailed || result.code !== 0
+    let failed =
+      running.runtimeFailed || (!running.cancelled && result.code !== 0)
     let validationErrorCode: string | undefined
     try {
       await running.outputWrite

@@ -28,9 +28,6 @@ import {
   targetEventSourceLinkSchema,
 } from "./content"
 
-const localDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "localDate must use YYYY-MM-DD")
 const revisionSchema = z.number().int().positive()
 const optionalRevisionSchema = revisionSchema.nullable().optional()
 
@@ -1384,18 +1381,12 @@ export const targetResolvedEventSchema = z.object({
   valueSource: z.enum(TARGET_VALUE_SOURCES),
 })
 
-export const targetJourneyDayGroupSchema = z.object({
-  localDate: localDateSchema,
-  eventIds: z.array(idSchema).min(1),
-})
-
 export const targetResolvedJourneyProjectionSchema = z.object({
   journeyId: idSchema,
   revision: revisionSchema,
   scopeSectionEventId: idSchema.nullable(),
   mode: z.enum(TARGET_PROJECTION_MODES),
   events: z.array(targetResolvedEventSchema),
-  dayGroups: z.array(targetJourneyDayGroupSchema).optional(),
 })
 
 export type TargetJourneyEvent = z.infer<typeof targetJourneyEventSchema>

@@ -203,7 +203,7 @@ describe("P3 Journey projection resolver", () => {
     ).toEqual(expected)
   })
 
-  it("derives CITY time and local-day groups with deterministic source fallback", () => {
+  it("derives CITY time with deterministic source fallback", () => {
     const deleted = scenario(
       "12-coordinate-section-delete-history",
       "read-soft-deleted-history"
@@ -217,37 +217,6 @@ describe("P3 Journey projection resolver", () => {
         })
       ).toEqual(expected)
     }
-
-    const nested = graph(
-      "02-city-derived-day-groups",
-      "city-derived-day-groups"
-    )
-    expect(
-      resolveJourneyProjection({
-        graph: nested,
-        scopeSectionEventId: null,
-        mode: "PLANNER",
-      }).events
-    ).toEqual([
-      {
-        eventId: "city",
-        resolvedPosition: 0,
-        title: "杭州",
-        startAt: "2026-08-01T00:00:00.000Z",
-        endAt: "2026-08-02T03:00:00.000Z",
-        valueSource: "PLANNED",
-      },
-    ])
-    expect(
-      resolveJourneyProjection({
-        graph: nested,
-        scopeSectionEventId: "city",
-        mode: "PLANNER",
-      }).dayGroups
-    ).toEqual([
-      { localDate: "2026-08-01", eventIds: ["morning"] },
-      { localDate: "2026-08-02", eventIds: ["afternoon"] },
-    ])
 
     const mixed = structuredClone(deleted.input.graph!)
     const mixedEnd = mixed.events.find((event) => event.id === "delete-end")!
@@ -264,24 +233,6 @@ describe("P3 Journey projection resolver", () => {
       endAt: "2026-08-02T00:00:00.000Z",
       valueSource: "PLANNED",
     })
-
-    const empty = structuredClone(nested)
-    empty.events = empty.events.filter((event) => event.id === "city")
-    empty.links = []
-    expect(
-      resolveJourneyProjection({
-        graph: empty,
-        scopeSectionEventId: null,
-        mode: "EXECUTION",
-      }).events
-    ).toEqual([
-      {
-        eventId: "city",
-        resolvedPosition: 0,
-        title: "杭州",
-        valueSource: "PLANNED",
-      },
-    ])
   })
 
   it("assigns authoritative ordinals to mappable CITY sections", () => {

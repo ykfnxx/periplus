@@ -4,29 +4,167 @@ DROP TRIGGER IF EXISTS "WorkspaceRevision_delete_guard";
 DROP TRIGGER IF EXISTS "WorkspaceRevision_identity_insert_guard";
 DROP TRIGGER IF EXISTS "JourneyEvent_type_update_guard";
 DROP TRIGGER IF EXISTS "ProviderUsageLog_agent_run_update_guard";
+DROP TRIGGER IF EXISTS "TransitPlan_delete_guard";
+DROP TRIGGER IF EXISTS "TransitSegment_delete_guard";
+DROP TRIGGER IF EXISTS "TransitPlanningRun_delete_guard";
+
+-- This is a breaking CITY-only cutover. Remove whole aggregates that cannot
+-- satisfy the new contract instead of leaving partial DAY/THEME state behind.
+CREATE TEMP TABLE "_legacy_journey_ids" AS
+SELECT DISTINCT journey."id"
+FROM "Journey" journey
+WHERE EXISTS (
+  SELECT 1
+  FROM "JourneyEvent" event
+  LEFT JOIN "SectionEventDetail" detail ON detail."eventId" = event."id"
+  WHERE event."journeyId" = journey."id"
+    AND event."type" = 'SECTION'
+    AND (
+      event."parentSectionEventId" IS NOT NULL OR
+      detail."eventId" IS NULL OR
+      detail."kind" <> 'CITY' OR
+      detail."timezone" IS NULL OR
+      length(trim(detail."timezone")) = 0
+    )
+) OR EXISTS (
+  SELECT 1
+  FROM "JourneyRevision" revision
+  WHERE revision."journeyId" = journey."id"
+    AND (
+      coalesce(json_type(revision."snapshotJson", '$.events'), '') <> 'array' OR
+      EXISTS (
+        SELECT 1
+        FROM json_each(revision."snapshotJson", '$.events') event
+        WHERE json_extract(event.value, '$.type') = 'SECTION'
+          AND (
+            json_extract(event.value, '$.parentSectionEventId') IS NOT NULL OR
+            coalesce(json_extract(event.value, '$.detail.kind'), '') <> 'CITY' OR
+            coalesce(json_extract(event.value, '$.detail.timeZone'), '') = ''
+          )
+      )
+    )
+);
+
+CREATE TEMP TABLE "_legacy_workspace_ids" AS
+SELECT workspace."id"
+FROM "WorkspaceSession" workspace
+WHERE workspace."status" = 'EXPIRED'
+  OR workspace."sourceJourneyId" IN (
+    SELECT "id" FROM "_legacy_journey_ids"
+  )
+  OR coalesce(json_type(workspace."headGraphJson", '$.events'), '') <> 'array'
+  OR EXISTS (
+    SELECT 1
+    FROM json_each(workspace."headGraphJson", '$.events') event
+    WHERE json_extract(event.value, '$.type') = 'SECTION'
+      AND (
+        json_extract(event.value, '$.parentSectionEventId') IS NOT NULL OR
+        coalesce(json_extract(event.value, '$.detail.kind'), '') <> 'CITY' OR
+        coalesce(json_extract(event.value, '$.detail.timeZone'), '') = ''
+      )
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM "WorkspaceRevision" revision
+    WHERE revision."workspaceId" = workspace."id"
+      AND (
+        coalesce(json_type(revision."beforeGraphJson", '$.events'), '') <> 'array' OR
+        coalesce(json_type(revision."afterGraphJson", '$.events'), '') <> 'array' OR
+        EXISTS (
+          SELECT 1
+          FROM json_each(revision."beforeGraphJson", '$.events') event
+          WHERE json_extract(event.value, '$.type') = 'SECTION'
+            AND (
+              json_extract(event.value, '$.parentSectionEventId') IS NOT NULL OR
+              coalesce(json_extract(event.value, '$.detail.kind'), '') <> 'CITY' OR
+              coalesce(json_extract(event.value, '$.detail.timeZone'), '') = ''
+            )
+        ) OR EXISTS (
+          SELECT 1
+          FROM json_each(revision."afterGraphJson", '$.events') event
+          WHERE json_extract(event.value, '$.type') = 'SECTION'
+            AND (
+              json_extract(event.value, '$.parentSectionEventId') IS NOT NULL OR
+              coalesce(json_extract(event.value, '$.detail.kind'), '') <> 'CITY' OR
+              coalesce(json_extract(event.value, '$.detail.timeZone'), '') = ''
+            )
+        )
+      )
+  );
 
 UPDATE "ProviderUsageLog"
 SET "workspaceId" = NULL, "agentRunId" = NULL
-WHERE "workspaceId" IN (
-  SELECT "id" FROM "WorkspaceSession" WHERE "status" = 'EXPIRED'
-) OR "agentRunId" IN (
+WHERE "workspaceId" IN (SELECT "id" FROM "_legacy_workspace_ids")
+OR "agentRunId" IN (
   SELECT "id" FROM "WorkspaceAgentRun"
-  WHERE "workspaceId" IN (
-    SELECT "id" FROM "WorkspaceSession" WHERE "status" = 'EXPIRED'
-  )
+  WHERE "workspaceId" IN (SELECT "id" FROM "_legacy_workspace_ids")
 );
-DELETE FROM "WorkspaceMessage" WHERE "workspaceId" IN (
-  SELECT "id" FROM "WorkspaceSession" WHERE "status" = 'EXPIRED'
+UPDATE "JourneyRevision"
+SET "workspaceRevisionId" = NULL
+WHERE "workspaceRevisionId" IN (
+  SELECT "id" FROM "WorkspaceRevision"
+  WHERE "workspaceId" IN (SELECT "id" FROM "_legacy_workspace_ids")
 );
-DELETE FROM "WorkspaceSuggestion" WHERE "workspaceId" IN (
-  SELECT "id" FROM "WorkspaceSession" WHERE "status" = 'EXPIRED'
+DELETE FROM "WorkspaceMessage"
+WHERE "workspaceId" IN (SELECT "id" FROM "_legacy_workspace_ids");
+DELETE FROM "WorkspaceSuggestion"
+WHERE "workspaceId" IN (SELECT "id" FROM "_legacy_workspace_ids");
+DELETE FROM "WorkspaceRevision"
+WHERE "workspaceId" IN (SELECT "id" FROM "_legacy_workspace_ids");
+DELETE FROM "WorkspaceAgentRun"
+WHERE "workspaceId" IN (SELECT "id" FROM "_legacy_workspace_ids");
+DELETE FROM "WorkspaceSession"
+WHERE "id" IN (SELECT "id" FROM "_legacy_workspace_ids");
+
+CREATE TEMP TABLE "_legacy_event_ids" AS
+SELECT "id" FROM "JourneyEvent"
+WHERE "journeyId" IN (SELECT "id" FROM "_legacy_journey_ids");
+
+DELETE FROM "Journey"
+WHERE "id" IN (SELECT "id" FROM "_legacy_journey_ids");
+DELETE FROM "JourneyBranchSelection"
+WHERE "journeyId" IN (SELECT "id" FROM "_legacy_journey_ids");
+DELETE FROM "JourneyEventReplacement"
+WHERE "journeyId" IN (SELECT "id" FROM "_legacy_journey_ids");
+DELETE FROM "JourneyEventLink"
+WHERE "journeyId" IN (SELECT "id" FROM "_legacy_journey_ids");
+DELETE FROM "EventAssetLink"
+WHERE "journeyId" IN (SELECT "id" FROM "_legacy_journey_ids");
+DELETE FROM "EventSourceLink"
+WHERE "journeyId" IN (SELECT "id" FROM "_legacy_journey_ids");
+DELETE FROM "TransitSegment"
+WHERE "transitPlanId" IN (
+  SELECT "id" FROM "TransitPlan"
+  WHERE "transitEventId" IN (SELECT "id" FROM "_legacy_event_ids")
 );
-DELETE FROM "WorkspaceRevision" WHERE "workspaceId" IN (
-  SELECT "id" FROM "WorkspaceSession" WHERE "status" = 'EXPIRED'
-);
-DELETE FROM "WorkspaceAgentRun" WHERE "workspaceId" IN (
-  SELECT "id" FROM "WorkspaceSession" WHERE "status" = 'EXPIRED'
-);
+DELETE FROM "TransitPlan"
+WHERE "transitEventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "TransitPlanningRun"
+WHERE "transitEventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "JourneyEvent"
+WHERE "id" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "SectionEventDetail"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "VisitEventDetail"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "StayEventDetail"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "MealEventDetail"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "ActivityEventDetail"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "TransitEventDetail"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "NoteEventDetail"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "EventObservation"
+WHERE "eventId" IN (SELECT "id" FROM "_legacy_event_ids");
+DELETE FROM "JourneyRevision"
+WHERE "journeyId" IN (SELECT "id" FROM "_legacy_journey_ids");
+
+DROP TABLE "_legacy_event_ids";
+DROP TABLE "_legacy_workspace_ids";
+DROP TABLE "_legacy_journey_ids";
 
 CREATE TABLE "new_SectionEventDetail" (
     "eventId" TEXT NOT NULL PRIMARY KEY,
@@ -225,5 +363,30 @@ WHEN NEW."agentRunId" IS NOT NULL AND (
   )
 )
 BEGIN SELECT RAISE(ABORT, 'Provider usage Agent run must belong to the attributed Workspace'); END;
+
+CREATE TRIGGER "TransitPlan_delete_guard"
+BEFORE DELETE ON "TransitPlan"
+WHEN EXISTS (
+  SELECT 1 FROM "TransitPlanningRun" run
+  WHERE run."id" = OLD."planningRunId" AND run."status" <> 'PLANNING'
+)
+BEGIN SELECT RAISE(ABORT, 'Plans cannot be deleted after a run leaves PLANNING'); END;
+
+CREATE TRIGGER "TransitSegment_delete_guard"
+BEFORE DELETE ON "TransitSegment"
+WHEN EXISTS (
+  SELECT 1 FROM "TransitPlan" plan
+  JOIN "TransitPlanningRun" run ON run."id" = plan."planningRunId"
+  WHERE plan."id" = OLD."transitPlanId" AND run."status" <> 'PLANNING'
+)
+BEGIN SELECT RAISE(ABORT, 'Segments cannot be deleted after a run leaves PLANNING'); END;
+
+CREATE TRIGGER "TransitPlanningRun_delete_guard"
+BEFORE DELETE ON "TransitPlanningRun"
+WHEN OLD."status" <> 'PLANNING' AND EXISTS (
+  SELECT 1 FROM "TransitEventDetail" detail
+  WHERE detail."eventId" = OLD."transitEventId"
+)
+BEGIN SELECT RAISE(ABORT, 'finalized planning runs can only be deleted by purging their Transit Event'); END;
 
 PRAGMA foreign_keys=ON;

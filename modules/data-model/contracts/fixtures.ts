@@ -300,23 +300,6 @@ const rootCityChainGraph = (() => {
   )
 })()
 
-const cityDayGroupsGraph = (() => {
-  const journeyId = "fixture-02-city-day-groups"
-  const afternoon = visitEvent("afternoon", journeyId, "良渚", "city")
-  if (afternoon.type !== "VISIT") throw new Error("fixture invariant")
-  afternoon.plannedStartAt = "2026-08-02T01:00:00.000Z"
-  afternoon.plannedEndAt = "2026-08-02T03:00:00.000Z"
-  return graph(
-    journeyId,
-    [
-      cityEvent("city", journeyId, "杭州"),
-      visitEvent("morning", journeyId, "西湖", "city"),
-      afternoon,
-    ],
-    [link("city-sequence", journeyId, "morning", "afternoon", 1024)]
-  )
-})()
-
 const transitChoiceBefore = readyTransitGraph("fixture-03-transit-options")
 const transitChoiceAfter = clone(transitChoiceBefore)
 transitChoiceAfter.revision = 2
@@ -1148,9 +1131,6 @@ const deletedProjection: TargetResolvedJourneyProjection = {
       valueSource: "ACTUAL",
     },
   ],
-  dayGroups: [
-    { localDate: "2026-08-01", eventIds: ["delete-start", "delete-end"] },
-  ],
 }
 const deletedRootPlannerProjection: TargetResolvedJourneyProjection = {
   journeyId: deletedSectionGraph.id,
@@ -1245,18 +1225,6 @@ export const TARGET_CONTRACT_FIXTURES: readonly TargetContractFixture[] = [
         id: "root-city-chain",
         input: { graph: rootCityChainGraph },
         expected: { state: { graph: rootCityChainGraph } },
-      },
-    ],
-  },
-  {
-    id: "02-city-derived-day-groups",
-    purpose:
-      "CITY directly owns events while local dates are derived from event times",
-    cases: [
-      {
-        id: "city-derived-day-groups",
-        input: { graph: cityDayGroupsGraph },
-        expected: { state: { graph: cityDayGroupsGraph } },
       },
     ],
   },

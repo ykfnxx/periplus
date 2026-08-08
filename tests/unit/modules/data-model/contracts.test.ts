@@ -79,10 +79,10 @@ function cloneGraph(value: TargetJourneyGraphSnapshot) {
 }
 
 describe("breaking data-model target contracts", () => {
-  it("freezes twelve uniquely named table-driven fixtures", () => {
-    expect(TARGET_CONTRACT_FIXTURES).toHaveLength(12)
+  it("freezes eleven uniquely named table-driven fixtures", () => {
+    expect(TARGET_CONTRACT_FIXTURES).toHaveLength(11)
     expect(new Set(TARGET_CONTRACT_FIXTURES.map((item) => item.id)).size).toBe(
-      12
+      11
     )
     for (const item of TARGET_CONTRACT_FIXTURES) {
       expect(item.cases.length, item.id).toBeGreaterThan(0)
@@ -439,29 +439,6 @@ describe("breaking data-model target contracts", () => {
         )
       ).toBe(true)
     }
-  })
-
-  it("keeps local dates derived from direct CITY event start times", () => {
-    const document = scenario(
-      "02-city-derived-day-groups",
-      "city-derived-day-groups"
-    ).input.graph!
-    const city = document.events.find((event) => event.id === "city")!
-    const morning = document.events.find((event) => event.id === "morning")!
-    const afternoon = document.events.find((event) => event.id === "afternoon")!
-    expect(city.type).toBe("SECTION")
-    if (city.type !== "SECTION") return
-    expect(city.detail).toMatchObject({
-      kind: "CITY",
-      timeZone: "Asia/Shanghai",
-    })
-    expect(morning.parentSectionEventId).toBe(city.id)
-    expect(afternoon.parentSectionEventId).toBe(city.id)
-    if (morning.type !== "VISIT" || afternoon.type !== "VISIT") {
-      throw new Error("fixture invariant")
-    }
-    expect(morning.plannedStartAt).toBe("2026-08-01T00:00:00.000Z")
-    expect(afternoon.plannedStartAt).toBe("2026-08-02T01:00:00.000Z")
   })
 
   it("retains the READY transit selection when a refresh run fails", () => {

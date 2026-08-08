@@ -6,7 +6,6 @@ import {
 } from "@/lib/journeys/projections"
 import { locationCount } from "@/lib/journeys/summary"
 import { buildTransitPlanRequest } from "@/lib/journeys/planning"
-import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import { targetJourneyGraphSnapshotSchema } from "@/modules/data-model/contracts"
 
 describe("Silk Road debug preset", () => {
@@ -62,38 +61,5 @@ describe("Silk Road debug preset", () => {
       mode: "DRIVE",
       alternatives: 3,
     })
-  })
-
-  it("derives local-day groups for one- and two-day CITY event chains", () => {
-    const graph = createSilkRoadJourney({ id: "journey", ownerId: "owner" })
-    const eventTypeById = new Map(
-      graph.events.map((event) => [event.id, event.type])
-    )
-    const lanzhou = resolveJourneyProjection({
-      graph,
-      mode: "PLANNER",
-      scopeSectionEventId: "section-lanzhou",
-    })
-    expect(
-      new Set(lanzhou.events.map((event) => eventTypeById.get(event.eventId)))
-    ).toEqual(new Set(["VISIT", "TRANSIT", "MEAL", "ACTIVITY", "STAY"]))
-    expect(lanzhou.dayGroups).toBeDefined()
-    expect(lanzhou.dayGroups!.map((group) => group.localDate)).toEqual([
-      "2026-10-03",
-    ])
-
-    const dunhuang = resolveJourneyProjection({
-      graph,
-      mode: "PLANNER",
-      scopeSectionEventId: "section-dunhuang",
-    })
-    expect(
-      new Set(dunhuang.events.map((event) => eventTypeById.get(event.eventId)))
-    ).toEqual(new Set(["VISIT", "MEAL", "STAY", "ACTIVITY"]))
-    expect(dunhuang.dayGroups).toBeDefined()
-    expect(dunhuang.dayGroups!.map((group) => group.localDate)).toEqual([
-      "2026-10-06",
-      "2026-10-07",
-    ])
   })
 })
