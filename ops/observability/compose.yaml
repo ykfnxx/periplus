@@ -51,7 +51,7 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
   phoenix:
-    image: arizephoenix/phoenix:9.0.0
+    image: arizephoenix/phoenix:version-9.0.0
     restart: unless-stopped
     ports:
       - "${PERIPLUS_OBSERVABILITY_BIND_HOST:-127.0.0.1}:${PERIPLUS_PHOENIX_PORT:-6008}:6006"

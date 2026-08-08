@@ -20,7 +20,8 @@ describe("observability configuration contract", () => {
   it("requires runtime Grafana credentials and configures Phoenix retention", () => {
     const compose = read("ops/observability/compose.yaml")
 
-    expect(compose).toContain("arizephoenix/phoenix:9.0.0")
+    expect(compose).toContain("arizephoenix/phoenix:version-9.0.0")
+    expect(compose).not.toContain("arizephoenix/phoenix:9.0.0")
     expect(compose).toContain('PHOENIX_DEFAULT_RETENTION_POLICY_DAYS: "30"')
     expect(compose).toContain(
       "${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER must be set at runtime}"
