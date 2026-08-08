@@ -87,8 +87,10 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true
-  otlphttp/phoenix:
-    endpoint: http://phoenix:6006
+  otlp/phoenix:
+    endpoint: phoenix:4317
+    tls:
+      insecure: true
   prometheus:
     endpoint: 0.0.0.0:9464
     send_timestamps: true
@@ -107,7 +109,7 @@ service:
     traces/phoenix:
       receivers: [otlp]
       processors: [memory_limiter, filter/phoenix, attributes/phoenix, batch]
-      exporters: [otlphttp/phoenix]
+      exporters: [otlp/phoenix]
     metrics:
       receivers: [otlp, spanmetrics]
       processors: [memory_limiter, batch]

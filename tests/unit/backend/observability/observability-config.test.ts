@@ -14,6 +14,10 @@ describe("observability configuration contract", () => {
     expect(collector).toContain("url.full")
     expect(collector).toContain("http.url")
     expect(collector).toContain("url.query")
+    expect(collector).toContain("otlp/phoenix:")
+    expect(collector).toContain("endpoint: phoenix:4317")
+    expect(collector).toContain("exporters: [otlp/phoenix]")
+    expect(collector).not.toContain("otlphttp/phoenix")
     expect(collector).not.toContain("        - 'name == \"agent.run\"'")
   })
 
