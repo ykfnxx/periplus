@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { z } from "zod"
+import { context as otelContext } from "@opentelemetry/api"
 import type { AuthContext } from "@/modules/auth/server/context"
 import { hotelSearchInputSchema } from "@/backend/mcp/schemas/hotel"
 import {
@@ -50,7 +51,7 @@ import type {
   AgentEventEmitter,
   AgentMode,
 } from "../types"
-import { buildPrompt } from "./prompt"
+import { buildPrompt, promptVersion } from "./prompt"
 import type {
   AgentRuntime,
   AgentRuntimeExit,
@@ -63,6 +64,17 @@ import {
   type EvalTraceInput,
   type EvalTraceSink,
 } from "./evals"
+import {
+  AgentRunTelemetry,
+  redactedInput,
+  startAgentRunTelemetry,
+  type TelemetrySpan,
+} from "../observability"
+import {
+  OpenInferenceSpanKind,
+  PROMPT_TEMPLATE_VERSION,
+  TOOL_NAME,
+} from "@arizeai/openinference-semantic-conventions"
 
 interface AgentGatewayOptions {
   backendUrl: string
@@ -129,6 +141,7 @@ interface RunningAgent {
   heartbeatTimer: ReturnType<typeof setInterval> | null
   traceRunSpanId: string
   traceFailure: Error | null
+  telemetry: AgentRunTelemetry
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
   hotelStayState: HotelStayState
@@ -436,26 +449,73 @@ export class AgentGateway {
       this.agentRunLeaseSeconds
     )
     if (!persistedRun) throw new WorkspaceInputError("Workspace was not found")
+    const telemetry = startAgentRunTelemetry({
+      workspaceId,
+      userId: context.userId,
+      runId: persistedRun.id,
+      mode,
+      runtimeId: this.runtime.id,
+      promptVersion: promptVersion(mode),
+    })
+    telemetry.setPromptInput(prompt)
     let assistantMessageId: string
     try {
-      await appendWorkspaceMessage(context, workspaceId, {
-        role: "USER",
-        content: prompt,
-      })
-      const assistantMessage = await appendWorkspaceMessage(
-        context,
-        workspaceId,
-        {
-          role: "ASSISTANT",
-          content: "",
-          agentRunId: persistedRun.id,
-        }
+      const userMessageSpan = telemetry.startSpan(
+        "workspace.message.user.persist",
+        OpenInferenceSpanKind.CHAIN,
+        { "periplus.message.role": "user" }
       )
+      let userMessage
+      try {
+        userMessage = await telemetry.withSpan(userMessageSpan, () =>
+          appendWorkspaceMessage(context, workspaceId, {
+            role: "USER",
+            content: prompt,
+          })
+        )
+        userMessageSpan.end("OK", {
+          "periplus.message.length": prompt.length,
+          ...(userMessage ? { "periplus.message.id": userMessage.id } : {}),
+        })
+      } catch (error) {
+        userMessageSpan.recordException(error)
+        userMessageSpan.end("ERROR")
+        throw error
+      }
+
+      const assistantMessageSpan = telemetry.startSpan(
+        "workspace.message.assistant.persist",
+        OpenInferenceSpanKind.CHAIN,
+        { "periplus.message.role": "assistant" }
+      )
+      let assistantMessage
+      try {
+        assistantMessage = await telemetry.withSpan(assistantMessageSpan, () =>
+          appendWorkspaceMessage(context, workspaceId, {
+            role: "ASSISTANT",
+            content: "",
+            agentRunId: persistedRun.id,
+          })
+        )
+        assistantMessageSpan.end("OK", {
+          ...(assistantMessage
+            ? { "periplus.message.id": assistantMessage.id }
+            : {}),
+        })
+      } catch (error) {
+        assistantMessageSpan.recordException(error)
+        assistantMessageSpan.end("ERROR")
+        throw error
+      }
       if (!assistantMessage) {
         throw new WorkspaceInputError("Assistant message could not be created")
       }
       assistantMessageId = assistantMessage.id
     } catch (error) {
+      telemetry.finish(
+        "ERROR",
+        error instanceof Error ? error.message : "User message failed"
+      )
       try {
         await finishWorkspaceAgentRun(context, workspaceId, persistedRun.id, {
           status: "FAILED",
@@ -486,6 +546,7 @@ export class AgentGateway {
       heartbeatTimer: null,
       traceRunSpanId: randomUUID(),
       traceFailure: null,
+      telemetry,
       requiresPlanValidation: false,
       lastPlanValidation: null,
       hotelStayState: { kind: "not_searched" },
@@ -506,37 +567,115 @@ export class AgentGateway {
       emit(workspaceId, { type: "workspace.locked", payload: document })
       emit(workspaceId, {
         type: "agent.run.started",
-        payload: { runId: running.runId, runtimeId: this.runtime.id },
-      })
-      const runtimeRun = await this.runtime.start(
-        {
+        payload: {
           runId: running.runId,
-          prompt: draftPrompt(conversationMessages(document), mode, document),
-          toolServers: this.toolServers(running, mode),
+          runtimeId: this.runtime.id,
+          ...(running.telemetry.traceId
+            ? { traceId: running.telemetry.traceId }
+            : {}),
         },
+      })
+      const promptSpan = running.telemetry.startSpan(
+        "agent.prompt.build",
+        OpenInferenceSpanKind.PROMPT,
+        { "periplus.prompt.version": promptVersion(mode) }
+      )
+      const runtimePrompt = draftPrompt(
+        conversationMessages(document),
+        mode,
+        document
+      )
+      promptSpan.end("OK", {
+        "periplus.prompt.length": runtimePrompt.length,
+      })
+      running.telemetry.setPromptInput(runtimePrompt)
+
+      const runtimeStartSpan = running.telemetry.startSpan(
+        "agent.runtime.start",
+        OpenInferenceSpanKind.CHAIN,
         {
-          onStdout: (text) => {
-            this.persistStdout(running, text, emit)
-          },
-          onStderr: (text) => {
-            this.heartbeatInBackground(running)
-            emit(workspaceId, {
-              type: "agent.message.delta",
-              payload: { runId: running.runId, stream: "stderr", text },
-            })
-          },
-          onError: (error) => {
-            running.runtimeFailed = true
-            emit(workspaceId, {
-              type: "agent.run.failed",
-              payload: { runId: running.runId, message: error.message },
-            })
-          },
-          onExit: (result) => {
-            void this.finish(running, mode, result, emit)
-          },
+          "periplus.agent.runtime": this.runtime.id,
+          "periplus.agent.mode": mode,
         }
       )
+      const runtimeStreamSpan = running.telemetry.startRuntimeStream(
+        runtimeStartSpan.context
+      )
+      let runtimeRun
+      try {
+        runtimeRun = await running.telemetry.withSpan(runtimeStartSpan, () =>
+          this.runtime.start(
+            {
+              runId: running.runId,
+              prompt: runtimePrompt,
+              traceCarrier: running.telemetry.carrierFor(runtimeStreamSpan),
+              toolServers: this.toolServers(running, mode),
+            },
+            {
+              onStdout: (text) => {
+                running.telemetry.recordStreamDelta(text)
+                this.persistStdout(running, text, emit)
+              },
+              onStderr: (text) => {
+                this.heartbeatInBackground(running)
+                emit(workspaceId, {
+                  type: "agent.message.delta",
+                  payload: { runId: running.runId, stream: "stderr", text },
+                })
+              },
+              onError: (error) => {
+                running.runtimeFailed = true
+                running.telemetry.recordRuntimeError(error.name)
+                running.telemetry.root.addEvent("runtime.error", {
+                  "error.type": error.name,
+                })
+                emit(workspaceId, {
+                  type: "agent.run.failed",
+                  payload: { runId: running.runId, message: error.message },
+                })
+              },
+              onModelTelemetry: (event) => {
+                const modelSpan = running.telemetry.startSpan(
+                  "llm.request",
+                  OpenInferenceSpanKind.LLM,
+                  {
+                    "llm.provider": event.provider,
+                    "llm.model_name": event.model,
+                    [PROMPT_TEMPLATE_VERSION]: promptVersion(mode),
+                    ...(event.inputTokens === undefined
+                      ? {}
+                      : { "llm.token_count.prompt": event.inputTokens }),
+                    ...(event.outputTokens === undefined
+                      ? {}
+                      : { "llm.token_count.completion": event.outputTokens }),
+                    ...(event.cacheReadTokens === undefined
+                      ? {}
+                      : {
+                          "llm.token_count.cache_read": event.cacheReadTokens,
+                        }),
+                    ...(event.cacheWriteTokens === undefined
+                      ? {}
+                      : {
+                          "llm.token_count.cache_write": event.cacheWriteTokens,
+                        }),
+                  },
+                  runtimeStreamSpan.context
+                )
+                modelSpan.end("OK")
+              },
+              onExit: (result) => {
+                void this.finish(running, mode, result, emit)
+              },
+            }
+          )
+        )
+        runtimeStartSpan.end("OK")
+      } catch (error) {
+        runtimeStartSpan.end("ERROR", {
+          "error.type": error instanceof Error ? error.name : "Error",
+        })
+        throw error
+      }
       running.runtimeRun = runtimeRun
       if (running.cancelled) runtimeRun.cancel()
     } catch (error) {
@@ -612,6 +751,33 @@ export class AgentGateway {
       typeof request.command.name === "string"
         ? request.command.name
         : undefined
+    const otelToolSpan = running.telemetry.startSpan(
+      "agent.tool",
+      OpenInferenceSpanKind.TOOL,
+      {
+        [TOOL_NAME]: request.type,
+      },
+      otelContext.active()
+    )
+    otelToolSpan.setAttribute("input.value", redactedInput(request) ?? "")
+    const otelCommandSpan =
+      request.type === "workspace.command"
+        ? running.telemetry.startSpan(
+            "workspace.command",
+            OpenInferenceSpanKind.CHAIN,
+            {
+              "periplus.command.name": commandName ?? "invalid",
+              "periplus.command.idempotency_key": request.idempotencyKey,
+            },
+            otelToolSpan.context
+          )
+        : null
+    if (otelCommandSpan && request.type === "workspace.command") {
+      otelCommandSpan.setAttribute(
+        "input.value",
+        redactedInput(request.command) ?? ""
+      )
+    }
     await this.trace(running, {
       type: "tool.started",
       spanId: toolSpanId,
@@ -682,9 +848,19 @@ export class AgentGateway {
         ) {
           throw new WorkspaceRevisionConflictError()
         }
+        const validationSpan = running.telemetry.startSpan(
+          "workspace.validate_plan",
+          OpenInferenceSpanKind.CHAIN,
+          {},
+          otelToolSpan.context
+        )
         const validation = validateJourneyPlan({
           graph: document.session.headGraph,
           workspaceRevision: document.session.headWorkspaceRevision,
+        })
+        validationSpan.end("OK", {
+          "periplus.validation.valid": validation.valid,
+          "periplus.workspace.revision": validation.workspaceRevision,
         })
         running.lastPlanValidation = validation
         await this.trace(running, {
@@ -701,9 +877,9 @@ export class AgentGateway {
         })
         output = validation
       } else if (isPlaceToolRequest(request)) {
-        output = await this.executePlaceTool(running, request)
+        output = await this.executePlaceTool(running, request, otelToolSpan)
       } else if (request.type === "hotel.search") {
-        output = await this.executeHotelTool(running, request)
+        output = await this.executeHotelTool(running, request, otelToolSpan)
       } else {
         const parsedCommand = targetCommandBodySchema.parse(request.command)
         const selectedCommand = commandWithSelectedHotel(
@@ -772,6 +948,14 @@ export class AgentGateway {
             replayedFromIdempotencyKey: result.replayedFromIdempotencyKey,
           },
         })
+        otelCommandSpan?.end("OK", {
+          "periplus.command.name": result.commandName,
+          "periplus.command.replayed": Boolean(
+            result.replayedFromIdempotencyKey
+          ),
+          "periplus.workspace.revision_before": request.expectedRevision,
+          "periplus.workspace.revision_after": result.newRevision,
+        })
       }
       if (isEvidenceToolRequest(request)) {
         await this.trace(running, {
@@ -804,8 +988,25 @@ export class AgentGateway {
           outputHash: evalContentHash(output),
         },
       })
+      otelToolSpan.setAttribute("output.value", redactedInput(output) ?? "")
+      running.telemetry.recordTool(
+        request.type,
+        request.type.startsWith("place.")
+          ? "amap"
+          : request.type === "hotel.search"
+            ? "rollinggo"
+            : "workspace",
+        "OK",
+        performance.now() - startedAt
+      )
+      otelToolSpan.end("OK", {
+        "periplus.tool.duration_ms": performance.now() - startedAt,
+      })
       return output
     } catch (error) {
+      otelCommandSpan?.end("ERROR", {
+        "error.type": error instanceof Error ? error.name : "Error",
+      })
       if (request.type === "workspace.command" && commandSpanId) {
         if (appliedCommandResult) {
           if (!appliedCommandResult.replayedFromIdempotencyKey) {
@@ -868,13 +1069,28 @@ export class AgentGateway {
             error instanceof Error ? error.message : "Agent tool failed",
         },
       })
+      running.telemetry.recordTool(
+        request.type,
+        request.type.startsWith("place.")
+          ? "amap"
+          : request.type === "hotel.search"
+            ? "rollinggo"
+            : "workspace",
+        "ERROR",
+        performance.now() - startedAt
+      )
+      otelToolSpan.end("ERROR", {
+        "error.type": error instanceof Error ? error.name : "Error",
+        "periplus.tool.duration_ms": performance.now() - startedAt,
+      })
       throw error
     }
   }
 
   private async executePlaceTool(
     running: RunningAgent,
-    request: PlaceAgentToolRequest
+    request: PlaceAgentToolRequest,
+    parentSpan: TelemetrySpan
   ) {
     const usageContext: PlaceProviderUsageContext = {
       userId: running.context.userId,
@@ -889,7 +1105,13 @@ export class AgentGateway {
           requestId: request.requestId,
         })
       )
-      const result = await this.placeService.searchPlaces(input, usageContext)
+      const result = await this.withProviderSpan(
+        running,
+        parentSpan,
+        "amap",
+        "place.search",
+        () => this.placeService.searchPlaces(input, usageContext)
+      )
       if (isAttractionSearch(input)) {
         const candidates = result.results.filter((candidate) =>
           isAttractionCategory(candidate.category)
@@ -925,7 +1147,13 @@ export class AgentGateway {
           requestId: request.requestId,
         })
       )
-      return this.placeService.resolvePlace(input, usageContext)
+      return this.withProviderSpan(
+        running,
+        parentSpan,
+        "amap",
+        "place.resolve",
+        () => this.placeService.resolvePlace(input, usageContext)
+      )
     }
     if (request.type === "place.enrich") {
       const input = withoutRequestId(
@@ -934,7 +1162,13 @@ export class AgentGateway {
           requestId: request.requestId,
         })
       )
-      return this.placeService.enrichPlace(input, usageContext)
+      return this.withProviderSpan(
+        running,
+        parentSpan,
+        "amap",
+        "place.enrich",
+        () => this.placeService.enrichPlace(input, usageContext)
+      )
     }
 
     const input = withoutRequestId(
@@ -970,16 +1204,24 @@ export class AgentGateway {
         "Place target must be a VISIT, STAY, MEAL, or ACTIVITY event"
       )
     }
-    return this.placeService.resolvePlaceForJourneyEvent(
-      input,
-      event.type,
-      usageContext
+    return this.withProviderSpan(
+      running,
+      parentSpan,
+      "amap",
+      "place.resolve_for_journey_event",
+      () =>
+        this.placeService.resolvePlaceForJourneyEvent(
+          input,
+          event.type,
+          usageContext
+        )
     )
   }
 
   private async executeHotelTool(
     running: RunningAgent,
-    request: HotelAgentToolRequest
+    request: HotelAgentToolRequest,
+    parentSpan: TelemetrySpan
   ) {
     const input = withoutRequestId(
       hotelSearchInputSchema.parse({
@@ -993,7 +1235,13 @@ export class AgentGateway {
       agentRunId: running.runId,
       requestId: request.requestId,
     }
-    const result = await this.hotelService.searchHotels(input, usageContext)
+    const result = await this.withProviderSpan(
+      running,
+      parentSpan,
+      "rollinggo",
+      "hotel.search",
+      () => this.hotelService.searchHotels(input, usageContext)
+    )
     const firstCandidate = result.candidates[0]
     const stayDetail = firstCandidate
       ? selectedHotelStay(firstCandidate)
@@ -1035,6 +1283,35 @@ export class AgentGateway {
     }
   }
 
+  private async withProviderSpan<T>(
+    running: RunningAgent,
+    parentSpan: TelemetrySpan,
+    provider: string,
+    operation: string,
+    callback: () => Promise<T>
+  ) {
+    const span = running.telemetry.startSpan(
+      "provider.request",
+      OpenInferenceSpanKind.CHAIN,
+      {
+        "periplus.provider": provider,
+        "periplus.provider.operation": operation,
+      },
+      parentSpan.context
+    )
+    try {
+      const result = await running.telemetry.withSpan(span, callback)
+      span.setAttribute("output.value", redactedInput(result) ?? "")
+      span.end("OK")
+      return result
+    } catch (error) {
+      span.end("ERROR", {
+        "error.type": error instanceof Error ? error.name : "Error",
+      })
+      throw error
+    }
+  }
+
   private toolServers(
     running: RunningAgent,
     mode: AgentMode
@@ -1053,6 +1330,7 @@ export class AgentGateway {
             {
               backendUrl: this.options.backendUrl,
               capabilityToken: running.capabilityToken,
+              traceCarrier: running.telemetry.traceCarrier,
             },
             null,
             2
@@ -1180,6 +1458,10 @@ export class AgentGateway {
           running.workspaceId
         )
         if (!document) throw new WorkspaceInputError("Workspace was not found")
+        const validationSpan = running.telemetry.startSpan(
+          "workspace.validate_plan.final",
+          OpenInferenceSpanKind.CHAIN
+        )
         const finalValidation = validateJourneyPlan({
           graph: document.session.headGraph,
           workspaceRevision: document.session.headWorkspaceRevision,
@@ -1191,6 +1473,11 @@ export class AgentGateway {
           lastValidation.workspaceRevision ===
             finalValidation.workspaceRevision &&
           lastValidation.projectionHash === finalValidation.projectionHash
+        validationSpan.end("OK", {
+          "periplus.validation.valid": finalValidation.valid,
+          "periplus.validation.passed": passed,
+          "periplus.workspace.revision": finalValidation.workspaceRevision,
+        })
         await this.trace(running, {
           type: "validator.completed",
           spanId: randomUUID(),
@@ -1271,6 +1558,20 @@ export class AgentGateway {
         },
       })
     } finally {
+      if (result.code !== 0 && !running.cancelled && !running.runtimeFailed) {
+        running.telemetry.recordRuntimeError("exit_code")
+      }
+      running.telemetry.finishRuntimeStream(
+        failed ? "ERROR" : running.cancelled ? "CANCELLED" : "OK"
+      )
+      running.telemetry.finish(
+        failed ? "ERROR" : running.cancelled ? "CANCELLED" : "OK",
+        running.stdout,
+        {
+          "periplus.agent.exit_code": result.code ?? -1,
+          "periplus.agent.runtime": result.metadata.runtimeId,
+        }
+      )
       this.releaseRuntime(running)
     }
     const document = await this.commands.getDocument(
@@ -1284,7 +1585,14 @@ export class AgentGateway {
         : running.cancelled
           ? "agent.run.cancelled"
           : "agent.run.completed",
-      payload: { runId: running.runId, code: result.code, ...result.metadata },
+      payload: {
+        runId: running.runId,
+        code: result.code,
+        ...result.metadata,
+        ...(running.telemetry.traceId
+          ? { traceId: running.telemetry.traceId }
+          : {}),
+      },
     })
   }
 
@@ -1297,6 +1605,9 @@ export class AgentGateway {
     running.finished = true
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
+    running.telemetry.recordRuntimeError(
+      error instanceof Error ? error.name : "Error"
+    )
     try {
       await finishWorkspaceAgentRun(
         running.context,
@@ -1322,6 +1633,11 @@ export class AgentGateway {
         },
       })
     } finally {
+      running.telemetry.finishRuntimeStream("ERROR", error)
+      running.telemetry.finish("ERROR", running.stdout, {
+        "periplus.agent.error_type":
+          error instanceof Error ? error.name : "Error",
+      })
       this.releaseRuntime(running)
     }
     emit(running.workspaceId, {
@@ -1329,6 +1645,9 @@ export class AgentGateway {
       payload: {
         runId: running.runId,
         runtimeId: this.runtime.id,
+        ...(running.telemetry.traceId
+          ? { traceId: running.telemetry.traceId }
+          : {}),
         message:
           error instanceof Error ? error.message : "Agent runtime failed",
       },

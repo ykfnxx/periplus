@@ -1,3 +1,5 @@
+import type { TraceCarrier } from "../observability"
+
 export interface AgentToolServer {
   id: string
   command: string
@@ -14,6 +16,7 @@ export interface AgentRuntimeRequest {
   runId: string
   prompt: string
   toolServers: AgentToolServer[]
+  traceCarrier?: TraceCarrier
 }
 
 export interface AgentRuntimeMetadata {
@@ -31,6 +34,16 @@ export interface AgentRuntimeObserver {
   onStderr: (text: string) => void
   onError: (error: Error) => void
   onExit: (result: AgentRuntimeExit) => void
+  onModelTelemetry?: (event: AgentRuntimeModelTelemetry) => void
+}
+
+export interface AgentRuntimeModelTelemetry {
+  provider: string
+  model: string
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
 }
 
 export interface AgentRuntimeRun {

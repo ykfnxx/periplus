@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { z } from "zod"
 import { agentToolRequestSchema, type AgentGateway } from "./agent/gateway"
 import { domainErrorResponse } from "./domain-error"
+import { withIncomingTraceContext } from "./observability"
 import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
 
 type JsonBody = Record<string, unknown>
@@ -57,9 +58,8 @@ export async function handleInternalRequest(
   if (req.method === "POST" && url.pathname === "/internal/agent-tool") {
     try {
       const body = agentToolBodySchema.parse(await readJson(req))
-      const result = await agentGateway.executeTool(
-        body.capabilityToken,
-        body.request
+      const result = await withIncomingTraceContext(req.headers, () =>
+        agentGateway.executeTool(body.capabilityToken, body.request)
       )
       sendJson(res, 200, { result })
     } catch (error) {

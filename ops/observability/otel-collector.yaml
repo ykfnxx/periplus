@@ -1,0 +1,91 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+  batch:
+    send_batch_size: 256
+    timeout: 1s
+  attributes/tempo:
+    actions:
+      - key: input.value
+        action: delete
+      - key: output.value
+        action: delete
+      - key: llm.prompts
+        action: delete
+      - key: llm.input_messages
+        action: delete
+      - key: llm.output_messages
+        action: delete
+  filter/phoenix:
+    error_mode: ignore
+    traces:
+      span:
+        - 'name == "agent.run"'
+        - 'name == "agent.tool"'
+        - 'name == "agent.prompt.build"'
+        - 'name == "agent.runtime.start"'
+        - 'name == "agent.runtime.stream"'
+        - 'name == "provider.request"'
+        - 'name == "workspace.command"'
+        - 'name == "workspace.validate_plan"'
+        - 'name == "workspace.validate_plan.final"'
+  attributes/phoenix:
+    actions:
+      - key: capabilityToken
+        action: delete
+      - key: periplus.capability_token
+        action: delete
+      - key: authorization
+        action: delete
+      - key: api.key
+        action: delete
+
+connectors:
+  spanmetrics:
+    dimensions:
+      - name: http.method
+      - name: http.route
+      - name: http.status_code
+      - name: service.name
+    metrics_flush_interval: 15s
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  otlphttp/phoenix:
+    endpoint: http://phoenix:6006
+  prometheus:
+    endpoint: 0.0.0.0:9464
+    send_timestamps: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888
+  pipelines:
+    traces/tempo:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/tempo, batch]
+      exporters: [otlp/tempo, spanmetrics]
+    traces/phoenix:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/phoenix, attributes/phoenix, batch]
+      exporters: [otlphttp/phoenix]
+    metrics:
+      receivers: [otlp, spanmetrics]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]

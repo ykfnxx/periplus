@@ -10,6 +10,7 @@ import type {
   AgentRuntimeRun,
   AgentToolServer,
 } from "../runtime"
+import type { TraceCarrier } from "../../observability"
 
 const PERIPLUS_TOOL_NAMES = [
   "periplus_workspace_get",
@@ -50,11 +51,13 @@ interface PiRuntimeOptions {
 interface WorkspaceToolConfig {
   backendUrl: string
   capabilityToken: string
+  traceCarrier?: TraceCarrier
 }
 
 interface PiRunConfig {
   backendUrl?: string
   capabilityToken?: string
+  traceCarrier?: TraceCarrier
   model: string
   toolNames: string[]
   webSearchEnabled: boolean
@@ -143,6 +146,7 @@ export class PiRuntime implements AgentRuntime {
     const runConfig: PiRunConfig = {
       backendUrl: workspace?.backendUrl,
       capabilityToken: workspace?.capabilityToken,
+      traceCarrier: workspace?.traceCarrier,
       model: this.options.model,
       toolNames: workspace ? [...PERIPLUS_TOOL_NAMES] : [],
       webSearchEnabled: Boolean(workspace && this.options.webSearchEnabled),
