@@ -233,8 +233,9 @@ export class AgentRunTelemetry {
   private firstDeltaAt: number | null = null
   private deltaCount = 0
   private byteCount = 0
-  private firstDelta: string | null = null
-  private lastDelta: string | null = null
+  private firstDeltaSequence: number | null = null
+  private lastDeltaSequence: number | null = null
+  private lastDeltaAt: number | null = null
   private persistedCount = 0
   private lastPersistedAt: string | null = null
   private ended = false
@@ -331,16 +332,16 @@ export class AgentRunTelemetry {
   recordStreamDelta(text: string) {
     const now = performance.now()
     const byteCount = Buffer.byteLength(text, "utf8")
-    const redactedText = redactTelemetryText(text).slice(0, 1024)
+    this.deltaCount += 1
+    this.byteCount += byteCount
     if (this.firstDeltaAt === null) {
       this.firstDeltaAt = now
-      this.firstDelta = redactedText
+      this.firstDeltaSequence = this.deltaCount
       this.stream?.setAttribute("periplus.stream.ttft_ms", now - this.startedAt)
       this.root.setAttribute("periplus.agent.ttft_ms", now - this.startedAt)
     }
-    this.deltaCount += 1
-    this.byteCount += byteCount
-    this.lastDelta = redactedText
+    this.lastDeltaSequence = this.deltaCount
+    this.lastDeltaAt = now
     const attributes = {
       runtime: this.runtimeId,
       status: "streaming",
@@ -350,11 +351,23 @@ export class AgentRunTelemetry {
     this.stream?.setAttributes({
       "periplus.stream.delta_count": this.deltaCount,
       "periplus.stream.byte_count": this.byteCount,
-      ...(this.firstDelta
-        ? { "periplus.stream.first_delta": this.firstDelta }
+      ...(this.firstDeltaSequence
+        ? { "periplus.stream.first_delta_sequence": this.firstDeltaSequence }
         : {}),
-      ...(this.lastDelta
-        ? { "periplus.stream.last_delta": this.lastDelta }
+      ...(this.lastDeltaSequence
+        ? { "periplus.stream.last_delta_sequence": this.lastDeltaSequence }
+        : {}),
+      ...(this.firstDeltaAt !== null
+        ? {
+            "periplus.stream.first_delta_at_ms":
+              this.firstDeltaAt - this.startedAt,
+          }
+        : {}),
+      ...(this.lastDeltaAt !== null
+        ? {
+            "periplus.stream.last_delta_at_ms":
+              this.lastDeltaAt - this.startedAt,
+          }
         : {}),
     })
   }
@@ -391,11 +404,23 @@ export class AgentRunTelemetry {
       ...(this.firstDeltaAt === null ? { "periplus.stream.ttft_ms": -1 } : {}),
       "periplus.stream.delta_count": this.deltaCount,
       "periplus.stream.byte_count": this.byteCount,
-      ...(this.firstDelta
-        ? { "periplus.stream.first_delta": this.firstDelta }
+      ...(this.firstDeltaSequence
+        ? { "periplus.stream.first_delta_sequence": this.firstDeltaSequence }
         : {}),
-      ...(this.lastDelta
-        ? { "periplus.stream.last_delta": this.lastDelta }
+      ...(this.lastDeltaSequence
+        ? { "periplus.stream.last_delta_sequence": this.lastDeltaSequence }
+        : {}),
+      ...(this.firstDeltaAt !== null
+        ? {
+            "periplus.stream.first_delta_at_ms":
+              this.firstDeltaAt - this.startedAt,
+          }
+        : {}),
+      ...(this.lastDeltaAt !== null
+        ? {
+            "periplus.stream.last_delta_at_ms":
+              this.lastDeltaAt - this.startedAt,
+          }
         : {}),
       ...(this.lastPersistedAt
         ? { "periplus.stream.last_persisted_at": this.lastPersistedAt }

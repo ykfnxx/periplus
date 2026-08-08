@@ -33,6 +33,14 @@ describe("observability configuration contract", () => {
   })
 
   it("exposes spanmetrics quantiles and run lookup variables", () => {
+    const collector = read("ops/observability/otel-collector.yaml")
+    expect(collector).toContain("name: http.request.method")
+    expect(collector).toContain("name: http.response.status_code")
+    expect(collector).not.toContain("name: http.method")
+    expect(collector).not.toContain("name: http.status_code")
+    expect(collector).toContain("periplus.stream.first_delta")
+    expect(collector).toContain("periplus.stream.last_delta")
+
     const overview = JSON.parse(
       read("ops/observability/grafana/dashboards/agent-api-overview.json")
     ) as { panels: Array<{ targets?: Array<{ expr?: string }> }> }
@@ -50,6 +58,10 @@ describe("observability configuration contract", () => {
     expect(overviewExpressions).toContain(
       "periplus_agent_run_ttft_milliseconds_bucket"
     )
+    expect(overviewExpressions).toContain("http_request_method")
+    expect(overviewExpressions).toContain("http_response_status_code")
+    expect(overviewExpressions).not.toContain("http_method")
+    expect(overviewExpressions).not.toContain("http_status_code")
 
     const runs = JSON.parse(
       read("ops/observability/grafana/dashboards/agent-runs.json")
@@ -62,12 +74,16 @@ describe("observability configuration contract", () => {
         "session_id_hash",
         "run_id_hash",
         "runtime",
+        "mode",
         "status",
         "prompt_version",
       ])
     )
     expect(runs.panels[0]?.targets?.[0]?.query).toContain(
       ".periplus.agent.run_id_hash =~ `$run_id_hash`"
+    )
+    expect(runs.panels[0]?.targets?.[0]?.query).toContain(
+      ".periplus.agent.mode =~ `$mode`"
     )
   })
 })

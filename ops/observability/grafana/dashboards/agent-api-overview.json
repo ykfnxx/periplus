@@ -149,8 +149,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(traces_span_metrics_calls_total[5m])) by (http_method, http_route, http_status_code)",
-          "legendFormat": "{{http_method}} {{http_route}} / {{http_status_code}}",
+          "expr": "sum(rate(traces_span_metrics_calls_total[5m])) by (http_request_method, http_route, http_response_status_code)",
+          "legendFormat": "{{http_request_method}} {{http_route}} / {{http_response_status_code}}",
           "refId": "A"
         }
       ],
@@ -168,18 +168,18 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_method, http_route, http_status_code))",
-          "legendFormat": "p50 {{http_method}} {{http_route}} / {{http_status_code}}",
+          "expr": "histogram_quantile(0.5, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_request_method, http_route, http_response_status_code))",
+          "legendFormat": "p50 {{http_request_method}} {{http_route}} / {{http_response_status_code}}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_method, http_route, http_status_code))",
-          "legendFormat": "p95 {{http_method}} {{http_route}} / {{http_status_code}}",
+          "expr": "histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_request_method, http_route, http_response_status_code))",
+          "legendFormat": "p95 {{http_request_method}} {{http_route}} / {{http_response_status_code}}",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_method, http_route, http_status_code))",
-          "legendFormat": "p99 {{http_method}} {{http_route}} / {{http_status_code}}",
+          "expr": "histogram_quantile(0.99, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_request_method, http_route, http_response_status_code))",
+          "legendFormat": "p99 {{http_request_method}} {{http_route}} / {{http_response_status_code}}",
           "refId": "C"
         }
       ],

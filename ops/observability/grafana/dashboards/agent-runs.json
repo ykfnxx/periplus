@@ -11,7 +11,7 @@
       "options": {},
       "targets": [
         {
-          "query": "{ resource.service.name = `periplus-backend` && name = `agent.run` && .periplus.session.id_hash =~ `$session_id_hash` && .periplus.agent.run_id_hash =~ `$run_id_hash` && .periplus.agent.runtime =~ `$runtime` && .periplus.agent.status =~ `$status` && .periplus.prompt.version =~ `$prompt_version` }",
+          "query": "{ resource.service.name = `periplus-backend` && name = `agent.run` && .periplus.session.id_hash =~ `$session_id_hash` && .periplus.agent.run_id_hash =~ `$run_id_hash` && .periplus.agent.runtime =~ `$runtime` && .periplus.agent.mode =~ `$mode` && .periplus.agent.status =~ `$status` && .periplus.prompt.version =~ `$prompt_version` }",
           "queryType": "traceql",
           "refId": "A"
         }

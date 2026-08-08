@@ -31,7 +31,24 @@ if (periplusServerConfig.observability.enabled) {
         exportTimeoutMillis: 2000,
       }),
     ],
-    instrumentations: [new HttpInstrumentation()],
+    instrumentations: [
+      new HttpInstrumentation({
+        requestHook(span, request) {
+          if (!("url" in request)) return
+          const pathname = new URL(request.url ?? "/", "http://periplus.local")
+            .pathname
+          span.setAttribute(
+            "http.route",
+            pathname === "/internal/agent-tool" ? pathname : "other"
+          )
+        },
+        responseHook(span, response) {
+          if (typeof response.statusCode === "number") {
+            span.setAttribute("http.response.status_code", response.statusCode)
+          }
+        },
+      }),
+    ],
   })
 
   sdk.start()
