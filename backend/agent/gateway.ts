@@ -44,7 +44,10 @@ import {
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
 } from "@/modules/data/workspaces/workspace-repository"
-import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
+import {
+  type PreparedAgentDraft,
+  WorkspaceCommandService,
+} from "@/modules/workspace/server/workspace-command-service"
 import type {
   AgentConversationMessage,
   AgentEventEmitter,
@@ -132,6 +135,8 @@ interface RunningAgent {
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
   hotelStayState: HotelStayState
+  drafts: Map<string, PreparedAgentDraft>
+  draftValidationAttempts: number
 }
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
@@ -140,6 +145,20 @@ export const agentToolRequestSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("workspace.validate_plan"),
       expectedRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.validate_draft"),
+      expectedRevision: z.number().int().nonnegative(),
+      idempotencyKey: z.string().trim().min(1),
+      commands: z.array(z.unknown()).min(1).max(40),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.commit_draft"),
+      draftId: z.string().trim().min(1),
     })
     .strict(),
   z
@@ -489,6 +508,8 @@ export class AgentGateway {
       requiresPlanValidation: false,
       lastPlanValidation: null,
       hotelStayState: { kind: "not_searched" },
+      drafts: new Map(),
+      draftValidationAttempts: 0,
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
@@ -570,6 +591,21 @@ export class AgentGateway {
     capabilityToken: string,
     request: Extract<AgentToolRequest, { type: "workspace.validate_plan" }>
   ): Promise<PlanValidationReport>
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.validate_draft" }>
+  ): Promise<{
+    draftId: string
+    validation: PlanValidationReport
+    repairsRemaining: number
+  }>
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.commit_draft" }>
+  ): Promise<{
+    result: Awaited<ReturnType<WorkspaceCommandService["commitAgentDraft"]>>
+    workspace: Awaited<ReturnType<WorkspaceCommandService["getDocument"]>>
+  }>
   async executeTool(
     capabilityToken: string,
     request: Extract<AgentToolRequest, { type: "workspace.command" }>
@@ -700,6 +736,74 @@ export class AgentGateway {
           },
         })
         output = validation
+      } else if (request.type === "workspace.validate_draft") {
+        const existingDraft = running.drafts.get(request.idempotencyKey)
+        if (
+          existingDraft &&
+          (existingDraft.expectedRevision !== request.expectedRevision ||
+            JSON.stringify(existingDraft.commands) !==
+              JSON.stringify(request.commands))
+        ) {
+          throw new WorkspaceInputError(
+            "Draft idempotency key was already used for a different request"
+          )
+        }
+        if (!existingDraft && running.draftValidationAttempts >= 3) {
+          throw new WorkspaceInputError(
+            "Journey draft has exhausted its two repair attempts"
+          )
+        }
+        const draft =
+          existingDraft ??
+          (await this.commands.prepareAgentDraft(running.context, {
+            workspaceId: running.workspaceId,
+            expectedRevision: request.expectedRevision,
+            idempotencyKey: request.idempotencyKey,
+            actor: { kind: "AGENT", agentRunId: running.runId },
+            commands: request.commands,
+          }))
+        if (!existingDraft) {
+          running.draftValidationAttempts += 1
+          running.drafts.set(request.idempotencyKey, draft)
+        }
+        const repairsUsed = Math.max(0, running.draftValidationAttempts - 1)
+        await this.trace(running, {
+          type: "validator.completed",
+          spanId: randomUUID(),
+          parentSpanId: toolSpanId,
+          status: "OK",
+          payload: {
+            valid: draft.validation.valid,
+            issueCodes: draft.validation.issues.map((issue) => issue.code),
+            projectionHash: draft.validation.projectionHash,
+            workspaceRevision: draft.validation.workspaceRevision,
+            draft: true,
+            repairsUsed,
+          },
+        })
+        output = {
+          draftId: request.idempotencyKey,
+          validation: draft.validation,
+          repairsRemaining: Math.max(0, 2 - repairsUsed),
+        }
+      } else if (request.type === "workspace.commit_draft") {
+        const draft = running.drafts.get(request.draftId)
+        if (!draft) {
+          throw new WorkspaceInputError(
+            "Draft was not validated in this Agent run"
+          )
+        }
+        const result = await this.commands.commitAgentDraft(
+          running.context,
+          draft
+        )
+        running.requiresPlanValidation = true
+        running.lastPlanValidation = draft.validation
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        output = { result, workspace: document }
       } else if (isPlaceToolRequest(request)) {
         output = await this.executePlaceTool(running, request)
       } else if (request.type === "hotel.search") {

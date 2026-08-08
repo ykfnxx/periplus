@@ -25,6 +25,28 @@ type CityEvent = Extract<TargetJourneyEvent, { type: "SECTION" }> & {
   >
 }
 
+type PlanIssueInput = Omit<
+  PlanValidationIssue,
+  "severity" | "path" | "suggestion"
+> & {
+  path?: string
+  suggestion?: string
+}
+
+function issue(
+  input: PlanIssueInput,
+  severity: PlanValidationIssue["severity"] = "ERROR"
+): PlanValidationIssue {
+  return {
+    ...input,
+    severity,
+    path: input.path ?? input.eventIds[0] ?? "graph",
+    suggestion:
+      input.suggestion ??
+      `Allowed operations: ${input.allowedOperations.join(", ")}`,
+  }
+}
+
 const LOCATION_TYPES = new Set(["VISIT", "STAY", "MEAL", "ACTIVITY"])
 
 function isLocationEvent(event: TargetJourneyEvent): event is LocationEvent {
@@ -73,7 +95,7 @@ function readyTransitIssue(
   date?: string
 ): PlanValidationIssue | null {
   if (transit.detail.routeState === "READY") return null
-  return {
+  return issue({
     code: "TRANSIT_ROUTE_NOT_READY",
     cityEventId,
     localDate: date,
@@ -81,7 +103,7 @@ function readyTransitIssue(
     message: `Transit ${transit.id} has no selected route`,
     repairability: "RETRY_EXTERNAL",
     allowedOperations: ["journey.plan_transit"],
-  }
+  })
 }
 
 function endpointIssue(
@@ -100,7 +122,7 @@ function endpointIssue(
   ) {
     return null
   }
-  return {
+  return issue({
     code: "TRANSIT_ENDPOINT_MISMATCH",
     cityEventId,
     localDate: date,
@@ -108,7 +130,7 @@ function endpointIssue(
     message: `Transit ${transit.id} does not connect its adjacent route events`,
     repairability: "AGENT",
     allowedOperations: ["journey.update_event", "journey.add_link"],
-  }
+  })
 }
 
 export function validateJourneyPlan({
@@ -118,6 +140,32 @@ export function validateJourneyPlan({
   const issues: PlanValidationIssue[] = []
   const eventById = new Map(graph.events.map((event) => [event.id, event]))
   const projections: Record<string, string[]> = {}
+
+  for (const link of graph.links) {
+    if (
+      link.introducedRevision > graph.revision ||
+      (link.retiredRevision != null && link.retiredRevision <= graph.revision)
+    ) {
+      continue
+    }
+    const from = eventById.get(link.fromEventId)
+    const to = eventById.get(link.toEventId)
+    if (!from || !to || from.parentSectionEventId === to.parentSectionEventId) {
+      continue
+    }
+    issues.push(
+      issue({
+        code: "CROSS_CITY_CONNECTION",
+        eventIds: [from.id, to.id],
+        message: `Link ${link.id} crosses City Scopes without a root Transit`,
+        repairability: "AGENT",
+        allowedOperations: ["journey.retire_link", "journey.add_link"],
+        path: link.id,
+        suggestion:
+          "Keep City-internal links inside one City Scope; connect Cities only in the root chain through TRANSIT.",
+      })
+    )
+  }
 
   const project = (scopeSectionEventId: string | null) => {
     try {
@@ -132,18 +180,20 @@ export function validateJourneyPlan({
         .map((eventId) => eventById.get(eventId))
         .filter((event): event is TargetJourneyEvent => Boolean(event))
     } catch (error) {
-      issues.push({
-        code: "PROJECTION_INVALID",
-        cityEventId: scopeSectionEventId ?? undefined,
-        eventIds: scopeSectionEventId ? [scopeSectionEventId] : [],
-        message: error instanceof Error ? error.message : "Projection failed",
-        repairability: "AGENT",
-        allowedOperations: [
-          "journey.add_link",
-          "journey.retire_link",
-          "journey.select_branch",
-        ],
-      })
+      issues.push(
+        issue({
+          code: "PROJECTION_INVALID",
+          cityEventId: scopeSectionEventId ?? undefined,
+          eventIds: scopeSectionEventId ? [scopeSectionEventId] : [],
+          message: error instanceof Error ? error.message : "Projection failed",
+          repairability: "AGENT",
+          allowedOperations: [
+            "journey.add_link",
+            "journey.retire_link",
+            "journey.select_branch",
+          ],
+        })
+      )
       return []
     }
   }
@@ -151,44 +201,52 @@ export function validateJourneyPlan({
   const root = project(null)
   const cities: CityEvent[] = []
   if (root.length === 0) {
-    issues.push({
-      code: "ROOT_ROUTE_DISCONNECTED",
-      eventIds: [],
-      message: "Root Scope must contain at least one CITY",
-      repairability: "AGENT",
-      allowedOperations: ["journey.add_event"],
-    })
+    issues.push(
+      issue({
+        code: "ROOT_ROUTE_DISCONNECTED",
+        eventIds: [],
+        message: "Root Scope must contain at least one CITY",
+        repairability: "AGENT",
+        allowedOperations: ["journey.add_event"],
+      })
+    )
   } else if (root.length % 2 === 0) {
-    issues.push({
-      code: "ROOT_ROUTE_DISCONNECTED",
-      eventIds: [root.at(-1)!.id],
-      message: "Root Scope must end with CITY",
-      repairability: "AGENT",
-      allowedOperations: ["journey.add_event", "journey.add_link"],
-    })
+    issues.push(
+      issue({
+        code: "ROOT_ROUTE_DISCONNECTED",
+        eventIds: [root.at(-1)!.id],
+        message: "Root Scope must end with CITY",
+        repairability: "AGENT",
+        allowedOperations: ["journey.add_event", "journey.add_link"],
+      })
+    )
   }
 
   root.forEach((event, index) => {
     const isCity = event.type === "SECTION" && event.detail.kind === "CITY"
     const expectedCity = index % 2 === 0
     if (!isCity && event.type !== "TRANSIT") {
-      issues.push({
-        code: "ROOT_EVENT_TYPE_INVALID",
-        eventIds: [event.id],
-        message: `Root event ${event.id} must be CITY or TRANSIT`,
-        repairability: "AGENT",
-        allowedOperations: ["journey.move_event", "journey.retire_event"],
-      })
+      issues.push(
+        issue({
+          code: "ROOT_EVENT_TYPE_INVALID",
+          eventIds: [event.id],
+          message: `Root event ${event.id} must be CITY or TRANSIT`,
+          repairability: "AGENT",
+          allowedOperations: ["journey.move_event", "journey.retire_event"],
+        })
+      )
       return
     }
     if (expectedCity !== isCity) {
-      issues.push({
-        code: "ROOT_ROUTE_DISCONNECTED",
-        eventIds: [event.id],
-        message: "Root Scope must alternate CITY and TRANSIT",
-        repairability: "AGENT",
-        allowedOperations: ["journey.add_event", "journey.add_link"],
-      })
+      issues.push(
+        issue({
+          code: "ROOT_ROUTE_DISCONNECTED",
+          eventIds: [event.id],
+          message: "Root Scope must alternate CITY and TRANSIT",
+          repairability: "AGENT",
+          allowedOperations: ["journey.add_event", "journey.add_link"],
+        })
+      )
       return
     }
     if (isCity) cities.push(event as CityEvent)
@@ -208,46 +266,52 @@ export function validateJourneyPlan({
   for (const city of cities) {
     const timeZone = city.detail.timeZone
     if (!validTimeZone(timeZone)) {
-      issues.push({
-        code: "CITY_TIMEZONE_INVALID",
-        cityEventId: city.id,
-        eventIds: [city.id],
-        message: `CITY ${city.id} must use a valid IANA time zone`,
-        repairability: "AGENT",
-        allowedOperations: ["journey.update_event"],
-      })
+      issues.push(
+        issue({
+          code: "CITY_TIMEZONE_INVALID",
+          cityEventId: city.id,
+          eventIds: [city.id],
+          message: `CITY ${city.id} must use a valid IANA time zone`,
+          repairability: "AGENT",
+          allowedOperations: ["journey.update_event"],
+        })
+      )
       continue
     }
 
     const route = project(city.id)
     if (route.length === 0) {
-      issues.push({
-        code: "CITY_ROUTE_EMPTY",
-        cityEventId: city.id,
-        eventIds: [city.id],
-        message: `CITY ${city.id} has no planned events`,
-        repairability: "AGENT",
-        allowedOperations: ["journey.add_event"],
-      })
+      issues.push(
+        issue({
+          code: "CITY_ROUTE_EMPTY",
+          cityEventId: city.id,
+          eventIds: [city.id],
+          message: `CITY ${city.id} has no planned events`,
+          repairability: "AGENT",
+          allowedOperations: ["journey.add_event"],
+        })
+      )
       continue
     }
 
     const datedLocations: Array<{
-      event: TargetJourneyEvent
+      event: LocationEvent
       index: number
       date: string
     }> = []
 
     route.forEach((event, index) => {
       if (!isLocationEvent(event) && event.type !== "TRANSIT") {
-        issues.push({
-          code: "CITY_EVENT_TYPE_INVALID",
-          cityEventId: city.id,
-          eventIds: [event.id],
-          message: `City event ${event.id} must be a place, stay, activity, meal, or Transit`,
-          repairability: "AGENT",
-          allowedOperations: ["journey.move_event", "journey.retire_event"],
-        })
+        issues.push(
+          issue({
+            code: "CITY_EVENT_TYPE_INVALID",
+            cityEventId: city.id,
+            eventIds: [event.id],
+            message: `City event ${event.id} must be a place, stay, activity, meal, or Transit`,
+            repairability: "AGENT",
+            allowedOperations: ["journey.move_event", "journey.retire_event"],
+          })
+        )
         return
       }
       if (event.type === "TRANSIT") {
@@ -256,18 +320,20 @@ export function validateJourneyPlan({
         const from = route.slice(0, index).reverse().find(isLocationEvent)
         const to = route.slice(index + 1).find(isLocationEvent)
         if (!from || !to) {
-          issues.push({
-            code: "TRANSIT_ENDPOINT_MISMATCH",
-            cityEventId: city.id,
-            eventIds: [event.id],
-            message: `Transit ${event.id} must sit between two place events`,
-            repairability: "AGENT",
-            allowedOperations: [
-              "journey.move_event",
-              "journey.update_event",
-              "journey.add_link",
-            ],
-          })
+          issues.push(
+            issue({
+              code: "TRANSIT_ENDPOINT_MISMATCH",
+              cityEventId: city.id,
+              eventIds: [event.id],
+              message: `Transit ${event.id} must sit between two place events`,
+              repairability: "AGENT",
+              allowedOperations: [
+                "journey.move_event",
+                "journey.update_event",
+                "journey.add_link",
+              ],
+            })
+          )
         } else {
           const endpoint = endpointIssue(graph, event, from.id, to.id, city.id)
           if (endpoint) issues.push(endpoint)
@@ -275,14 +341,16 @@ export function validateJourneyPlan({
         return
       }
       if (!event.plannedStartAt) {
-        issues.push({
-          code: "PLANNED_START_MISSING",
-          cityEventId: city.id,
-          eventIds: [event.id],
-          message: `Event ${event.id} needs plannedStartAt for local-day grouping`,
-          repairability: "AGENT",
-          allowedOperations: ["journey.update_event"],
-        })
+        issues.push(
+          issue({
+            code: "PLANNED_START_MISSING",
+            cityEventId: city.id,
+            eventIds: [event.id],
+            message: `Event ${event.id} needs plannedStartAt for local-day grouping`,
+            repairability: "AGENT",
+            allowedOperations: ["journey.update_event"],
+          })
+        )
         return
       }
       datedLocations.push({
@@ -290,7 +358,47 @@ export function validateJourneyPlan({
         index,
         date: localDate(event.plannedStartAt, timeZone),
       })
+      if (event.type === "VISIT" && !event.detail.providerCoverImage) {
+        issues.push(
+          issue(
+            {
+              code: "IMAGE_UNAVAILABLE",
+              cityEventId: city.id,
+              eventIds: [event.id],
+              message: `Visit ${event.id} has no provider image`,
+              repairability: "RETRY_EXTERNAL",
+              allowedOperations: ["place.enrich"],
+              suggestion:
+                "Optionally enrich the resolved place image; a missing image does not block this plan.",
+            },
+            "WARNING"
+          )
+        )
+      }
     })
+
+    for (let index = 1; index < datedLocations.length; index += 1) {
+      const previous = datedLocations[index - 1]!
+      const current = datedLocations[index]!
+      if (
+        Date.parse(current.event.plannedStartAt!) <
+        Date.parse(previous.event.plannedStartAt!)
+      ) {
+        issues.push(
+          issue({
+            code: "TIME_ORDER_INVALID",
+            cityEventId: city.id,
+            eventIds: [previous.event.id, current.event.id],
+            message: "Route order moves backwards in time",
+            repairability: "AGENT",
+            allowedOperations: ["journey.update_event", "journey.move_event"],
+            path: current.event.id,
+            suggestion:
+              "Move the later event after its predecessor or assign a later plannedStartAt.",
+          })
+        )
+      }
+    }
 
     const dayBuckets = Map.groupBy(datedLocations, (entry) => entry.date)
     for (const [date, locations] of dayBuckets) {
@@ -301,19 +409,21 @@ export function validateJourneyPlan({
           .slice(from.index + 1, to.index)
           .filter((event): event is TransitEvent => event.type === "TRANSIT")
         if (transits.length === 0) {
-          issues.push({
-            code: "MISSING_TRANSIT_BETWEEN",
-            cityEventId: city.id,
-            localDate: date,
-            eventIds: [from.event.id, to.event.id],
-            message: "Adjacent same-day places must be connected by Transit",
-            repairability: "AGENT",
-            allowedOperations: [
-              "journey.add_event",
-              "journey.add_link",
-              "journey.plan_transit",
-            ],
-          })
+          issues.push(
+            issue({
+              code: "MISSING_TRANSIT_BETWEEN",
+              cityEventId: city.id,
+              localDate: date,
+              eventIds: [from.event.id, to.event.id],
+              message: "Adjacent same-day places must be connected by Transit",
+              repairability: "AGENT",
+              allowedOperations: [
+                "journey.add_event",
+                "journey.add_link",
+                "journey.plan_transit",
+              ],
+            })
+          )
           continue
         }
       }
@@ -334,7 +444,7 @@ export function validateJourneyPlan({
     .digest("hex")
 
   return planValidationReportSchema.parse({
-    valid: issues.length === 0,
+    valid: issues.every((issue) => issue.severity !== "ERROR"),
     workspaceRevision,
     journeyRevision: graph.revision,
     projectionHash,

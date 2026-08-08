@@ -104,6 +104,15 @@ describe("PlaceIntelligenceService", () => {
     expect(result).toMatchObject({
       status: "ready",
       place: { placeId: "palace", canAddToJourney: true },
+      placeRef: {
+        provider: "amap",
+        providerId: "B000A8UIN8",
+        canonicalName: "故宫博物院",
+        city: "北京市",
+        lat: 39.916,
+        lng: 116.397,
+        coordinateSystem: "GCJ02",
+      },
       command: {
         name: "journey.update_event",
         payload: {
@@ -145,7 +154,7 @@ describe("PlaceIntelligenceService", () => {
     const result = await service.enrichPlace(
       {
         placeId: "palace",
-        fields: ["coordinates", "provider_match"],
+        fields: ["coordinates", "images", "provider_match"],
       },
       { requestId: "enrich-request-1" }
     )
@@ -161,6 +170,15 @@ describe("PlaceIntelligenceService", () => {
       undefined,
       { requestId: "enrich-request-1" }
     )
+  })
+
+  it("requires a unique verified result before resolving a place", async () => {
+    const { service, provider } = serviceFor(amapCandidate())
+    provider.search.mockResolvedValue({ candidates: [], warnings: [] })
+
+    const result = await service.resolvePlace({ text: "故宫" })
+
+    expect(result).toMatchObject({ status: "ambiguous" })
   })
 
   it("records provider warning failures against the scoped request", async () => {

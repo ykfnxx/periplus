@@ -158,6 +158,7 @@ enum WorkspaceCommandName {
   JOURNEY_ADD_OBSERVATION     @map("journey.add_observation")
   JOURNEY_LINK_SOURCE_ITEM    @map("journey.link_source_item")
   JOURNEY_UNDO                @map("journey.undo")
+  JOURNEY_APPLY_DRAFT         @map("journey.apply_draft")
   WORKSPACE_REFRESH           @map("workspace.refresh")
   WORKSPACE_REPLAY            @map("workspace.replay")
   WORKSPACE_FORK              @map("workspace.fork")

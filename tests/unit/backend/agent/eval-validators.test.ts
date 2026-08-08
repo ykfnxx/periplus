@@ -13,7 +13,11 @@ import {
   buildTransitPlanRequest,
   transitPlanFingerprint,
 } from "@/lib/journeys/planning"
-import type { PlaceResolveResult, PlaceSearchResult } from "@/lib/places/types"
+import type {
+  PlaceRef,
+  PlaceResolveResult,
+  PlaceSearchResult,
+} from "@/lib/places/types"
 import {
   TARGET_CONTRACT_FIXTURES,
   type TargetJourneyEvent,
@@ -46,6 +50,28 @@ function westLake(): PlaceSearchResult {
     canAddToJourney: true,
     needsUserConfirmation: false,
     reason: "provider exact match",
+  }
+}
+
+function placeRef(place: PlaceSearchResult): PlaceRef {
+  return {
+    provider: place.bestCoordinate.provider,
+    providerId: place.sources[0]?.providerId,
+    canonicalName: place.name,
+    city: place.city,
+    address: place.address,
+    lat: place.bestCoordinate.lat,
+    lng: place.bestCoordinate.lng,
+    coordinateSystem: place.bestCoordinate.coordinateSystem,
+    confidence: place.confidence,
+    candidates: [
+      {
+        id: place.id,
+        name: place.name,
+        city: place.city,
+        confidence: place.confidence,
+      },
+    ],
   }
 }
 
@@ -236,6 +262,7 @@ describe("Agent feature capability validators", () => {
     const result = {
       status: "resolved" as const,
       place: westLake(),
+      placeRef: placeRef(westLake()),
       warnings: [],
     }
     const evidenceId = "evidence-west-lake"
@@ -280,7 +307,12 @@ describe("Agent feature capability validators", () => {
     place.city = "南昌市"
     const report = validatePlaceCapability({
       id: "wrong-city",
-      result: { status: "resolved", place, warnings: [] },
+      result: {
+        status: "resolved",
+        place,
+        placeRef: placeRef(place),
+        warnings: [],
+      },
       expectation: { status: "resolved", city: "杭州" },
     })
 
@@ -297,6 +329,7 @@ describe("Agent feature capability validators", () => {
       result: {
         status: "ready",
         place,
+        placeRef: placeRef(place),
         command: {
           name: "journey.update_event",
           payload: {
@@ -341,7 +374,12 @@ describe("Agent feature capability validators", () => {
   it("fails Place evidence that is only a non-empty unbound id", () => {
     const report = validatePlaceCapability({
       id: "unbound-evidence",
-      result: { status: "resolved", place: westLake(), warnings: [] },
+      result: {
+        status: "resolved",
+        place: westLake(),
+        placeRef: placeRef(westLake()),
+        warnings: [],
+      },
       expectation: { status: "resolved", requireEvidence: true },
       evidenceId: "invented-evidence-id",
       traceEvents: [],
@@ -402,6 +440,7 @@ describe("Agent feature capability validators", () => {
     const result = {
       status: "resolved" as const,
       place: westLake(),
+      placeRef: placeRef(westLake()),
       warnings: [],
     }
     const evidenceId = "forged-place-evidence"
@@ -476,6 +515,7 @@ describe("Agent feature capability validators", () => {
     const result = {
       status: "resolved" as const,
       place: westLake(),
+      placeRef: placeRef(westLake()),
       warnings: [],
     }
     const evidenceId = "search-evidence"

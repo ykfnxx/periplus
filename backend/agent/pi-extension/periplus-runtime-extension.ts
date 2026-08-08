@@ -164,6 +164,26 @@ export default function periplusRuntimeExtension(pi: ExtensionAPI) {
     (params) => ({ type: "workspace.validate_plan", ...params })
   )
   register(
+    "periplus_workspace_validate_draft",
+    "Validate journey draft",
+    "Validate a bounded journey-command draft before it is written.",
+    Type.Object({
+      expectedRevision: Type.Number(),
+      idempotencyKey: Type.String(),
+      commands: Type.Array(Type.Object({}, { additionalProperties: true })),
+    }),
+    (params) => ({ type: "workspace.validate_draft", ...params }),
+    "sequential"
+  )
+  register(
+    "periplus_workspace_commit_draft",
+    "Commit validated journey draft",
+    "Atomically commit a previously validated journey draft.",
+    Type.Object({ draftId: Type.String() }),
+    (params) => ({ type: "workspace.commit_draft", ...params }),
+    "sequential"
+  )
+  register(
     "periplus_workspace_command",
     "Execute Workspace command",
     "Execute one typed Periplus Workspace command with expectedRevision and idempotencyKey.",

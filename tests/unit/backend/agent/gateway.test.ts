@@ -581,6 +581,154 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
   })
 
+  it("validates a draft before atomically committing one Workspace revision", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
+    const token = capabilityToken(runtime)
+    const validation = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-title-update",
+      commands: [
+        {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${workspace.headGraph.id}-visit`,
+            patch: { type: "VISIT", title: "西湖（草稿）" },
+          },
+        },
+      ],
+    })
+
+    expect(validation).toMatchObject({
+      draftId: "draft-title-update",
+      validation: { valid: true, workspaceRevision: 1 },
+      repairsRemaining: 2,
+    })
+    expect(validation.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "IMAGE_UNAVAILABLE",
+        severity: "WARNING",
+      })
+    )
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(0)
+
+    const committed = await gateway.executeTool(token, {
+      type: "workspace.commit_draft",
+      draftId: validation.draftId,
+    })
+    expect(committed.result).toMatchObject({
+      commandName: "journey.apply_draft",
+      newRevision: 1,
+    })
+    const document = await commands.getDocument(context, workspace.id)
+    expect(document?.session).toMatchObject({ headWorkspaceRevision: 1 })
+    expect(document?.session.headGraph.events).toContainEqual(
+      expect.objectContaining({
+        id: `${workspace.headGraph.id}-visit`,
+        title: "西湖（草稿）",
+      })
+    )
+    const revisions = await prisma.workspaceRevision.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { revision: "asc" },
+    })
+    expect(revisions).toHaveLength(1)
+    expect(revisions[0]?.commandName).toBe("JOURNEY_APPLY_DRAFT")
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+          ?.status
+      ).toBe("SUCCEEDED")
+    })
+  })
+
+  it("limits an Agent run to an initial validation and two draft repairs", async () => {
+    const {
+      workspace,
+      commands: workspaceCommands,
+      runtime,
+      gateway,
+      emit,
+    } = await setup()
+    await gateway.start(context, workspace.id, "修复城市时区", "auto", emit)
+    const token = capabilityToken(runtime)
+    const commands = [
+      {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-city`,
+          patch: {
+            type: "SECTION",
+            detail: {
+              kind: "CITY",
+              timeZone: "not-a-timezone",
+              lat: 30.2741,
+              lng: 120.1551,
+              coordinateSystem: "GCJ02",
+            },
+          },
+        },
+      },
+    ]
+
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-initial",
+      commands,
+    })
+    expect(initial.validation).toMatchObject({ valid: false })
+    expect(initial.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "CITY_TIMEZONE_INVALID" })
+    )
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.commit_draft",
+        draftId: initial.draftId,
+      })
+    ).rejects.toThrow("Journey draft validation failed")
+    expect(
+      (await workspaceCommands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(0)
+
+    for (const idempotencyKey of ["draft-repair-1", "draft-repair-2"]) {
+      const validation = await gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey,
+        commands,
+      })
+      expect(validation.validation).toMatchObject({ valid: false })
+      expect(validation.validation.issues).toContainEqual(
+        expect.objectContaining({ code: "CITY_TIMEZONE_INVALID" })
+      )
+    }
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "draft-over-limit",
+        commands,
+      })
+    ).rejects.toThrow("exhausted its two repair attempts")
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (
+          await workspaceCommands.getDocument(context, workspace.id)
+        )?.agentRuns.at(-1)?.status
+      ).toBe("SUCCEEDED")
+    })
+  })
+
   it("keeps a user-cancelled run cancelled when the runtime exits without a code", async () => {
     const { workspace, commands, runtime, gateway, events, emit } =
       await setup()

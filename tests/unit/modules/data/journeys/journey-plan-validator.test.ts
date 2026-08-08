@@ -21,9 +21,9 @@ function identity(id: string, parentSectionEventId: string | null) {
   }
 }
 
-function city(timeZone = "Asia/Shanghai"): TargetJourneyEvent {
+function city(timeZone = "Asia/Shanghai", id = "city"): TargetJourneyEvent {
   return {
-    ...identity("city", null),
+    ...identity(id, null),
     type: "SECTION",
     title: "西安",
     detail: {
@@ -36,9 +36,13 @@ function city(timeZone = "Asia/Shanghai"): TargetJourneyEvent {
   }
 }
 
-function visit(id: string, plannedStartAt: string): TargetJourneyEvent {
+function visit(
+  id: string,
+  plannedStartAt: string,
+  parentSectionEventId = "city"
+): TargetJourneyEvent {
   return {
-    ...identity(id, "city"),
+    ...identity(id, parentSectionEventId),
     type: "VISIT",
     executionStatus: "PLANNED",
     title: id,
@@ -113,7 +117,13 @@ describe("validateJourneyPlan", () => {
     })
 
     expect(report).toMatchObject({ valid: true, workspaceRevision: 3 })
-    expect(report.issues).toEqual([])
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        code: "IMAGE_UNAVAILABLE",
+        severity: "WARNING",
+        eventIds: ["wall"],
+      })
+    )
   })
 
   it("rejects a non-CITY root event", () => {
@@ -217,6 +227,55 @@ describe("validateJourneyPlan", () => {
 
     expect(report.issues.map((issue) => issue.code)).toContain(
       "CITY_TIMEZONE_INVALID"
+    )
+  })
+
+  it("reports route time moving backwards as a repairable draft error", () => {
+    const report = validateJourneyPlan({
+      graph: graph(
+        [
+          city(),
+          visit("later", "2026-08-01T04:00:00.000Z"),
+          visit("earlier", "2026-08-01T01:00:00.000Z"),
+        ],
+        [link("backwards", "later", "earlier", 0)]
+      ),
+      workspaceRevision: 2,
+    })
+
+    expect(report).toMatchObject({ valid: false })
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        code: "TIME_ORDER_INVALID",
+        eventIds: ["later", "earlier"],
+        allowedOperations: ["journey.update_event", "journey.move_event"],
+      })
+    )
+  })
+
+  it("reports a link that crosses City Scopes", () => {
+    const report = validateJourneyPlan({
+      graph: graph(
+        [
+          city("Asia/Shanghai", "city-a"),
+          city("Asia/Shanghai", "city-b"),
+          visit("a-visit", NOW, "city-a"),
+          visit("b-visit", NOW, "city-b"),
+        ],
+        [
+          link("root", "city-a", "city-b", 0),
+          link("cross-city", "a-visit", "b-visit", 1),
+        ]
+      ),
+      workspaceRevision: 2,
+    })
+
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        code: "CROSS_CITY_CONNECTION",
+        path: "cross-city",
+        eventIds: ["a-visit", "b-visit"],
+      })
     )
   })
 })

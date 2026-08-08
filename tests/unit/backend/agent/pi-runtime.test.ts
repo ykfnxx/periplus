@@ -108,7 +108,7 @@ describe("PiRuntime", () => {
       {
         runId: "run-1",
         prompt:
-          "Call periplus.workspace.get before periplus.workspace.validate_plan.",
+          "Call periplus.workspace.get before periplus.workspace.validate_draft and periplus.workspace.commit_draft.",
         toolServers: [workspaceToolServer],
       },
       observer
@@ -136,8 +136,11 @@ describe("PiRuntime", () => {
     )
     expect(options.env).not.toHaveProperty("PI_PACKAGE_DIR")
     expect(command.message).toContain("periplus_workspace_get")
-    expect(command.message).toContain("periplus_workspace_validate_plan")
+    expect(command.message).toContain("periplus_workspace_validate_draft")
+    expect(command.message).toContain("periplus_workspace_commit_draft")
     expect(runConfig.toolNames).toContain("periplus_workspace_command")
+    expect(runConfig.toolNames).toContain("periplus_workspace_validate_draft")
+    expect(runConfig.toolNames).toContain("periplus_workspace_commit_draft")
     expect(runConfig.webSearchEnabled).toBe(true)
 
     await finished

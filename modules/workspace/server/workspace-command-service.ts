@@ -8,6 +8,7 @@ import {
   type TransitPlanRequest,
 } from "@/lib/journeys/planning"
 import {
+  targetCommandBodySchema,
   targetCommandEnvelopeSchema,
   targetCommandResultSchema,
   targetTransitPlanningRunSchema,
@@ -21,6 +22,7 @@ import {
   type TargetTransitPlanningRun,
   type TargetWorkspaceDocument,
   type TargetWorkspaceRevision,
+  type PlanValidationReport,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import { getAsset } from "@/modules/data/content/content-repository"
@@ -55,6 +57,33 @@ type JourneyCommand = Extract<
   TargetCommandEnvelope["command"],
   { name: `journey.${string}` }
 >
+
+const DRAFT_COMMAND_NAMES = new Set<JourneyCommand["name"]>([
+  "journey.add_event",
+  "journey.update_event",
+  "journey.move_event",
+  "journey.place_event",
+  "journey.retire_event",
+  "journey.replace_event",
+  "journey.add_link",
+  "journey.retire_link",
+  "journey.select_branch",
+  "journey.plan_transit",
+  "journey.select_transit_plan",
+])
+
+export interface PreparedAgentDraft {
+  workspaceId: string
+  expectedRevision: number
+  idempotencyKey: string
+  actor: TargetCommandEnvelope["actor"]
+  commands: JourneyCommand[]
+  before: TargetJourneyGraphSnapshot
+  after: TargetJourneyGraphSnapshot
+  validation: PlanValidationReport
+  changedEventIds: string[]
+  projectionInvalidationScopes: Array<string | null>
+}
 
 interface StoredCommandPatchEntry {
   op: "command"
@@ -1700,7 +1729,8 @@ async function planTransit(
   document: TargetWorkspaceDocument,
   envelope: TargetCommandEnvelope,
   planning: WorkspaceCommandDependencies["transitPlanning"],
-  now: string
+  now: string,
+  validate = true
 ) {
   if (envelope.command.name !== "journey.plan_transit") {
     throw new WorkspaceCommandUnsupportedError(envelope.command.name)
@@ -1756,7 +1786,7 @@ async function planTransit(
   }
   graph.transitPlanningRuns.push(run)
   event.updatedAt = now
-  return validateJourneyGraph(graph)
+  return validate ? validateJourneyGraph(graph) : graph
 }
 
 async function applyContentCommand(
@@ -1940,7 +1970,8 @@ function commandEventIds(
 function applyJourneyCommand(
   document: TargetWorkspaceDocument,
   envelope: TargetCommandEnvelope,
-  now: string
+  now: string,
+  validate = true
 ) {
   if (!envelope.command.name.startsWith("journey.")) {
     throw new WorkspaceCommandUnsupportedError(envelope.command.name)
@@ -2371,7 +2402,46 @@ function applyJourneyCommand(
     case "journey.undo":
       throw new WorkspaceCommandUnsupportedError(command.name)
   }
-  return validateJourneyGraph(graph)
+  return validate ? validateJourneyGraph(graph) : graph
+}
+
+function normalizeAtomicDraftRevision(
+  before: TargetJourneyGraphSnapshot,
+  after: TargetJourneyGraphSnapshot
+) {
+  const revision = before.revision + 1
+  after.revision = revision
+  for (const event of after.events) {
+    if (event.introducedRevision > before.revision) {
+      event.introducedRevision = revision
+    }
+    if (
+      event.retiredRevision != null &&
+      event.retiredRevision > before.revision
+    ) {
+      event.retiredRevision = revision
+    }
+  }
+  for (const link of after.links) {
+    if (link.introducedRevision > before.revision) {
+      link.introducedRevision = revision
+    }
+    if (
+      link.retiredRevision != null &&
+      link.retiredRevision > before.revision
+    ) {
+      link.retiredRevision = revision
+    }
+  }
+  for (const replacement of after.replacements) {
+    if (replacement.revision > before.revision) replacement.revision = revision
+  }
+  for (const selection of after.branchSelections) {
+    if (selection.journeyRevision > before.revision) {
+      selection.journeyRevision = revision
+    }
+  }
+  return after
 }
 
 export class WorkspaceCommandService {
@@ -2384,6 +2454,174 @@ export class WorkspaceCommandService {
   constructor(dependencies: WorkspaceCommandDependencies = {}) {
     this.transitPlanning =
       dependencies.transitPlanning ?? new TransitPlanningService()
+  }
+
+  async prepareAgentDraft(
+    context: AuthContext,
+    input: {
+      workspaceId: string
+      expectedRevision: number
+      idempotencyKey: string
+      actor: TargetCommandEnvelope["actor"]
+      commands: unknown[]
+    },
+    options: ExecuteOptions = {}
+  ): Promise<PreparedAgentDraft> {
+    const commands = input.commands.map((command) => {
+      const parsed = targetCommandBodySchema.parse(command)
+      if (
+        !parsed.name.startsWith("journey.") ||
+        !DRAFT_COMMAND_NAMES.has(parsed.name as JourneyCommand["name"])
+      ) {
+        throw new WorkspaceInputError(
+          `Draft command ${parsed.name} is not supported`
+        )
+      }
+      return parsed as JourneyCommand
+    })
+    if (!commands.length) {
+      throw new WorkspaceInputError("Draft must contain at least one command")
+    }
+
+    const document = await getWorkspaceDocument(
+      context,
+      input.workspaceId,
+      options.now
+    )
+    if (!document) throw new WorkspaceInputError("Workspace was not found")
+    if (document.session.headWorkspaceRevision !== input.expectedRevision) {
+      throw new WorkspaceRevisionConflictError()
+    }
+    if (document.session.status !== "ACTIVE") {
+      throw new WorkspaceInputError("Workspace is not active")
+    }
+    if (document.draftState === "STALE") {
+      throw new WorkspaceRevisionConflictError(
+        "Workspace source Journey is stale; refresh, fork, or replay"
+      )
+    }
+    if (input.actor.kind !== "AGENT") {
+      throw new WorkspaceInputError("Draft commands require an Agent actor")
+    }
+    const agentRunId = input.actor.agentRunId
+    if (
+      !document.agentRuns.some(
+        (run) => run.id === agentRunId && run.status === "RUNNING"
+      )
+    ) {
+      throw new WorkspaceInputError(
+        "Workspace AGENT actor requires a running same-Workspace Agent run"
+      )
+    }
+
+    const before = document.session.headGraph
+    let after = clone(before)
+    const now = (options.now ?? new Date()).toISOString()
+    for (const [index, command] of commands.entries()) {
+      const envelope = targetCommandEnvelopeSchema.parse({
+        aggregateId: input.workspaceId,
+        expectedRevision: input.expectedRevision,
+        idempotencyKey: `${input.idempotencyKey}:draft:${index}`,
+        actor: input.actor,
+        command,
+      })
+      const draftDocument: TargetWorkspaceDocument = {
+        ...document,
+        session: { ...document.session, headGraph: after },
+      }
+      after =
+        command.name === "journey.plan_transit"
+          ? await planTransit(
+              context,
+              draftDocument,
+              envelope,
+              this.transitPlanning,
+              now,
+              false
+            )
+          : applyJourneyCommand(draftDocument, envelope, now, false)
+    }
+    after = normalizeAtomicDraftRevision(before, after)
+    const changedEventIds = projectionDiffEventIds(before, after)
+    const projectionInvalidationScopes = invalidationScopes(
+      before,
+      after,
+      changedEventIds
+    )
+    const validation = validateJourneyPlan({
+      graph: after,
+      workspaceRevision: input.expectedRevision + 1,
+    })
+    return {
+      workspaceId: input.workspaceId,
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: input.idempotencyKey,
+      actor: input.actor,
+      commands,
+      before,
+      after,
+      validation,
+      changedEventIds,
+      projectionInvalidationScopes,
+    }
+  }
+
+  async commitAgentDraft(
+    context: AuthContext,
+    draft: PreparedAgentDraft,
+    options: ExecuteOptions = {}
+  ): Promise<TargetCommandResult> {
+    if (!draft.validation.valid) {
+      throw new WorkspaceInputError(
+        `Journey draft validation failed: ${draft.validation.issues
+          .filter((issue) => issue.severity === "ERROR")
+          .map((issue) => issue.code)
+          .join(", ")}`
+      )
+    }
+    const after = validateJourneyGraphTransition(draft.before, draft.after)
+    const patch = [
+      {
+        op: "draft",
+        draftEnvelope: {
+          aggregateId: draft.workspaceId,
+          expectedRevision: draft.expectedRevision,
+          idempotencyKey: draft.idempotencyKey,
+          actor: draft.actor,
+          commands: draft.commands,
+        },
+        changedEventIds: draft.changedEventIds,
+        projectionInvalidationScopes: draft.projectionInvalidationScopes,
+      },
+    ]
+    const inversePatch = [
+      {
+        op: "restore",
+        restoreWorkspaceRevision: draft.expectedRevision,
+        graph: draft.before,
+      },
+    ]
+    const result = await appendWorkspaceRevision(context, draft.workspaceId, {
+      expectedRevision: draft.expectedRevision,
+      commandName: "journey.apply_draft",
+      after,
+      patch,
+      inversePatch,
+      idempotencyKey: draft.idempotencyKey,
+      actor: draft.actor,
+      now: options.now,
+    })
+    if (!result) throw new WorkspaceInputError("Workspace was not found")
+    return targetCommandResultSchema.parse({
+      aggregateId: draft.workspaceId,
+      commandName: "journey.apply_draft",
+      newRevision: result.revision.revision,
+      changedEventIds: draft.changedEventIds,
+      patch,
+      inversePatch,
+      projectionInvalidationScopes: draft.projectionInvalidationScopes,
+      replayedFromIdempotencyKey: result.replayedFromIdempotencyKey,
+    })
   }
 
   async execute(

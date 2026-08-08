@@ -12,7 +12,9 @@ import type {
   PlaceResolveForJourneyEventInput,
   PlaceResolveForJourneyEventResult,
   PlaceResolveResult,
+  PlaceRef,
   PlaceSearchInput,
+  PlaceSearchResult,
   PlaceSearchResponse,
 } from "@/lib/places/types"
 import { PlaceCatalogRepository } from "./place-catalog-repository"
@@ -23,6 +25,32 @@ export interface PlaceProviderUsageContext {
   workspaceId?: string
   agentRunId?: string
   requestId?: string
+}
+
+export function placeRefFromResult(
+  place: PlaceSearchResult,
+  candidates: readonly PlaceSearchResult[]
+): PlaceRef {
+  const source = place.sources.find(
+    (candidate) => candidate.provider === place.bestCoordinate.provider
+  )
+  return {
+    provider: place.bestCoordinate.provider,
+    providerId: source?.providerId,
+    canonicalName: place.name,
+    city: place.city ?? place.province,
+    address: place.address,
+    lat: place.bestCoordinate.lat,
+    lng: place.bestCoordinate.lng,
+    coordinateSystem: place.bestCoordinate.coordinateSystem,
+    confidence: place.confidence,
+    candidates: candidates.map((candidate) => ({
+      id: candidate.id,
+      name: candidate.name,
+      city: candidate.city ?? candidate.province,
+      confidence: candidate.confidence,
+    })),
+  }
 }
 
 type LocationEventType = "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
@@ -129,13 +157,16 @@ export class PlaceIntelligenceService {
     }
 
     const isClearWinner =
-      first.quality === "verified" ||
-      (!input.requireExact &&
-        first.quality === "probable" &&
-        (!second || first.confidence - second.confidence >= 0.12))
+      first.quality === "verified" &&
+      (!second || first.confidence - second.confidence >= 0.1)
 
     if (isClearWinner && !first.needsUserConfirmation) {
-      return { status: "resolved", place: first, warnings: response.warnings }
+      return {
+        status: "resolved",
+        place: first,
+        placeRef: placeRefFromResult(first, response.results),
+        warnings: response.warnings,
+      }
     }
 
     return {
@@ -207,6 +238,7 @@ export class PlaceIntelligenceService {
     return {
       status: "ready",
       place: resolved.place,
+      placeRef: resolved.placeRef,
       command,
       warnings: resolved.warnings,
     }

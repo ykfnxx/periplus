@@ -117,6 +117,24 @@ export interface PlaceSearchResult {
   reason: string
 }
 
+export interface PlaceRef {
+  provider: PlaceProvider
+  providerId?: string
+  canonicalName: string
+  city?: string
+  address?: string
+  lat: number
+  lng: number
+  coordinateSystem: CoordinateSystem
+  confidence: number
+  candidates: Array<{
+    id: string
+    name: string
+    city?: string
+    confidence: number
+  }>
+}
+
 export interface ProviderWarning {
   provider: PlaceProvider
   code: "timeout" | "quota_exceeded" | "provider_error" | "low_confidence"
@@ -147,6 +165,7 @@ export type PlaceResolveForJourneyEventResult =
   | {
       status: "ready"
       place: PlaceSearchResult
+      placeRef: PlaceRef
       command: {
         name: "journey.update_event"
         payload: {
@@ -177,6 +196,7 @@ export type PlaceResolveResult =
   | {
       status: "resolved"
       place: PlaceSearchResult
+      placeRef: PlaceRef
       warnings: ProviderWarning[]
     }
   | {
@@ -197,7 +217,12 @@ export interface PlaceEnrichInput {
   provider?: PlaceProvider
   providerId?: string
   fields: Array<
-    "coordinates" | "aliases" | "description" | "provider_match" | "categories"
+    | "coordinates"
+    | "aliases"
+    | "description"
+    | "provider_match"
+    | "categories"
+    | "images"
   >
 }
 

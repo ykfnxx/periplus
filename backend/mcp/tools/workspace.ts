@@ -21,6 +21,16 @@ const workspacePlanValidationInputSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
 })
 
+const workspaceDraftValidationInputSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  idempotencyKey: z.string().trim().min(1),
+  commands: z.array(z.unknown()).min(1).max(40),
+})
+
+const workspaceDraftCommitInputSchema = z.object({
+  draftId: z.string().trim().min(1),
+})
+
 function result(value: ReturnType<typeof mcpJsonResult>): CallToolResult {
   return value as CallToolResult
 }
@@ -86,6 +96,46 @@ export function registerWorkspaceTools(server: McpServer): void {
         const parsed = workspacePlanValidationInputSchema.parse(input)
         return callWorkspaceBackend({
           type: "workspace.validate_plan",
+          ...parsed,
+        })
+      } catch (error) {
+        return errorResult(error)
+      }
+    }
+  )
+  server.registerTool(
+    "periplus.workspace.validate_draft",
+    {
+      title: "Validate journey draft",
+      description:
+        "Validate an ordered, bounded journey-command draft before it is written. Use the returned allowedOperations and suggestions for at most two repair rounds.",
+      inputSchema: workspaceDraftValidationInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const parsed = workspaceDraftValidationInputSchema.parse(input)
+        return callWorkspaceBackend({
+          type: "workspace.validate_draft",
+          ...parsed,
+        })
+      } catch (error) {
+        return errorResult(error)
+      }
+    }
+  )
+  server.registerTool(
+    "periplus.workspace.commit_draft",
+    {
+      title: "Commit validated journey draft",
+      description:
+        "Atomically commit one previously validated, error-free journey draft. Do not use this for a draft with validation errors.",
+      inputSchema: workspaceDraftCommitInputSchema.shape,
+    },
+    async (input) => {
+      try {
+        const parsed = workspaceDraftCommitInputSchema.parse(input)
+        return callWorkspaceBackend({
+          type: "workspace.commit_draft",
           ...parsed,
         })
       } catch (error) {

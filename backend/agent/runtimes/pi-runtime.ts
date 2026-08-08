@@ -15,6 +15,8 @@ const PERIPLUS_TOOL_NAMES = [
   "periplus_workspace_get",
   "periplus_workspace_project",
   "periplus_workspace_validate_plan",
+  "periplus_workspace_validate_draft",
+  "periplus_workspace_commit_draft",
   "periplus_workspace_command",
   "periplus_place_search",
   "periplus_place_resolve",
@@ -27,6 +29,8 @@ const PI_TOOL_NAME_MAP = [
   ["periplus.workspace.get", "periplus_workspace_get"],
   ["periplus.workspace.project", "periplus_workspace_project"],
   ["periplus.workspace.validate_plan", "periplus_workspace_validate_plan"],
+  ["periplus.workspace.validate_draft", "periplus_workspace_validate_draft"],
+  ["periplus.workspace.commit_draft", "periplus_workspace_commit_draft"],
   ["periplus.workspace.command", "periplus_workspace_command"],
   ["periplus.place.search", "periplus_place_search"],
   [
