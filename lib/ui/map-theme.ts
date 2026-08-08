@@ -23,6 +23,12 @@ export const routeDayColors = [
   "#48c9a9",
   "#ffd166",
   "#a78bfa",
+  "#ef6f6c",
+  "#3b82f6",
+  "#65a30d",
+  "#db5f9a",
+  "#6366f1",
+  "#0d9488",
 ] as const
 
 export const routeMarkerColors = [
@@ -30,6 +36,11 @@ export const routeMarkerColors = [
   periplusColors.coral,
   periplusColors.bluegray,
 ] as const
+
+export function getRouteDayColor(colorIndex: number | null) {
+  if (colorIndex === null) return periplusColors.teak
+  return routeDayColors[colorIndex % routeDayColors.length]!
+}
 
 export interface TransportEdgeStyle {
   color: string

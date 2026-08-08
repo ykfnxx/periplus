@@ -8,8 +8,8 @@ import type { MapIntent } from "@/modules/workspace/contracts"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
+  getRouteDayColor,
   periplusColors,
-  routeDayColors,
   routeMarkerColors,
 } from "@/lib/ui/map-theme"
 
@@ -85,11 +85,9 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       const dayKey = dayProjection?.groupKeyByEventId.get(event.id)
       const dayGroup = dayKey ? dayGroupByKey.get(dayKey) : undefined
       const dayColor =
-        dayGroup?.colorIndex === null
-          ? periplusColors.bluegray
-          : dayGroup
-            ? routeDayColors[dayGroup.colorIndex % routeDayColors.length]
-            : periplusColors.routeBlue
+        dayGroup !== undefined
+          ? getRouteDayColor(dayGroup.colorIndex)
+          : periplusColors.routeBlue
       content.style.background =
         view.level === "overview" ? routeMarkerColors[colorIndex] : dayColor
       content.style.color =

@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { dispatchMapIntent } from "@/modules/workspace/ui/WorkspaceController"
 import RealMapStoryCanvas from "@/tests/storybook/map-story"
 import {
-  dunhuangRouteStoryJourney,
-  selectedDayTwoMarker,
+  fiveDayMarkerStoryJourney,
+  selectedDayFiveMarker,
   selectedUnscheduledMarker,
 } from "@/tests/storybook/route-fixtures"
 import {
@@ -27,7 +27,7 @@ function MarkerStory({
 }
 
 const sharedState = {
-  workspaceDocument: workspaceDocumentForStory(dunhuangRouteStoryJourney),
+  workspaceDocument: workspaceDocumentForStory(fiveDayMarkerStoryJourney),
   viewLevel: "section" as const,
   activeSectionEventId: "section-dunhuang",
   mapFocusRequest: {
@@ -54,7 +54,7 @@ export const DayThemes: Story = {
   render: () => (
     <MarkerStory
       title="多日主题色"
-      description="白色序号按完整 CITY 事件链的位置生成，不按天重置；第 1 天为鲜橙、第 2 天为薄荷绿，未排期为中性蓝灰。"
+      description="白色序号按完整 CITY 事件链的位置生成，不按天重置；此场景同时展示前 5 天互不重复的主题色，以及未排期的中性 teak。"
     />
   ),
 }
@@ -63,13 +63,13 @@ export const SelectedMarker: Story = {
   decorators: [
     withWorkspaceState({
       ...sharedState,
-      selectedLocationEvent: selectedDayTwoMarker,
+      selectedLocationEvent: selectedDayFiveMarker,
     }),
   ],
   render: () => (
     <MarkerStory
       title="选中态"
-      description="序号 7 保留第 2 天主题色，并只用加粗描边与放大反馈表达选中。"
+      description="第 5 天 marker 保留独立主题色，并只用加粗描边与放大反馈表达选中。"
     />
   ),
 }
@@ -84,7 +84,7 @@ export const UnscheduledMarker: Story = {
   render: () => (
     <MarkerStory
       title="未排期中性色"
-      description="无法推导属于第几天的地点不猜测归属；序号 10 使用中性蓝灰，此 Story 同时展示其选中态。"
+      description="无法推导属于第几天的地点不猜测归属；marker 与顶部标签、纵向轨统一使用中性 teak，此 Story 同时展示其选中态。"
     />
   ),
 }

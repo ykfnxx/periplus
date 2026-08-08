@@ -315,7 +315,45 @@ export const dunhuangRouteStoryJourney: TargetJourneyGraphSnapshot = {
   transitPlanningRuns: [normalRun, multiSegmentRun],
 }
 
-export const selectedDayTwoMarker = locationEvent("activity-dunhuang-sunset")
+const fiveDayEventTimes = new Map<string, readonly [string, string]>([
+  [
+    "visit-dunhuang-mogao",
+    ["2026-10-06T01:00:00.000Z", "2026-10-06T04:00:00.000Z"],
+  ],
+  [
+    "meal-dunhuang-noodles",
+    ["2026-10-07T03:00:00.000Z", "2026-10-07T04:00:00.000Z"],
+  ],
+  ["stay-dunhuang-1", ["2026-10-08T13:30:00.000Z", "2026-10-09T00:00:00.000Z"]],
+  [
+    "visit-dunhuang-mingsha",
+    ["2026-10-09T01:00:00.000Z", "2026-10-09T04:00:00.000Z"],
+  ],
+  [
+    "activity-dunhuang-sunset",
+    ["2026-10-10T09:00:00.000Z", "2026-10-10T11:00:00.000Z"],
+  ],
+])
+
+export const fiveDayMarkerStoryJourney: TargetJourneyGraphSnapshot = {
+  ...dunhuangRouteStoryJourney,
+  events: dunhuangRouteStoryJourney.events.map((event) => {
+    const times = fiveDayEventTimes.get(event.id)
+    if (!times || event.type === "SECTION") return event
+    return {
+      ...event,
+      plannedStartAt: times[0],
+      plannedEndAt: times[1],
+    }
+  }),
+}
+
+const dayFiveMarker = fiveDayMarkerStoryJourney.events.find(
+  (event): event is LocationEvent =>
+    event.id === "activity-dunhuang-sunset" && event.type === "ACTIVITY"
+)
+if (!dayFiveMarker) throw new Error("Missing fifth-day Storybook marker")
+export const selectedDayFiveMarker = dayFiveMarker
 
 export const selectedUnscheduledMarker = unscheduledLocation
 
