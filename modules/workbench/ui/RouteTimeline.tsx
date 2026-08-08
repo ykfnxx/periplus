@@ -1,13 +1,18 @@
 "use client"
 
-import { useEffect, useRef, type ReactNode } from "react"
-import Image from "next/image"
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react"
+import type {
+  JourneyDayGroup,
+  JourneyDayProjection,
+} from "@/lib/journeys/day-groups"
 import {
   BedDouble,
   AlertCircle,
   BusFront,
   CalendarDays,
   Car,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Footprints,
   Landmark,
@@ -19,8 +24,6 @@ import {
   TrainFront,
   UtensilsCrossed,
 } from "lucide-react"
-import { matchPhotosToNode } from "@/lib/geo"
-import { plannedLocationOf } from "@/lib/journeys/locations"
 import {
   activeTransitPlanningRun,
   selectedTransitPlan,
@@ -49,13 +52,13 @@ import {
 } from "@/lib/journeys/projections"
 import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
 import { ProviderImage } from "./ProviderImage"
+import { routeDayTone } from "./route-day-theme"
 
-type LocationJourneyEvent = Extract<
+export type LocationJourneyEvent = Extract<
   TargetJourneyEvent,
   { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
 >
 type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
-type MatchedPhoto = ReturnType<typeof matchPhotosToNode>[number]
 
 const transportLabels: Record<TransportMode, string> = {
   FLIGHT: "飞机",
@@ -70,11 +73,15 @@ const transportLabels: Record<TransportMode, string> = {
 
 export default function RouteTimeline({
   items,
+  dayProjection,
+  onActiveDayChange,
 }: {
   items: JourneyScopeItem[]
+  dayProjection?: JourneyDayProjection
+  onActiveDayChange?: (dayKey: string) => void
 }) {
+  const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef(new Map<string, HTMLDivElement>())
-  const photoShares = useWorkspaceStore((state) => state.photoShares)
   const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
@@ -115,6 +122,51 @@ export default function RouteTimeline({
     })
   }, [selectedLocationEvent])
 
+  useEffect(() => {
+    const list = listRef.current
+    if (!list || !dayProjection?.groups.length || !onActiveDayChange) return
+    const viewport = list.closest<HTMLElement>("[data-overlay-scroll-viewport]")
+    const preview = list.closest<HTMLElement>("[data-route-preview]")
+    const header = preview?.querySelector<HTMLElement>(
+      "[data-route-preview-header]"
+    )
+    if (!viewport || !header) return
+
+    let animationFrame = 0
+    const updateActiveDay = () => {
+      animationFrame = 0
+      const eventElements = Array.from(
+        list.querySelectorAll<HTMLElement>("[data-route-day-key]")
+      )
+      const firstKey = eventElements[0]?.dataset.routeDayKey
+      if (!firstKey) return
+
+      const threshold =
+        viewport.getBoundingClientRect().top +
+        header.getBoundingClientRect().height +
+        10
+      let currentKey = firstKey
+      for (const element of eventElements) {
+        if (element.getBoundingClientRect().top > threshold) break
+        currentKey = element.dataset.routeDayKey ?? currentKey
+      }
+      onActiveDayChange(currentKey)
+    }
+    const scheduleUpdate = () => {
+      if (animationFrame) return
+      animationFrame = window.requestAnimationFrame(updateActiveDay)
+    }
+
+    scheduleUpdate()
+    viewport.addEventListener("scroll", scheduleUpdate, { passive: true })
+    window.addEventListener("resize", scheduleUpdate)
+    return () => {
+      viewport.removeEventListener("scroll", scheduleUpdate)
+      window.removeEventListener("resize", scheduleUpdate)
+      if (animationFrame) window.cancelAnimationFrame(animationFrame)
+    }
+  }, [dayProjection, onActiveDayChange])
+
   const selectLocation = (event: LocationJourneyEvent) => {
     setSelectedTransitEventId(null)
     setSelectedLocationEvent(event)
@@ -140,6 +192,9 @@ export default function RouteTimeline({
     ? getJourneyScopeTreeEvents(graph, viewLevel, activeSectionEventId)
     : events
   const eventById = new Map(graph?.events.map((event) => [event.id, event]))
+  const dayGroupByKey = new Map(
+    dayProjection?.groups.map((group) => [group.key, group])
+  )
   const transits = transitEvents(summaryEvents)
   const durationMinutes = totalDurationMinutes(summaryEvents)
   return (
@@ -165,12 +220,12 @@ export default function RouteTimeline({
         </p>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div ref={listRef} data-route-timeline-list className="mt-4 space-y-3">
         {items.map(({ event, resolved }) => {
+          let content: ReactNode = null
           if (event.type === "SECTION") {
-            return (
+            content = (
               <button
-                key={event.id}
                 type="button"
                 aria-label={`进入分组 ${event.title}`}
                 onClick={() => enterSection(event.id)}
@@ -194,17 +249,15 @@ export default function RouteTimeline({
                 </span>
               </button>
             )
-          }
-          if (event.type === "TRANSIT") {
+          } else if (event.type === "TRANSIT") {
             const fromTitle = event.detail.plannedFromEventId
               ? eventById.get(event.detail.plannedFromEventId)?.title
               : undefined
             const toTitle = event.detail.plannedToEventId
               ? eventById.get(event.detail.plannedToEventId)?.title
               : undefined
-            return (
-              <TransitTimelineRow
-                key={event.id}
+            content = (
+              <TransitEventCard
                 event={event}
                 selected={selectedTransitEventId === event.id}
                 onSelect={() => selectTransit(event)}
@@ -226,143 +279,291 @@ export default function RouteTimeline({
                 }
               />
             )
-          }
-          if (
+          } else if (
             event.type === "VISIT" ||
             event.type === "STAY" ||
             event.type === "MEAL" ||
             event.type === "ACTIVITY"
           ) {
-            const location = plannedLocationOf(event)
-            const photos = location
-              ? matchPhotosToNode(location.lat, location.lng, photoShares)
-              : []
             const selected = selectedLocationEvent?.id === event.id
-            return (
-              <div
-                key={event.id}
-                ref={(element) => {
-                  if (element) itemRefs.current.set(event.id, element)
-                  else itemRefs.current.delete(event.id)
-                }}
-              >
-                <button
-                  type="button"
-                  aria-label={`选择事件 ${event.title}`}
-                  aria-current={selected ? "true" : undefined}
-                  onClick={() => selectLocation(event)}
-                  onMouseEnter={() => setHoveredEventId(event.id)}
-                  onMouseLeave={() => setHoveredEventId(null)}
-                  className={`w-full overflow-hidden rounded-xl border text-left transition ${
-                    selected
-                      ? "border-russet bg-selected-soft shadow-periplus-soft"
-                      : "border-ink-10 bg-white hover:-translate-y-0.5 hover:border-russet hover:shadow-periplus-soft"
-                  }`}
-                >
-                  <LocationEventCard event={event} photos={photos} />
-                </button>
+            content = (
+              <LocationEventCard
+                event={event}
+                selected={selected}
+                onSelect={() => selectLocation(event)}
+                onHoverChange={(hovered) =>
+                  setHoveredEventId(hovered ? event.id : null)
+                }
+              />
+            )
+          } else if (event.type === "NOTE") {
+            content = (
+              <div className="rounded-xl border border-dashed border-ink-15 bg-cream/55 px-4 py-3 text-sm leading-6 text-walnut">
+                {event.detail.body}
               </div>
             )
           }
-          return event.type === "NOTE" ? (
-            <div
+
+          const dayKey = dayProjection?.groupKeyByEventId.get(event.id)
+          const dayGroup = dayKey ? dayGroupByKey.get(dayKey) : undefined
+          return (
+            <TimelineDayItem
               key={event.id}
-              className="rounded-xl border border-dashed border-ink-15 bg-cream/55 px-4 py-3 text-sm leading-6 text-walnut"
+              eventId={event.id}
+              group={dayGroup}
+              isFirstInGroup={dayGroup?.firstEventId === event.id}
+              containerRef={(element) => {
+                if (element) itemRefs.current.set(event.id, element)
+                else itemRefs.current.delete(event.id)
+              }}
             >
-              {event.detail.body}
-            </div>
-          ) : null
+              {content}
+            </TimelineDayItem>
+          )
         })}
       </div>
     </div>
   )
 }
 
-function LocationEventCard({
+function TimelineDayItem({
+  eventId,
+  group,
+  isFirstInGroup,
+  containerRef,
+  children,
+}: {
+  eventId: string
+  group?: JourneyDayGroup
+  isFirstInGroup: boolean
+  containerRef: (element: HTMLDivElement | null) => void
+  children: ReactNode
+}) {
+  const tone = routeDayTone(group?.colorIndex ?? null)
+  if (!group) {
+    return (
+      <div ref={containerRef} data-route-event-id={eventId}>
+        {children}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      data-route-event-id={eventId}
+      data-route-day-key={group.key}
+      data-day-tone={tone.id}
+    >
+      {isFirstInGroup ? (
+        <div
+          data-route-day-divider={group.key}
+          className="mb-2 flex items-center gap-2 pt-1"
+        >
+          <span
+            aria-hidden="true"
+            className={`h-2.5 w-2.5 shrink-0 rounded-full ${tone.marker}`}
+          />
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${tone.soft} ${tone.text}`}
+          >
+            {group.label}
+          </span>
+          <span
+            aria-hidden="true"
+            className={`h-px min-w-4 flex-1 ${tone.line}`}
+          />
+        </div>
+      ) : null}
+      <div className="relative pl-4">
+        <span
+          aria-hidden="true"
+          className={`absolute top-0 bottom-0 left-0.5 w-[5px] rounded-full ${tone.line}`}
+        />
+        {children}
+      </div>
+    </div>
+  )
+}
+
+export function LocationEventCard({
   event,
-  photos,
+  selected = false,
+  onSelect,
+  onHoverChange,
+  containerRef,
 }: {
   event: LocationJourneyEvent
-  photos: MatchedPhoto[]
+  selected?: boolean
+  onSelect: () => void
+  onHoverChange?: (hovered: boolean) => void
+  containerRef?: Ref<HTMLDivElement>
 }) {
+  const gallerySources =
+    event.type === "VISIT" || event.type === "STAY"
+      ? gallerySourcesForEvent(event)
+      : []
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
+      className={`overflow-hidden rounded-xl border transition ${
+        selected
+          ? "border-russet bg-selected-soft shadow-periplus-soft"
+          : "border-ink-10 bg-white hover:-translate-y-0.5 hover:border-russet hover:shadow-periplus-soft"
+      }`}
+    >
+      {(event.type === "VISIT" || event.type === "STAY") &&
+      gallerySources.length > 0 ? (
+        <EventImageGallery
+          title={event.title}
+          category={event.type === "STAY" ? "HOTEL" : "SIGHT"}
+          sources={gallerySources}
+          onSelect={onSelect}
+        />
+      ) : null}
+      <button
+        type="button"
+        aria-label={`选择事件 ${event.title}`}
+        aria-current={selected ? "true" : undefined}
+        onClick={onSelect}
+        className="w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-russet focus-visible:ring-inset"
+      >
+        <LocationEventCardContent event={event} />
+      </button>
+    </div>
+  )
+}
+
+function LocationEventCardContent({ event }: { event: LocationJourneyEvent }) {
   if (event.type === "MEAL") return <MealEventCard event={event} />
   if (event.type === "ACTIVITY") return <ActivityEventCard event={event} />
   if (event.type === "STAY") return <StayEventCard event={event} />
-  return <VisitEventCard event={event} photos={photos} />
+  return <VisitEventCard event={event} />
 }
 
 function VisitEventCard({
   event,
-  photos,
 }: {
   event: Extract<LocationJourneyEvent, { type: "VISIT" }>
-  photos: MatchedPhoto[]
 }) {
   return (
-    <>
-      {photos.length ? (
-        <span
-          data-photo-board
-          className={`grid h-28 gap-2 px-4 pt-4 ${
-            photos.length === 1
-              ? "grid-cols-1"
-              : photos.length === 2
-                ? "grid-cols-2"
-                : "grid-cols-3"
-          }`}
-        >
-          {photos.slice(0, 3).map((photo, index) => (
-            <span
-              key={photo.id}
-              data-photo-item
-              className="relative min-w-0 overflow-hidden rounded-lg bg-cream"
-            >
-              <Image
-                src={photo.url}
-                alt=""
-                fill
-                sizes="380px"
-                unoptimized
-                className="object-cover"
-              />
-              {index === 2 && photos.length > 3 ? (
-                <span className="absolute inset-0 flex items-center justify-center bg-ink/55 text-sm font-black text-soft-white">
-                  +{photos.length - 3}
-                </span>
-              ) : null}
-            </span>
-          ))}
-        </span>
-      ) : event.detail.providerCoverImage ? (
-        <ProviderImage
-          src={event.detail.providerCoverImage.url}
-          alt={event.title}
-          category="SIGHT"
-          width={640}
-          height={224}
-          className="h-28 w-full object-cover px-4 pt-4"
-        />
-      ) : null}
-      <span className="block px-4 py-4">
-        <EventCardHeading
-          icon={<Landmark className="h-3.5 w-3.5" aria-hidden="true" />}
-          label="景点"
-          time={formatEventTime(event.plannedStartAt)}
-        />
-        <span className="mt-2 block text-[17px] leading-6 font-black text-ink">
-          {event.title}
-        </span>
-        {event.description ? (
-          <span className="mt-1 line-clamp-2 block text-[12px] leading-5 text-walnut">
-            {event.description}
-          </span>
-        ) : null}
-        <EventMetaRow
-          duration={event.detail.plannedDurationMinutes}
-          status={event.executionStatus}
-        />
+    <span className="block px-4 py-4">
+      <EventCardHeading
+        icon={<Landmark className="h-3.5 w-3.5" aria-hidden="true" />}
+        label="景点"
+        time={formatEventTime(event.plannedStartAt)}
+      />
+      <span className="mt-2 block text-[17px] leading-6 font-black text-ink">
+        {event.title}
       </span>
-    </>
+      {event.description ? (
+        <span className="mt-1 line-clamp-2 block text-[12px] leading-5 text-walnut">
+          {event.description}
+        </span>
+      ) : null}
+      <EventMetaRow
+        duration={event.detail.plannedDurationMinutes}
+        status={event.executionStatus}
+      />
+    </span>
+  )
+}
+
+function gallerySourcesForEvent(
+  event: Extract<LocationJourneyEvent, { type: "VISIT" | "STAY" }>
+) {
+  const providerSource =
+    event.type === "VISIT"
+      ? event.detail.providerCoverImage?.url
+      : event.detail.hotelOffer?.coverImageUrl
+  return providerSource?.trim() ? [providerSource] : []
+}
+
+function EventImageGallery({
+  title,
+  category,
+  sources,
+  onSelect,
+}: {
+  title: string
+  category: "SIGHT" | "HOTEL"
+  sources: string[]
+  onSelect: () => void
+}) {
+  const [selectedSource, setSelectedSource] = useState<string | null>(null)
+  const selectedIndex = selectedSource ? sources.indexOf(selectedSource) : -1
+  const activeIndex = selectedIndex >= 0 ? selectedIndex : 0
+  const activeSource = sources[activeIndex]
+  const hasMultipleImages = sources.length > 1
+
+  const selectOffset = (offset: number) => {
+    if (!hasMultipleImages) return
+    setSelectedSource((currentSource) => {
+      const currentIndex = currentSource ? sources.indexOf(currentSource) : -1
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0
+      const nextIndex = (safeIndex + offset + sources.length) % sources.length
+      return sources[nextIndex] ?? null
+    })
+  }
+
+  return (
+    <div
+      data-photo-board
+      data-active-index={activeIndex}
+      role="group"
+      aria-label={`${title} 图片`}
+      aria-roledescription="轮播图"
+      className="relative mx-4 mt-4 h-32 overflow-hidden rounded-lg bg-route-summary"
+    >
+      <div data-photo-item className="h-full w-full">
+        <ProviderImage
+          src={activeSource}
+          alt={activeSource ? title : ""}
+          category={category}
+          width={640}
+          height={256}
+          className="h-full w-full object-cover"
+        />
+      </div>
+      <span className="sr-only" aria-live="polite">
+        {activeSource
+          ? `第 ${activeIndex + 1} 张，共 ${sources.length} 张`
+          : "暂无图片"}
+      </span>
+      <button
+        type="button"
+        aria-label={`通过图片选择事件 ${title}`}
+        onClick={onSelect}
+        className="absolute inset-0 z-10 outline-none focus-visible:ring-2 focus-visible:ring-russet focus-visible:ring-inset"
+      />
+      {hasMultipleImages ? (
+        <>
+          <button
+            type="button"
+            aria-label={`${title} 上一张图片`}
+            onClick={() => selectOffset(-1)}
+            className="group/previous pointer-events-auto absolute inset-y-0 left-0 z-20 flex w-14 items-center justify-start pl-2 outline-none"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink/65 text-soft-white opacity-0 shadow-md backdrop-blur-sm transition-opacity group-hover/previous:opacity-100 group-focus-visible/previous:opacity-100">
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label={`${title} 下一张图片`}
+            onClick={() => selectOffset(1)}
+            className="group/next pointer-events-auto absolute inset-y-0 right-0 z-20 flex w-14 items-center justify-end pr-2 outline-none"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink/65 text-soft-white opacity-0 shadow-md backdrop-blur-sm transition-opacity group-hover/next:opacity-100 group-focus-visible/next:opacity-100">
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </span>
+          </button>
+        </>
+      ) : null}
+    </div>
   )
 }
 
@@ -400,7 +601,7 @@ function MealEventCard({
   )
 }
 
-function ActivityEventCard({
+export function ActivityEventCard({
   event,
 }: {
   event: Extract<LocationJourneyEvent, { type: "ACTIVITY" }>
@@ -463,16 +664,8 @@ function StayEventCard({
         <StayTime label="离店" value={formatEventTime(event.plannedEndAt)} />
       </span>
       {hotelOffer ? (
-        <span className="mt-3 flex items-center gap-3 rounded-lg bg-route-summary p-2.5">
-          <ProviderImage
-            src={hotelOffer.coverImageUrl}
-            alt=""
-            category="HOTEL"
-            width={56}
-            height={44}
-            className="h-11 w-14 shrink-0 rounded-md object-cover"
-          />
-          <span className="min-w-0 flex-1">
+        <span className="mt-3 block rounded-lg bg-route-summary p-2.5">
+          <span className="block min-w-0">
             <span className="block text-[10px] font-black text-teak">
               RollingGo 报价快照
             </span>
@@ -564,7 +757,7 @@ function StayTime({ label, value }: { label: string; value?: string | null }) {
   )
 }
 
-function TransitTimelineRow({
+export function TransitEventCard({
   event,
   selected,
   onSelect,
@@ -681,6 +874,7 @@ function TransitTimelineRow({
           <div className="relative -mx-3">
             <div
               ref={planChoicesRef}
+              data-transit-plan-choices
               className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10"
             >
               {activeRun!.plans.map((candidate) => {

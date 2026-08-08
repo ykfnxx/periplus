@@ -30,9 +30,9 @@ export function ProviderImage({
   height: number
   className: string
 }) {
-  const [failed, setFailed] = useState(false)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
 
-  if (!src || failed) {
+  if (!src || failedSrc === src) {
     return (
       <div
         data-testid={`provider-image-fallback-${category}`}
@@ -51,7 +51,7 @@ export function ProviderImage({
       height={height}
       unoptimized
       className={className}
-      onError={() => setFailed(true)}
+      onError={() => setFailedSrc(src)}
     />
   )
 }

@@ -52,17 +52,20 @@ test.describe("Journey workspace", () => {
     await loadSilkRoadJourney(page)
     await page.getByRole("tab", { name: "西安", exact: true }).click()
 
+    await expect(page.getByRole("heading", { name: "西安" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "返回上一级" })).toBeVisible()
+    await expect(page.getByRole("tablist", { name: "行程日期" })).toBeVisible()
     await expect(
-      page.getByRole("tab", { name: "西安", exact: true })
+      page.getByRole("tab", { name: "跳转到第 1 天" })
     ).toHaveAttribute("aria-selected", "true")
     await expect(
-      page.getByRole("button", { name: "选择事件 西安城墙" })
+      page.getByRole("button", { name: "选择事件 西安城墙", exact: true })
     ).toContainText("景点")
     await expect(
-      page.getByRole("button", { name: "选择事件 大雁塔" })
+      page.getByRole("button", { name: "选择事件 大雁塔", exact: true })
     ).toContainText("景点")
     await expect(
-      page.getByRole("button", { name: "选择事件 回民街" })
+      page.getByRole("button", { name: "选择事件 回民街", exact: true })
     ).toContainText("景点")
     await expect(
       page.getByRole("button", { name: "交通事件 出租车" })
@@ -83,7 +86,7 @@ test.describe("Journey workspace", () => {
     ).toBeVisible()
     await page.getByRole("tab", { name: "西安", exact: true }).click()
     await expect(
-      page.getByRole("button", { name: "选择事件 西安城墙" })
+      page.getByRole("button", { name: "选择事件 西安城墙", exact: true })
     ).toBeVisible()
 
     await page.screenshot({

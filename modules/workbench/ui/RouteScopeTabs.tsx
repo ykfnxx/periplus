@@ -1,15 +1,25 @@
 "use client"
 
-import { useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import type { JourneyDayGroup } from "@/lib/journeys/day-groups"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import type { TargetJourneyEvent } from "@/modules/data-model/contracts"
+import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
+import { routeDayTone } from "./route-day-theme"
 
-type SectionEvent = Extract<TargetJourneyEvent, { type: "SECTION" }>
-
-export default function RouteScopeTabs() {
+export default function RouteScopeTabs({
+  dayGroups = [],
+  activeDayKey = null,
+  onSelectDay,
+}: {
+  dayGroups?: JourneyDayGroup[]
+  activeDayKey?: string | null
+  onSelectDay?: (dayKey: string) => void
+}) {
+  const wheelScrollRef = usePlanChoiceWheelScroll()
   const railRef = useRef<HTMLDivElement>(null)
+  const dayTabRefs = useRef(new Map<string, HTMLButtonElement>())
   const graph = useWorkspaceStore(selectWorkspaceGraph)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
@@ -22,39 +32,43 @@ export default function RouteScopeTabs() {
   const returnToOverview = useWorkspaceStore((state) => state.returnToOverview)
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
 
+  const setRailRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      railRef.current = element
+      wheelScrollRef(element)
+    },
+    [wheelScrollRef]
+  )
+
+  useEffect(() => {
+    if (!activeDayKey) return
+    const rail = railRef.current
+    const tab = dayTabRefs.current.get(activeDayKey)
+    if (!rail || !tab) return
+
+    const railRect = rail.getBoundingClientRect()
+    const tabRect = tab.getBoundingClientRect()
+    const leftOverflow = tabRect.left - railRect.left
+    const rightOverflow = tabRect.right - railRect.right
+    if (leftOverflow < 0) {
+      rail.scrollTo({
+        left: rail.scrollLeft + leftOverflow - 8,
+        behavior: "smooth",
+      })
+    } else if (rightOverflow > 0) {
+      rail.scrollTo({
+        left: rail.scrollLeft + rightOverflow + 8,
+        behavior: "smooth",
+      })
+    }
+  }, [activeDayKey])
+
   if (!graph) return null
   const rootSections = getJourneyScopeProjection(
     graph,
     "overview",
     null
   ).events.filter((event) => event.type === "SECTION")
-  const activeSection = activeSectionEventId
-    ? graph.events.find(
-        (event): event is SectionEvent =>
-          event.id === activeSectionEventId && event.type === "SECTION"
-      )
-    : null
-  const nestedPath: SectionEvent[] = []
-  let cursor = activeSection
-  while (cursor) {
-    nestedPath.unshift(cursor)
-    if (!cursor.parentSectionEventId) break
-    const parentId = cursor.parentSectionEventId
-    cursor = graph.events.find(
-      (event): event is SectionEvent =>
-        event.id === parentId && event.type === "SECTION"
-    )
-  }
-  const directChildSections = activeSection
-    ? getJourneyScopeProjection(
-        graph,
-        "section",
-        activeSection.id
-      ).events.filter(
-        (event): event is SectionEvent => event.type === "SECTION"
-      )
-    : []
-
   const selectOverview = () => {
     if (viewLevel === "overview") return
     returnToOverview()
@@ -69,7 +83,9 @@ export default function RouteScopeTabs() {
 
   return (
     <div
-      ref={railRef}
+      ref={setRailRef}
+      data-route-scope-tabs
+      data-active-day-key={activeDayKey ?? undefined}
       className="scrollbar-hidden flex gap-2 overflow-x-auto pt-4 pb-0.5"
     >
       {viewLevel === "section" ? (
@@ -80,7 +96,7 @@ export default function RouteScopeTabs() {
             returnToParentScope()
             requestMapFocus({
               type: "active-journey",
-              maxZoom: activeSection?.parentSectionEventId ? 15 : 12,
+              maxZoom: 12,
             })
           }}
           className="h-[30px] shrink-0 rounded-full bg-cream px-3 text-[11px] font-black text-teak transition hover:bg-ink hover:text-soft-white"
@@ -88,7 +104,11 @@ export default function RouteScopeTabs() {
           ← 上一级
         </button>
       ) : null}
-      <div role="tablist" aria-label="行程范围" className="contents">
+      <div
+        role="tablist"
+        aria-label={viewLevel === "section" ? "行程日期" : "行程范围"}
+        className="contents"
+      >
         {viewLevel === "overview" ? (
           <>
             <ScopeTab label="总览" selected onSelect={selectOverview} />
@@ -103,26 +123,53 @@ export default function RouteScopeTabs() {
           </>
         ) : (
           <>
-            {nestedPath.map((section) => (
-              <ScopeTab
-                key={section.id}
-                label={section.title}
-                selected={activeSectionEventId === section.id}
-                onSelect={() => selectSection(section.id)}
-              />
-            ))}
-            {directChildSections.map((section) => (
-              <ScopeTab
-                key={section.id}
-                label={section.title}
-                selected={false}
-                onSelect={() => selectSection(section.id)}
+            {dayGroups.map((group) => (
+              <DateTab
+                key={group.key}
+                buttonRef={(element) => {
+                  if (element) dayTabRefs.current.set(group.key, element)
+                  else dayTabRefs.current.delete(group.key)
+                }}
+                group={group}
+                selected={activeDayKey === group.key}
+                onSelect={() => onSelectDay?.(group.key)}
               />
             ))}
           </>
         )}
       </div>
     </div>
+  )
+}
+
+function DateTab({
+  buttonRef,
+  group,
+  selected,
+  onSelect,
+}: {
+  buttonRef: (element: HTMLButtonElement | null) => void
+  group: JourneyDayGroup
+  selected: boolean
+  onSelect: () => void
+}) {
+  const tone = routeDayTone(group.colorIndex)
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      aria-label={`跳转到${group.label}`}
+      data-route-day-tab={group.key}
+      data-day-tone={tone.id}
+      onClick={onSelect}
+      className={`h-[30px] shrink-0 rounded-full px-4 text-[11px] font-black transition ${
+        selected ? tone.tabSelected : tone.tabIdle
+      }`}
+    >
+      {group.label}
+    </button>
   )
 }
 

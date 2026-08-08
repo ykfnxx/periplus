@@ -27,6 +27,12 @@
   --color-marker-mint: #48c9a9;
   --color-marker-yellow: #ffd166;
   --color-marker-violet: #a78bfa;
+  --color-marker-coral: #ef6f6c;
+  --color-marker-sky: #3b82f6;
+  --color-marker-lime: #65a30d;
+  --color-marker-pink: #db5f9a;
+  --color-marker-indigo: #6366f1;
+  --color-marker-turquoise: #0d9488;
 
   /* ink 标准 alpha 档：描边/底色用 5/10/15，更深的蒙层用 20/30/40/70 */
   --color-ink-5: rgb(44 36 22 / 5%);
@@ -91,6 +97,17 @@ body {
 .periplus-map-marker--bright,
 .periplus-map-marker--mustard {
   color: var(--color-ink);
+}
+
+.periplus-map-marker--ordinal {
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 900;
+  height: 34px;
+  line-height: 1;
+  min-width: 34px;
+  padding: 0;
+  width: 34px;
 }
 
 .periplus-route-badge {

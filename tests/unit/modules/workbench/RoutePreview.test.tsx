@@ -7,7 +7,6 @@ import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
 import { TARGET_CONTRACT_FIXTURES } from "@/modules/data-model/contracts/fixtures"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
-import { plannedLocationOf } from "@/lib/journeys/locations"
 
 function workspaceDocument() {
   return workspaceDocumentForStory(
@@ -177,7 +176,7 @@ describe("target Workspace route preview", () => {
     expect(screen.getByText("离店")).toBeVisible()
   })
 
-  it("keeps visit photos inside independently rounded media boards", () => {
+  it("shows the visit gallery when the event has a provider cover", () => {
     const document = workspaceDocument()
     const visit = getJourneyScopeProjection(
       document.session.headGraph,
@@ -187,37 +186,67 @@ describe("target Workspace route preview", () => {
     if (!visit || visit.event.type !== "VISIT") {
       throw new Error("visit fixture is missing")
     }
-    const location = plannedLocationOf(visit.event)
-    if (!location) throw new Error("visit fixture location is missing")
+    const eventWithCover = {
+      ...visit.event,
+      detail: {
+        ...visit.event.detail,
+        providerCoverImage: {
+          provider: "amap" as const,
+          url: "https://images.example/visit.jpg",
+          fetchedAt: "2026-08-08T00:00:00.000Z",
+        },
+      },
+    }
     act(() => {
       useWorkspaceStore.getState().applyWorkspaceDocument(document)
-      useWorkspaceStore.getState().setPhotoShares(
-        Array.from({ length: 4 }, (_, index) => ({
-          id: `photo-${index}`,
-          ownerId: "owner",
-          ownerName: "Owner",
-          lat: location.lat,
-          lng: location.lng,
-          imageDataUrl:
-            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
-          caption: `photo ${index}`,
-          createdAt: index,
-          canDelete: true,
-        }))
-      )
     })
 
-    render(<RouteTimeline items={[visit]} />)
+    render(<RouteTimeline items={[{ ...visit, event: eventWithCover }]} />)
 
     const card = screen.getByRole("button", {
-      name: `选择事件 ${visit.event.title}`,
+      name: `选择事件 ${eventWithCover.title}`,
     })
-    const board = card.querySelector("[data-photo-board]")
+    const board = card.parentElement?.querySelector("[data-photo-board]")
     expect(board).not.toBeNull()
     const photoItems = board?.querySelectorAll("[data-photo-item]") ?? []
-    expect(photoItems).toHaveLength(3)
-    for (const item of photoItems) expect(item).toHaveClass("rounded-lg")
-    expect(within(card).getByText("+1")).toBeVisible()
+    expect(photoItems).toHaveLength(1)
+    expect(board).toHaveAttribute("data-active-index", "0")
+    expect(screen.getByAltText(eventWithCover.title)).toHaveAttribute(
+      "src",
+      "https://images.example/visit.jpg"
+    )
+    expect(
+      screen.queryByRole("button", { name: /上一张图片|下一张图片/ })
+    ).not.toBeInTheDocument()
+  })
+
+  it("does not reserve gallery space when visit and stay image sources are absent", () => {
+    const document = workspaceDocument()
+    const items = getJourneyScopeProjection(
+      document.session.headGraph,
+      "section",
+      "section-xian"
+    ).items.filter(
+      (item) => item.event.type === "VISIT" || item.event.type === "STAY"
+    )
+    act(() => {
+      useWorkspaceStore.getState().applyWorkspaceDocument(document)
+    })
+
+    render(<RouteTimeline items={items} />)
+
+    expect(
+      globalThis.document.querySelector("[data-photo-board]")
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId("provider-image-fallback-SIGHT")
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId("provider-image-fallback-HOTEL")
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: /上一张图片|下一张图片/ })
+    ).not.toBeInTheDocument()
   })
 
   it("renders transit choices as an icon-free clipped horizontal scroller", () => {

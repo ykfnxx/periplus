@@ -1,12 +1,17 @@
 "use client"
 
 import { useEffect } from "react"
+import { deriveJourneyDayGroups } from "@/lib/journeys/day-groups"
 import { plannedLocationOf } from "@/lib/journeys/locations"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import type { MapIntent } from "@/modules/workspace/contracts"
 import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { periplusColors, routeMarkerColors } from "@/lib/ui/map-theme"
+import {
+  getRouteDayColor,
+  periplusColors,
+  routeMarkerColors,
+} from "@/lib/ui/map-theme"
 
 interface RouteMarkersProps {
   onIntent?: (intent: MapIntent) => void
@@ -30,6 +35,13 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       graph,
       viewLevel,
       activeSectionEventId
+    )
+    const dayProjection =
+      view.level === "section" && view.section?.detail.kind === "CITY"
+        ? deriveJourneyDayGroups(view.events, view.section.detail.timeZone)
+        : null
+    const dayGroupByKey = new Map(
+      dayProjection?.groups.map((group) => [group.key, group])
     )
     const points = view.items
       .map(({ event, resolved }) => ({
@@ -56,7 +68,9 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       const content = document.createElement("div")
       content.className = [
         "periplus-map-marker",
-        "periplus-map-marker--bright",
+        view.level === "overview"
+          ? "periplus-map-marker--bright"
+          : "periplus-map-marker--ordinal",
         hoveredEventId === event.id ? "periplus-map-marker--hovered" : "",
         selectedLocationEvent?.id === event.id
           ? "periplus-map-marker--selected"
@@ -68,21 +82,38 @@ export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
       content.setAttribute("aria-label", `选择地点 ${event.title}`)
       const colorIndex =
         (resolved.locationOrdinal - 1) % routeMarkerColors.length
-      content.style.background =
-        view.level === "overview"
-          ? routeMarkerColors[colorIndex]
+      const dayKey = dayProjection?.groupKeyByEventId.get(event.id)
+      const dayGroup = dayKey ? dayGroupByKey.get(dayKey) : undefined
+      const dayColor =
+        dayGroup !== undefined
+          ? getRouteDayColor(dayGroup.colorIndex)
           : periplusColors.routeBlue
+      content.style.background =
+        view.level === "overview" ? routeMarkerColors[colorIndex] : dayColor
       content.style.color =
-        view.level === "overview" && colorIndex === 2
-          ? periplusColors.ink
-          : periplusColors.white
-      content.textContent = routeMarkerLabel(event)
+        view.level === "section"
+          ? periplusColors.white
+          : colorIndex === 2
+            ? periplusColors.ink
+            : periplusColors.white
+      if (dayKey) content.dataset.routeDayKey = dayKey
+      if (dayGroup) {
+        content.dataset.dayColorIndex = String(dayGroup.colorIndex)
+      }
+      content.dataset.routeEventPosition = String(resolved.resolvedPosition + 1)
+      content.textContent =
+        view.level === "section"
+          ? String(resolved.resolvedPosition + 1)
+          : routeMarkerLabel(event)
 
       const marker = new AMap.Marker({
         content,
         position: new AMap.LngLat(location.lng, location.lat),
         title: event.title,
-        offset: new AMap.Pixel(-18, -15),
+        offset:
+          view.level === "section"
+            ? new AMap.Pixel(-17, -17)
+            : new AMap.Pixel(-18, -15),
       })
       marker.on("click", (mapEvent) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
