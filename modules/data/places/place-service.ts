@@ -407,7 +407,7 @@ export class PlaceIntelligenceService {
     }
     warnings.push({
       provider: image.provider,
-      code: "provider_error",
+      code: "IMAGE_UNAVAILABLE",
       message: "地点图片不可用",
       image,
     })

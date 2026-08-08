@@ -138,6 +138,7 @@ interface RunningAgent {
   drafts: Map<string, PreparedAgentDraft>
   draftRequests: Map<string, string>
   draftHotelSelections: Map<string, HotelStaySelection>
+  latestDraftId: string | null
   draftValidationAttempts: number
 }
 
@@ -400,6 +401,81 @@ function selectedCoverImage(result: unknown): PlaceImage | undefined {
   return result.command.payload.patch.detail.providerCoverImage as PlaceImage
 }
 
+type DraftPosition = {
+  placement: "UNSCHEDULED" | "START" | "END" | "BEFORE" | "AFTER" | "BRANCH"
+  parentSectionEventId?: string | null
+  anchorEventId?: string
+  forkEventId?: string
+  joinEventId?: string
+}
+
+function positionTouchesIssue(
+  position: DraftPosition,
+  eventIds: ReadonlySet<string>
+) {
+  if (position.placement === "START" || position.placement === "END") {
+    return Boolean(
+      position.parentSectionEventId &&
+      eventIds.has(position.parentSectionEventId)
+    )
+  }
+  if (position.placement === "BEFORE" || position.placement === "AFTER") {
+    return Boolean(
+      position.anchorEventId && eventIds.has(position.anchorEventId)
+    )
+  }
+  if (position.placement === "BRANCH") {
+    return (
+      Boolean(position.forkEventId && eventIds.has(position.forkEventId)) ||
+      Boolean(position.joinEventId && eventIds.has(position.joinEventId))
+    )
+  }
+  return false
+}
+
+function repairTargetsIssue(
+  command: ReturnType<typeof targetCommandBodySchema.parse>,
+  issue: PlanValidationReport["issues"][number],
+  draft: PreparedAgentDraft
+) {
+  const eventIds = new Set(issue.eventIds)
+  const touchesEvent = (eventId: string) => eventIds.has(eventId)
+  const touchesLink = (linkId: string) => {
+    const link = draft.after.links.find((candidate) => candidate.id === linkId)
+    return Boolean(
+      link && (touchesEvent(link.fromEventId) || touchesEvent(link.toEventId))
+    )
+  }
+
+  switch (command.name) {
+    case "journey.add_event":
+      return positionTouchesIssue(command.payload.position, eventIds)
+    case "journey.update_event":
+    case "journey.move_event":
+    case "journey.place_event":
+    case "journey.retire_event":
+    case "journey.plan_transit":
+    case "journey.select_transit_plan":
+      return touchesEvent(command.payload.eventId)
+    case "journey.replace_event":
+      return touchesEvent(command.payload.predecessorEventId)
+    case "journey.add_link":
+      return (
+        touchesEvent(command.payload.link.fromEventId) ||
+        touchesEvent(command.payload.link.toEventId)
+      )
+    case "journey.retire_link":
+      return touchesLink(command.payload.linkId)
+    case "journey.select_branch":
+      return (
+        touchesEvent(command.payload.forkEventId) ||
+        touchesLink(command.payload.selectedLinkId)
+      )
+    default:
+      return false
+  }
+}
+
 function conversationMessages(
   document: NonNullable<
     Awaited<ReturnType<WorkspaceCommandService["getDocument"]>>
@@ -575,6 +651,7 @@ export class AgentGateway {
       drafts: new Map(),
       draftRequests: new Map(),
       draftHotelSelections: new Map(),
+      latestDraftId: null,
       draftValidationAttempts: 0,
     }
     this.runs.set(workspaceId, running)
@@ -832,27 +909,31 @@ export class AgentGateway {
         }
         let baseDraft: PreparedAgentDraft | undefined
         if (!existingDraft && running.draftValidationAttempts > 0) {
-          if (!request.previousDraftId) {
+          if (request.previousDraftId !== running.latestDraftId) {
             throw new WorkspaceInputError(
-              "Repair draft must reference the previous invalid draft"
+              "Repair draft must reference the latest invalid draft"
             )
           }
-          baseDraft = running.drafts.get(request.previousDraftId)
-          if (!baseDraft || baseDraft.validation.valid) {
+          const previousDraft = running.drafts.get(request.previousDraftId)
+          if (!previousDraft || previousDraft.validation.valid) {
             throw new WorkspaceInputError(
               "Repair draft must reference a previous invalid draft"
             )
           }
-          const allowed = new Set(
-            baseDraft.validation.issues
-              .filter((issue) => issue.severity === "ERROR")
-              .flatMap((issue) => issue.allowedOperations)
+          baseDraft = previousDraft
+          const issues = previousDraft.validation.issues.filter(
+            (issue) => issue.severity === "ERROR"
           )
           for (const command of request.commands) {
             const parsed = targetCommandBodySchema.parse(command)
-            if (!allowed.has(parsed.name)) {
+            const allowed = issues.some(
+              (issue) =>
+                issue.allowedOperations.includes(parsed.name) &&
+                repairTargetsIssue(parsed, issue, previousDraft)
+            )
+            if (!allowed) {
               throw new WorkspaceInputError(
-                `Repair command ${parsed.name} is not allowed by the previous draft issues`
+                `Repair command ${parsed.name} does not target a previous draft issue`
               )
             }
           }
@@ -903,6 +984,7 @@ export class AgentGateway {
           running.draftValidationAttempts += 1
           running.drafts.set(request.idempotencyKey, draft)
           running.draftRequests.set(request.idempotencyKey, requestFingerprint)
+          running.latestDraftId = request.idempotencyKey
         }
         const repairsUsed = Math.max(0, running.draftValidationAttempts - 1)
         await this.trace(running, {
@@ -990,6 +1072,11 @@ export class AgentGateway {
         const draft =
           existingDraft ??
           (await (async () => {
+            if (request.previousDraftId !== running.latestDraftId) {
+              throw new WorkspaceInputError(
+                "Transit preparation must reference the latest invalid draft"
+              )
+            }
             const previous = running.drafts.get(request.previousDraftId)
             if (!previous || previous.validation.valid) {
               throw new WorkspaceInputError(
@@ -998,8 +1085,10 @@ export class AgentGateway {
             }
             const allowed = previous.validation.issues
               .filter((issue) => issue.severity === "ERROR")
-              .some((issue) =>
-                issue.allowedOperations.includes("journey.plan_transit")
+              .some(
+                (issue) =>
+                  issue.allowedOperations.includes("journey.plan_transit") &&
+                  issue.eventIds.includes(request.eventId)
               )
             if (!allowed) {
               throw new WorkspaceInputError(
@@ -1030,6 +1119,7 @@ export class AgentGateway {
           running.draftValidationAttempts += 1
           running.drafts.set(request.idempotencyKey, draft)
           running.draftRequests.set(request.idempotencyKey, requestFingerprint)
+          running.latestDraftId = request.idempotencyKey
         }
         const repairsUsed = Math.max(0, running.draftValidationAttempts - 1)
         output = {

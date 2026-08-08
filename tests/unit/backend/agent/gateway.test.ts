@@ -656,22 +656,14 @@ describe.sequential("P3 persistent AgentGateway", () => {
       confidence: 0.99,
       candidates: [],
     }
-    const gateway = new AgentGateway(commands, runtime, {
-      backendUrl: "http://127.0.0.1:3002",
-      projectRoot: "/workspace/periplus",
-      heartbeatIntervalMs: null,
-      placeService: {
-        resolvePlace: vi.fn().mockResolvedValue({
-          status: "resolved",
-          place: {},
-          placeRef,
-          warnings: [],
-        }),
-      } as never,
-    })
-    await gateway.start(context, workspace.id, "校对西湖", "auto", vi.fn())
-    const token = capabilityToken(runtime)
-    const command = {
+    const coverImage = {
+      provider: "amap" as const,
+      url: "https://images.example/west-lake.jpg",
+      fetchedAt: "2026-08-09T00:00:00.000Z",
+      width: 1200,
+      height: 800,
+    }
+    const command = (coverWidth?: number) => ({
       name: "journey.update_event",
       payload: {
         eventId: `${workspace.headGraph.id}-visit`,
@@ -684,15 +676,34 @@ describe.sequential("P3 persistent AgentGateway", () => {
             coordinateSystem: "GCJ02",
             coordinateProvider: "amap",
             providerPlaceId: "B-west-lake",
+            ...(coverWidth
+              ? { providerCoverImage: { ...coverImage, width: coverWidth } }
+              : {}),
           },
         },
       },
-    }
+    })
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+      placeService: {
+        resolvePlaceForJourneyEvent: vi.fn().mockResolvedValue({
+          status: "ready",
+          place: {},
+          placeRef,
+          command: command(coverImage.width),
+          warnings: [],
+        }),
+      } as never,
+    })
+    await gateway.start(context, workspace.id, "校对西湖", "auto", vi.fn())
+    const token = capabilityToken(runtime)
     const unverified = await gateway.executeTool(token, {
       type: "workspace.validate_draft",
       expectedRevision: 0,
       idempotencyKey: "place-unverified",
-      commands: [command],
+      commands: [command()],
     })
     expect(unverified.validation).toMatchObject({ valid: false })
     expect(unverified.validation.issues).toContainEqual(
@@ -700,16 +711,31 @@ describe.sequential("P3 persistent AgentGateway", () => {
     )
 
     await gateway.executeTool(token, {
-      type: "place.resolve",
+      type: "place.resolve_for_journey_event",
       requestId: "resolve-west-lake",
-      input: { text: "西湖", city: "杭州" },
+      input: {
+        text: "西湖",
+        city: "杭州",
+        eventId: `${workspace.headGraph.id}-visit`,
+      },
     })
+    const forgedDimensions = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "place-forged-dimensions",
+      previousDraftId: unverified.draftId,
+      commands: [command(coverImage.width + 1)],
+    })
+    expect(forgedDimensions.validation).toMatchObject({ valid: false })
+    expect(forgedDimensions.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "PLACE_UNVERIFIED", severity: "ERROR" })
+    )
     const verified = await gateway.executeTool(token, {
       type: "workspace.validate_draft",
       expectedRevision: 0,
       idempotencyKey: "place-verified",
-      previousDraftId: unverified.draftId,
-      commands: [command],
+      previousDraftId: forgedDimensions.draftId,
+      commands: [command(coverImage.width)],
     })
     expect(verified.validation.valid).toBe(true)
     await gateway.executeTool(token, {
@@ -769,28 +795,38 @@ describe.sequential("P3 persistent AgentGateway", () => {
         .headWorkspaceRevision
     ).toBe(0)
 
-    let previousDraftId = initial.draftId
-    for (const idempotencyKey of ["draft-repair-1", "draft-repair-2"]) {
-      const validation = await gateway.executeTool(token, {
+    const firstRepair = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-repair-1",
+      previousDraftId: initial.draftId,
+      commands,
+    })
+    expect(firstRepair.validation).toMatchObject({ valid: false })
+    await expect(
+      gateway.executeTool(token, {
         type: "workspace.validate_draft",
         expectedRevision: 0,
-        idempotencyKey,
-        previousDraftId,
+        idempotencyKey: "draft-stale-ancestor",
+        previousDraftId: initial.draftId,
         commands,
       })
-      expect(validation.validation).toMatchObject({ valid: false })
-      expect(validation.validation.issues).toContainEqual(
-        expect.objectContaining({ code: "CITY_TIMEZONE_INVALID" })
-      )
-      previousDraftId = validation.draftId
-    }
+    ).rejects.toThrow("latest invalid draft")
+    const secondRepair = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-repair-2",
+      previousDraftId: firstRepair.draftId,
+      commands,
+    })
+    expect(secondRepair.validation).toMatchObject({ valid: false })
 
     await expect(
       gateway.executeTool(token, {
         type: "workspace.validate_draft",
         expectedRevision: 0,
         idempotencyKey: "draft-over-limit",
-        previousDraftId,
+        previousDraftId: secondRepair.draftId,
         commands,
       })
     ).rejects.toThrow("exhausted its two repair attempts")
@@ -839,19 +875,18 @@ describe.sequential("P3 persistent AgentGateway", () => {
         previousDraftId: initial.draftId,
         commands: [
           {
-            name: "journey.add_event",
+            name: "journey.update_event",
             payload: {
-              event: {
-                type: "NOTE",
-                title: "无关修复",
-                detail: { body: "无关修复" },
+              eventId: `${workspace.headGraph.id}-visit`,
+              patch: {
+                type: "VISIT",
+                description: "无关修复",
               },
-              position: { placement: "UNSCHEDULED" },
             },
           },
         ],
       })
-    ).rejects.toThrow("is not allowed by the previous draft issues")
+    ).rejects.toThrow("does not target a previous draft issue")
     runtime.exit(0)
   })
 

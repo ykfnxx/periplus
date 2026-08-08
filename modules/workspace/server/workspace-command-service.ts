@@ -2564,7 +2564,9 @@ function validateDraftPlaceBindings(
         !cover ||
         cover.provider !== event.detail.providerCoverImage.provider ||
         cover.url !== event.detail.providerCoverImage.url ||
-        cover.fetchedAt !== event.detail.providerCoverImage.fetchedAt
+        cover.fetchedAt !== event.detail.providerCoverImage.fetchedAt ||
+        cover.width !== event.detail.providerCoverImage.width ||
+        cover.height !== event.detail.providerCoverImage.height
       ) {
         issues.push({
           code: "PLACE_UNVERIFIED",

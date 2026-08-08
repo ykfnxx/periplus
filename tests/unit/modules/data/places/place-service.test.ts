@@ -194,7 +194,7 @@ describe("PlaceIntelligenceService", () => {
       status: "ready",
       warnings: [
         expect.objectContaining({
-          code: "provider_error",
+          code: "IMAGE_UNAVAILABLE",
           image: expect.objectContaining({
             provider: "amap",
             url: "https://images.example/palace.jpg",

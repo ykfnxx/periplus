@@ -144,7 +144,12 @@ export interface PlaceVerification {
 
 export interface ProviderWarning {
   provider: PlaceProvider
-  code: "timeout" | "quota_exceeded" | "provider_error" | "low_confidence"
+  code:
+    | "timeout"
+    | "quota_exceeded"
+    | "provider_error"
+    | "low_confidence"
+    | "IMAGE_UNAVAILABLE"
   message: string
   image?: PlaceImage
 }
