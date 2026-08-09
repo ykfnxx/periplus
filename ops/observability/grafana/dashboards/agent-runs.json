@@ -1,0 +1,205 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {},
+      "targets": [
+        {
+          "query": "{ resource.service.name = `periplus-backend` && name = `agent.run` && .periplus.session.id_hash =~ `$session_id_hash` && .periplus.agent.run_id_hash =~ `$run_id_hash` && .periplus.agent.runtime =~ `$runtime` && .periplus.agent.mode =~ `$mode` && .periplus.agent.status =~ `$status` && .periplus.prompt.version =~ `$prompt_version` }",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent runs and traces",
+      "type": "traces"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(periplus_agent_run_duration_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\",status=~\"$status\"}[5m])) by (le, runtime, mode, status))",
+          "legendFormat": "p50 {{runtime}} / {{mode}} / {{status}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(periplus_agent_run_duration_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\",status=~\"$status\"}[5m])) by (le, runtime, mode, status))",
+          "legendFormat": "p95 {{runtime}} / {{mode}} / {{status}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(periplus_agent_run_duration_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\",status=~\"$status\"}[5m])) by (le, runtime, mode, status))",
+          "legendFormat": "p99 {{runtime}} / {{mode}} / {{status}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Run duration p50 / p95 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(periplus_agent_run_ttft_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\"}[5m])) by (le, runtime, mode))",
+          "legendFormat": "p50 TTFT {{runtime}} / {{mode}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(periplus_agent_run_ttft_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\"}[5m])) by (le, runtime, mode))",
+          "legendFormat": "p95 TTFT {{runtime}} / {{mode}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(periplus_agent_run_ttft_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\"}[5m])) by (le, runtime, mode))",
+          "legendFormat": "p99 TTFT {{runtime}} / {{mode}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Time to first token p50 / p95 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(periplus_agent_tool_duration_milliseconds_bucket{status=~\"$status\"}[5m])) by (le, tool, provider, status))",
+          "legendFormat": "p50 {{tool}} / {{provider}} / {{status}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(periplus_agent_tool_duration_milliseconds_bucket{status=~\"$status\"}[5m])) by (le, tool, provider, status))",
+          "legendFormat": "p95 {{tool}} / {{provider}} / {{status}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(periplus_agent_tool_duration_milliseconds_bucket{status=~\"$status\"}[5m])) by (le, tool, provider, status))",
+          "legendFormat": "p99 {{tool}} / {{provider}} / {{status}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Tool duration p50 / p95 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(periplus_agent_runtime_errors_total{runtime=~\"$runtime\"}[5m])) by (runtime, error_type)",
+          "legendFormat": "{{runtime}} / {{error_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Runtime errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
+      "id": 6,
+      "options": {
+        "content": "TraceQL filters are applied to the trace panel: session hash, run hash, runtime, status, and prompt version. A selected `agent.run` trace can be opened in Tempo to inspect the message → runtime → MCP → command waterfall.",
+        "mode": "markdown"
+      },
+      "title": "Session, run, runtime, status, and prompt-version lookup",
+      "type": "text"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["periplus", "agent", "trace"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "Session hash",
+        "name": "session_id_hash",
+        "type": "textbox"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "Run hash",
+        "name": "run_id_hash",
+        "type": "textbox"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "label": "Runtime",
+        "multi": true,
+        "name": "runtime",
+        "query": "label_values(periplus_agent_runs_total, runtime)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "label": "Mode",
+        "multi": true,
+        "name": "mode",
+        "query": "label_values(periplus_agent_runs_total, mode)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "label": "Status",
+        "multi": true,
+        "name": "status",
+        "query": "label_values(periplus_agent_runs_total, status)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "current": { "text": ".*", "value": ".*" },
+        "label": "Prompt version",
+        "name": "prompt_version",
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Periplus Agent Runs",
+  "uid": "periplus-agent-runs",
+  "version": 2
+}

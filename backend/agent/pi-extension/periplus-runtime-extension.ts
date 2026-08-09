@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
+import type { TraceCarrier } from "../../observability"
 
 interface PiRunConfig {
   backendUrl?: string
   capabilityToken?: string
+  traceCarrier?: TraceCarrier
   model: string
   toolNames: string[]
   webSearchEnabled: boolean
@@ -37,7 +39,15 @@ async function callAgentTool(
   }
   const response = await fetch(`${config.backendUrl}/internal/agent-tool`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(config.traceCarrier?.traceparent
+        ? { traceparent: config.traceCarrier.traceparent }
+        : {}),
+      ...(config.traceCarrier?.tracestate
+        ? { tracestate: config.traceCarrier.tracestate }
+        : {}),
+    },
     body: JSON.stringify({ capabilityToken: config.capabilityToken, request }),
     signal,
   })

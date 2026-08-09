@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type { AgentConversationMessage } from "@/backend/types"
 import type { AgentMode } from "../types"
 
@@ -81,4 +82,16 @@ export function buildPrompt(
     "用户要求酒店推荐时，只有城市、入住日期、晚数和入住人数明确才调用 periplus.hotel.search；信息不明确先追问。完整候选只显示在持久化卡片中，工具仅返回首位 firstCandidate 和对应的 stayDetail；将该 stayDetail 作为新增或更新 STAY 的内容放进同一份验证草稿。新增 STAY 放入当前明确的 CITY Scope；已有明确 STAY 时更新其标题、地点和 hotelOffer 快照。",
     "commit_draft 后调用 periplus.workspace.validate_plan，并传入最新 headWorkspaceRevision；只有 valid=true 且之后未再修改 Workspace 才能向用户声明完成。",
   ].join("\n")
+}
+
+export function promptVersion(mode: AgentMode) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: 1,
+        mode,
+        template: buildPrompt([], mode, "{}"),
+      })
+    )
+    .digest("hex")
 }
