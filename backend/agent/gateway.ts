@@ -1438,6 +1438,9 @@ export class AgentGateway {
           running.workspaceId
         )
         if (!document) throw new WorkspaceInputError("Workspace was not found")
+        if (document.session.headWorkspaceRevision !== result.newRevision) {
+          throw new WorkspaceRevisionConflictError()
+        }
         running.lastPlanValidation = validateJourneyPlan({
           graph: document.session.headGraph,
           workspaceRevision: document.session.headWorkspaceRevision,

@@ -1231,6 +1231,59 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
   })
 
+  it("rejects a commit when the canonical baseline advances after commit", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "连续更新路线", "auto", emit)
+    const token = capabilityToken(runtime)
+    const draft = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "post-commit-concurrent-draft",
+      commands: [
+        visitDescriptionCommand(workspace.headGraph.id, "Agent 原子提交"),
+      ],
+    })
+    const commitAgentDraft = commands.commitAgentDraft.bind(commands)
+    vi.spyOn(commands, "commitAgentDraft").mockImplementation(
+      async (commitContext, committedDraft, options) => {
+        const result = await commitAgentDraft(
+          commitContext,
+          committedDraft,
+          options
+        )
+        await commands.execute(context, {
+          aggregateId: workspace.id,
+          expectedRevision: result.newRevision,
+          idempotencyKey: "post-commit-concurrent-user-write",
+          actor: { kind: "USER", userId: context.userId },
+          command: visitDescriptionCommand(
+            workspace.headGraph.id,
+            "用户在基线读取前更新"
+          ),
+        })
+        return result
+      }
+    )
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.commit_draft",
+        draftId: draft.draftId,
+      })
+    ).rejects.toThrow("updated by another request")
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(2)
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+      ).toMatchObject({ status: "FAILED" })
+    })
+  })
+
   it("uses no mutation tools in suggest mode and persists the suggestion", async () => {
     const { workspace, commands, runtime, gateway, emit } = await setup()
     await gateway.start(context, workspace.id, "给出修改建议", "suggest", emit)
