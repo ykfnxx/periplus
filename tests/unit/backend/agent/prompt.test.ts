@@ -39,6 +39,7 @@ describe("buildPrompt", () => {
     )
     expect(prompt).toContain("Root Scope：CITY 与跨城 TRANSIT")
     expect(prompt).toContain("periplus.hotel.search")
+    expect(prompt).toContain("web_search")
     expect(prompt).toContain("periplus.draft.add_place_card")
     expect(prompt).toContain("periplus.draft.validate")
     expect(prompt).toContain("periplus.draft.prepare_transit")

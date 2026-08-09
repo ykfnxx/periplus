@@ -21,6 +21,7 @@ const runtime =
         projectRoot: process.cwd(),
         apiKey: periplusServerConfig.deepseek.apiKey,
         model: periplusServerConfig.deepseek.model,
+        webSearchEnabled: periplusServerConfig.pi.webSearchEnabled,
         timeoutMs: periplusServerConfig.pi.timeoutMs,
       })
     : new KimiCodeRuntime({

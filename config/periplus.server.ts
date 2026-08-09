@@ -123,6 +123,9 @@ export const periplusServerConfig = {
         join(process.cwd(), "node_modules/.bin/pi")
       )
     },
+    get webSearchEnabled() {
+      return envString("PERIPLUS_PI_WEB_SEARCH_ENABLED") === "true"
+    },
     get timeoutMs() {
       return envNumber("PERIPLUS_PI_TIMEOUT_MS", 120000)
     },

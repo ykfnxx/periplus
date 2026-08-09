@@ -3,9 +3,72 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import periplusRuntimeExtension, {
+  responseSources,
+  responseText,
+} from "@/backend/agent/pi-extension/periplus-runtime-extension"
+
+async function registeredTools(webSearchEnabled: boolean) {
+  const workDir = await mkdtemp(join(tmpdir(), "periplus-pi-tools-"))
+  const runConfigPath = join(workDir, "run.json")
+  const previous = process.env.PERIPLUS_PI_RUN_CONFIG
+  await writeFile(
+    runConfigPath,
+    JSON.stringify({
+      model: "deepseek-v4-flash",
+      toolNames: ["periplus_workspace_get_context"],
+      webSearchEnabled,
+      maxWebSearches: 3,
+    })
+  )
+  process.env.PERIPLUS_PI_RUN_CONFIG = runConfigPath
+  const names: string[] = []
+  try {
+    periplusRuntimeExtension({
+      registerTool(tool: { name: string }) {
+        names.push(tool.name)
+      },
+    } as unknown as Parameters<typeof periplusRuntimeExtension>[0])
+    return names
+  } finally {
+    if (previous === undefined) delete process.env.PERIPLUS_PI_RUN_CONFIG
+    else process.env.PERIPLUS_PI_RUN_CONFIG = previous
+    await rm(workDir, { recursive: true, force: true })
+  }
+}
 
 describe("Periplus Pi extension", () => {
-  it("loads only the selected Periplus tools in Pi RPC mode", async () => {
+  it("extracts a non-empty DeepSeek answer and its sources", () => {
+    const response = {
+      output_text: "",
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: "current answer",
+              annotations: [
+                { title: "Primary source", url: "https://example.com/source" },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(responseText(response)).toBe("current answer")
+    expect(responseSources(response)).toEqual([
+      { title: "Primary source", url: "https://example.com/source" },
+    ])
+  })
+
+  it("registers web_search only when the run config enables it", async () => {
+    await expect(registeredTools(false)).resolves.not.toContain("web_search")
+    await expect(registeredTools(true)).resolves.toContain("web_search")
+  })
+
+  it("loads the selected Periplus tools in Pi RPC mode", async () => {
     const workDir = await mkdtemp(join(tmpdir(), "periplus-pi-extension-"))
     const agentDir = join(workDir, "agent")
     const runConfigPath = join(workDir, "run.json")
@@ -38,6 +101,8 @@ describe("Periplus Pi extension", () => {
         capabilityToken: "capability-token",
         model: "deepseek-v4-flash",
         toolNames: ["periplus_workspace_get_context"],
+        webSearchEnabled: false,
+        maxWebSearches: 3,
       })
     )
 

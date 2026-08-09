@@ -32,7 +32,7 @@ function autoPrompt(messages: AgentConversationMessage[]) {
     "只执行最后一条用户请求；更早的对话仅提供上下文。",
     "",
     "[RUNTIME_BOUNDARY]",
-    "- 只允许调用当前列出的 Periplus MCP 工具。",
+    "- 只允许调用当前列出的 Periplus MCP 工具；若运行时显式列出 web_search，只能用于时效性资料查询，不得替代地点/酒店 evidence 或 Workspace 工具。",
     "- 不允许读取项目文件、搜索源码、运行 Shell、连接数据库或猜测内部 command DSL。",
     "- MCP schema 是唯一字段来源；接口没有的字段不得自行补造。",
     "",

@@ -99,6 +99,7 @@ describe("PiRuntime", () => {
       projectRoot: process.cwd(),
       apiKey: "deepseek-key",
       model: "deepseek-v4-flash",
+      webSearchEnabled: true,
       timeoutMs: 1000,
     })
     const { observer, finished } = startObserver()
@@ -122,7 +123,12 @@ describe("PiRuntime", () => {
     }
     const runConfig = JSON.parse(
       readFileSync(options.env.PERIPLUS_PI_RUN_CONFIG, "utf8")
-    ) as { toolNames: string[] }
+    ) as {
+      model: string
+      toolNames: string[]
+      webSearchEnabled: boolean
+      maxWebSearches: number
+    }
 
     expect(args).toEqual(
       expect.arrayContaining([
@@ -144,7 +150,11 @@ describe("PiRuntime", () => {
     expect(runConfig.toolNames).not.toContain(
       "periplus_workspace_validate_draft"
     )
-    expect(runConfig).not.toHaveProperty("webSearchEnabled")
+    expect(runConfig).toMatchObject({
+      model: "deepseek-v4-flash",
+      webSearchEnabled: true,
+      maxWebSearches: 3,
+    })
 
     await finished
 
@@ -168,6 +178,7 @@ describe("PiRuntime", () => {
       projectRoot: process.cwd(),
       apiKey: "deepseek-key",
       model: "deepseek-v4-flash",
+      webSearchEnabled: false,
       timeoutMs: 1000,
     })
     const first = startObserver()
@@ -237,6 +248,7 @@ describe("PiRuntime", () => {
       projectRoot: process.cwd(),
       apiKey: "deepseek-key",
       model: "deepseek-v4-flash",
+      webSearchEnabled: false,
       timeoutMs: 1000,
     })
     const { observer, finished } = startObserver()
@@ -266,6 +278,7 @@ describe("PiRuntime", () => {
       projectRoot: process.cwd(),
       apiKey: "deepseek-key",
       model: "deepseek-v4-flash",
+      webSearchEnabled: false,
       timeoutMs: 120_000,
     })
     const { observer, finished } = startObserver()
@@ -303,6 +316,7 @@ describe("PiRuntime", () => {
         projectRoot: process.cwd(),
         apiKey: "deepseek-key",
         model: "deepseek-v4-flash",
+        webSearchEnabled: false,
         timeoutMs: 10,
       })
       const { observer, finished } = startObserver()
@@ -337,6 +351,7 @@ describe("PiRuntime", () => {
       projectRoot: process.cwd(),
       apiKey: "deepseek-key",
       model: "deepseek-v4-flash",
+      webSearchEnabled: false,
       timeoutMs: 1000,
     })
     const { observer, finished } = startObserver()

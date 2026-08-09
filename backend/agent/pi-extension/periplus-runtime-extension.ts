@@ -7,7 +7,10 @@ interface PiRunConfig {
   backendUrl?: string
   capabilityToken?: string
   traceCarrier?: TraceCarrier
+  model: string
   toolNames: string[]
+  webSearchEnabled: boolean
+  maxWebSearches: number
 }
 
 interface AgentToolResponse {
@@ -55,6 +58,63 @@ function textResult(value: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
     details: {},
   }
+}
+
+export function responseSources(response: Record<string, unknown>) {
+  const sources: Array<{ title?: string; url: string }> = []
+  const output = Array.isArray(response.output) ? response.output : []
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue
+    const content = Array.isArray((item as { content?: unknown }).content)
+      ? ((item as { content: unknown[] }).content ?? [])
+      : []
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue
+      const annotations = Array.isArray(
+        (part as { annotations?: unknown }).annotations
+      )
+        ? ((part as { annotations: unknown[] }).annotations ?? [])
+        : []
+      for (const annotation of annotations) {
+        if (!annotation || typeof annotation !== "object") continue
+        const candidate = annotation as { title?: unknown; url?: unknown }
+        if (typeof candidate.url === "string") {
+          sources.push({
+            url: candidate.url,
+            ...(typeof candidate.title === "string"
+              ? { title: candidate.title }
+              : {}),
+          })
+        }
+      }
+    }
+  }
+  return sources
+}
+
+export function responseText(response: Record<string, unknown>) {
+  if (typeof response.output_text === "string" && response.output_text) {
+    return response.output_text
+  }
+  const output = Array.isArray(response.output) ? response.output : []
+  return output
+    .filter(
+      (item): item is { type: string; content: unknown[] } =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        (item as { type?: unknown }).type === "message" &&
+        Array.isArray((item as { content?: unknown }).content)
+    )
+    .flatMap((item) => item.content)
+    .filter(
+      (part): part is { type: string; text: string } =>
+        Boolean(part) &&
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "output_text" &&
+        typeof (part as { text?: unknown }).text === "string"
+    )
+    .map((part) => part.text)
+    .join("\n")
 }
 
 const id = Type.String({ minLength: 1 })
@@ -616,4 +676,56 @@ export default function periplusRuntimeExtension(pi: ExtensionAPI) {
     ),
     "hotel.search"
   )
+
+  if (!config.webSearchEnabled) return
+  let remainingSearches = config.maxWebSearches
+  pi.registerTool({
+    name: "web_search",
+    label: "Web search",
+    description:
+      "Search the current web for timely information and return the answer with source links.",
+    parameters: Type.Object(
+      { query: Type.String({ minLength: 1 }) },
+      { additionalProperties: false }
+    ),
+    async execute(_toolCallId, { query }, signal) {
+      if (remainingSearches <= 0) throw new Error("Web search limit reached")
+      const apiKey = process.env.DEEPSEEK_API_KEY
+      if (!apiKey) {
+        throw new Error("DEEPSEEK_API_KEY is required for web search")
+      }
+      remainingSearches -= 1
+      const response = await fetch("https://api.deepseek.com/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: config.model,
+          input: query,
+          tools: [{ type: "web_search" }],
+          tool_choice: { type: "web_search" },
+          max_output_tokens: 4096,
+        }),
+        signal,
+      })
+      const body = (await response.json()) as Record<string, unknown>
+      if (!response.ok) {
+        throw new Error(
+          typeof body.error === "object" && body.error !== null
+            ? String(
+                (body.error as { message?: unknown }).message ??
+                  "Web search failed"
+              )
+            : "Web search failed"
+        )
+      }
+      return textResult({
+        answer: responseText(body),
+        sources: responseSources(body),
+        usage: body.usage,
+      })
+    },
+  })
 }

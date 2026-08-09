@@ -73,6 +73,7 @@ interface PiRuntimeOptions {
   projectRoot: string
   apiKey: string
   model: string
+  webSearchEnabled: boolean
   timeoutMs: number
 }
 
@@ -86,7 +87,10 @@ interface PiRunConfig {
   backendUrl?: string
   capabilityToken?: string
   traceCarrier?: TraceCarrier
+  model: string
   toolNames: string[]
+  webSearchEnabled: boolean
+  maxWebSearches: number
 }
 
 function workspaceToolConfig(
@@ -172,7 +176,10 @@ export class PiRuntime implements AgentRuntime {
       backendUrl: workspace?.backendUrl,
       capabilityToken: workspace?.capabilityToken,
       traceCarrier: workspace?.traceCarrier,
+      model: this.options.model,
       toolNames: workspace ? [...PERIPLUS_TOOL_NAMES] : [],
+      webSearchEnabled: Boolean(workspace && this.options.webSearchEnabled),
+      maxWebSearches: 3,
     }
     await writeFile(
       join(agentDir, "models.json"),
