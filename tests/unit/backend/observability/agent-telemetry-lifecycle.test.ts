@@ -244,23 +244,32 @@ describe.sequential("Agent telemetry execution contract", () => {
       const toolConfig = runtime.request?.toolServers[0]?.configFile?.content
       if (!toolConfig) throw new Error("Workspace tool config was not created")
       const capabilityToken = JSON.parse(toolConfig).capabilityToken as string
-      const draft = await gateway.executeTool(capabilityToken, {
-        type: "workspace.validate_draft",
-        expectedRevision: 0,
+      const opened = await gateway.executeTool(capabilityToken, {
+        type: "draft.open",
+        expectedWorkspaceRevision: 0,
         idempotencyKey: "telemetry-draft",
-        commands: [
-          {
-            name: "journey.update_event",
-            payload: {
-              eventId: `${journeyId}-visit`,
-              patch: { type: "VISIT", description: "OTel 草稿" },
-            },
-          },
-        ],
+      })
+      const draftId = (opened as { draftId: string }).draftId
+      await gateway.executeTool(capabilityToken, {
+        type: "draft.update_schedule",
+        draftId,
+        operationId: "telemetry-schedule",
+        cardId: `${journeyId}-visit`,
+        patch: { plannedStartAt: "2026-08-01T01:00:00.000Z" },
       })
       await gateway.executeTool(capabilityToken, {
-        type: "workspace.commit_draft",
-        draftId: draft.draftId,
+        type: "draft.validate",
+        draftId,
+        attemptId: "telemetry-validate",
+      })
+      await gateway.executeTool(capabilityToken, {
+        type: "draft.commit",
+        draftId,
+        idempotencyKey: "telemetry-commit",
+      })
+      await gateway.executeTool(capabilityToken, {
+        type: "journey.validate_current",
+        expectedWorkspaceRevision: 1,
       })
       runtime.observer?.onStdout(firstDelta)
       runtime.observer?.onStdout(secondDelta)
@@ -291,11 +300,9 @@ describe.sequential("Agent telemetry execution contract", () => {
         (span) => span.name === "agent.workspace.unlock.load"
       )
       const draftValidation = spans.find(
-        (span) => span.name === "workspace.validate_draft"
+        (span) => span.name === "draft.validate"
       )
-      const draftCommit = spans.find(
-        (span) => span.name === "workspace.commit_draft"
-      )
+      const draftCommit = spans.find((span) => span.name === "draft.commit")
 
       expect(stream).toBeDefined()
       expect(persistence).toBeDefined()

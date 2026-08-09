@@ -17,33 +17,45 @@ function message(
 }
 
 describe("buildPrompt", () => {
-  it("includes the complete conversation before the latest user request", () => {
+  it("separates history and latest request in the versioned Auto protocol", () => {
     const prompt = buildPrompt([
       message("user", "规划新疆路线"),
       message("assistant", "可以，第一版已规划。"),
       message("user", "把喀纳斯提前"),
+      message("assistant", ""),
     ])
 
-    expect(prompt).toContain("完整对话：")
+    expect(prompt).toContain('<PERIPLUS_AUTO_PROTOCOL version="2">')
+    expect(prompt).toContain("[CONVERSATION_HISTORY]")
+    expect(prompt).toContain("[LATEST_USER_REQUEST]")
     expect(prompt).toContain("用户：\n规划新疆路线")
     expect(prompt).toContain("Agent：\n可以，第一版已规划。")
     expect(prompt).toContain("用户：\n把喀纳斯提前")
-    expect(prompt).toContain("只执行最后一条用户需求")
-    expect(prompt).toContain("Root Scope 必须由 CITY 与跨城 TRANSIT 交替组成")
-    expect(prompt).toContain("CITY 内事件直接归属该城市")
+    expect(prompt.indexOf("把喀纳斯提前")).toBeGreaterThan(
+      prompt.indexOf("[LATEST_USER_REQUEST]")
+    )
+    expect(prompt.slice(prompt.indexOf("[LATEST_USER_REQUEST]"))).not.toContain(
+      "Agent："
+    )
+    expect(prompt).toContain("Root Scope：CITY 与跨城 TRANSIT")
     expect(prompt).toContain("periplus.hotel.search")
-    expect(prompt).toContain("firstCandidate")
-    expect(prompt).toContain("periplus.workspace.validate_draft")
-    expect(prompt).toContain("periplus.workspace.commit_draft")
-    expect(prompt).toContain("periplus.workspace.prepare_transit")
-    expect(prompt).toContain("没有 Journey 直写工具")
-    expect(prompt).toContain("periplus.workspace.validate_plan")
+    expect(prompt).toContain("web_search")
+    expect(prompt).toContain("periplus.draft.add_place_card")
+    expect(prompt).toContain("periplus.draft.validate")
+    expect(prompt).toContain("periplus.draft.prepare_transit")
+    expect(prompt).toContain("periplus.draft.commit")
+    expect(prompt).toContain("periplus.journey.validate_current")
+    expect(prompt).toContain("最多 5 次")
+    expect(prompt).not.toContain("validate_draft")
+    expect(prompt).not.toContain("command DSL。\n\n完整对话")
   })
 
   it("keeps validation execution out of suggest mode", () => {
     const prompt = buildPrompt([message("user", "给出路线建议")], "suggest")
 
-    expect(prompt).toContain("CITY 内事件直接归属该城市")
-    expect(prompt).not.toContain("完成全部修改后必须调用")
+    expect(prompt).toContain('<PERIPLUS_SUGGEST_PROTOCOL version="2">')
+    expect(prompt).toContain("[WORKSPACE_SNAPSHOT]")
+    expect(prompt).not.toContain("STAGE 05 OPEN_DRAFT")
+    expect(prompt).not.toContain("periplus.draft.commit")
   })
 })

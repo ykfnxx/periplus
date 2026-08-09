@@ -108,7 +108,7 @@ describe("PiRuntime", () => {
       {
         runId: "run-1",
         prompt:
-          "Call periplus.workspace.get before periplus.workspace.validate_draft and periplus.workspace.commit_draft.",
+          "Call periplus.workspace.get_context before periplus.draft.open and periplus.draft.commit.",
         toolServers: [workspaceToolServer],
       },
       observer
@@ -123,7 +123,12 @@ describe("PiRuntime", () => {
     }
     const runConfig = JSON.parse(
       readFileSync(options.env.PERIPLUS_PI_RUN_CONFIG, "utf8")
-    ) as { toolNames: string[]; webSearchEnabled: boolean }
+    ) as {
+      model: string
+      toolNames: string[]
+      webSearchEnabled: boolean
+      maxWebSearches: number
+    }
 
     expect(args).toEqual(
       expect.arrayContaining([
@@ -135,14 +140,21 @@ describe("PiRuntime", () => {
       ])
     )
     expect(options.env).not.toHaveProperty("PI_PACKAGE_DIR")
-    expect(command.message).toContain("periplus_workspace_get")
-    expect(command.message).toContain("periplus_workspace_validate_draft")
-    expect(command.message).toContain("periplus_workspace_commit_draft")
+    expect(command.message).toContain("periplus_workspace_get_context")
+    expect(command.message).toContain("periplus_draft_open")
+    expect(command.message).toContain("periplus_draft_commit")
     expect(runConfig.toolNames).not.toContain("periplus_workspace_command")
-    expect(runConfig.toolNames).toContain("periplus_workspace_validate_draft")
-    expect(runConfig.toolNames).toContain("periplus_workspace_commit_draft")
-    expect(runConfig.toolNames).toContain("periplus_workspace_prepare_transit")
-    expect(runConfig.webSearchEnabled).toBe(true)
+    expect(runConfig.toolNames).toContain("periplus_draft_validate")
+    expect(runConfig.toolNames).toContain("periplus_draft_commit")
+    expect(runConfig.toolNames).toContain("periplus_draft_prepare_transit")
+    expect(runConfig.toolNames).not.toContain(
+      "periplus_workspace_validate_draft"
+    )
+    expect(runConfig).toMatchObject({
+      model: "deepseek-v4-flash",
+      webSearchEnabled: true,
+      maxWebSearches: 3,
+    })
 
     await finished
 
@@ -166,7 +178,7 @@ describe("PiRuntime", () => {
       projectRoot: process.cwd(),
       apiKey: "deepseek-key",
       model: "deepseek-v4-flash",
-      webSearchEnabled: true,
+      webSearchEnabled: false,
       timeoutMs: 1000,
     })
     const first = startObserver()

@@ -92,16 +92,14 @@ function serviceFor(confidenceSource = catalogCandidate()) {
 }
 
 describe("PlaceIntelligenceService", () => {
-  it("aggregates catalog and live results into a journey-ready place", async () => {
+  it("aggregates catalog and live results into canonical resolved evidence", async () => {
     const { service, logUsage } = serviceFor()
 
-    const result = await service.resolvePlaceForJourneyEvent(
+    const result = await service.resolvePlace(
       {
         text: "故宫博物院",
         city: "北京",
-        eventId: "event-1",
       },
-      "VISIT",
       {
         userId: "owner-1",
         workspaceId: "workspace-1",
@@ -111,7 +109,7 @@ describe("PlaceIntelligenceService", () => {
     )
 
     expect(result).toMatchObject({
-      status: "ready",
+      status: "resolved",
       place: { placeId: "palace", canAddToJourney: true },
       placeRef: {
         provider: "amap",
@@ -121,27 +119,6 @@ describe("PlaceIntelligenceService", () => {
         lat: 39.916,
         lng: 116.397,
         coordinateSystem: "GCJ02",
-      },
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: "event-1",
-          patch: {
-            type: "VISIT",
-            detail: {
-              plannedPlaceId: "palace",
-              providerPlaceId: "B000A8UIN8",
-              coordinateSystem: "GCJ02",
-              plannedLat: 39.916,
-              plannedLng: 116.397,
-              providerCoverImage: {
-                provider: "amap",
-                url: "https://images.example/palace.jpg",
-                fetchedAt: "2026-08-03T00:00:00.000Z",
-              },
-            },
-          },
-        },
       },
     })
     expect(logUsage).toHaveBeenCalledWith(
@@ -181,17 +158,16 @@ describe("PlaceIntelligenceService", () => {
     )
   })
 
-  it("degrades a 404 attraction image to a warning without blocking place resolution", async () => {
+  it("degrades a 404 image to a warning without invalidating resolved evidence", async () => {
     const { service, imageProbe } = serviceFor()
     imageProbe.mockResolvedValue(false)
 
-    const result = await service.resolvePlaceForJourneyEvent(
-      { text: "故宫博物院", city: "北京", eventId: "event-1" },
-      "VISIT"
+    const result = await service.verifyPlaceImages(
+      catalogCandidate().images ?? []
     )
 
     expect(result).toMatchObject({
-      status: "ready",
+      images: [],
       warnings: [
         expect.objectContaining({
           code: "IMAGE_UNAVAILABLE",
@@ -205,19 +181,21 @@ describe("PlaceIntelligenceService", () => {
         }),
       ],
     })
-    if (result.status !== "ready") throw new Error("expected ready result")
-    expect(result.command.payload.patch.detail).not.toHaveProperty(
-      "providerCoverImage"
-    )
   })
 
-  it("requires a unique verified result before resolving a place", async () => {
+  it("accepts a unique actionable live result and honors requireExact", async () => {
     const { service, provider } = serviceFor(amapCandidate())
     provider.search.mockResolvedValue({ candidates: [], warnings: [] })
 
-    const result = await service.resolvePlace({ text: "故宫" })
+    const result = await service.resolvePlace({ text: "故宫", city: "北京" })
+    const exact = await service.resolvePlace({
+      text: "故宫",
+      city: "北京",
+      requireExact: true,
+    })
 
-    expect(result).toMatchObject({ status: "ambiguous" })
+    expect(result).toMatchObject({ status: "resolved" })
+    expect(exact).toMatchObject({ status: "ambiguous" })
   })
 
   it("records provider warning failures against the scoped request", async () => {

@@ -3,10 +3,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ZodError, type z, type ZodObject, type ZodRawShape } from "zod"
 import { mcpErrorResult, mcpJsonResult } from "../errors"
 import {
-  eventSearchInputSchema,
   placeEnrichInputSchema,
   placeResolveInputSchema,
-  placeResolveForJourneyEventInputSchema,
   placeSearchInputSchema,
 } from "../schemas/place"
 import { callWorkspaceBackend } from "../workspace-client"
@@ -33,19 +31,6 @@ function toolErrorResult(error: unknown): CallToolResult {
   return asCallToolResult(
     mcpErrorResult("internal_error", "Unexpected place tool error")
   )
-}
-
-function placeHandler<TSchema extends ZodObject<ZodRawShape>>(
-  schema: TSchema,
-  handler: (input: z.infer<TSchema>) => Promise<unknown>
-) {
-  return async (input: ToolInput) => {
-    try {
-      return asCallToolResult(mcpJsonResult(await handler(schema.parse(input))))
-    } catch (error) {
-      return toolErrorResult(error)
-    }
-  }
 }
 
 function workspacePlaceHandler<TSchema extends ZodObject<ZodRawShape>>(
@@ -87,24 +72,8 @@ export function registerPlaceTools(server: McpServer): void {
     "Search places",
     "Search the Periplus place catalog through the current Workspace Agent capability, with optional attributed live-provider fallback.",
     placeSearchInputSchema,
-    workspacePlaceHandler(placeSearchInputSchema, ({ requestId, ...input }) =>
-      callWorkspaceBackend({ type: "place.search", requestId, input })
-    )
-  )
-  registerPlaceTool(
-    server,
-    "periplus.place.resolve_for_journey_event",
-    "Resolve place for journey event",
-    "Resolve a place for a Workspace event and return a canonical journey.update_event command.",
-    placeResolveForJourneyEventInputSchema,
-    workspacePlaceHandler(
-      placeResolveForJourneyEventInputSchema,
-      ({ requestId, ...input }) =>
-        callWorkspaceBackend({
-          type: "place.resolve_for_journey_event",
-          requestId,
-          input,
-        })
+    workspacePlaceHandler(placeSearchInputSchema, (input) =>
+      callWorkspaceBackend({ type: "place.search", ...input })
     )
   )
   registerPlaceTool(
@@ -113,36 +82,18 @@ export function registerPlaceTools(server: McpServer): void {
     "Resolve place",
     "Resolve a user place phrase into one high-confidence place or an ambiguity set.",
     placeResolveInputSchema,
-    workspacePlaceHandler(placeResolveInputSchema, ({ requestId, ...input }) =>
-      callWorkspaceBackend({ type: "place.resolve", requestId, input })
+    workspacePlaceHandler(placeResolveInputSchema, (input) =>
+      callWorkspaceBackend({ type: "place.resolve", ...input })
     )
   )
   registerPlaceTool(
     server,
     "periplus.place.enrich",
     "Enrich place",
-    "Return currently known enrichment details for a catalog place.",
+    "Optionally enrich a resolved place handle with currently available images. Missing images return warnings and never block the draft.",
     placeEnrichInputSchema,
-    workspacePlaceHandler(placeEnrichInputSchema, ({ requestId, ...input }) =>
-      callWorkspaceBackend({ type: "place.enrich", requestId, input })
+    workspacePlaceHandler(placeEnrichInputSchema, (input) =>
+      callWorkspaceBackend({ type: "place.enrich", ...input })
     )
-  )
-  registerPlaceTool(
-    server,
-    "periplus.event.search",
-    "Search events",
-    "Reserved event-search interface for future activity providers.",
-    eventSearchInputSchema,
-    placeHandler(eventSearchInputSchema, async (input) => ({
-      results: [],
-      warnings: [
-        {
-          provider: "periplus",
-          code: "provider_error",
-          message: "活动搜索 provider 尚未接入",
-        },
-      ],
-      fallbackQuery: input,
-    }))
   )
 }

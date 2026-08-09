@@ -43,7 +43,8 @@ function providerFromString(value: string): PlaceProvider {
     value === "wikidata" ||
     value === "mct" ||
     value === "osm" ||
-    value === "opentripmap"
+    value === "opentripmap" ||
+    value === "rollinggo"
   ) {
     return value
   }

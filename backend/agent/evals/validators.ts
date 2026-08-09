@@ -1,8 +1,4 @@
-import type {
-  PlaceResolveForJourneyEventResult,
-  PlaceResolveResult,
-  PlaceSearchResult,
-} from "@/lib/places/types"
+import type { PlaceResolveResult, PlaceSearchResult } from "@/lib/places/types"
 import {
   buildTransitPlanRequest,
   transitPlanFingerprint,
@@ -20,9 +16,7 @@ import {
 } from "./contracts"
 import { evalContentHash, verifyEvalTrace } from "./trace"
 
-type PlaceCapabilityResult =
-  | PlaceResolveResult
-  | PlaceResolveForJourneyEventResult
+type PlaceCapabilityResult = PlaceResolveResult
 
 export interface PlaceCapabilityExpectation {
   status: PlaceCapabilityResult["status"]
@@ -31,8 +25,6 @@ export interface PlaceCapabilityExpectation {
   coordinateNear?: { lat: number; lng: number; maxErrorMeters: number }
   requireProviderIdentity?: boolean
   requireEvidence?: boolean
-  expectedEventId?: string
-  expectedEventType?: "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
 }
 
 export interface PlaceCapabilityCase {
@@ -87,9 +79,7 @@ function normalizedPlace(value: string | undefined) {
 function resolvedPlace(
   result: PlaceCapabilityResult
 ): PlaceSearchResult | null {
-  return result.status === "resolved" || result.status === "ready"
-    ? result.place
-    : null
+  return result.status === "resolved" ? result.place : null
 }
 
 function distanceMeters(
@@ -151,10 +141,6 @@ export function validatePlaceCapability(
         event.payload.evidenceId === testCase.evidenceId
     )
     const evidence = matchingEvidence[0]
-    const allowedToolTypes =
-      testCase.result.status === "ready"
-        ? ["place.resolve_for_journey_event"]
-        : ["place.resolve", "place.resolve_for_journey_event"]
     metrics.push(
       metric(
         "evidence_trace_integrity",
@@ -169,7 +155,7 @@ export function validatePlaceCapability(
           matchingEvidence.length === 1 &&
           evidence?.payload.contentHash === evalContentHash(testCase.result) &&
           typeof evidence.payload.toolType === "string" &&
-          allowedToolTypes.includes(evidence.payload.toolType) &&
+          evidence.payload.toolType === "place.resolve" &&
           evidence.payload.resultStatus === testCase.result.status,
         "Place decision is bound to one recorded evidence event with the exact result hash"
       )
@@ -178,10 +164,7 @@ export function validatePlaceCapability(
 
   const place = resolvedPlace(testCase.result)
   if (!place) {
-    if (
-      testCase.expectation.status === "resolved" ||
-      testCase.expectation.status === "ready"
-    ) {
+    if (testCase.expectation.status === "resolved") {
       metrics.push(
         metric("resolved_place", false, "Expected a resolved Place result")
       )
@@ -254,39 +237,6 @@ export function validatePlaceCapability(
         "provider_identity",
         Boolean(hasIdentity),
         "Resolved Place retains an external provider identity"
-      )
-    )
-  }
-  if (testCase.result.status === "ready") {
-    const command = testCase.result.command
-    const detail = command.payload.patch.detail
-    const expectedSource = place.sources.find(
-      (source) =>
-        source.provider === place.bestCoordinate.provider && source.providerId
-    )
-    metrics.push(
-      metric(
-        "ready_command_target",
-        Boolean(testCase.expectation.expectedEventId) &&
-          Boolean(testCase.expectation.expectedEventType) &&
-          command.name === "journey.update_event" &&
-          command.payload.eventId === testCase.expectation.expectedEventId &&
-          command.payload.patch.type === testCase.expectation.expectedEventType,
-        "Ready Place command targets the expected Journey Event and Event type"
-      ),
-      metric(
-        "ready_command_coordinate",
-        detail.plannedLat === place.bestCoordinate.lat &&
-          detail.plannedLng === place.bestCoordinate.lng &&
-          detail.coordinateSystem === place.bestCoordinate.coordinateSystem,
-        "Ready Place command preserves the resolved coordinate and coordinate system"
-      ),
-      metric(
-        "ready_command_provider",
-        detail.coordinateProvider === place.bestCoordinate.provider &&
-          detail.plannedPlaceId === place.placeId &&
-          detail.providerPlaceId === expectedSource?.providerId,
-        "Ready Place command preserves Place and provider identity"
       )
     )
   }

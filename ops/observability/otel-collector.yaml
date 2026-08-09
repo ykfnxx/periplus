@@ -46,7 +46,7 @@ processors:
     error_mode: ignore
     traces:
       span:
-        - 'not (name == "agent.run" or name == "agent.run.rejection" or name == "agent.tool" or name == "agent.prompt.build" or name == "agent.runtime.start" or name == "agent.runtime.stream" or name == "agent.stream.persist" or name == "provider.request" or name == "llm.request" or name == "workspace.command" or name == "workspace.validate_plan" or name == "workspace.validate_plan.final" or name == "workspace.validate_draft" or name == "workspace.commit_draft" or name == "workspace.prepare_transit")'
+        - 'not (name == "agent.run" or name == "agent.run.rejection" or name == "agent.tool" or name == "agent.prompt.build" or name == "agent.runtime.start" or name == "agent.runtime.stream" or name == "agent.stream.persist" or name == "provider.request" or name == "llm.request" or name == "workspace.command" or name == "journey.validate_current" or name == "journey.validate_current.final" or IsMatch(name, "^draft\\."))'
   attributes/phoenix:
     actions:
       - key: capabilityToken
