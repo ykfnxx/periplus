@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { copyFile, mkdir, mkdtemp, writeFile } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type {
@@ -26,6 +26,7 @@ export class KimiCodeRuntime implements AgentRuntime {
     const workDir = await mkdtemp(join(tmpdir(), "periplus-agent-"))
     const kimiHome = join(workDir, "kimi-home")
     await this.prepareIdentity(kimiHome)
+    await this.writeToolPolicy(kimiHome)
     await this.writeToolConfiguration(workDir, kimiHome, request)
 
     const metadata = { runtimeId: this.id, workDir }
@@ -56,6 +57,27 @@ export class KimiCodeRuntime implements AgentRuntime {
         child.kill("SIGTERM")
       },
     }
+  }
+
+  private async writeToolPolicy(kimiHome: string) {
+    const path = join(kimiHome, "config.toml")
+    const source = await readFile(path, "utf8").catch(() => "")
+    // Kimi treats an empty enabled list as unrestricted. Suggest runs expose no
+    // MCP server, so this non-empty allowlist still yields a zero-tool runtime.
+    const section = '[tools]\nenabled = ["mcp__periplus-workspace__*"]\n'
+    const start = source.search(/^\[tools\]\s*$/m)
+    let next = source
+    if (start >= 0) {
+      const remainder = source.slice(start).match(/\n(?=\[[^\]\n]+\]\s*$)/m)
+      const end =
+        remainder?.index === undefined
+          ? source.length
+          : start + remainder.index + 1
+      next = `${source.slice(0, start)}${section}${source.slice(end)}`
+    } else {
+      next = `${source.trimEnd()}${source.trim() ? "\n\n" : ""}${section}`
+    }
+    await writeFile(path, next, { mode: 0o600 })
   }
 
   private async prepareIdentity(kimiHome: string) {

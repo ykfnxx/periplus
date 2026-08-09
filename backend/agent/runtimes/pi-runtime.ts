@@ -13,31 +13,56 @@ import type {
 import type { TraceCarrier } from "../../observability"
 
 const PERIPLUS_TOOL_NAMES = [
-  "periplus_workspace_get",
-  "periplus_workspace_project",
-  "periplus_workspace_validate_plan",
-  "periplus_workspace_validate_draft",
-  "periplus_workspace_commit_draft",
-  "periplus_workspace_prepare_transit",
+  "periplus_workspace_get_context",
+  "periplus_journey_project",
+  "periplus_journey_validate_current",
+  "periplus_draft_open",
+  "periplus_draft_get",
+  "periplus_draft_add_city_card",
+  "periplus_draft_add_place_card",
+  "periplus_draft_add_hotel_stay_card",
+  "periplus_draft_add_place_stay_card",
+  "periplus_draft_add_transit_card",
+  "periplus_draft_update_city_card",
+  "periplus_draft_update_schedule",
+  "periplus_draft_change_place",
+  "periplus_draft_update_transit_card",
+  "periplus_draft_move_card",
+  "periplus_draft_remove_card",
+  "periplus_draft_connect_cards",
+  "periplus_draft_disconnect_cards",
+  "periplus_draft_validate",
+  "periplus_draft_prepare_transit",
+  "periplus_draft_commit",
   "periplus_place_search",
   "periplus_place_resolve",
-  "periplus_place_resolve_for_journey_event",
   "periplus_place_enrich",
   "periplus_hotel_search",
 ] as const
 
 const PI_TOOL_NAME_MAP = [
-  ["periplus.workspace.get", "periplus_workspace_get"],
-  ["periplus.workspace.project", "periplus_workspace_project"],
-  ["periplus.workspace.validate_plan", "periplus_workspace_validate_plan"],
-  ["periplus.workspace.validate_draft", "periplus_workspace_validate_draft"],
-  ["periplus.workspace.commit_draft", "periplus_workspace_commit_draft"],
-  ["periplus.workspace.prepare_transit", "periplus_workspace_prepare_transit"],
+  ["periplus.workspace.get_context", "periplus_workspace_get_context"],
+  ["periplus.journey.project", "periplus_journey_project"],
+  ["periplus.journey.validate_current", "periplus_journey_validate_current"],
+  ["periplus.draft.open", "periplus_draft_open"],
+  ["periplus.draft.get", "periplus_draft_get"],
+  ["periplus.draft.add_city_card", "periplus_draft_add_city_card"],
+  ["periplus.draft.add_place_card", "periplus_draft_add_place_card"],
+  ["periplus.draft.add_hotel_stay_card", "periplus_draft_add_hotel_stay_card"],
+  ["periplus.draft.add_place_stay_card", "periplus_draft_add_place_stay_card"],
+  ["periplus.draft.add_transit_card", "periplus_draft_add_transit_card"],
+  ["periplus.draft.update_city_card", "periplus_draft_update_city_card"],
+  ["periplus.draft.update_schedule", "periplus_draft_update_schedule"],
+  ["periplus.draft.change_place", "periplus_draft_change_place"],
+  ["periplus.draft.update_transit_card", "periplus_draft_update_transit_card"],
+  ["periplus.draft.move_card", "periplus_draft_move_card"],
+  ["periplus.draft.remove_card", "periplus_draft_remove_card"],
+  ["periplus.draft.connect_cards", "periplus_draft_connect_cards"],
+  ["periplus.draft.disconnect_cards", "periplus_draft_disconnect_cards"],
+  ["periplus.draft.validate", "periplus_draft_validate"],
+  ["periplus.draft.prepare_transit", "periplus_draft_prepare_transit"],
+  ["periplus.draft.commit", "periplus_draft_commit"],
   ["periplus.place.search", "periplus_place_search"],
-  [
-    "periplus.place.resolve_for_journey_event",
-    "periplus_place_resolve_for_journey_event",
-  ],
   ["periplus.place.resolve", "periplus_place_resolve"],
   ["periplus.place.enrich", "periplus_place_enrich"],
   ["periplus.hotel.search", "periplus_hotel_search"],
@@ -48,7 +73,6 @@ interface PiRuntimeOptions {
   projectRoot: string
   apiKey: string
   model: string
-  webSearchEnabled: boolean
   timeoutMs: number
 }
 
@@ -62,10 +86,7 @@ interface PiRunConfig {
   backendUrl?: string
   capabilityToken?: string
   traceCarrier?: TraceCarrier
-  model: string
   toolNames: string[]
-  webSearchEnabled: boolean
-  maxWebSearches: number
 }
 
 function workspaceToolConfig(
@@ -151,10 +172,7 @@ export class PiRuntime implements AgentRuntime {
       backendUrl: workspace?.backendUrl,
       capabilityToken: workspace?.capabilityToken,
       traceCarrier: workspace?.traceCarrier,
-      model: this.options.model,
       toolNames: workspace ? [...PERIPLUS_TOOL_NAMES] : [],
-      webSearchEnabled: Boolean(workspace && this.options.webSearchEnabled),
-      maxWebSearches: 3,
     }
     await writeFile(
       join(agentDir, "models.json"),

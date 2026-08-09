@@ -25,6 +25,7 @@ export type PlaceProvider =
   | "mct"
   | "osm"
   | "opentripmap"
+  | "rollinggo"
 
 export type PlaceQuality =
   | "verified"
@@ -169,43 +170,6 @@ export interface PlaceResolveInput {
   }
   requireExact?: boolean
 }
-
-export interface PlaceResolveForJourneyEventInput extends PlaceResolveInput {
-  eventId: string
-}
-
-export type PlaceResolveForJourneyEventResult =
-  | {
-      status: "ready"
-      place: PlaceSearchResult
-      placeRef: PlaceRef
-      command: {
-        name: "journey.update_event"
-        payload: {
-          eventId: string
-          patch: {
-            type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
-            detail: {
-              plannedPlaceId?: string
-              plannedLat: number
-              plannedLng: number
-              coordinateSystem: CoordinateSystem
-              coordinateProvider?: string
-              providerPlaceId?: string
-              providerCoverImage?: {
-                provider: "amap"
-                url: string
-                fetchedAt: string
-                width?: number
-                height?: number
-              }
-            }
-          }
-        }
-      }
-      warnings: ProviderWarning[]
-    }
-  | Exclude<PlaceResolveResult, { status: "resolved" }>
 
 export type PlaceResolveResult =
   | {

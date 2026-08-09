@@ -3,28 +3,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { responseText } from "@/backend/agent/pi-extension/periplus-runtime-extension"
 
 describe("Periplus Pi extension", () => {
-  it("reads final text from a DeepSeek Responses message output", () => {
-    expect(
-      responseText({
-        output_text: "",
-        output: [
-          {
-            type: "reasoning",
-            content: [{ type: "reasoning_text", text: "private reasoning" }],
-          },
-          {
-            type: "message",
-            content: [{ type: "output_text", text: "search answer" }],
-          },
-        ],
-      })
-    ).toBe("search answer")
-  })
-
-  it("loads registered Periplus and web-search tools in Pi RPC mode", async () => {
+  it("loads only the selected Periplus tools in Pi RPC mode", async () => {
     const workDir = await mkdtemp(join(tmpdir(), "periplus-pi-extension-"))
     const agentDir = join(workDir, "agent")
     const runConfigPath = join(workDir, "run.json")
@@ -56,9 +37,7 @@ describe("Periplus Pi extension", () => {
         backendUrl: "http://127.0.0.1:3002",
         capabilityToken: "capability-token",
         model: "deepseek-v4-flash",
-        toolNames: ["periplus_workspace_get"],
-        webSearchEnabled: true,
-        maxWebSearches: 3,
+        toolNames: ["periplus_workspace_get_context"],
       })
     )
 

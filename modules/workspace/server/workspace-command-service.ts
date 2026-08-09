@@ -55,7 +55,7 @@ import {
   type TransitPlanUsageContext,
 } from "@/modules/data/transit/transit-planning-service"
 
-type JourneyCommand = Extract<
+export type JourneyCommand = Extract<
   TargetCommandEnvelope["command"],
   { name: `journey.${string}` }
 >
@@ -73,7 +73,7 @@ const DRAFT_COMMAND_NAMES = new Set<JourneyCommand["name"]>([
   "journey.select_transit_plan",
 ])
 
-export interface PreparedAgentDraft {
+export interface AgentDraftCandidate {
   workspaceId: string
   expectedRevision: number
   idempotencyKey: string
@@ -81,9 +81,12 @@ export interface PreparedAgentDraft {
   commands: JourneyCommand[]
   before: TargetJourneyGraphSnapshot
   after: TargetJourneyGraphSnapshot
-  validation: PlanValidationReport
   changedEventIds: string[]
   projectionInvalidationScopes: Array<string | null>
+}
+
+export interface PreparedAgentDraft extends AgentDraftCandidate {
+  validation: PlanValidationReport
 }
 
 interface StoredCommandPatchEntry {
@@ -2447,13 +2450,13 @@ function normalizeAtomicDraftRevision(
 
 type PlaceBoundEvent = Extract<
   TargetJourneyEvent,
-  { type: "VISIT" | "MEAL" | "ACTIVITY" }
+  { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
 >
 
 function isPlaceBoundEvent(
   event: TargetJourneyEvent
 ): event is PlaceBoundEvent {
-  return ["VISIT", "MEAL", "ACTIVITY"].includes(event.type)
+  return ["VISIT", "STAY", "MEAL", "ACTIVITY"].includes(event.type)
 }
 
 function activeAt(event: TargetJourneyEvent, revision: number) {
@@ -2526,7 +2529,6 @@ function validateDraftPlaceBindings(
         repairability: "AGENT",
         allowedOperations: [
           "place.resolve",
-          "place.resolve_for_journey_event",
           "journey.add_event",
           "journey.update_event",
           "journey.replace_event",
@@ -2575,11 +2577,7 @@ function validateDraftPlaceBindings(
           eventIds: [event.id],
           message: `Visit ${event.id} has an image not returned by its verified place`,
           repairability: "AGENT",
-          allowedOperations: [
-            "place.resolve_for_journey_event",
-            "place.enrich",
-            "journey.update_event",
-          ],
+          allowedOperations: ["place.enrich", "journey.update_event"],
           suggestion:
             "Keep only the provider cover image returned by the verified place result.",
         })
@@ -2602,35 +2600,16 @@ export class WorkspaceCommandService {
       dependencies.transitPlanning ?? new TransitPlanningService()
   }
 
-  async prepareAgentDraft(
+  async openAgentDraft(
     context: AuthContext,
     input: {
       workspaceId: string
       expectedRevision: number
       idempotencyKey: string
       actor: TargetCommandEnvelope["actor"]
-      commands: unknown[]
-      baseDraft?: PreparedAgentDraft
-      verifiedPlaces?: readonly PlaceVerification[]
     },
     options: ExecuteOptions = {}
-  ): Promise<PreparedAgentDraft> {
-    const repairCommands = input.commands.map((command) => {
-      const parsed = targetCommandBodySchema.parse(command)
-      if (
-        !parsed.name.startsWith("journey.") ||
-        !DRAFT_COMMAND_NAMES.has(parsed.name as JourneyCommand["name"])
-      ) {
-        throw new WorkspaceInputError(
-          `Draft command ${parsed.name} is not supported`
-        )
-      }
-      return parsed as JourneyCommand
-    })
-    if (!repairCommands.length) {
-      throw new WorkspaceInputError("Draft must contain at least one command")
-    }
-
+  ): Promise<AgentDraftCandidate> {
     const document = await getWorkspaceDocument(
       context,
       input.workspaceId,
@@ -2661,31 +2640,87 @@ export class WorkspaceCommandService {
         "Workspace AGENT actor requires a running same-Workspace Agent run"
       )
     }
+    const before = document.session.headGraph
+    return {
+      workspaceId: input.workspaceId,
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: input.idempotencyKey,
+      actor: input.actor,
+      commands: [],
+      before,
+      after: clone(before),
+      changedEventIds: [],
+      projectionInvalidationScopes: [],
+    }
+  }
 
+  async applyAgentDraftMutation(
+    context: AuthContext,
+    input: {
+      draft: AgentDraftCandidate
+      operationId: string
+      commands: unknown[]
+    },
+    options: ExecuteOptions = {}
+  ): Promise<AgentDraftCandidate> {
+    const mutationCommands = input.commands.map((command) => {
+      const parsed = targetCommandBodySchema.parse(command)
+      if (
+        !parsed.name.startsWith("journey.") ||
+        !DRAFT_COMMAND_NAMES.has(parsed.name as JourneyCommand["name"])
+      ) {
+        throw new WorkspaceInputError(
+          `Draft command ${parsed.name} is not supported`
+        )
+      }
+      return parsed as JourneyCommand
+    })
+    if (!mutationCommands.length) {
+      throw new WorkspaceInputError("Draft mutation must contain a command")
+    }
+    if (input.draft.actor.kind !== "AGENT") {
+      throw new WorkspaceInputError("Draft commands require an Agent actor")
+    }
+    const agentRunId = input.draft.actor.agentRunId
+
+    const document = await getWorkspaceDocument(
+      context,
+      input.draft.workspaceId,
+      options.now
+    )
+    if (!document) throw new WorkspaceInputError("Workspace was not found")
     if (
-      input.baseDraft &&
-      (input.baseDraft.workspaceId !== input.workspaceId ||
-        input.baseDraft.expectedRevision !== input.expectedRevision ||
-        input.baseDraft.actor.kind !== "AGENT" ||
-        input.baseDraft.actor.agentRunId !== agentRunId)
+      document.session.headWorkspaceRevision !== input.draft.expectedRevision
+    ) {
+      throw new WorkspaceRevisionConflictError()
+    }
+    if (document.session.status !== "ACTIVE") {
+      throw new WorkspaceInputError("Workspace is not active")
+    }
+    if (document.draftState === "STALE") {
+      throw new WorkspaceRevisionConflictError(
+        "Workspace source Journey is stale; refresh, fork, or replay"
+      )
+    }
+    if (
+      !document.agentRuns.some(
+        (run) => run.id === agentRunId && run.status === "RUNNING"
+      )
     ) {
       throw new WorkspaceInputError(
-        "Repair draft does not belong to this Agent run"
+        "Workspace AGENT actor requires a running same-Workspace Agent run"
       )
     }
 
-    const before = document.session.headGraph
-    let after = clone(input.baseDraft?.after ?? before)
-    const commands = input.baseDraft
-      ? [...input.baseDraft.commands, ...repairCommands]
-      : repairCommands
+    const before = input.draft.before
+    let after = clone(input.draft.after)
     const now = (options.now ?? new Date()).toISOString()
-    for (const [index, command] of repairCommands.entries()) {
+    for (const [index, command] of mutationCommands.entries()) {
       const envelope = targetCommandEnvelopeSchema.parse({
-        aggregateId: input.workspaceId,
-        expectedRevision: input.expectedRevision,
-        idempotencyKey: `${input.idempotencyKey}:draft:${(input.baseDraft?.commands.length ?? 0) + index}`,
-        actor: input.actor,
+        aggregateId: input.draft.workspaceId,
+        expectedRevision: input.draft.expectedRevision,
+        idempotencyKey: `${input.operationId}:draft:${input.draft.commands.length + index}`,
+        actor: input.draft.actor,
         command,
       })
       const draftDocument: TargetWorkspaceDocument = {
@@ -2701,13 +2736,26 @@ export class WorkspaceCommandService {
       after,
       changedEventIds
     )
+    return {
+      ...input.draft,
+      commands: [...input.draft.commands, ...mutationCommands],
+      after,
+      changedEventIds,
+      projectionInvalidationScopes,
+    }
+  }
+
+  validateAgentDraft(
+    draft: AgentDraftCandidate,
+    verifiedPlaces: readonly PlaceVerification[] = []
+  ): PreparedAgentDraft {
     const planValidation = validateJourneyPlan({
-      graph: after,
-      workspaceRevision: input.expectedRevision + 1,
+      graph: draft.after,
+      workspaceRevision: draft.expectedRevision + 1,
     })
     const issues = [
       ...planValidation.issues,
-      ...validateDraftPlaceBindings(before, after, input.verifiedPlaces ?? []),
+      ...validateDraftPlaceBindings(draft.before, draft.after, verifiedPlaces),
     ]
     const validation: PlanValidationReport = {
       ...planValidation,
@@ -2715,29 +2763,20 @@ export class WorkspaceCommandService {
       issues,
     }
     return {
-      workspaceId: input.workspaceId,
-      expectedRevision: input.expectedRevision,
-      idempotencyKey: input.idempotencyKey,
-      actor: input.actor,
-      commands,
-      before,
-      after,
+      ...draft,
       validation,
-      changedEventIds,
-      projectionInvalidationScopes,
     }
   }
 
   async prepareAgentTransit(
     context: AuthContext,
     input: {
-      draft: PreparedAgentDraft
+      draft: AgentDraftCandidate
       idempotencyKey: string
       eventId: string
-      verifiedPlaces?: readonly PlaceVerification[]
     },
     options: ExecuteOptions = {}
-  ): Promise<PreparedAgentDraft> {
+  ): Promise<AgentDraftCandidate> {
     if (input.draft.actor.kind !== "AGENT") {
       throw new WorkspaceInputError(
         "Transit preparation requires an Agent draft"
@@ -2797,28 +2836,11 @@ export class WorkspaceCommandService {
       after,
       changedEventIds
     )
-    const planValidation = validateJourneyPlan({
-      graph: after,
-      workspaceRevision: input.draft.expectedRevision + 1,
-    })
-    const issues = [
-      ...planValidation.issues,
-      ...validateDraftPlaceBindings(
-        input.draft.before,
-        after,
-        input.verifiedPlaces ?? []
-      ),
-    ]
     return {
       ...input.draft,
       idempotencyKey: input.idempotencyKey,
       commands: [...input.draft.commands, command],
       after,
-      validation: {
-        ...planValidation,
-        valid: issues.every((issue) => issue.severity !== "ERROR"),
-        issues,
-      },
       changedEventIds,
       projectionInvalidationScopes,
     }

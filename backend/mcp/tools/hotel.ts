@@ -32,16 +32,15 @@ export function registerHotelTools(server: McpServer): void {
     {
       title: "Search hotel recommendations",
       description:
-        "Search RollingGo for up to ten hotel candidates. Use clear destination and stay dates; the Workspace shows the complete result cards while the first valid candidate can be added to the itinerary through a typed command.",
+        "Search RollingGo for up to ten hotel candidates. The Workspace persists the complete result cards; only the first valid candidate gets a run-scoped hotelSelectionId for draft.add_hotel_stay_card.",
       inputSchema: hotelSearchInputSchema.shape,
     },
     async (input) => {
       try {
-        const { requestId, ...hotelInput } = hotelSearchInputSchema.parse(input)
+        const hotelInput = hotelSearchInputSchema.parse(input)
         return callWorkspaceBackend({
           type: "hotel.search",
-          requestId,
-          input: hotelInput,
+          ...hotelInput,
         })
       } catch (error) {
         return errorResult(error)

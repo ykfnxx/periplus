@@ -1,16 +1,12 @@
 import { decideProviderMatch } from "@/lib/places/matching"
-import { isAttractionCategory } from "@/lib/places/attractions"
 import { normalizePlaceSearchInput } from "@/lib/places/normalize"
 import { planPlaceProviderSearch } from "@/lib/places/policy"
 import { rankPlaceCandidates } from "@/lib/places/ranker"
-import { targetCommandBodySchema } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import type {
   PlaceEnrichInput,
   PlaceEnrichResult,
   PlaceResolveInput,
-  PlaceResolveForJourneyEventInput,
-  PlaceResolveForJourneyEventResult,
   PlaceResolveResult,
   PlaceRef,
   PlaceImage,
@@ -54,7 +50,6 @@ export function placeRefFromResult(
   }
 }
 
-type LocationEventType = "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
 type PlaceProviderPurpose = "place_search" | "place_enrich"
 type PlaceProviderUsageLogger = (
   purpose: PlaceProviderPurpose,
@@ -168,11 +163,18 @@ export class PlaceIntelligenceService {
       }
     }
 
+    const normalized = normalizePlaceSearchInput({
+      query: input.text,
+    }).normalizedQuery
+    const exactMatch =
+      first.normalizedName === normalized ||
+      first.aliases.includes(normalized ?? "")
     const isClearWinner =
-      first.quality === "verified" &&
-      (!second || first.confidence - second.confidence >= 0.1)
+      first.canAddToJourney &&
+      (!second || first.confidence - second.confidence >= 0.1) &&
+      (!input.requireExact || exactMatch)
 
-    if (isClearWinner && !first.needsUserConfirmation) {
+    if (isClearWinner) {
       return {
         status: "resolved",
         place: first,
@@ -186,83 +188,6 @@ export class PlaceIntelligenceService {
       candidates: response.results,
       question: `找到多个可能的“${input.text}”，需要确认具体地点。`,
       warnings: response.warnings,
-    }
-  }
-
-  async resolvePlaceForJourneyEvent(
-    input: PlaceResolveForJourneyEventInput,
-    eventType: LocationEventType,
-    usageContext?: PlaceProviderUsageContext
-  ): Promise<PlaceResolveForJourneyEventResult> {
-    const resolved = await this.resolvePlace(
-      {
-        ...input,
-        intent:
-          input.intent ?? (eventType === "VISIT" ? "sightseeing" : undefined),
-      },
-      usageContext
-    )
-    if (resolved.status !== "resolved") return resolved
-
-    const externalSource = resolved.place.sources.find(
-      (source) =>
-        source.provider === resolved.place.bestCoordinate.provider &&
-        source.providerId
-    )
-    const candidateCoverImage =
-      eventType === "VISIT" && isAttractionCategory(resolved.place.category)
-        ? resolved.place.images?.find((image) => image.provider === "amap")
-        : undefined
-    const warnings = [...resolved.warnings]
-    const providerCoverImage = candidateCoverImage
-      ? await this.availableImage(candidateCoverImage, warnings)
-      : undefined
-    const command: Extract<
-      PlaceResolveForJourneyEventResult,
-      { status: "ready" }
-    >["command"] = {
-      name: "journey.update_event",
-      payload: {
-        eventId: input.eventId,
-        patch: {
-          type: eventType,
-          detail: {
-            ...(resolved.place.placeId
-              ? { plannedPlaceId: resolved.place.placeId }
-              : {}),
-            plannedLat: resolved.place.bestCoordinate.lat,
-            plannedLng: resolved.place.bestCoordinate.lng,
-            coordinateSystem: resolved.place.bestCoordinate.coordinateSystem,
-            coordinateProvider: resolved.place.bestCoordinate.provider,
-            ...(externalSource?.providerId
-              ? { providerPlaceId: externalSource.providerId }
-              : {}),
-            ...(providerCoverImage
-              ? {
-                  providerCoverImage: {
-                    provider: "amap" as const,
-                    url: providerCoverImage.url,
-                    fetchedAt: providerCoverImage.fetchedAt,
-                    ...(providerCoverImage.width
-                      ? { width: providerCoverImage.width }
-                      : {}),
-                    ...(providerCoverImage.height
-                      ? { height: providerCoverImage.height }
-                      : {}),
-                  },
-                }
-              : {}),
-          },
-        },
-      },
-    }
-    targetCommandBodySchema.parse(command)
-    return {
-      status: "ready",
-      place: resolved.place,
-      placeRef: resolved.placeRef,
-      command,
-      warnings,
     }
   }
 
@@ -362,6 +287,24 @@ export class PlaceIntelligenceService {
       reviewCandidateId,
       reason: decision.reason,
     }
+  }
+
+  async verifyPlaceImages(images: readonly PlaceImage[]) {
+    const warnings: PlaceSearchResponse["warnings"] = []
+    if (!images.length) {
+      warnings.push({
+        provider: "periplus",
+        code: "IMAGE_UNAVAILABLE",
+        message: "当前地点没有可用图片",
+      })
+      return { images: [], warnings }
+    }
+    const available = (
+      await Promise.all(
+        images.map((image) => this.availableImage(image, warnings))
+      )
+    ).filter((image): image is PlaceImage => Boolean(image))
+    return { images: available, warnings }
   }
 
   private async callProvider(

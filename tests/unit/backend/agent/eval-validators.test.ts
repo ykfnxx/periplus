@@ -322,55 +322,6 @@ describe("Agent feature capability validators", () => {
     )
   })
 
-  it("fails a ready Place whose command targets another Event and rewrites provider coordinates", () => {
-    const place = westLake()
-    const report = validatePlaceCapability({
-      id: "forged-ready-command",
-      result: {
-        status: "ready",
-        place,
-        placeRef: placeRef(place),
-        command: {
-          name: "journey.update_event",
-          payload: {
-            eventId: "wrong-event",
-            patch: {
-              type: "VISIT",
-              detail: {
-                plannedLat: 0,
-                plannedLng: 0,
-                coordinateSystem: "WGS84",
-                coordinateProvider: "osm",
-                providerPlaceId: "wrong-provider-id",
-              },
-            },
-          },
-        },
-        warnings: [],
-      },
-      expectation: {
-        status: "ready",
-        expectedEventId: "west-lake-event",
-        expectedEventType: "VISIT",
-      },
-    })
-
-    expect(report.hardPass).toBe(false)
-    expect(report.metrics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "ready_command_target", status: "FAIL" }),
-        expect.objectContaining({
-          id: "ready_command_coordinate",
-          status: "FAIL",
-        }),
-        expect.objectContaining({
-          id: "ready_command_provider",
-          status: "FAIL",
-        }),
-      ])
-    )
-  })
-
   it("fails Place evidence that is only a non-empty unbound id", () => {
     const report = validatePlaceCapability({
       id: "unbound-evidence",
@@ -460,7 +411,7 @@ describe("Agent feature capability validators", () => {
       spanId: "workspace-tool-span",
       parentSpanId: "run-span",
       status: "OK",
-      payload: { toolType: "workspace.get" },
+      payload: { toolType: "workspace.get_context" },
     })
     await sink.emit({
       runId: "place-run",
@@ -483,7 +434,7 @@ describe("Agent feature capability validators", () => {
       spanId: "workspace-tool-span",
       parentSpanId: "run-span",
       status: "OK",
-      payload: { toolType: "workspace.get" },
+      payload: { toolType: "workspace.get_context" },
     })
     await sink.emit({
       runId: "place-run",

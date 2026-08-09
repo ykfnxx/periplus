@@ -177,10 +177,7 @@ function actionability(
     coordinateMatches &&
     (quality === "verified" || quality === "probable")
 
-  const needsUserConfirmation =
-    quality !== "verified" ||
-    (candidate.fromLiveProvider &&
-      !candidate.sources.some((source) => source.provider === "periplus"))
+  const needsUserConfirmation = !canAddToJourney
 
   return { bestCoordinate, canAddToJourney, needsUserConfirmation }
 }

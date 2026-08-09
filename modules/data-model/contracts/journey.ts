@@ -326,11 +326,19 @@ function requireActualCoordinatePair(
   }
 }
 
-const targetVisitDetailUpdateSchema = targetPlannedVisitDetailSchema
-  .partial()
+const targetPlannedLocationDetailUpdateSchema =
+  targetPlannedLocationDetailSchema.partial().extend({
+    plannedPlaceId: idSchema.nullable().optional(),
+    providerPlaceId: idSchema.nullable().optional(),
+  })
+
+const targetVisitDetailUpdateSchema = targetPlannedLocationDetailUpdateSchema
+  .extend({
+    providerCoverImage: targetProviderCoverImageSchema.nullable().optional(),
+  })
   .strict()
 
-const targetStayDetailUpdateSchema = targetPlannedLocationDetailSchema
+const targetStayDetailUpdateSchema = targetPlannedLocationDetailUpdateSchema
   .extend({
     checkInNote: z.string().optional(),
     hotelOffer: z
@@ -348,19 +356,36 @@ const targetStayDetailUpdateSchema = targetPlannedLocationDetailSchema
         externalUrl: z.string().url().optional(),
         fetchedAt: dateTimeSchema,
       })
+      .nullable()
       .optional(),
   })
-  .partial()
   .strict()
 
-const targetMealDetailUpdateSchema = targetPlannedLocationDetailSchema
+const targetMealDetailUpdateSchema = targetPlannedLocationDetailUpdateSchema
   .extend({ cuisine: z.string().optional() })
-  .partial()
   .strict()
 
-const targetActivityDetailUpdateSchema = targetPlannedLocationDetailSchema
+const targetActivityDetailUpdateSchema = targetPlannedLocationDetailUpdateSchema
   .extend({ bookingReference: z.string().optional() })
+  .strict()
+
+const targetTransitDetailUpdateSchema = targetTransitEventDetailSchema
+  .omit({
+    actualFromEventId: true,
+    actualToEventId: true,
+    actualDepartAt: true,
+    actualDurationMinutes: true,
+    actualDistanceKm: true,
+    actualCost: true,
+    activePlanningRunId: true,
+    selectedPlanId: true,
+    routeState: true,
+  })
   .partial()
+  .extend({
+    plannedDepartAt: dateTimeSchema.nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })
   .strict()
 
 export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
@@ -386,21 +411,7 @@ export const targetJourneyEventUpdatePatchSchema = z.discriminatedUnion(
         type: z.literal("TRANSIT"),
         ...targetEventUpdateBase,
         ...targetExecutableEventUpdateFields,
-        detail: targetTransitEventDetailSchema
-          .omit({
-            actualFromEventId: true,
-            actualToEventId: true,
-            actualDepartAt: true,
-            actualDurationMinutes: true,
-            actualDistanceKm: true,
-            actualCost: true,
-            activePlanningRunId: true,
-            selectedPlanId: true,
-            routeState: true,
-          })
-          .partial()
-          .strict()
-          .optional(),
+        detail: targetTransitDetailUpdateSchema.optional(),
       })
       .strict(),
     z
