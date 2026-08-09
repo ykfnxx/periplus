@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type { AgentConversationMessage } from "@/backend/types"
 import type { AgentMode } from "../types"
 
@@ -78,4 +79,16 @@ export function buildPrompt(
     "完成全部修改后必须调用 periplus.workspace.validate_plan，并传入最新 headWorkspaceRevision。",
     "如果 valid=false，只按 issues 修复并使用最新 revision 再次校验，最多修复三轮；只有 valid=true 且之后未再修改 Workspace 才能向用户声明完成。",
   ].join("\n")
+}
+
+export function promptVersion(mode: AgentMode) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: 1,
+        mode,
+        template: buildPrompt([], mode, "{}"),
+      })
+    )
+    .digest("hex")
 }

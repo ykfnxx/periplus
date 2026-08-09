@@ -1,0 +1,237 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(periplus_agent_runs_total{runtime=~\"$runtime\",mode=~\"$mode\",status=~\"$status\"}[5m])) by (runtime, mode, status)",
+          "legendFormat": "{{runtime}} / {{mode}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent run rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(periplus_agent_run_duration_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\",status=~\"$status\"}[5m])) by (le, runtime, mode, status))",
+          "legendFormat": "p50 {{runtime}} / {{mode}} / {{status}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(periplus_agent_run_duration_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\",status=~\"$status\"}[5m])) by (le, runtime, mode, status))",
+          "legendFormat": "p95 {{runtime}} / {{mode}} / {{status}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(periplus_agent_run_duration_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\",status=~\"$status\"}[5m])) by (le, runtime, mode, status))",
+          "legendFormat": "p99 {{runtime}} / {{mode}} / {{status}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Agent run duration p50 / p95 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(periplus_agent_tool_calls_total{status=~\"$status\"}[5m])) by (tool, provider, status)",
+          "legendFormat": "{{tool}} / {{provider}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "MCP and provider tool rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(periplus_agent_tool_duration_milliseconds_bucket{status=~\"$status\"}[5m])) by (le, tool, provider, status))",
+          "legendFormat": "p50 {{tool}} / {{provider}} / {{status}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(periplus_agent_tool_duration_milliseconds_bucket{status=~\"$status\"}[5m])) by (le, tool, provider, status))",
+          "legendFormat": "p95 {{tool}} / {{provider}} / {{status}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(periplus_agent_tool_duration_milliseconds_bucket{status=~\"$status\"}[5m])) by (le, tool, provider, status))",
+          "legendFormat": "p99 {{tool}} / {{provider}} / {{status}}",
+          "refId": "C"
+        }
+      ],
+      "title": "MCP and provider tool duration p50 / p95 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(periplus_agent_run_ttft_milliseconds_bucket{runtime=~\"$runtime\",mode=~\"$mode\"}[5m])) by (le, runtime, mode))",
+          "legendFormat": "p95 TTFT {{runtime}} / {{mode}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Time to first token",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(periplus_agent_runtime_errors_total{runtime=~\"$runtime\"}[5m])) by (runtime, error_type)",
+          "legendFormat": "{{runtime}} / {{error_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Runtime errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(traces_span_metrics_calls_total[5m])) by (http_request_method, http_route, http_response_status_code)",
+          "legendFormat": "{{http_request_method}} {{http_route}} / {{http_response_status_code}}",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP and internal API rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 8,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_request_method, http_route, http_response_status_code))",
+          "legendFormat": "p50 {{http_request_method}} {{http_route}} / {{http_response_status_code}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_request_method, http_route, http_response_status_code))",
+          "legendFormat": "p95 {{http_request_method}} {{http_route}} / {{http_response_status_code}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, http_request_method, http_route, http_response_status_code))",
+          "legendFormat": "p99 {{http_request_method}} {{http_route}} / {{http_response_status_code}}",
+          "refId": "C"
+        }
+      ],
+      "title": "HTTP and internal API duration p50 / p95 / p99",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["periplus", "agent"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "label": "Runtime",
+        "multi": true,
+        "name": "runtime",
+        "query": "label_values(periplus_agent_runs_total, runtime)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "label": "Mode",
+        "multi": true,
+        "name": "mode",
+        "query": "label_values(periplus_agent_runs_total, mode)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "label": "Status",
+        "multi": true,
+        "name": "status",
+        "query": "label_values(periplus_agent_runs_total, status)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Periplus Agent and API Overview",
+  "uid": "periplus-agent-api-overview",
+  "version": 2
+}

@@ -82,6 +82,32 @@ export const periplusServerConfig = {
         : ("kimi" as const)
     },
   },
+  observability: {
+    get enabled() {
+      return envString("PERIPLUS_OBSERVABILITY_ENABLED", "true") === "true"
+    },
+    get idSalt() {
+      return envString("PERIPLUS_OBSERVABILITY_ID_SALT")
+    },
+    get otlpEndpoint() {
+      return envString(
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "http://127.0.0.1:4318"
+      ).replace(/\/$/, "")
+    },
+    get serviceName() {
+      return envString("OTEL_SERVICE_NAME", "periplus-backend")
+    },
+    get bindHost() {
+      return envString("PERIPLUS_OBSERVABILITY_BIND_HOST", "127.0.0.1")
+    },
+    get grafanaPort() {
+      return envNumber("PERIPLUS_GRAFANA_PORT", 3003)
+    },
+    get phoenixPort() {
+      return envNumber("PERIPLUS_PHOENIX_PORT", 6008)
+    },
+  },
   deepseek: {
     get apiKey() {
       return envString("DEEPSEEK_API_KEY")

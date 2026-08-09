@@ -6,6 +6,7 @@ import { AgentGateway } from "./agent/gateway"
 import { KimiCodeRuntime } from "./agent/runtimes/kimi-code-runtime"
 import { PiRuntime } from "./agent/runtimes/pi-runtime"
 import { handleInternalRequest } from "./internal-api"
+import { shutdownTelemetry } from "./observability"
 import { createAgentWebSocketServer } from "./ws"
 
 loadProjectEnv()
@@ -50,3 +51,26 @@ createAgentWebSocketServer(server, commands, agentGateway)
 server.listen(port, periplusServerConfig.agentBackend.host, () => {
   console.log(`Periplus backend listening on ${backendUrl}`)
 })
+
+let shuttingDown = false
+const shutdown = async () => {
+  if (shuttingDown) return
+  shuttingDown = true
+  let finished = false
+  const finish = () => {
+    if (finished) return
+    finished = true
+    void shutdownTelemetry()
+      .catch(() => undefined)
+      .finally(() => process.exit(0))
+  }
+  const timeout = setTimeout(finish, 5000)
+  timeout.unref()
+  server.close(() => {
+    clearTimeout(timeout)
+    finish()
+  })
+}
+
+process.once("SIGINT", () => void shutdown())
+process.once("SIGTERM", () => void shutdown())

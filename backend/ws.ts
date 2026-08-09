@@ -1,6 +1,7 @@
 import type { Server } from "node:http"
 import { WebSocket, WebSocketServer } from "ws"
 import { z } from "zod"
+import { OpenInferenceSpanKind } from "@arizeai/openinference-semantic-conventions"
 import { targetCommandEnvelopeSchema } from "@/modules/data-model/contracts"
 import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
 import { verifyWorkspaceTicket } from "@/modules/data/workspaces/workspace-ticket"
@@ -8,6 +9,7 @@ import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-co
 import { AgentGateway } from "./agent/gateway"
 import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
 import { domainErrorResponse } from "./domain-error"
+import { startTelemetrySpan } from "./observability"
 
 const commandIdSchema = z.object({ commandId: z.string().optional() })
 const wireMessageSchema = z.discriminatedUnion("type", [
@@ -139,14 +141,19 @@ export function createAgentWebSocketServer(
         void (async () => {
           const rawText = rawMessage.toString("utf8")
           const commandId = commandIdFromRawWireMessage(rawText)
+          let messageSpan: ReturnType<typeof startTelemetrySpan> | undefined
           try {
             const message = parseWireMessage(rawText)
+            messageSpan = startTelemetrySpan(
+              "websocket.message",
+              OpenInferenceSpanKind.CHAIN,
+              { "periplus.websocket.message_type": message.type }
+            )
 
             if (message.type === "workspace.get") {
-              send(socket, {
-                type: "workspace.updated",
-                payload: await commands.getDocument(context, workspaceId),
-              })
+              const document = await commands.getDocument(context, workspaceId)
+              send(socket, { type: "workspace.updated", payload: document })
+              messageSpan.end("OK")
               return
             }
             if (message.type === "workspace.command") {
@@ -166,6 +173,7 @@ export function createAgentWebSocketServer(
                 type: "workspace.updated",
                 payload: { result, workspace: current },
               })
+              messageSpan.end("OK")
               return
             }
             if (message.type === "agent.run.start") {
@@ -179,13 +187,18 @@ export function createAgentWebSocketServer(
                 mode,
                 broadcast
               )
+              messageSpan.end("OK")
               return
             }
             if (message.type === "agent.run.cancel") {
               agentGateway.cancel(workspaceId)
+              messageSpan.end("OK")
               return
             }
           } catch (error) {
+            messageSpan?.end("ERROR", {
+              "error.type": error instanceof Error ? error.name : "Error",
+            })
             send(socket, errorEvent(error, commandId))
           }
         })()

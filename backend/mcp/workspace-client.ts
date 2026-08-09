@@ -3,12 +3,14 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { loadProjectEnv } from "@/config/env.server"
 import { periplusServerConfig } from "@/config/periplus.server"
 import { mcpErrorResult, mcpJsonResult } from "./errors"
+import type { TraceCarrier } from "../observability"
 
 loadProjectEnv()
 
 interface WorkspaceMcpRuntimeConfig {
   backendUrl?: string
   capabilityToken?: string
+  traceCarrier?: TraceCarrier
 }
 
 function getArgValue(name: string) {
@@ -46,7 +48,15 @@ export async function callWorkspaceBackend(
   }
   const response = await fetch(`${backendUrl}/internal/agent-tool`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(runtimeConfig.traceCarrier?.traceparent
+        ? { traceparent: runtimeConfig.traceCarrier.traceparent }
+        : {}),
+      ...(runtimeConfig.traceCarrier?.tracestate
+        ? { tracestate: runtimeConfig.traceCarrier.tracestate }
+        : {}),
+    },
     body: JSON.stringify({ capabilityToken, request }),
   })
   const body = (await response.json()) as {

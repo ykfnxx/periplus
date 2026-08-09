@@ -971,7 +971,8 @@ export async function startWorkspaceAgentRun(
   workspaceId: string,
   now = new Date(),
   runtimeOwnerId = `direct-${context.userId}`,
-  leaseSeconds = WORKSPACE_AGENT_RUN_LEASE_SECONDS
+  leaseSeconds = WORKSPACE_AGENT_RUN_LEASE_SECONDS,
+  runId = randomUUID()
 ) {
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return null
@@ -988,6 +989,7 @@ export async function startWorkspaceAgentRun(
       }
       return tx.workspaceAgentRun.create({
         data: {
+          id: runId,
           workspaceId,
           status: "RUNNING",
           runtimeOwnerId,
