@@ -139,9 +139,29 @@ async function writeProtocolReport() {
 }
 
 async function placeReport() {
+  const place = resolvedWestLake()
   const result = {
     status: "resolved" as const,
-    place: resolvedWestLake(),
+    place,
+    placeRef: {
+      provider: place.bestCoordinate.provider,
+      providerId: place.sources[0]?.providerId,
+      canonicalName: place.name,
+      city: place.city,
+      address: place.address,
+      lat: place.bestCoordinate.lat,
+      lng: place.bestCoordinate.lng,
+      coordinateSystem: place.bestCoordinate.coordinateSystem,
+      confidence: place.confidence,
+      candidates: [
+        {
+          id: place.id,
+          name: place.name,
+          city: place.city,
+          confidence: place.confidence,
+        },
+      ],
+    },
     warnings: [],
   }
   const evidenceId = "cassette:place:west-lake"

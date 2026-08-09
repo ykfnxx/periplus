@@ -12,7 +12,10 @@ import type {
   PlaceResolveForJourneyEventInput,
   PlaceResolveForJourneyEventResult,
   PlaceResolveResult,
+  PlaceRef,
+  PlaceImage,
   PlaceSearchInput,
+  PlaceSearchResult,
   PlaceSearchResponse,
 } from "@/lib/places/types"
 import { PlaceCatalogRepository } from "./place-catalog-repository"
@@ -25,6 +28,32 @@ export interface PlaceProviderUsageContext {
   requestId?: string
 }
 
+export function placeRefFromResult(
+  place: PlaceSearchResult,
+  candidates: readonly PlaceSearchResult[]
+): PlaceRef {
+  const source = place.sources.find(
+    (candidate) => candidate.provider === place.bestCoordinate.provider
+  )
+  return {
+    provider: place.bestCoordinate.provider,
+    providerId: source?.providerId,
+    canonicalName: place.name,
+    city: place.city ?? place.province,
+    address: place.address,
+    lat: place.bestCoordinate.lat,
+    lng: place.bestCoordinate.lng,
+    coordinateSystem: place.bestCoordinate.coordinateSystem,
+    confidence: place.confidence,
+    candidates: candidates.map((candidate) => ({
+      id: candidate.id,
+      name: candidate.name,
+      city: candidate.city ?? candidate.province,
+      confidence: candidate.confidence,
+    })),
+  }
+}
+
 type LocationEventType = "VISIT" | "STAY" | "MEAL" | "ACTIVITY"
 type PlaceProviderPurpose = "place_search" | "place_enrich"
 type PlaceProviderUsageLogger = (
@@ -33,6 +62,16 @@ type PlaceProviderUsageLogger = (
   code: string | undefined,
   context: PlaceProviderUsageContext
 ) => Promise<void>
+
+type ImageProbe = (url: string) => Promise<boolean>
+
+async function probeImage(url: string) {
+  const response = await fetch(url, {
+    method: "HEAD",
+    signal: AbortSignal.timeout(3_000),
+  })
+  return response.ok
+}
 
 export class PlaceIntelligenceService {
   constructor(
@@ -48,7 +87,8 @@ export class PlaceIntelligenceService {
       AMapPlaceProvider,
       "search"
     > = new AMapPlaceProvider(),
-    private readonly logUsage: PlaceProviderUsageLogger = logPlaceProviderUsage
+    private readonly logUsage: PlaceProviderUsageLogger = logPlaceProviderUsage,
+    private readonly imageProbe: ImageProbe = probeImage
   ) {}
 
   async searchPlaces(
@@ -129,13 +169,16 @@ export class PlaceIntelligenceService {
     }
 
     const isClearWinner =
-      first.quality === "verified" ||
-      (!input.requireExact &&
-        first.quality === "probable" &&
-        (!second || first.confidence - second.confidence >= 0.12))
+      first.quality === "verified" &&
+      (!second || first.confidence - second.confidence >= 0.1)
 
     if (isClearWinner && !first.needsUserConfirmation) {
-      return { status: "resolved", place: first, warnings: response.warnings }
+      return {
+        status: "resolved",
+        place: first,
+        placeRef: placeRefFromResult(first, response.results),
+        warnings: response.warnings,
+      }
     }
 
     return {
@@ -166,10 +209,14 @@ export class PlaceIntelligenceService {
         source.provider === resolved.place.bestCoordinate.provider &&
         source.providerId
     )
-    const providerCoverImage =
+    const candidateCoverImage =
       eventType === "VISIT" && isAttractionCategory(resolved.place.category)
         ? resolved.place.images?.find((image) => image.provider === "amap")
         : undefined
+    const warnings = [...resolved.warnings]
+    const providerCoverImage = candidateCoverImage
+      ? await this.availableImage(candidateCoverImage, warnings)
+      : undefined
     const command: Extract<
       PlaceResolveForJourneyEventResult,
       { status: "ready" }
@@ -196,6 +243,12 @@ export class PlaceIntelligenceService {
                     provider: "amap" as const,
                     url: providerCoverImage.url,
                     fetchedAt: providerCoverImage.fetchedAt,
+                    ...(providerCoverImage.width
+                      ? { width: providerCoverImage.width }
+                      : {}),
+                    ...(providerCoverImage.height
+                      ? { height: providerCoverImage.height }
+                      : {}),
                   },
                 }
               : {}),
@@ -207,8 +260,9 @@ export class PlaceIntelligenceService {
     return {
       status: "ready",
       place: resolved.place,
+      placeRef: resolved.placeRef,
       command,
-      warnings: resolved.warnings,
+      warnings,
     }
   }
 
@@ -255,13 +309,30 @@ export class PlaceIntelligenceService {
       coordinatePreference: "auto",
     })
     const live = await this.callProvider("place_enrich", query, usageContext)
-    const results = rankPlaceCandidates(query, live.candidates)
+    let results = rankPlaceCandidates(query, live.candidates)
     const decision = decideProviderMatch(results)
+    const warnings = [...live.warnings]
+    if (input.fields.includes("images")) {
+      results = await Promise.all(
+        results.map(async (result) => ({
+          ...result,
+          images: result.images
+            ? (
+                await Promise.all(
+                  result.images.map((image) =>
+                    this.availableImage(image, warnings)
+                  )
+                )
+              ).filter((image): image is PlaceImage => Boolean(image))
+            : undefined,
+        }))
+      )
+    }
     if (decision.status === "NO_MATCH") {
       return {
         placeId: input.placeId,
         results,
-        warnings: live.warnings,
+        warnings,
         matchStatus: decision.status,
         reason: decision.reason,
       }
@@ -272,7 +343,7 @@ export class PlaceIntelligenceService {
       return {
         placeId: input.placeId,
         results,
-        warnings: live.warnings,
+        warnings,
         matchStatus: decision.status,
         reason: decision.reason,
       }
@@ -286,7 +357,7 @@ export class PlaceIntelligenceService {
     return {
       placeId: input.placeId,
       results,
-      warnings: live.warnings,
+      warnings,
       matchStatus: decision.status,
       reviewCandidateId,
       reason: decision.reason,
@@ -323,6 +394,24 @@ export class PlaceIntelligenceService {
       }
       throw error
     }
+  }
+
+  private async availableImage(
+    image: PlaceImage,
+    warnings: PlaceSearchResponse["warnings"]
+  ): Promise<PlaceImage | undefined> {
+    try {
+      if (await this.imageProbe(image.url)) return image
+    } catch {
+      // Fall through to the same degradable image warning as a non-2xx response.
+    }
+    warnings.push({
+      provider: image.provider,
+      code: "IMAGE_UNAVAILABLE",
+      message: "地点图片不可用",
+      image,
+    })
+    return undefined
   }
 }
 

@@ -18,6 +18,8 @@ function catalogCandidate(): PlaceCandidate {
         provider: "amap",
         url: "https://images.example/palace.jpg",
         fetchedAt: "2026-08-03T00:00:00.000Z",
+        width: 1200,
+        height: 800,
       },
     ],
     coordinates: [],
@@ -74,11 +76,18 @@ function serviceFor(confidenceSource = catalogCandidate()) {
       .mockResolvedValue({ candidates: [amapCandidate()], warnings: [] }),
   }
   const logUsage = vi.fn().mockResolvedValue(undefined)
+  const imageProbe = vi.fn().mockResolvedValue(true)
   return {
-    service: new PlaceIntelligenceService(repository, provider, logUsage),
+    service: new PlaceIntelligenceService(
+      repository,
+      provider,
+      logUsage,
+      imageProbe
+    ),
     repository,
     provider,
     logUsage,
+    imageProbe,
   }
 }
 
@@ -104,6 +113,15 @@ describe("PlaceIntelligenceService", () => {
     expect(result).toMatchObject({
       status: "ready",
       place: { placeId: "palace", canAddToJourney: true },
+      placeRef: {
+        provider: "amap",
+        providerId: "B000A8UIN8",
+        canonicalName: "故宫博物院",
+        city: "北京市",
+        lat: 39.916,
+        lng: 116.397,
+        coordinateSystem: "GCJ02",
+      },
       command: {
         name: "journey.update_event",
         payload: {
@@ -145,7 +163,7 @@ describe("PlaceIntelligenceService", () => {
     const result = await service.enrichPlace(
       {
         placeId: "palace",
-        fields: ["coordinates", "provider_match"],
+        fields: ["coordinates", "images", "provider_match"],
       },
       { requestId: "enrich-request-1" }
     )
@@ -161,6 +179,45 @@ describe("PlaceIntelligenceService", () => {
       undefined,
       { requestId: "enrich-request-1" }
     )
+  })
+
+  it("degrades a 404 attraction image to a warning without blocking place resolution", async () => {
+    const { service, imageProbe } = serviceFor()
+    imageProbe.mockResolvedValue(false)
+
+    const result = await service.resolvePlaceForJourneyEvent(
+      { text: "故宫博物院", city: "北京", eventId: "event-1" },
+      "VISIT"
+    )
+
+    expect(result).toMatchObject({
+      status: "ready",
+      warnings: [
+        expect.objectContaining({
+          code: "IMAGE_UNAVAILABLE",
+          image: expect.objectContaining({
+            provider: "amap",
+            url: "https://images.example/palace.jpg",
+            fetchedAt: "2026-08-03T00:00:00.000Z",
+            width: 1200,
+            height: 800,
+          }),
+        }),
+      ],
+    })
+    if (result.status !== "ready") throw new Error("expected ready result")
+    expect(result.command.payload.patch.detail).not.toHaveProperty(
+      "providerCoverImage"
+    )
+  })
+
+  it("requires a unique verified result before resolving a place", async () => {
+    const { service, provider } = serviceFor(amapCandidate())
+    provider.search.mockResolvedValue({ candidates: [], warnings: [] })
+
+    const result = await service.resolvePlace({ text: "故宫" })
+
+    expect(result).toMatchObject({ status: "ambiguous" })
   })
 
   it("records provider warning failures against the scoped request", async () => {

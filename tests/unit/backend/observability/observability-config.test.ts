@@ -11,6 +11,9 @@ describe("observability configuration contract", () => {
 
     expect(collector).toContain('not (name == "agent.run"')
     expect(collector).toContain('name == "llm.request"')
+    expect(collector).toContain('name == "workspace.validate_draft"')
+    expect(collector).toContain('name == "workspace.commit_draft"')
+    expect(collector).toContain('name == "workspace.prepare_transit"')
     expect(collector).toContain("url.full")
     expect(collector).toContain("http.url")
     expect(collector).toContain("url.query")

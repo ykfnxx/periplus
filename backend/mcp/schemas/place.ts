@@ -60,6 +60,7 @@ export const placeEnrichInputSchema = z.object({
       "description",
       "provider_match",
       "categories",
+      "images",
     ])
   ),
 })

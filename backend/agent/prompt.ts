@@ -75,9 +75,12 @@ export function buildPrompt(
   return [
     ...basePrompt(messages),
     "只能通过 MCP 工具读取和修改当前 Workspace，不要读写项目文件，不要直接连接数据库。",
-    "用户要求酒店推荐时，只有城市、入住日期、晚数和入住人数明确才调用 periplus.hotel.search；信息不明确先追问。完整候选只显示在持久化卡片中，工具仅返回首位 firstCandidate 和对应的 stayDetail；写入 STAY 时必须使用该 stayDetail。新增 STAY 时放入当前明确的 CITY Scope；已有明确 STAY 时用 journey.update_event 更新其标题、地点和 hotelOffer 快照。",
-    "完成全部修改后必须调用 periplus.workspace.validate_plan，并传入最新 headWorkspaceRevision。",
-    "如果 valid=false，只按 issues 修复并使用最新 revision 再次校验，最多修复三轮；只有 valid=true 且之后未再修改 Workspace 才能向用户声明完成。",
+    "规划行程时，先用 periplus.place.resolve 或 periplus.place.resolve_for_journey_event 校对地点；只有唯一高置信候选才能进入草稿。景点可调用 periplus.place.enrich 获取图片，图片缺失只记录 warning，不阻断行程。",
+    "所有 Journey 图修改先组成 commands，调用 periplus.workspace.validate_draft。只有 validation.valid=true 才调用 periplus.workspace.commit_draft 写入；没有 Journey 直写工具。",
+    "草稿 invalid 时只能依据 issues.allowedOperations 和 suggestion 修复：携带 previousDraftId，并只提交修复 delta 再次 validate_draft；初始校验后最多两轮修复。两轮仍有 error 时不要 commit，向用户说明未完成及 issues。",
+    "需要实时路线时，先让包含 TRANSIT 的草稿校验返回问题，再用 periplus.workspace.prepare_transit(previousDraftId, eventId) 准备外部路线；它返回的新草稿仍须通过 validation 才能 commit。",
+    "用户要求酒店推荐时，只有城市、入住日期、晚数和入住人数明确才调用 periplus.hotel.search；信息不明确先追问。完整候选只显示在持久化卡片中，工具仅返回首位 firstCandidate 和对应的 stayDetail；将该 stayDetail 作为新增或更新 STAY 的内容放进同一份验证草稿。新增 STAY 放入当前明确的 CITY Scope；已有明确 STAY 时更新其标题、地点和 hotelOffer 快照。",
+    "commit_draft 后调用 periplus.workspace.validate_plan，并传入最新 headWorkspaceRevision；只有 valid=true 且之后未再修改 Workspace 才能向用户声明完成。",
   ].join("\n")
 }
 

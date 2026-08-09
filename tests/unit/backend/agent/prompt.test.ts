@@ -33,6 +33,10 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("CITY 内事件直接归属该城市")
     expect(prompt).toContain("periplus.hotel.search")
     expect(prompt).toContain("firstCandidate")
+    expect(prompt).toContain("periplus.workspace.validate_draft")
+    expect(prompt).toContain("periplus.workspace.commit_draft")
+    expect(prompt).toContain("periplus.workspace.prepare_transit")
+    expect(prompt).toContain("没有 Journey 直写工具")
     expect(prompt).toContain("periplus.workspace.validate_plan")
   })
 

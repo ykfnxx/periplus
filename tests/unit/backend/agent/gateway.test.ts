@@ -18,6 +18,7 @@ import type {
 import type { AgentEvent } from "@/backend/types"
 import {
   TARGET_CONTRACT_FIXTURES,
+  type PlanValidationReport,
   type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
@@ -64,7 +65,7 @@ class FakeRuntime implements AgentRuntime {
   }
 }
 
-class StateDiffFailingTraceSink implements EvalTraceSink {
+class ValidatorFailingTraceSink implements EvalTraceSink {
   readonly delegate = new MemoryEvalTraceSink()
   private failure: Error | null = null
 
@@ -73,8 +74,8 @@ class StateDiffFailingTraceSink implements EvalTraceSink {
   }
 
   async emit(input: EvalTraceInput) {
-    if (input.type === "state.diff.recorded") {
-      this.failure = new Error("injected state diff trace failure")
+    if (input.type === "validator.completed") {
+      this.failure = new Error("injected validator trace failure")
       throw this.failure
     }
     return this.delegate.emit(input)
@@ -144,6 +145,63 @@ function graph(id: string): TargetJourneyGraphSnapshot {
   }
 }
 
+function emptyRootGraph(id: string): TargetJourneyGraphSnapshot {
+  return { ...graph(id), events: [] }
+}
+
+function cityRouteGraph(id: string): TargetJourneyGraphSnapshot {
+  const snapshot = graph(id)
+  const visit = snapshot.events.find((event) => event.type === "VISIT")
+  if (!visit) throw new Error("expected visit fixture")
+  const secondVisit = {
+    ...visit,
+    id: `${id}-visit-2`,
+    title: "灵隐寺",
+    plannedStartAt: "2026-08-02T00:00:00.000Z",
+    detail: {
+      ...visit.detail,
+      plannedLat: 30.24,
+      plannedLng: 120.1,
+    },
+  }
+  snapshot.events.push(secondVisit)
+  snapshot.links.push({
+    id: `${id}-city-main`,
+    journeyId: id,
+    fromEventId: visit.id,
+    toEventId: secondVisit.id,
+    kind: "MAIN",
+    rank: 1024,
+    introducedRevision: 1,
+  })
+  return snapshot
+}
+
+function rootTopologyGraph(id: string): TargetJourneyGraphSnapshot {
+  const snapshot = cityRouteGraph(id)
+  const city = snapshot.events.find((event) => event.type === "SECTION")
+  if (!city || city.detail.kind !== "CITY") {
+    throw new Error("expected city fixture")
+  }
+  const secondCity = {
+    ...city,
+    id: `${id}-city-2`,
+    title: "苏州",
+    detail: { ...city.detail, lat: 31.3, lng: 120.6 },
+  }
+  snapshot.events.push(secondCity)
+  snapshot.links.push({
+    id: `${id}-root-main`,
+    journeyId: id,
+    fromEventId: city.id,
+    toEventId: secondCity.id,
+    kind: "MAIN",
+    rank: 1024,
+    introducedRevision: 1,
+  })
+  return snapshot
+}
+
 async function setup(evalTrace?: { scenarioId: string; sink: EvalTraceSink }) {
   const workspace = await createWorkspace(context, {
     graph: graph(`agent-workspace-${randomUUID()}`),
@@ -167,57 +225,106 @@ function capabilityToken(runtime: FakeRuntime) {
   return JSON.parse(content).capabilityToken as string
 }
 
+function markProjectionInvalid(
+  gateway: AgentGateway,
+  workspaceId: string,
+  draftId: string,
+  cityEventId?: string
+) {
+  const running = (
+    gateway as unknown as {
+      runs: Map<
+        string,
+        { drafts: Map<string, { validation: PlanValidationReport }> }
+      >
+    }
+  ).runs.get(workspaceId)
+  const previous = running?.drafts.get(draftId)
+  if (!previous) throw new Error("expected stored draft")
+  previous.validation = {
+    ...previous.validation,
+    valid: false,
+    issues: [
+      {
+        code: "PROJECTION_INVALID",
+        ...(cityEventId
+          ? { cityEventId, eventIds: [cityEventId] }
+          : { eventIds: [] }),
+        severity: "ERROR",
+        path: cityEventId ?? "graph",
+        message: "Route topology needs a scoped link repair",
+        repairability: "AGENT",
+        allowedOperations: [
+          "journey.add_link",
+          "journey.retire_link",
+          "journey.select_branch",
+        ],
+        suggestion: "Repair only topology inside the affected scope.",
+      },
+    ],
+  }
+}
+
+function visitDescriptionCommand(workspaceId: string, description: string) {
+  return {
+    name: "journey.update_event" as const,
+    payload: {
+      eventId: `${workspaceId}-visit`,
+      patch: { type: "VISIT" as const, description },
+    },
+  }
+}
+
+async function validateAndCommit(
+  gateway: AgentGateway,
+  token: string,
+  input: {
+    expectedRevision: number
+    idempotencyKey: string
+    commands: unknown[]
+    previousDraftId?: string
+  }
+) {
+  const draft = await gateway.executeTool(token, {
+    type: "workspace.validate_draft",
+    ...input,
+  })
+  expect(draft.validation.valid).toBe(true)
+  return {
+    draft,
+    committed: await gateway.executeTool(token, {
+      type: "workspace.commit_draft",
+      draftId: draft.draftId,
+    }),
+  }
+}
+
 describe.sequential("P3 persistent AgentGateway", () => {
-  it("emits a complete headless Eval Trace around Agent commands", async () => {
+  it("rejects direct Agent writes without creating a revision", async () => {
     const sink = new MemoryEvalTraceSink()
     const { workspace, commands, runtime, gateway, emit } = await setup({
       scenarioId: "gateway-command-observability",
       sink,
     })
     await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
-    await gateway.executeTool(capabilityToken(runtime), {
-      type: "workspace.command",
-      expectedRevision: 0,
-      idempotencyKey: "eval-update-visit",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "西湖（可观测）" },
-        },
-      },
-    })
-    const replay = await gateway.executeTool(capabilityToken(runtime), {
-      type: "workspace.command",
-      expectedRevision: 0,
-      idempotencyKey: "eval-update-visit",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "西湖（可观测）" },
-        },
-      },
-    })
-    expect(replay.result.replayedFromIdempotencyKey).toBe(true)
     await expect(
       gateway.executeTool(capabilityToken(runtime), {
         type: "workspace.command",
         expectedRevision: 0,
-        idempotencyKey: "eval-stale-update",
+        idempotencyKey: "direct-write-is-blocked",
         command: {
           name: "journey.update_event",
           payload: {
             eventId: `${workspace.headGraph.id}-visit`,
-            patch: { type: "VISIT", title: "不应写入" },
+            patch: { type: "VISIT", description: "不应写入" },
           },
         },
       })
-    ).rejects.toThrow("updated by another request")
-    await gateway.executeTool(capabilityToken(runtime), {
-      type: "workspace.validate_plan",
-      expectedRevision: 1,
-    })
+    ).rejects.toThrow("direct Workspace commands are disabled")
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(0)
     runtime.exit(0)
     await vi.waitFor(async () => {
       expect(
@@ -234,73 +341,51 @@ describe.sequential("P3 persistent AgentGateway", () => {
         "run.started",
         "tool.started",
         "command.dispatched",
-        "command.applied",
-        "state.diff.recorded",
         "command.rejected",
         "tool.failed",
-        "tool.completed",
         "run.completed",
       ])
     )
     expect(
       validateWriteProtocolCapability("gateway-command", sink.events).hardPass
     ).toBe(true)
-    expect(
-      sink.events.filter((event) => event.type === "state.diff.recorded")
-    ).toHaveLength(1)
-    expect(sink.events).toContainEqual(
-      expect.objectContaining({
-        type: "command.applied",
-        payload: expect.objectContaining({
-          replayedFromIdempotencyKey: true,
-        }),
-      })
-    )
   })
 
-  it("does not change a committed command result when Eval Trace persistence fails", async () => {
-    const sink = new StateDiffFailingTraceSink()
+  it("does not change an atomically committed draft when validator tracing fails", async () => {
+    const sink = new ValidatorFailingTraceSink()
     const { workspace, commands, runtime, gateway, emit } = await setup({
       scenarioId: "gateway-trace-failure-isolation",
       sink,
     })
     await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
 
-    const mutation = await gateway.executeTool(capabilityToken(runtime), {
-      type: "workspace.command",
+    const draft = await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.validate_draft",
       expectedRevision: 0,
       idempotencyKey: "eval-trace-failure-update",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "西湖（Trace 失败后仍提交）" },
-        },
-      },
+      commands: [
+        visitDescriptionCommand(workspace.headGraph.id, "Trace 失败后仍提交"),
+      ],
+    })
+    expect(draft.validation).toMatchObject({ valid: true })
+    const mutation = await gateway.executeTool(capabilityToken(runtime), {
+      type: "workspace.commit_draft",
+      draftId: draft.draftId,
     })
 
     expect(mutation.result).toMatchObject({ newRevision: 1 })
     expect(
       (await commands.getDocument(context, workspace.id))?.session.headGraph
-        .events[0]?.title
-    ).toBe("西湖（Trace 失败后仍提交）")
+        .events[0]?.description
+    ).toBe("Trace 失败后仍提交")
     expect(sink.events.map((event) => event.type)).toEqual([
       "run.started",
       "tool.started",
-      "command.dispatched",
     ])
-    expect(sink.events.some((event) => event.type === "command.rejected")).toBe(
-      false
-    )
     expect(verifyEvalTrace(sink.events).valid).toBe(false)
     await expect(sink.close()).rejects.toThrow(
-      "injected state diff trace failure"
+      "injected validator trace failure"
     )
-
-    await gateway.executeTool(capabilityToken(runtime), {
-      type: "workspace.validate_plan",
-      expectedRevision: 1,
-    })
 
     runtime.exit(0)
     await vi.waitFor(async () => {
@@ -345,19 +430,12 @@ describe.sequential("P3 persistent AgentGateway", () => {
     expect(assistantMessage?.agentRunId).toBe(started?.agentRuns.at(-1)?.id)
 
     const token = capabilityToken(runtime)
-    const mutation = await gateway.executeTool(token, {
-      type: "workspace.command",
+    const { committed } = await validateAndCommit(gateway, token, {
       expectedRevision: 0,
       idempotencyKey: "agent-update-visit",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "西湖（Agent）" },
-        },
-      },
+      commands: [visitDescriptionCommand(workspace.headGraph.id, "Agent 更新")],
     })
-    expect(mutation.result).toMatchObject({ newRevision: 1 })
+    expect(committed.result).toMatchObject({ newRevision: 1 })
     await expect(
       gateway.executeTool(token, {
         type: "workspace.validate_plan",
@@ -395,7 +473,9 @@ describe.sequential("P3 persistent AgentGateway", () => {
         }),
       })
     )
-    expect(restarted?.session.headGraph.events[0]?.title).toBe("西湖（Agent）")
+    expect(restarted?.session.headGraph.events[0]?.description).toBe(
+      "Agent 更新"
+    )
     await expect(
       gateway.executeTool(token, { type: "workspace.get" })
     ).rejects.toThrow("invalid or expired")
@@ -459,28 +539,36 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
     expect(search).not.toHaveProperty("candidates")
 
-    await gateway.executeTool(token, {
-      type: "workspace.command",
+    const draft = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
       expectedRevision: 0,
       idempotencyKey: "hotel-first-only-stay",
-      command: {
-        name: "journey.add_event",
-        payload: {
-          event: {
-            type: "STAY",
-            title: "第二酒店",
-            detail: {
-              plannedLat: 34.27,
-              plannedLng: 108.95,
-              coordinateSystem: "WGS84",
+      commands: [
+        {
+          name: "journey.add_event",
+          payload: {
+            event: {
+              type: "STAY",
+              title: "第二酒店",
+              plannedStartAt: "2026-08-02T00:00:00.000Z",
+              detail: {
+                plannedLat: 34.27,
+                plannedLng: 108.95,
+                coordinateSystem: "WGS84",
+              },
+            },
+            position: {
+              placement: "END",
+              parentSectionEventId: `${workspace.headGraph.id}-city`,
             },
           },
-          position: {
-            placement: "END",
-            parentSectionEventId: `${workspace.headGraph.id}-city`,
-          },
         },
-      },
+      ],
+    })
+    expect(draft.validation.valid).toBe(true)
+    await gateway.executeTool(token, {
+      type: "workspace.commit_draft",
+      draftId: draft.draftId,
     })
 
     const document = await commands.getDocument(context, workspace.id)
@@ -495,90 +583,598 @@ describe.sequential("P3 persistent AgentGateway", () => {
         hotelOffer: { providerHotelId: "first" },
       },
     })
-    await expect(
-      gateway.executeTool(token, {
-        type: "workspace.command",
-        expectedRevision: 1,
-        idempotencyKey: "hotel-second-stay-without-offer",
-        command: {
-          name: "journey.update_event",
-          payload: {
-            eventId: `${workspace.headGraph.id}-visit`,
-            patch: {
-              type: "STAY",
-              detail: {
-                plannedLat: 34.27,
-                plannedLng: 108.95,
-                coordinateSystem: "WGS84",
-              },
-            },
-          },
-        },
-      })
-    ).rejects.toThrow("酒店检索每次只能写入首位候选一次")
-
-    await gateway.executeTool(token, {
-      type: "hotel.search",
-      requestId: "hotel-search-empty",
-      input: {
-        originQuery: "西安酒店",
-        place: "西安",
-        placeType: "城市",
-      },
+    const replay = await gateway.executeTool(token, {
+      type: "workspace.commit_draft",
+      draftId: draft.draftId,
     })
+    expect(replay.result.replayedFromIdempotencyKey).toBe(true)
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(1)
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+          ?.status
+      ).toBe("SUCCEEDED")
+    })
+
+    const noSearchWorkspace = await createWorkspace(context, {
+      graph: graph(`hotel-no-search-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const noSearchRuntime = new FakeRuntime()
+    const noSearchGateway = new AgentGateway(commands, noSearchRuntime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+      hotelService,
+    })
+    await noSearchGateway.start(
+      context,
+      noSearchWorkspace.id,
+      "不检索就写酒店",
+      "auto",
+      vi.fn()
+    )
     await expect(
-      gateway.executeTool(token, {
-        type: "workspace.command",
-        expectedRevision: 1,
-        idempotencyKey: "hotel-empty-stay",
-        command: {
-          name: "journey.add_event",
-          payload: {
-            event: {
-              type: "STAY",
-              title: "空结果不应写入",
-              detail: {
-                plannedLat: 34.27,
-                plannedLng: 108.95,
-                coordinateSystem: "WGS84",
+      noSearchGateway.executeTool(capabilityToken(noSearchRuntime), {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "hotel-no-search-stay",
+        commands: [
+          {
+            name: "journey.add_event",
+            payload: {
+              event: {
+                type: "STAY",
+                title: "伪造酒店",
+                detail: {
+                  plannedLat: 34.27,
+                  plannedLng: 108.95,
+                  coordinateSystem: "WGS84",
+                },
+              },
+              position: {
+                placement: "END",
+                parentSectionEventId: `${noSearchWorkspace.headGraph.id}-city`,
               },
             },
-            position: {
-              placement: "END",
-              parentSectionEventId: `${workspace.headGraph.id}-city`,
-            },
           },
-        },
+        ],
       })
     ).rejects.toThrow("酒店检索每次只能写入首位候选一次")
-    runtime.exit(1)
+    noSearchRuntime.exit(1)
   })
 
-  it("fails a mutated run that does not validate its final revision", async () => {
+  it("does not treat a rejected direct write as a graph mutation", async () => {
     const { workspace, commands, runtime, gateway, emit } = await setup()
     await gateway.start(context, workspace.id, "更新路线", "auto", emit)
-    await gateway.executeTool(capabilityToken(runtime), {
-      type: "workspace.command",
-      expectedRevision: 0,
-      idempotencyKey: "unvalidated-update",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "未校验更新" },
-        },
-      },
-    })
+    await expect(
+      gateway.executeTool(capabilityToken(runtime), {
+        type: "workspace.command",
+        expectedRevision: 0,
+        idempotencyKey: "unvalidated-update",
+        command: visitDescriptionCommand(workspace.headGraph.id, "未校验更新"),
+      })
+    ).rejects.toThrow("direct Workspace commands are disabled")
 
     runtime.exit(0)
     await vi.waitFor(async () => {
       expect(
         (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
       ).toMatchObject({
-        status: "FAILED",
-        errorCode: "PLAN_VALIDATION_REQUIRED",
+        status: "SUCCEEDED",
       })
     })
+  })
+
+  it("validates a draft before atomically committing one Workspace revision", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "更新西湖标题", "auto", emit)
+    const token = capabilityToken(runtime)
+    const validation = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-title-update",
+      commands: [visitDescriptionCommand(workspace.headGraph.id, "草稿更新")],
+    })
+
+    expect(validation).toMatchObject({
+      draftId: "draft-title-update",
+      validation: { valid: true, workspaceRevision: 1 },
+      repairsRemaining: 2,
+    })
+    expect(validation.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "IMAGE_UNAVAILABLE",
+        severity: "WARNING",
+      })
+    )
+    const replay = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-title-update",
+      commands: [visitDescriptionCommand(workspace.headGraph.id, "草稿更新")],
+    })
+    expect(replay).toEqual(validation)
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(0)
+
+    const committed = await gateway.executeTool(token, {
+      type: "workspace.commit_draft",
+      draftId: validation.draftId,
+    })
+    expect(committed.result).toMatchObject({
+      commandName: "journey.apply_draft",
+      newRevision: 1,
+    })
+    const document = await commands.getDocument(context, workspace.id)
+    expect(document?.session).toMatchObject({ headWorkspaceRevision: 1 })
+    expect(document?.session.headGraph.events).toContainEqual(
+      expect.objectContaining({
+        id: `${workspace.headGraph.id}-visit`,
+        description: "草稿更新",
+      })
+    )
+    const revisions = await prisma.workspaceRevision.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { revision: "asc" },
+    })
+    expect(revisions).toHaveLength(1)
+    expect(revisions[0]?.commandName).toBe("JOURNEY_APPLY_DRAFT")
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+          ?.status
+      ).toBe("SUCCEEDED")
+    })
+  })
+
+  it("binds a changed place event to a resolve result from the same Agent run", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: graph(`verified-place-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const runtime = new FakeRuntime()
+    const commands = new WorkspaceCommandService()
+    const placeRef = {
+      provider: "amap" as const,
+      providerId: "B-west-lake",
+      canonicalName: "西湖",
+      city: "杭州",
+      lat: 30.25,
+      lng: 120.15,
+      coordinateSystem: "GCJ02" as const,
+      confidence: 0.99,
+      candidates: [],
+    }
+    const coverImage = {
+      provider: "amap" as const,
+      url: "https://images.example/west-lake.jpg",
+      fetchedAt: "2026-08-09T00:00:00.000Z",
+      width: 1200,
+      height: 800,
+    }
+    const command = (coverWidth?: number) => ({
+      name: "journey.update_event",
+      payload: {
+        eventId: `${workspace.headGraph.id}-visit`,
+        patch: {
+          type: "VISIT",
+          title: "西湖",
+          detail: {
+            plannedLat: 30.25,
+            plannedLng: 120.15,
+            coordinateSystem: "GCJ02",
+            coordinateProvider: "amap",
+            providerPlaceId: "B-west-lake",
+            ...(coverWidth
+              ? { providerCoverImage: { ...coverImage, width: coverWidth } }
+              : {}),
+          },
+        },
+      },
+    })
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+      placeService: {
+        resolvePlaceForJourneyEvent: vi.fn().mockResolvedValue({
+          status: "ready",
+          place: {},
+          placeRef,
+          command: command(coverImage.width),
+          warnings: [],
+        }),
+      } as never,
+    })
+    await gateway.start(context, workspace.id, "校对西湖", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    const unverified = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "place-unverified",
+      commands: [command()],
+    })
+    expect(unverified.validation).toMatchObject({ valid: false })
+    expect(unverified.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "PLACE_UNVERIFIED", severity: "ERROR" })
+    )
+
+    await gateway.executeTool(token, {
+      type: "place.resolve_for_journey_event",
+      requestId: "resolve-west-lake",
+      input: {
+        text: "西湖",
+        city: "杭州",
+        eventId: `${workspace.headGraph.id}-visit`,
+      },
+    })
+    const forgedDimensions = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "place-forged-dimensions",
+      previousDraftId: unverified.draftId,
+      commands: [command(coverImage.width + 1)],
+    })
+    expect(forgedDimensions.validation).toMatchObject({ valid: false })
+    expect(forgedDimensions.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "PLACE_UNVERIFIED", severity: "ERROR" })
+    )
+    const verified = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "place-verified",
+      previousDraftId: forgedDimensions.draftId,
+      commands: [command(coverImage.width)],
+    })
+    expect(verified.validation.valid).toBe(true)
+    await gateway.executeTool(token, {
+      type: "workspace.commit_draft",
+      draftId: verified.draftId,
+    })
+    runtime.exit(0)
+  })
+
+  it("limits an Agent run to an initial validation and two draft repairs", async () => {
+    const {
+      workspace,
+      commands: workspaceCommands,
+      runtime,
+      gateway,
+      emit,
+    } = await setup()
+    await gateway.start(context, workspace.id, "修复城市时区", "auto", emit)
+    const token = capabilityToken(runtime)
+    const commands = [
+      {
+        name: "journey.update_event",
+        payload: {
+          eventId: `${workspace.headGraph.id}-city`,
+          patch: {
+            type: "SECTION",
+            detail: {
+              kind: "CITY",
+              timeZone: "not-a-timezone",
+              lat: 30.2741,
+              lng: 120.1551,
+              coordinateSystem: "GCJ02",
+            },
+          },
+        },
+      },
+    ]
+
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-initial",
+      commands,
+    })
+    expect(initial.validation).toMatchObject({ valid: false })
+    expect(initial.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "CITY_TIMEZONE_INVALID" })
+    )
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.commit_draft",
+        draftId: initial.draftId,
+      })
+    ).rejects.toThrow("Journey draft validation failed")
+    expect(
+      (await workspaceCommands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(0)
+
+    const firstRepair = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-repair-1",
+      previousDraftId: initial.draftId,
+      commands,
+    })
+    expect(firstRepair.validation).toMatchObject({ valid: false })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "draft-stale-ancestor",
+        previousDraftId: initial.draftId,
+        commands,
+      })
+    ).rejects.toThrow("latest invalid draft")
+    const secondRepair = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "draft-repair-2",
+      previousDraftId: firstRepair.draftId,
+      commands,
+    })
+    expect(secondRepair.validation).toMatchObject({ valid: false })
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "draft-over-limit",
+        previousDraftId: secondRepair.draftId,
+        commands,
+      })
+    ).rejects.toThrow("exhausted its two repair attempts")
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (
+          await workspaceCommands.getDocument(context, workspace.id)
+        )?.agentRuns.at(-1)?.status
+      ).toBe("SUCCEEDED")
+    })
+  })
+
+  it("accepts only repair operations allowed by the previous invalid draft", async () => {
+    const { workspace, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "修复城市时区", "auto", emit)
+    const token = capabilityToken(runtime)
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "repair-scope-initial",
+      commands: [
+        {
+          name: "journey.update_event",
+          payload: {
+            eventId: `${workspace.headGraph.id}-city`,
+            patch: {
+              type: "SECTION",
+              detail: {
+                kind: "CITY",
+                timeZone: "not-a-timezone",
+                lat: 30.2741,
+                lng: 120.1551,
+                coordinateSystem: "GCJ02",
+              },
+            },
+          },
+        },
+      ],
+    })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "repair-scope-illegal",
+        previousDraftId: initial.draftId,
+        commands: [
+          {
+            name: "journey.update_event",
+            payload: {
+              eventId: `${workspace.headGraph.id}-visit`,
+              patch: {
+                type: "VISIT",
+                description: "无关修复",
+              },
+            },
+          },
+        ],
+      })
+    ).rejects.toThrow("does not target a previous draft issue")
+    runtime.exit(0)
+  })
+
+  it("allows the first CITY to repair an empty root route", async () => {
+    const workspace = await createWorkspace(context, {
+      graph: emptyRootGraph(`empty-root-${randomUUID()}`),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await gateway.start(context, workspace.id, "补齐首个城市", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "empty-root-initial",
+      commands: [
+        {
+          name: "journey.add_event",
+          payload: {
+            event: { type: "NOTE", title: "暂存", detail: { body: "暂存" } },
+            position: { placement: "UNSCHEDULED" },
+          },
+        },
+      ],
+    })
+    expect(initial.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "ROOT_ROUTE_DISCONNECTED" })
+    )
+
+    const repaired = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "empty-root-first-city",
+      previousDraftId: initial.draftId,
+      commands: [
+        {
+          name: "journey.add_event",
+          payload: {
+            event: {
+              type: "SECTION",
+              title: "杭州",
+              detail: {
+                kind: "CITY",
+                timeZone: "Asia/Shanghai",
+                lat: 30.2741,
+                lng: 120.1551,
+                coordinateSystem: "GCJ02",
+              },
+            },
+            position: { placement: "START", parentSectionEventId: null },
+          },
+        },
+      ],
+    })
+    expect(repaired.validation.issues).not.toContainEqual(
+      expect.objectContaining({ code: "ROOT_ROUTE_DISCONNECTED" })
+    )
+    runtime.exit(0)
+  })
+
+  it("allows a projection repair to add a link within its CITY scope", async () => {
+    const journeyId = `city-projection-${randomUUID()}`
+    const workspace = await createWorkspace(context, {
+      graph: cityRouteGraph(journeyId),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await gateway.start(context, workspace.id, "修复城市拓扑", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "city-projection-initial",
+      commands: [
+        visitDescriptionCommand(journeyId, "保留可修复的城市拓扑草稿"),
+      ],
+    })
+    expect(initial.validation.valid).toBe(true)
+
+    const cityEventId = `${journeyId}-city`
+    markProjectionInvalid(gateway, workspace.id, initial.draftId, cityEventId)
+
+    const repaired = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "city-projection-link-repair",
+      previousDraftId: initial.draftId,
+      commands: [
+        {
+          name: "journey.add_link",
+          payload: {
+            link: {
+              id: "city-scope-alternative",
+              fromEventId: `${journeyId}-visit`,
+              toEventId: `${journeyId}-visit-2`,
+              kind: "ALTERNATIVE",
+              branchKey: "city-scope-repair",
+              rank: 2048,
+            },
+          },
+        },
+      ],
+    })
+    expect(repaired.validation.valid).toBe(true)
+    runtime.exit(0)
+  })
+
+  it("allows root projection links but rejects CITY links", async () => {
+    const journeyId = `root-projection-${randomUUID()}`
+    const workspace = await createWorkspace(context, {
+      graph: rootTopologyGraph(journeyId),
+      now: new Date(now),
+    })
+    const commands = new WorkspaceCommandService()
+    const runtime = new FakeRuntime()
+    const gateway = new AgentGateway(commands, runtime, {
+      backendUrl: "http://127.0.0.1:3002",
+      projectRoot: "/workspace/periplus",
+      heartbeatIntervalMs: null,
+    })
+    await gateway.start(context, workspace.id, "修复根级拓扑", "auto", vi.fn())
+    const token = capabilityToken(runtime)
+    const initial = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "root-projection-initial",
+      commands: [visitDescriptionCommand(journeyId, "保留根级拓扑草稿")],
+    })
+    markProjectionInvalid(gateway, workspace.id, initial.draftId)
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "root-projection-city-link",
+        previousDraftId: initial.draftId,
+        commands: [
+          {
+            name: "journey.add_link",
+            payload: {
+              link: {
+                id: "city-link-is-not-root-repair",
+                fromEventId: `${journeyId}-visit`,
+                toEventId: `${journeyId}-visit-2`,
+                kind: "ALTERNATIVE",
+                branchKey: "city-not-root",
+                rank: 2048,
+              },
+            },
+          },
+        ],
+      })
+    ).rejects.toThrow("does not target a previous draft issue")
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "root-projection-root-link",
+        previousDraftId: initial.draftId,
+        commands: [
+          {
+            name: "journey.add_link",
+            payload: {
+              link: {
+                id: "root-scope-alternative",
+                fromEventId: `${journeyId}-city`,
+                toEventId: `${journeyId}-city-2`,
+                kind: "ALTERNATIVE",
+                branchKey: "root-scope-repair",
+                rank: 2048,
+              },
+            },
+          },
+        ],
+      })
+    ).resolves.toMatchObject({ draftId: "root-projection-root-link" })
+    runtime.exit(0)
   })
 
   it("keeps a user-cancelled run cancelled when the runtime exits without a code", async () => {
@@ -598,47 +1194,93 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
   })
 
-  it("invalidates a successful report after another graph mutation", async () => {
+  it("rejects a draft after a concurrent user revision", async () => {
     const { workspace, commands, runtime, gateway, emit } = await setup()
     await gateway.start(context, workspace.id, "连续更新路线", "auto", emit)
     const token = capabilityToken(runtime)
-    await gateway.executeTool(token, {
-      type: "workspace.command",
+    const draft = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
       expectedRevision: 0,
-      idempotencyKey: "validated-update",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "第一次更新" },
-        },
-      },
+      idempotencyKey: "concurrent-draft",
+      commands: [
+        visitDescriptionCommand(workspace.headGraph.id, "Agent 草稿更新"),
+      ],
     })
-    await gateway.executeTool(token, {
-      type: "workspace.validate_plan",
-      expectedRevision: 1,
+    expect(draft.validation.valid).toBe(true)
+    await commands.execute(context, {
+      aggregateId: workspace.id,
+      expectedRevision: 0,
+      idempotencyKey: "concurrent-user-update",
+      actor: { kind: "USER", userId: context.userId },
+      command: visitDescriptionCommand(workspace.headGraph.id, "用户并发更新"),
     })
-    await gateway.executeTool(token, {
-      type: "workspace.command",
-      expectedRevision: 1,
-      idempotencyKey: "stale-validation-update",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "第二次更新" },
-        },
-      },
-    })
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.commit_draft",
+        draftId: draft.draftId,
+      })
+    ).rejects.toThrow("updated by another request")
 
     runtime.exit(0)
     await vi.waitFor(async () => {
       expect(
         (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
       ).toMatchObject({
-        status: "FAILED",
-        errorCode: "PLAN_VALIDATION_REQUIRED",
+        status: "SUCCEEDED",
       })
+    })
+  })
+
+  it("rejects a commit when the canonical baseline advances after commit", async () => {
+    const { workspace, commands, runtime, gateway, emit } = await setup()
+    await gateway.start(context, workspace.id, "连续更新路线", "auto", emit)
+    const token = capabilityToken(runtime)
+    const draft = await gateway.executeTool(token, {
+      type: "workspace.validate_draft",
+      expectedRevision: 0,
+      idempotencyKey: "post-commit-concurrent-draft",
+      commands: [
+        visitDescriptionCommand(workspace.headGraph.id, "Agent 原子提交"),
+      ],
+    })
+    const commitAgentDraft = commands.commitAgentDraft.bind(commands)
+    vi.spyOn(commands, "commitAgentDraft").mockImplementation(
+      async (commitContext, committedDraft, options) => {
+        const result = await commitAgentDraft(
+          commitContext,
+          committedDraft,
+          options
+        )
+        await commands.execute(context, {
+          aggregateId: workspace.id,
+          expectedRevision: result.newRevision,
+          idempotencyKey: "post-commit-concurrent-user-write",
+          actor: { kind: "USER", userId: context.userId },
+          command: visitDescriptionCommand(
+            workspace.headGraph.id,
+            "用户在基线读取前更新"
+          ),
+        })
+        return result
+      }
+    )
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "workspace.commit_draft",
+        draftId: draft.draftId,
+      })
+    ).rejects.toThrow("updated by another request")
+    expect(
+      (await commands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(2)
+
+    runtime.exit(0)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+      ).toMatchObject({ status: "FAILED" })
     })
   })
 
@@ -684,34 +1326,24 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
   })
 
-  it("returns lifecycle identities through the Agent tool round-trip", async () => {
+  it("blocks non-draft lifecycle commands from the Agent capability", async () => {
     const { workspace, commands, runtime, gateway, emit } = await setup()
     await gateway.start(context, workspace.id, "fork workspace", "auto", emit)
-    const result = await gateway.executeTool(capabilityToken(runtime), {
-      type: "workspace.command",
-      expectedRevision: 0,
-      idempotencyKey: "agent-fork-workspace",
-      command: {
-        name: "workspace.fork",
-        payload: { fromWorkspaceRevision: 0 },
-      },
-    })
-    expect(result.result.outcome).toMatchObject({
-      type: "workspace.forked",
-      sourceWorkspaceId: workspace.id,
-      sourceWorkspaceRevision: 0,
-      headWorkspaceRevision: 0,
-      workspaceId: expect.any(String),
-    })
-    const forkWorkspaceId = (result.result.outcome as { workspaceId: string })
-      .workspaceId
+    await expect(
+      gateway.executeTool(capabilityToken(runtime), {
+        type: "workspace.command",
+        expectedRevision: 0,
+        idempotencyKey: "agent-fork-workspace",
+        command: {
+          name: "workspace.fork",
+          payload: { fromWorkspaceRevision: 0 },
+        },
+      })
+    ).rejects.toThrow("direct Workspace commands are disabled")
     expect(
-      (await commands.getDocument(context, forkWorkspaceId))?.session
-    ).toMatchObject({
-      id: forkWorkspaceId,
-      headWorkspaceRevision: 0,
-      headGraph: workspace.headGraph,
-    })
+      (await commands.getDocument(context, workspace.id))?.session
+        .headWorkspaceRevision
+    ).toBe(0)
     runtime.exit(0)
   })
 
@@ -938,7 +1570,7 @@ describe.sequential("P3 persistent AgentGateway", () => {
     runtime.exit(0)
   })
 
-  it("reclaims an expired crash-orphan without losing persisted messages or commands", async () => {
+  it("reclaims an expired crash-orphan without persisting an uncommitted draft", async () => {
     const workspace = await createWorkspace(context, {
       graph: graph(`agent-restart-${randomUUID()}`),
       now: new Date(now),
@@ -956,18 +1588,13 @@ describe.sequential("P3 persistent AgentGateway", () => {
     })
     const emit = vi.fn()
     await gateway1.start(context, workspace.id, "first prompt", "auto", emit)
-    await gateway1.executeTool(capabilityToken(runtime1), {
-      type: "workspace.command",
+    const draft = await gateway1.executeTool(capabilityToken(runtime1), {
+      type: "workspace.validate_draft",
       expectedRevision: 0,
-      idempotencyKey: "command-before-crash",
-      command: {
-        name: "journey.update_event",
-        payload: {
-          eventId: `${workspace.headGraph.id}-visit`,
-          patch: { type: "VISIT", title: "persisted before crash" },
-        },
-      },
+      idempotencyKey: "draft-before-crash",
+      commands: [visitDescriptionCommand(workspace.headGraph.id, "不应持久化")],
     })
+    expect(draft.validation.valid).toBe(true)
     runtime1.observer?.onStdout("partial stdout is durable")
     await vi.waitFor(async () => {
       const document = await commands.getDocument(context, workspace.id, clock)
@@ -1000,9 +1627,8 @@ describe.sequential("P3 persistent AgentGateway", () => {
       "resume prompt",
       "",
     ])
-    expect(recovered?.session.headGraph.events[0]?.title).toBe(
-      "persisted before crash"
-    )
+    expect(recovered?.session.headWorkspaceRevision).toBe(0)
+    expect(recovered?.session.headGraph.events[0]?.description).toBeUndefined()
 
     runtime2.exit(0)
     await vi.waitFor(async () => {

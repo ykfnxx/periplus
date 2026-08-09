@@ -92,6 +92,8 @@ export interface PlaceImage {
   url: string
   title?: string
   fetchedAt: string
+  width?: number
+  height?: number
 }
 
 export interface PlaceSearchResult {
@@ -117,10 +119,39 @@ export interface PlaceSearchResult {
   reason: string
 }
 
+export interface PlaceRef {
+  provider: PlaceProvider
+  providerId?: string
+  canonicalName: string
+  city?: string
+  address?: string
+  lat: number
+  lng: number
+  coordinateSystem: CoordinateSystem
+  confidence: number
+  candidates: Array<{
+    id: string
+    name: string
+    city?: string
+    confidence: number
+  }>
+}
+
+export interface PlaceVerification {
+  ref: PlaceRef
+  coverImage?: PlaceImage
+}
+
 export interface ProviderWarning {
   provider: PlaceProvider
-  code: "timeout" | "quota_exceeded" | "provider_error" | "low_confidence"
+  code:
+    | "timeout"
+    | "quota_exceeded"
+    | "provider_error"
+    | "low_confidence"
+    | "IMAGE_UNAVAILABLE"
   message: string
+  image?: PlaceImage
 }
 
 export interface PlaceSearchResponse {
@@ -147,6 +178,7 @@ export type PlaceResolveForJourneyEventResult =
   | {
       status: "ready"
       place: PlaceSearchResult
+      placeRef: PlaceRef
       command: {
         name: "journey.update_event"
         payload: {
@@ -164,6 +196,8 @@ export type PlaceResolveForJourneyEventResult =
                 provider: "amap"
                 url: string
                 fetchedAt: string
+                width?: number
+                height?: number
               }
             }
           }
@@ -177,6 +211,7 @@ export type PlaceResolveResult =
   | {
       status: "resolved"
       place: PlaceSearchResult
+      placeRef: PlaceRef
       warnings: ProviderWarning[]
     }
   | {
@@ -197,7 +232,12 @@ export interface PlaceEnrichInput {
   provider?: PlaceProvider
   providerId?: string
   fields: Array<
-    "coordinates" | "aliases" | "description" | "provider_match" | "categories"
+    | "coordinates"
+    | "aliases"
+    | "description"
+    | "provider_match"
+    | "categories"
+    | "images"
   >
 }
 

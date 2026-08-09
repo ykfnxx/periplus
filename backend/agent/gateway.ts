@@ -9,6 +9,7 @@ import {
   isAttractionSearch,
 } from "@/lib/places/attractions"
 import type { HotelCandidate } from "@/lib/hotels/types"
+import type { PlaceImage, PlaceVerification } from "@/lib/places/types"
 import {
   placeEnrichInputSchema,
   placeResolveForJourneyEventInputSchema,
@@ -19,8 +20,6 @@ import {
   targetCommandBodySchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   type PlanValidationReport,
-  type TargetCommandEnvelope,
-  type TargetCommandResult,
 } from "@/modules/data-model/contracts"
 import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
@@ -45,7 +44,10 @@ import {
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
 } from "@/modules/data/workspaces/workspace-repository"
-import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
+import {
+  type PreparedAgentDraft,
+  WorkspaceCommandService,
+} from "@/modules/workspace/server/workspace-command-service"
 import type {
   AgentConversationMessage,
   AgentEventEmitter,
@@ -145,6 +147,12 @@ interface RunningAgent {
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
   hotelStayState: HotelStayState
+  verifiedPlaces: Map<string, PlaceVerification>
+  drafts: Map<string, PreparedAgentDraft>
+  draftRequests: Map<string, string>
+  draftHotelSelections: Map<string, HotelStaySelection>
+  latestDraftId: string | null
+  draftValidationAttempts: number
 }
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
@@ -153,6 +161,29 @@ export const agentToolRequestSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("workspace.validate_plan"),
       expectedRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.validate_draft"),
+      expectedRevision: z.number().int().nonnegative(),
+      idempotencyKey: z.string().trim().min(1),
+      commands: z.array(z.unknown()).min(1).max(40),
+      previousDraftId: z.string().trim().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.prepare_transit"),
+      previousDraftId: z.string().trim().min(1),
+      idempotencyKey: z.string().trim().min(1),
+      eventId: z.string().trim().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("workspace.commit_draft"),
+      draftId: z.string().trim().min(1),
     })
     .strict(),
   z
@@ -240,14 +271,6 @@ function withoutRequestId<T extends { requestId: string }>(
   return output as Omit<T, "requestId">
 }
 
-function changesJourneyGraph(commandName: string) {
-  return (
-    commandName.startsWith("journey.") ||
-    commandName === "workspace.refresh" ||
-    commandName === "workspace.replay"
-  )
-}
-
 function selectedHotelStay(candidate: HotelCandidate) {
   return {
     plannedLat: candidate.coordinates.lat,
@@ -266,69 +289,278 @@ function selectedHotelStay(candidate: HotelCandidate) {
   }
 }
 
-function commandWithSelectedHotel(
+function draftCommandsWithSelectedHotel(
   running: RunningAgent,
-  command: ReturnType<typeof targetCommandBodySchema.parse>,
-  idempotencyKey: string
+  commands: Array<ReturnType<typeof targetCommandBodySchema.parse>>,
+  hasSelectedHotel: boolean
 ) {
   const state = running.hotelStayState
-  const selected =
-    state.kind === "available" ||
-    (state.kind === "consumed" && state.idempotencyKey === idempotencyKey)
-      ? state.selection
-      : null
-  const consumesSelectedHotel = state.kind === "available"
-
+  const stayCommands = commands.filter(
+    (command) =>
+      (command.name === "journey.add_event" &&
+        command.payload.event.type === "STAY") ||
+      (command.name === "journey.update_event" &&
+        command.payload.patch.type === "STAY") ||
+      (command.name === "journey.replace_event" &&
+        command.payload.successor.type === "STAY")
+  )
+  if (!stayCommands.length) return { commands, selection: undefined }
   if (
-    command.name === "journey.add_event" &&
-    command.payload.event.type === "STAY"
+    stayCommands.length > 1 ||
+    hasSelectedHotel ||
+    state.kind !== "available"
   ) {
-    if (!selected) {
-      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
-    }
-    return {
-      command: {
-        ...command,
-        payload: {
-          ...command.payload,
-          event: {
-            ...command.payload.event,
-            title: selected.candidate.name,
-            detail: { ...command.payload.event.detail, ...selected.stayDetail },
-          },
-        },
-      },
-      consumesSelectedHotel,
-    }
+    throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
   }
 
-  if (
-    command.name === "journey.update_event" &&
-    command.payload.patch.type === "STAY"
-  ) {
-    if (!selected) {
-      throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
-    }
-    return {
-      command: {
-        ...command,
-        payload: {
-          ...command.payload,
-          patch: {
-            ...command.payload.patch,
-            title: selected.candidate.name,
-            detail: {
-              ...command.payload.patch.detail,
-              ...selected.stayDetail,
+  const selected = state.selection
+  return {
+    commands: commands.map((command) => {
+      if (
+        command.name === "journey.add_event" &&
+        command.payload.event.type === "STAY"
+      ) {
+        return {
+          ...command,
+          payload: {
+            ...command.payload,
+            event: {
+              ...command.payload.event,
+              title: selected.candidate.name,
+              detail: {
+                ...command.payload.event.detail,
+                ...selected.stayDetail,
+              },
             },
           },
-        },
-      },
-      consumesSelectedHotel,
-    }
+        }
+      }
+      if (
+        command.name === "journey.update_event" &&
+        command.payload.patch.type === "STAY"
+      ) {
+        return {
+          ...command,
+          payload: {
+            ...command.payload,
+            patch: {
+              ...command.payload.patch,
+              title: selected.candidate.name,
+              detail: {
+                ...command.payload.patch.detail,
+                ...selected.stayDetail,
+              },
+            },
+          },
+        }
+      }
+      if (
+        command.name === "journey.replace_event" &&
+        command.payload.successor.type === "STAY"
+      ) {
+        return {
+          ...command,
+          payload: {
+            ...command.payload,
+            successor: {
+              ...command.payload.successor,
+              title: selected.candidate.name,
+              detail: {
+                ...command.payload.successor.detail,
+                ...selected.stayDetail,
+              },
+            },
+          },
+        }
+      }
+      return command
+    }),
+    selection: selected,
+  }
+}
+
+function placeVerificationKey(verification: PlaceVerification) {
+  const { ref } = verification
+  return [
+    ref.provider,
+    ref.providerId ?? "",
+    ref.canonicalName,
+    ref.lat,
+    ref.lng,
+    ref.coordinateSystem,
+  ].join(":")
+}
+
+function selectedCoverImage(result: unknown): PlaceImage | undefined {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("command" in result) ||
+    !result.command ||
+    typeof result.command !== "object" ||
+    !("payload" in result.command) ||
+    !result.command.payload ||
+    typeof result.command.payload !== "object" ||
+    !("patch" in result.command.payload) ||
+    !result.command.payload.patch ||
+    typeof result.command.payload.patch !== "object" ||
+    !("detail" in result.command.payload.patch) ||
+    !result.command.payload.patch.detail ||
+    typeof result.command.payload.patch.detail !== "object" ||
+    !("providerCoverImage" in result.command.payload.patch.detail)
+  ) {
+    return undefined
+  }
+  return result.command.payload.patch.detail.providerCoverImage as PlaceImage
+}
+
+type DraftPosition = {
+  placement: "UNSCHEDULED" | "START" | "END" | "BEFORE" | "AFTER" | "BRANCH"
+  parentSectionEventId?: string | null
+  anchorEventId?: string
+  forkEventId?: string
+  joinEventId?: string
+}
+
+function positionTouchesIssue(
+  position: DraftPosition,
+  eventIds: ReadonlySet<string>
+) {
+  if (position.placement === "START" || position.placement === "END") {
+    return Boolean(
+      position.parentSectionEventId &&
+      eventIds.has(position.parentSectionEventId)
+    )
+  }
+  if (position.placement === "BEFORE" || position.placement === "AFTER") {
+    return Boolean(
+      position.anchorEventId && eventIds.has(position.anchorEventId)
+    )
+  }
+  if (position.placement === "BRANCH") {
+    return (
+      Boolean(position.forkEventId && eventIds.has(position.forkEventId)) ||
+      Boolean(position.joinEventId && eventIds.has(position.joinEventId))
+    )
+  }
+  return false
+}
+
+function isRootCityInsertion(
+  command: ReturnType<typeof targetCommandBodySchema.parse>
+) {
+  if (
+    command.name !== "journey.add_event" ||
+    command.payload.event.type !== "SECTION" ||
+    command.payload.event.detail.kind !== "CITY"
+  ) {
+    return false
+  }
+  const { position } = command.payload
+  return (
+    (position.placement === "START" || position.placement === "END") &&
+    position.parentSectionEventId === null
+  )
+}
+
+function isScopeEvent(
+  draft: PreparedAgentDraft,
+  eventId: string,
+  scopeEventId: string | null
+) {
+  return (
+    draft.after.events.find((event) => event.id === eventId)
+      ?.parentSectionEventId === scopeEventId
+  )
+}
+
+function isScopeLink(
+  draft: PreparedAgentDraft,
+  linkId: string,
+  scopeEventId: string | null
+) {
+  const link = draft.after.links.find((candidate) => candidate.id === linkId)
+  return Boolean(
+    link &&
+    isScopeEvent(draft, link.fromEventId, scopeEventId) &&
+    isScopeEvent(draft, link.toEventId, scopeEventId)
+  )
+}
+
+function projectionRepairTargetsScope(
+  command: ReturnType<typeof targetCommandBodySchema.parse>,
+  draft: PreparedAgentDraft,
+  scopeEventId: string | null
+) {
+  switch (command.name) {
+    case "journey.add_link":
+      return (
+        isScopeEvent(draft, command.payload.link.fromEventId, scopeEventId) &&
+        isScopeEvent(draft, command.payload.link.toEventId, scopeEventId)
+      )
+    case "journey.retire_link":
+      return isScopeLink(draft, command.payload.linkId, scopeEventId)
+    case "journey.select_branch":
+      return (
+        isScopeEvent(draft, command.payload.forkEventId, scopeEventId) &&
+        isScopeLink(draft, command.payload.selectedLinkId, scopeEventId)
+      )
+    default:
+      return false
+  }
+}
+
+function repairTargetsIssue(
+  command: ReturnType<typeof targetCommandBodySchema.parse>,
+  issue: PlanValidationReport["issues"][number],
+  draft: PreparedAgentDraft
+) {
+  if (issue.code === "ROOT_ROUTE_DISCONNECTED" && issue.eventIds.length === 0) {
+    return isRootCityInsertion(command)
+  }
+  if (issue.code === "PROJECTION_INVALID") {
+    return projectionRepairTargetsScope(
+      command,
+      draft,
+      issue.cityEventId ?? null
+    )
+  }
+  const eventIds = new Set(issue.eventIds)
+  const touchesEvent = (eventId: string) => eventIds.has(eventId)
+  const touchesLink = (linkId: string) => {
+    const link = draft.after.links.find((candidate) => candidate.id === linkId)
+    return Boolean(
+      link && (touchesEvent(link.fromEventId) || touchesEvent(link.toEventId))
+    )
   }
 
-  return { command, consumesSelectedHotel: false }
+  switch (command.name) {
+    case "journey.add_event":
+      return positionTouchesIssue(command.payload.position, eventIds)
+    case "journey.update_event":
+    case "journey.move_event":
+    case "journey.place_event":
+    case "journey.retire_event":
+    case "journey.plan_transit":
+    case "journey.select_transit_plan":
+      return touchesEvent(command.payload.eventId)
+    case "journey.replace_event":
+      return touchesEvent(command.payload.predecessorEventId)
+    case "journey.add_link":
+      return (
+        touchesEvent(command.payload.link.fromEventId) ||
+        touchesEvent(command.payload.link.toEventId)
+      )
+    case "journey.retire_link":
+      return touchesLink(command.payload.linkId)
+    case "journey.select_branch":
+      return (
+        touchesEvent(command.payload.forkEventId) ||
+        touchesLink(command.payload.selectedLinkId)
+      )
+    default:
+      return false
+  }
 }
 
 function conversationMessages(
@@ -659,6 +891,12 @@ export class AgentGateway {
       requiresPlanValidation: false,
       lastPlanValidation: null,
       hotelStayState: { kind: "not_searched" },
+      verifiedPlaces: new Map(),
+      drafts: new Map(),
+      draftRequests: new Map(),
+      draftHotelSelections: new Map(),
+      latestDraftId: null,
+      draftValidationAttempts: 0,
     }
     this.runs.set(workspaceId, running)
     this.runsByCapability.set(capabilityToken, running)
@@ -824,6 +1062,29 @@ export class AgentGateway {
   ): Promise<PlanValidationReport>
   async executeTool(
     capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.validate_draft" }>
+  ): Promise<{
+    draftId: string
+    validation: PlanValidationReport
+    repairsRemaining: number
+  }>
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.commit_draft" }>
+  ): Promise<{
+    result: Awaited<ReturnType<WorkspaceCommandService["commitAgentDraft"]>>
+    workspace: Awaited<ReturnType<WorkspaceCommandService["getDocument"]>>
+  }>
+  async executeTool(
+    capabilityToken: string,
+    request: Extract<AgentToolRequest, { type: "workspace.prepare_transit" }>
+  ): Promise<{
+    draftId: string
+    validation: PlanValidationReport
+    repairsRemaining: number
+  }>
+  async executeTool(
+    capabilityToken: string,
     request: Extract<AgentToolRequest, { type: "workspace.command" }>
   ): Promise<{
     result: Awaited<ReturnType<WorkspaceCommandService["execute"]>>
@@ -891,6 +1152,20 @@ export class AgentGateway {
         redactedInput(request.command) ?? ""
       )
     }
+    const otelDraftSpan =
+      request.type === "workspace.validate_draft" ||
+      request.type === "workspace.commit_draft" ||
+      request.type === "workspace.prepare_transit"
+        ? running.telemetry.startSpan(
+            request.type,
+            OpenInferenceSpanKind.CHAIN,
+            {},
+            otelToolSpan.context
+          )
+        : null
+    if (otelDraftSpan) {
+      otelDraftSpan.setAttribute("input.value", redactedInput(request) ?? "")
+    }
     await this.trace(running, {
       type: "tool.started",
       spanId: toolSpanId,
@@ -924,7 +1199,6 @@ export class AgentGateway {
       })
     }
 
-    let appliedCommandResult: TargetCommandResult | null = null
     try {
       await this.heartbeat(running)
       let output: unknown
@@ -989,87 +1263,285 @@ export class AgentGateway {
           },
         })
         output = validation
+      } else if (request.type === "workspace.validate_draft") {
+        const existingDraft = running.drafts.get(request.idempotencyKey)
+        const requestFingerprint = JSON.stringify({
+          expectedRevision: request.expectedRevision,
+          previousDraftId: request.previousDraftId ?? null,
+          commands: request.commands,
+        })
+        if (
+          existingDraft &&
+          running.draftRequests.get(request.idempotencyKey) !==
+            requestFingerprint
+        ) {
+          throw new WorkspaceInputError(
+            "Draft idempotency key was already used for a different request"
+          )
+        }
+        if (!existingDraft && running.draftValidationAttempts >= 3) {
+          throw new WorkspaceInputError(
+            "Journey draft has exhausted its two repair attempts"
+          )
+        }
+        let baseDraft: PreparedAgentDraft | undefined
+        if (!existingDraft && running.draftValidationAttempts > 0) {
+          if (request.previousDraftId !== running.latestDraftId) {
+            throw new WorkspaceInputError(
+              "Repair draft must reference the latest invalid draft"
+            )
+          }
+          const previousDraft = running.drafts.get(request.previousDraftId)
+          if (!previousDraft || previousDraft.validation.valid) {
+            throw new WorkspaceInputError(
+              "Repair draft must reference a previous invalid draft"
+            )
+          }
+          baseDraft = previousDraft
+          const issues = previousDraft.validation.issues.filter(
+            (issue) => issue.severity === "ERROR"
+          )
+          for (const command of request.commands) {
+            const parsed = targetCommandBodySchema.parse(command)
+            const allowed = issues.some(
+              (issue) =>
+                issue.allowedOperations.includes(parsed.name) &&
+                repairTargetsIssue(parsed, issue, previousDraft)
+            )
+            if (!allowed) {
+              throw new WorkspaceInputError(
+                `Repair command ${parsed.name} does not target a previous draft issue`
+              )
+            }
+          }
+        } else if (!existingDraft && request.previousDraftId) {
+          throw new WorkspaceInputError(
+            "Initial draft must not reference a previous draft"
+          )
+        }
+        const draft =
+          existingDraft ??
+          (await (async () => {
+            const parsedCommands = request.commands.map((command) =>
+              targetCommandBodySchema.parse(command)
+            )
+            const hotel = draftCommandsWithSelectedHotel(
+              running,
+              parsedCommands,
+              Boolean(
+                request.previousDraftId &&
+                running.draftHotelSelections.has(request.previousDraftId)
+              )
+            )
+            const prepared = await running.telemetry.withSpan(
+              otelDraftSpan ?? otelToolSpan,
+              () =>
+                this.commands.prepareAgentDraft(running.context, {
+                  workspaceId: running.workspaceId,
+                  expectedRevision: request.expectedRevision,
+                  idempotencyKey: request.idempotencyKey,
+                  actor: { kind: "AGENT", agentRunId: running.runId },
+                  commands: hotel.commands,
+                  baseDraft,
+                  verifiedPlaces: Array.from(running.verifiedPlaces.values()),
+                })
+            )
+            const inheritedHotel = request.previousDraftId
+              ? running.draftHotelSelections.get(request.previousDraftId)
+              : undefined
+            const selection = hotel.selection ?? inheritedHotel
+            if (selection) {
+              running.draftHotelSelections.set(
+                request.idempotencyKey,
+                selection
+              )
+            }
+            return prepared
+          })())
+        if (!existingDraft) {
+          running.draftValidationAttempts += 1
+          running.drafts.set(request.idempotencyKey, draft)
+          running.draftRequests.set(request.idempotencyKey, requestFingerprint)
+          running.latestDraftId = request.idempotencyKey
+        }
+        const repairsUsed = Math.max(0, running.draftValidationAttempts - 1)
+        otelDraftSpan?.setAttributes({
+          "periplus.validation.valid": draft.validation.valid,
+          "periplus.validation.issue_count": draft.validation.issues.length,
+          "periplus.draft.repairs_used": repairsUsed,
+          "periplus.workspace.revision": draft.validation.workspaceRevision,
+        })
+        await this.trace(running, {
+          type: "validator.completed",
+          spanId: randomUUID(),
+          parentSpanId: toolSpanId,
+          status: "OK",
+          payload: {
+            valid: draft.validation.valid,
+            issueCodes: draft.validation.issues.map((issue) => issue.code),
+            projectionHash: draft.validation.projectionHash,
+            workspaceRevision: draft.validation.workspaceRevision,
+            draft: true,
+            repairsUsed,
+          },
+        })
+        output = {
+          draftId: request.idempotencyKey,
+          validation: draft.validation,
+          repairsRemaining: Math.max(0, 2 - repairsUsed),
+        }
+      } else if (request.type === "workspace.commit_draft") {
+        const draft = running.drafts.get(request.draftId)
+        if (!draft) {
+          throw new WorkspaceInputError(
+            "Draft was not validated in this Agent run"
+          )
+        }
+        const hotelSelection = running.draftHotelSelections.get(request.draftId)
+        if (hotelSelection) {
+          const state = running.hotelStayState
+          const isReplay =
+            state.kind === "consumed" &&
+            state.idempotencyKey === request.draftId &&
+            state.selection.candidate.candidateId ===
+              hotelSelection.candidate.candidateId
+          if (
+            !isReplay &&
+            (state.kind !== "available" ||
+              state.selection.candidate.candidateId !==
+                hotelSelection.candidate.candidateId)
+          ) {
+            throw new WorkspaceInputError("酒店检索每次只能写入首位候选一次")
+          }
+        }
+        const result = await running.telemetry.withSpan(
+          otelDraftSpan ?? otelToolSpan,
+          () => this.commands.commitAgentDraft(running.context, draft)
+        )
+        otelDraftSpan?.setAttributes({
+          "periplus.command.name": result.commandName,
+          "periplus.command.replayed": Boolean(
+            result.replayedFromIdempotencyKey
+          ),
+          "periplus.workspace.revision": result.newRevision,
+        })
+        if (hotelSelection && running.hotelStayState.kind === "available") {
+          running.hotelStayState = {
+            kind: "consumed",
+            selection: hotelSelection,
+            idempotencyKey: request.draftId,
+          }
+        }
+        running.requiresPlanValidation = true
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        if (!document) throw new WorkspaceInputError("Workspace was not found")
+        if (document.session.headWorkspaceRevision !== result.newRevision) {
+          throw new WorkspaceRevisionConflictError()
+        }
+        running.lastPlanValidation = validateJourneyPlan({
+          graph: document.session.headGraph,
+          workspaceRevision: document.session.headWorkspaceRevision,
+        })
+        output = { result, workspace: document }
+      } else if (request.type === "workspace.prepare_transit") {
+        const existingDraft = running.drafts.get(request.idempotencyKey)
+        const requestFingerprint = JSON.stringify({
+          previousDraftId: request.previousDraftId,
+          eventId: request.eventId,
+          kind: "prepare_transit",
+        })
+        if (
+          existingDraft &&
+          running.draftRequests.get(request.idempotencyKey) !==
+            requestFingerprint
+        ) {
+          throw new WorkspaceInputError(
+            "Draft idempotency key was already used for a different request"
+          )
+        }
+        if (!existingDraft && running.draftValidationAttempts >= 3) {
+          throw new WorkspaceInputError(
+            "Journey draft has exhausted its two repair attempts"
+          )
+        }
+        const draft =
+          existingDraft ??
+          (await (async () => {
+            if (request.previousDraftId !== running.latestDraftId) {
+              throw new WorkspaceInputError(
+                "Transit preparation must reference the latest invalid draft"
+              )
+            }
+            const previous = running.drafts.get(request.previousDraftId)
+            if (!previous || previous.validation.valid) {
+              throw new WorkspaceInputError(
+                "Transit preparation must reference a previous invalid draft"
+              )
+            }
+            const allowed = previous.validation.issues
+              .filter((issue) => issue.severity === "ERROR")
+              .some(
+                (issue) =>
+                  issue.allowedOperations.includes("journey.plan_transit") &&
+                  issue.eventIds.includes(request.eventId)
+              )
+            if (!allowed) {
+              throw new WorkspaceInputError(
+                "Transit preparation is not allowed by the previous draft issues"
+              )
+            }
+            const prepared = await running.telemetry.withSpan(
+              otelDraftSpan ?? otelToolSpan,
+              () =>
+                this.commands.prepareAgentTransit(running.context, {
+                  draft: previous,
+                  idempotencyKey: request.idempotencyKey,
+                  eventId: request.eventId,
+                  verifiedPlaces: Array.from(running.verifiedPlaces.values()),
+                })
+            )
+            const selection = running.draftHotelSelections.get(
+              request.previousDraftId
+            )
+            if (selection) {
+              running.draftHotelSelections.set(
+                request.idempotencyKey,
+                selection
+              )
+            }
+            return prepared
+          })())
+        if (!existingDraft) {
+          running.draftValidationAttempts += 1
+          running.drafts.set(request.idempotencyKey, draft)
+          running.draftRequests.set(request.idempotencyKey, requestFingerprint)
+          running.latestDraftId = request.idempotencyKey
+        }
+        const repairsUsed = Math.max(0, running.draftValidationAttempts - 1)
+        otelDraftSpan?.setAttributes({
+          "periplus.validation.valid": draft.validation.valid,
+          "periplus.validation.issue_count": draft.validation.issues.length,
+          "periplus.draft.repairs_used": repairsUsed,
+          "periplus.workspace.revision": draft.validation.workspaceRevision,
+        })
+        output = {
+          draftId: request.idempotencyKey,
+          validation: draft.validation,
+          repairsRemaining: Math.max(0, 2 - repairsUsed),
+        }
       } else if (isPlaceToolRequest(request)) {
         output = await this.executePlaceTool(running, request, otelToolSpan)
       } else if (request.type === "hotel.search") {
         output = await this.executeHotelTool(running, request, otelToolSpan)
       } else {
-        const parsedCommand = targetCommandBodySchema.parse(request.command)
-        const selectedCommand = commandWithSelectedHotel(
-          running,
-          parsedCommand,
-          request.idempotencyKey
+        throw new WorkspaceInputError(
+          "Agent direct Workspace commands are disabled; use validate_draft and commit_draft"
         )
-        const envelope: TargetCommandEnvelope = {
-          aggregateId: running.workspaceId,
-          expectedRevision: request.expectedRevision,
-          idempotencyKey: request.idempotencyKey,
-          actor: { kind: "AGENT", agentRunId: running.runId },
-          command: selectedCommand.command,
-        }
-        const result = await this.commands.execute(running.context, envelope)
-        if (selectedCommand.consumesSelectedHotel) {
-          const current = running.hotelStayState
-          if (current.kind === "available") {
-            running.hotelStayState = {
-              kind: "consumed",
-              selection: current.selection,
-              idempotencyKey: request.idempotencyKey,
-            }
-          }
-        }
-        appliedCommandResult = result
-        if (changesJourneyGraph(result.commandName)) {
-          running.requiresPlanValidation = true
-          running.lastPlanValidation = null
-        }
-        const document = await this.commands.getDocument(
-          running.context,
-          running.workspaceId
-        )
-        output = { result, workspace: document }
       }
 
-      if (request.type === "workspace.command" && commandSpanId) {
-        const result = appliedCommandResult
-        if (!result) throw new Error("Command result was not captured")
-        if (!result.replayedFromIdempotencyKey) {
-          await this.trace(running, {
-            type: "state.diff.recorded",
-            spanId: commandSpanId,
-            parentSpanId: toolSpanId,
-            commandId,
-            revisionBefore: request.expectedRevision,
-            revisionAfter: result.newRevision,
-            status: "OK",
-            payload: {
-              changedEventIds: result.changedEventIds,
-              projectionInvalidationScopes: result.projectionInvalidationScopes,
-            },
-          })
-        }
-        await this.trace(running, {
-          type: "command.applied",
-          spanId: commandSpanId,
-          parentSpanId: toolSpanId,
-          commandId,
-          revisionBefore: request.expectedRevision,
-          revisionAfter: result.newRevision,
-          status: "OK",
-          payload: {
-            commandName: result.commandName,
-            replayedFromIdempotencyKey: result.replayedFromIdempotencyKey,
-          },
-        })
-        otelCommandSpan?.end("OK", {
-          "periplus.command.name": result.commandName,
-          "periplus.command.replayed": Boolean(
-            result.replayedFromIdempotencyKey
-          ),
-          "periplus.workspace.revision_before": request.expectedRevision,
-          "periplus.workspace.revision_after": result.newRevision,
-        })
-      }
       if (isEvidenceToolRequest(request)) {
         await this.trace(running, {
           type: "evidence.recorded",
@@ -1102,6 +1574,8 @@ export class AgentGateway {
         },
       })
       otelToolSpan.setAttribute("output.value", redactedInput(output) ?? "")
+      otelDraftSpan?.setAttribute("output.value", redactedInput(output) ?? "")
+      otelDraftSpan?.end("OK")
       running.telemetry.recordTool(
         request.type,
         request.type.startsWith("place.")
@@ -1120,54 +1594,25 @@ export class AgentGateway {
       otelCommandSpan?.end("ERROR", {
         "error.type": error instanceof Error ? error.name : "Error",
       })
+      otelDraftSpan?.recordException(error)
+      otelDraftSpan?.end("ERROR", {
+        "error.type": error instanceof Error ? error.name : "Error",
+      })
       if (request.type === "workspace.command" && commandSpanId) {
-        if (appliedCommandResult) {
-          if (!appliedCommandResult.replayedFromIdempotencyKey) {
-            await this.trace(running, {
-              type: "state.diff.recorded",
-              spanId: commandSpanId,
-              parentSpanId: toolSpanId,
-              commandId,
-              revisionBefore: request.expectedRevision,
-              revisionAfter: appliedCommandResult.newRevision,
-              status: "OK",
-              payload: {
-                changedEventIds: appliedCommandResult.changedEventIds,
-                projectionInvalidationScopes:
-                  appliedCommandResult.projectionInvalidationScopes,
-              },
-            })
-          }
-          await this.trace(running, {
-            type: "command.applied",
-            spanId: commandSpanId,
-            parentSpanId: toolSpanId,
-            commandId,
-            revisionBefore: request.expectedRevision,
-            revisionAfter: appliedCommandResult.newRevision,
-            status: "OK",
-            payload: {
-              commandName: appliedCommandResult.commandName,
-              replayedFromIdempotencyKey:
-                appliedCommandResult.replayedFromIdempotencyKey,
-            },
-          })
-        } else {
-          await this.trace(running, {
-            type: "command.rejected",
-            spanId: commandSpanId,
-            parentSpanId: toolSpanId,
-            commandId,
-            revisionBefore: request.expectedRevision,
-            status: "ERROR",
-            payload: {
-              commandName: commandName ?? "invalid",
-              errorName: error instanceof Error ? error.name : "Error",
-              errorMessage:
-                error instanceof Error ? error.message : "Command failed",
-            },
-          })
-        }
+        await this.trace(running, {
+          type: "command.rejected",
+          spanId: commandSpanId,
+          parentSpanId: toolSpanId,
+          commandId,
+          revisionBefore: request.expectedRevision,
+          status: "ERROR",
+          payload: {
+            commandName: commandName ?? "invalid",
+            errorName: error instanceof Error ? error.name : "Error",
+            errorMessage:
+              error instanceof Error ? error.message : "Command failed",
+          },
+        })
       }
       await this.trace(running, {
         type: "tool.failed",
@@ -1260,13 +1705,21 @@ export class AgentGateway {
           requestId: request.requestId,
         })
       )
-      return this.withProviderSpan(
+      const result = await this.withProviderSpan(
         running,
         parentSpan,
         "amap",
         "place.resolve",
         () => this.placeService.resolvePlace(input, usageContext)
       )
+      if (result.status === "resolved") {
+        const verification = { ref: result.placeRef }
+        running.verifiedPlaces.set(
+          placeVerificationKey(verification),
+          verification
+        )
+      }
+      return result
     }
     if (request.type === "place.enrich") {
       const input = withoutRequestId(
@@ -1317,7 +1770,7 @@ export class AgentGateway {
         "Place target must be a VISIT, STAY, MEAL, or ACTIVITY event"
       )
     }
-    return this.withProviderSpan(
+    const result = await this.withProviderSpan(
       running,
       parentSpan,
       "amap",
@@ -1329,6 +1782,18 @@ export class AgentGateway {
           usageContext
         )
     )
+    if (result.status === "ready") {
+      const coverImage = selectedCoverImage(result)
+      const verification = {
+        ref: result.placeRef,
+        ...(coverImage ? { coverImage } : {}),
+      }
+      running.verifiedPlaces.set(
+        placeVerificationKey(verification),
+        verification
+      )
+    }
+    return result
   }
 
   private async executeHotelTool(

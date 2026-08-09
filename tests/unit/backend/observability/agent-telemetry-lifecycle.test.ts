@@ -95,9 +95,11 @@ function graph(id: string): TargetJourneyGraphSnapshot {
 
 class LifecycleRuntime implements AgentRuntime {
   readonly id = "fake-observability-runtime"
+  request: AgentRuntimeRequest | null = null
   observer: AgentRuntimeObserver | null = null
 
-  async start(_request: AgentRuntimeRequest, observer: AgentRuntimeObserver) {
+  async start(request: AgentRuntimeRequest, observer: AgentRuntimeObserver) {
+    this.request = request
     this.observer = observer
     return {
       metadata: { runtimeId: this.id, workDir: "/tmp/fake-observability" },
@@ -192,8 +194,9 @@ describe.sequential("Agent telemetry execution contract", () => {
     const { AgentGateway } = await import("@/backend/agent/gateway")
 
     try {
+      const journeyId = `agent-observability-${randomUUID()}`
       const workspace = await createWorkspace(context, {
-        graph: graph(`agent-observability-${randomUUID()}`),
+        graph: graph(journeyId),
         now: new Date(now),
       })
       const commands = new WorkspaceCommandService()
@@ -238,6 +241,27 @@ describe.sequential("Agent telemetry execution contract", () => {
         "auto",
         emit
       )
+      const toolConfig = runtime.request?.toolServers[0]?.configFile?.content
+      if (!toolConfig) throw new Error("Workspace tool config was not created")
+      const capabilityToken = JSON.parse(toolConfig).capabilityToken as string
+      const draft = await gateway.executeTool(capabilityToken, {
+        type: "workspace.validate_draft",
+        expectedRevision: 0,
+        idempotencyKey: "telemetry-draft",
+        commands: [
+          {
+            name: "journey.update_event",
+            payload: {
+              eventId: `${journeyId}-visit`,
+              patch: { type: "VISIT", description: "OTel 草稿" },
+            },
+          },
+        ],
+      })
+      await gateway.executeTool(capabilityToken, {
+        type: "workspace.commit_draft",
+        draftId: draft.draftId,
+      })
       runtime.observer?.onStdout(firstDelta)
       runtime.observer?.onStdout(secondDelta)
       runtime.exit(0)
@@ -266,6 +290,12 @@ describe.sequential("Agent telemetry execution contract", () => {
       const unlock = spans.find(
         (span) => span.name === "agent.workspace.unlock.load"
       )
+      const draftValidation = spans.find(
+        (span) => span.name === "workspace.validate_draft"
+      )
+      const draftCommit = spans.find(
+        (span) => span.name === "workspace.commit_draft"
+      )
 
       expect(stream).toBeDefined()
       expect(persistence).toBeDefined()
@@ -273,6 +303,15 @@ describe.sequential("Agent telemetry execution contract", () => {
       expect(initialLoad).toBeDefined()
       expect(runPersist).toBeDefined()
       expect(unlock).toBeDefined()
+      expect(draftValidation?.attributes).toMatchObject({
+        "periplus.validation.valid": true,
+      })
+      expect(draftCommit?.attributes).toMatchObject({
+        "periplus.command.name": "journey.apply_draft",
+        "periplus.workspace.revision": 1,
+      })
+      expect(draftValidation?.endOrder).not.toBeNull()
+      expect(draftCommit?.endOrder).not.toBeNull()
       expect(stream?.attributes).toMatchObject({
         "periplus.stream.delta_count": 2,
         "periplus.stream.byte_count": Buffer.byteLength(

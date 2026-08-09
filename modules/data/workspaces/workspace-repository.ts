@@ -94,6 +94,7 @@ const commandNames = {
   "journey.add_observation": "JOURNEY_ADD_OBSERVATION",
   "journey.link_source_item": "JOURNEY_LINK_SOURCE_ITEM",
   "journey.undo": "JOURNEY_UNDO",
+  "journey.apply_draft": "JOURNEY_APPLY_DRAFT",
   "workspace.refresh": "WORKSPACE_REFRESH",
   "workspace.replay": "WORKSPACE_REPLAY",
   "workspace.fork": "WORKSPACE_FORK",
