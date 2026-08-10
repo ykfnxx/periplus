@@ -1,5 +1,8 @@
 import { decideProviderMatch } from "@/lib/places/matching"
-import { normalizePlaceSearchInput } from "@/lib/places/normalize"
+import {
+  normalizePlaceName,
+  normalizePlaceSearchInput,
+} from "@/lib/places/normalize"
 import { planPlaceProviderSearch } from "@/lib/places/policy"
 import { rankPlaceCandidates } from "@/lib/places/ranker"
 import { prisma } from "@/modules/data/db/prisma"
@@ -16,12 +19,14 @@ import type {
 } from "@/lib/places/types"
 import { PlaceCatalogRepository } from "./place-catalog-repository"
 import { AMapPlaceProvider } from "./providers/amap-place-provider"
+import { queryWithRetry } from "../providers/query-retry"
 
 export interface PlaceProviderUsageContext {
   userId?: string
   workspaceId?: string
   agentRunId?: string
   requestId?: string
+  signal?: AbortSignal
 }
 
 export function placeRefFromResult(
@@ -58,17 +63,47 @@ type PlaceProviderUsageLogger = (
   context: PlaceProviderUsageContext
 ) => Promise<void>
 
-type ImageProbe = (url: string) => Promise<boolean>
+type ImageProbe = (url: string, signal?: AbortSignal) => Promise<boolean>
 
-async function probeImage(url: string) {
+interface PlaceServiceRetryOptions {
+  sleep?: (milliseconds: number) => Promise<void>
+  random?: () => number
+  now?: () => number
+}
+
+const PROVIDER_CIRCUIT_TTL_MS = 2 * 60 * 1_000
+
+function providerFailureWarning(warnings: PlaceSearchResponse["warnings"]) {
+  return warnings.find(
+    (warning) =>
+      warning.code !== "low_confidence" &&
+      warning.code !== "IMAGE_UNAVAILABLE" &&
+      warning.code !== "UNVERIFIED_FALLBACK"
+  )
+}
+
+async function probeImage(url: string, signal?: AbortSignal) {
+  const timeoutSignal = AbortSignal.timeout(3_000)
   const response = await fetch(url, {
     method: "HEAD",
-    signal: AbortSignal.timeout(3_000),
+    signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
   })
   return response.ok
 }
 
 export class PlaceIntelligenceService {
+  private readonly providerCircuitUntil = new Map<string, number>()
+
+  private openProviderCircuit(circuitKey: string, until: number) {
+    this.providerCircuitUntil.set(circuitKey, until)
+    const cleanup = setTimeout(() => {
+      if (this.providerCircuitUntil.get(circuitKey) === until) {
+        this.providerCircuitUntil.delete(circuitKey)
+      }
+    }, PROVIDER_CIRCUIT_TTL_MS)
+    cleanup.unref?.()
+  }
+
   constructor(
     private readonly repository: Pick<
       PlaceCatalogRepository,
@@ -83,7 +118,8 @@ export class PlaceIntelligenceService {
       "search"
     > = new AMapPlaceProvider(),
     private readonly logUsage: PlaceProviderUsageLogger = logPlaceProviderUsage,
-    private readonly imageProbe: ImageProbe = probeImage
+    private readonly imageProbe: ImageProbe = probeImage,
+    private readonly retry: PlaceServiceRetryOptions = {}
   ) {}
 
   async searchPlaces(
@@ -106,7 +142,7 @@ export class PlaceIntelligenceService {
     const plan = planPlaceProviderSearch(query, local)
     const live = plan.useAmap
       ? await this.callProvider("place_search", query, usageContext)
-      : { candidates: [], warnings: [] }
+      : { candidates: [], warnings: [], providerAttempts: 0 }
 
     const results = rankPlaceCandidates(query, [
       ...local.candidates,
@@ -131,6 +167,7 @@ export class PlaceIntelligenceService {
     return {
       results,
       warnings: [...warnings, ...live.warnings],
+      providerAttempts: live.providerAttempts,
     }
   }
 
@@ -159,7 +196,11 @@ export class PlaceIntelligenceService {
           city: input.city ?? input.journeyContext?.currentCity,
         },
         reason: "本地地点库和实时 provider 都没有返回可用地点",
+        fallbackAllowed:
+          usageContext?.signal?.aborted !== true &&
+          response.warnings.some((warning) => warning.exhausted === true),
         warnings: response.warnings,
+        providerAttempts: response.providerAttempts,
       }
     }
 
@@ -169,10 +210,33 @@ export class PlaceIntelligenceService {
     const exactMatch =
       first.normalizedName === normalized ||
       first.aliases.includes(normalized ?? "")
+    const requestedCity = input.city ?? input.journeyContext?.currentCity
+    const normalizedRequestedCity = requestedCity
+      ? normalizePlaceName(requestedCity).replace(/市$/, "")
+      : undefined
+    const cityMatches =
+      !normalizedRequestedCity ||
+      [first.city, first.province, first.district].some((value) => {
+        if (!value) return false
+        const normalizedValue = normalizePlaceName(value).replace(/市$/, "")
+        return (
+          normalizedValue.includes(normalizedRequestedCity) ||
+          normalizedRequestedCity.includes(normalizedValue)
+        )
+      })
+    const requestedCategories = normalizePlaceSearchInput({
+      intent: input.intent,
+    }).categories
+    const categoryMatches =
+      requestedCategories.length === 0 ||
+      requestedCategories.includes(first.category)
+    const exactActionableMatch =
+      exactMatch && cityMatches && categoryMatches && first.canAddToJourney
     const isClearWinner =
       first.canAddToJourney &&
-      (!second || first.confidence - second.confidence >= 0.1) &&
-      (!input.requireExact || exactMatch)
+      (exactActionableMatch ||
+        !second ||
+        first.confidence - second.confidence >= 0.1)
 
     if (isClearWinner) {
       return {
@@ -180,6 +244,7 @@ export class PlaceIntelligenceService {
         place: first,
         placeRef: placeRefFromResult(first, response.results),
         warnings: response.warnings,
+        providerAttempts: response.providerAttempts,
       }
     }
 
@@ -188,6 +253,7 @@ export class PlaceIntelligenceService {
       candidates: response.results,
       question: `找到多个可能的“${input.text}”，需要确认具体地点。`,
       warnings: response.warnings,
+      providerAttempts: response.providerAttempts,
     }
   }
 
@@ -245,7 +311,7 @@ export class PlaceIntelligenceService {
             ? (
                 await Promise.all(
                   result.images.map((image) =>
-                    this.availableImage(image, warnings)
+                    this.availableImage(image, warnings, usageContext?.signal)
                   )
                 )
               ).filter((image): image is PlaceImage => Boolean(image))
@@ -258,6 +324,7 @@ export class PlaceIntelligenceService {
         placeId: input.placeId,
         results,
         warnings,
+        providerAttempts: live.providerAttempts,
         matchStatus: decision.status,
         reason: decision.reason,
       }
@@ -269,6 +336,7 @@ export class PlaceIntelligenceService {
         placeId: input.placeId,
         results,
         warnings,
+        providerAttempts: live.providerAttempts,
         matchStatus: decision.status,
         reason: decision.reason,
       }
@@ -283,13 +351,14 @@ export class PlaceIntelligenceService {
       placeId: input.placeId,
       results,
       warnings,
+      providerAttempts: live.providerAttempts,
       matchStatus: decision.status,
       reviewCandidateId,
       reason: decision.reason,
     }
   }
 
-  async verifyPlaceImages(images: readonly PlaceImage[]) {
+  async verifyPlaceImages(images: readonly PlaceImage[], signal?: AbortSignal) {
     const warnings: PlaceSearchResponse["warnings"] = []
     if (!images.length) {
       warnings.push({
@@ -301,7 +370,7 @@ export class PlaceIntelligenceService {
     }
     const available = (
       await Promise.all(
-        images.map((image) => this.availableImage(image, warnings))
+        images.map((image) => this.availableImage(image, warnings, signal))
       )
     ).filter((image): image is PlaceImage => Boolean(image))
     return { images: available, warnings }
@@ -313,15 +382,80 @@ export class PlaceIntelligenceService {
     usageContext?: PlaceProviderUsageContext
   ) {
     try {
-      const result = await this.amapProvider.search(query)
+      const circuitKey = usageContext?.agentRunId
+      const now = this.retry.now?.() ?? Date.now()
+      const circuitUntil = circuitKey
+        ? this.providerCircuitUntil.get(circuitKey)
+        : undefined
+      if (circuitKey && circuitUntil && circuitUntil <= now) {
+        this.providerCircuitUntil.delete(circuitKey)
+      }
+      if (circuitUntil && circuitUntil > now) {
+        const result = {
+          candidates: [],
+          warnings: [
+            {
+              provider: "amap" as const,
+              code: "quota_exceeded" as const,
+              message: "当前 Agent run 的高德查询已因硬额度错误停止",
+              retryable: false,
+              attempts: 0,
+              exhausted: true,
+            },
+          ],
+          providerAttempts: 0,
+        }
+        if (usageContext) {
+          await this.logUsage(purpose, "error", "quota_exceeded", usageContext)
+        }
+        return result
+      }
+
+      const retried = await queryWithRetry({
+        operation: () => this.amapProvider.search(query, usageContext?.signal),
+        failure: (result) => {
+          const warning = providerFailureWarning(result.warnings)
+          return warning
+            ? {
+                retryable:
+                  warning.retryable === true &&
+                  usageContext?.signal?.aborted !== true,
+                rateLimited: warning.code === "rate_limited",
+              }
+            : undefined
+        },
+        sleep: this.retry.sleep,
+        random: this.retry.random,
+        signal: usageContext?.signal,
+      })
+      const failure = providerFailureWarning(retried.result.warnings)
+      const result = {
+        ...retried.result,
+        providerAttempts: retried.attempts,
+        warnings: retried.result.warnings.map((warning) =>
+          warning === failure
+            ? {
+                ...warning,
+                attempts: retried.attempts,
+                exhausted: retried.exhausted,
+              }
+            : warning
+        ),
+      }
+      const terminalFailure = providerFailureWarning(result.warnings)
+      if (
+        circuitKey &&
+        terminalFailure?.exhausted &&
+        terminalFailure.retryable === false &&
+        terminalFailure.code === "quota_exceeded"
+      ) {
+        this.openProviderCircuit(circuitKey, now + PROVIDER_CIRCUIT_TTL_MS)
+      }
       if (usageContext) {
-        const providerFailure = result.warnings.find(
-          (warning) => warning.code !== "low_confidence"
-        )
         await this.logUsage(
           purpose,
-          providerFailure ? "error" : "success",
-          providerFailure?.code,
+          terminalFailure ? "error" : "success",
+          terminalFailure?.code,
           usageContext
         )
       }
@@ -341,11 +475,15 @@ export class PlaceIntelligenceService {
 
   private async availableImage(
     image: PlaceImage,
-    warnings: PlaceSearchResponse["warnings"]
+    warnings: PlaceSearchResponse["warnings"],
+    signal?: AbortSignal
   ): Promise<PlaceImage | undefined> {
     try {
-      if (await this.imageProbe(image.url)) return image
+      if (await this.imageProbe(image.url, signal)) return image
     } catch {
+      if (signal?.aborted) {
+        throw signal.reason ?? new DOMException("Aborted", "AbortError")
+      }
       // Fall through to the same degradable image warning as a non-2xx response.
     }
     warnings.push({

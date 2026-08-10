@@ -95,7 +95,10 @@ function mapHotel(
 }
 
 export class RollingGoHotelProvider {
-  async search(input: HotelSearchInput): Promise<HotelSearchResponse> {
+  async search(
+    input: HotelSearchInput,
+    signal?: AbortSignal
+  ): Promise<HotelSearchResponse> {
     const apiKey = periplusServerConfig.rollinggo.apiKey
     if (!apiKey) {
       return {
@@ -105,6 +108,7 @@ export class RollingGoHotelProvider {
             provider: "rollinggo",
             code: "provider_error",
             message: "缺少 PERIPLUS_ROLLINGGO_API_KEY",
+            retryable: false,
           },
         ],
       }
@@ -120,11 +124,19 @@ export class RollingGoHotelProvider {
     )
     const client = new Client({ name: "periplus-rollinggo", version: "1.0.0" })
     let timedOut = false
+    let aborted = false
     const timeout = setTimeout(() => {
       timedOut = true
       void client.close()
     }, 8_000)
+    const abortFromParent = () => {
+      aborted = true
+      void client.close()
+    }
+    if (signal?.aborted) abortFromParent()
+    else signal?.addEventListener("abort", abortFromParent, { once: true })
     try {
+      signal?.throwIfAborted()
       await client.connect(transport, { timeout: 8_000 })
       const result = parseSearchResult(
         (await client.callTool(
@@ -156,15 +168,34 @@ export class RollingGoHotelProvider {
         warnings: [],
       }
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "RollingGo 酒店检索失败"
+      const timeoutError =
+        timedOut || /time(?:d)?\s*out|TimeoutError/i.test(message)
+      const rateLimited = /(?:CU)?QPS|429|RATE.?LIMIT/i.test(message)
+      const quotaExceeded = /QUOTA|BALANCE|额度|余额/i.test(message)
+      const retryableProviderError =
+        /fetch|network|ECONN|socket|temporar|5\d\d/i.test(message)
       const warning: HotelProviderWarning = {
         provider: "rollinggo",
-        code: timedOut ? "timeout" : "provider_error",
-        message:
-          error instanceof Error ? error.message : "RollingGo 酒店检索失败",
+        code: timeoutError
+          ? "timeout"
+          : rateLimited
+            ? "rate_limited"
+            : quotaExceeded
+              ? "quota_exceeded"
+              : "provider_error",
+        message,
+        retryable:
+          !aborted &&
+          (timeoutError ||
+            rateLimited ||
+            (!quotaExceeded && retryableProviderError)),
       }
       return { candidates: [], warnings: [warning] }
     } finally {
       clearTimeout(timeout)
+      signal?.removeEventListener("abort", abortFromParent)
       await client.close()
     }
   }

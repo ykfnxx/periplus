@@ -344,11 +344,11 @@ describe.sequential("Agent telemetry execution contract", () => {
       expect(JSON.stringify(stream?.attributes)).not.toContain(secondDelta)
 
       expect(persistence?.attributes).toMatchObject({
-        "periplus.stream.persisted_count": 2,
+        "periplus.stream.persisted_count": 1,
       })
       expect(
         persistence?.events.filter((event) => event.name === "stream.persisted")
-      ).toHaveLength(2)
+      ).toHaveLength(1)
       expect(root?.startOrder).toBeLessThan(initialLoad?.startOrder ?? 0)
       expect(runPersist?.endOrder).toBeLessThan(unlock?.startOrder ?? 0)
       expect(unlock?.endOrder).toBeLessThan(root?.endOrder ?? 0)
@@ -361,7 +361,7 @@ describe.sequential("Agent telemetry execution contract", () => {
             "stream" in event.payload &&
             event.payload.stream === "stdout"
         )
-      ).toHaveLength(2)
+      ).toHaveLength(1)
     } finally {
       getTracer.mockRestore()
     }

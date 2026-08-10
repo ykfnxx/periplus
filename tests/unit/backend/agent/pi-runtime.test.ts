@@ -147,6 +147,7 @@ describe("PiRuntime", () => {
     expect(runConfig.toolNames).toContain("periplus_draft_validate")
     expect(runConfig.toolNames).toContain("periplus_draft_commit")
     expect(runConfig.toolNames).toContain("periplus_draft_prepare_transit")
+    expect(runConfig.toolNames).toContain("periplus_place_fallback")
     expect(runConfig.toolNames).not.toContain(
       "periplus_workspace_validate_draft"
     )

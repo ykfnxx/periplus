@@ -36,6 +36,7 @@ const PERIPLUS_TOOL_NAMES = [
   "periplus_draft_commit",
   "periplus_place_search",
   "periplus_place_resolve",
+  "periplus_place_fallback",
   "periplus_place_enrich",
   "periplus_hotel_search",
 ] as const
@@ -64,6 +65,7 @@ const PI_TOOL_NAME_MAP = [
   ["periplus.draft.commit", "periplus_draft_commit"],
   ["periplus.place.search", "periplus_place_search"],
   ["periplus.place.resolve", "periplus_place_resolve"],
+  ["periplus.place.fallback", "periplus_place_fallback"],
   ["periplus.place.enrich", "periplus_place_enrich"],
   ["periplus.hotel.search", "periplus_hotel_search"],
 ] as const

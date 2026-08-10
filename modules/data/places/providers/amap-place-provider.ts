@@ -134,22 +134,100 @@ function isQuotaError(response: AMapSearchResponse) {
   return response.infocode === "10004" || response.infocode === "10044"
 }
 
+function isRateLimitError(response: AMapSearchResponse) {
+  return /(?:CU)?QPS|RATE.?LIMIT/i.test(
+    `${response.infocode ?? ""} ${response.info ?? ""}`
+  )
+}
+
+class AMapHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`高德 HTTP ${status}`)
+    this.name = "AMapHttpError"
+  }
+}
+
+function warningForResponse(
+  response: AMapSearchResponse,
+  fallbackMessage: string
+): ProviderWarning {
+  if (isRateLimitError(response)) {
+    return {
+      provider: "amap",
+      code: "rate_limited",
+      message: response.info ?? fallbackMessage,
+      retryable: true,
+    }
+  }
+  if (isQuotaError(response)) {
+    return {
+      provider: "amap",
+      code: "quota_exceeded",
+      message: response.info ?? fallbackMessage,
+      retryable: false,
+    }
+  }
+  return {
+    provider: "amap",
+    code: "provider_error",
+    message: response.info ?? fallbackMessage,
+    retryable: false,
+  }
+}
+
+function warningForError(
+  error: unknown,
+  fallbackMessage: string
+): ProviderWarning {
+  if (error instanceof Error && error.name === "AbortError") {
+    return {
+      provider: "amap",
+      code: "timeout",
+      message: error.message,
+      retryable: true,
+    }
+  }
+  if (error instanceof AMapHttpError) {
+    return {
+      provider: "amap",
+      code: error.status === 429 ? "rate_limited" : "provider_error",
+      message: error.message,
+      retryable: error.status === 429 || error.status >= 500,
+    }
+  }
+  return {
+    provider: "amap",
+    code: "provider_error",
+    message: error instanceof Error ? error.message : fallbackMessage,
+    retryable: true,
+  }
+}
+
 async function fetchJson(
   url: URL,
-  timeoutMs: number
+  timeoutMs: number,
+  signal?: AbortSignal
 ): Promise<AMapSearchResponse> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const abortFromParent = () => controller.abort()
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener("abort", abortFromParent, { once: true })
   try {
     const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) throw new AMapHttpError(response.status)
     return (await response.json()) as AMapSearchResponse
   } finally {
     clearTimeout(timeout)
+    signal?.removeEventListener("abort", abortFromParent)
   }
 }
 
 export class AMapPlaceProvider {
-  async search(query: NormalizedPlaceQuery): Promise<AMapSearchOutput> {
+  async search(
+    query: NormalizedPlaceQuery,
+    signal?: AbortSignal
+  ): Promise<AMapSearchOutput> {
     const key = periplusServerConfig.amap.webServiceKey
     if (!key) {
       return {
@@ -160,18 +238,20 @@ export class AMapPlaceProvider {
             code: "provider_error",
             message:
               "缺少 PERIPLUS_AMAP_WEB_SERVICE_KEY 或 NEXT_PUBLIC_AMAP_KEY",
+            retryable: false,
           },
         ],
       }
     }
 
-    if (query.near) return this.searchAround(query, key)
-    return this.searchByKeyword(query, key)
+    if (query.near) return this.searchAround(query, key, signal)
+    return this.searchByKeyword(query, key, signal)
   }
 
   private async searchByKeyword(
     query: NormalizedPlaceQuery,
-    key: string
+    key: string,
+    signal?: AbortSignal
   ): Promise<AMapSearchOutput> {
     if (!query.query) return { candidates: [], warnings: [] }
 
@@ -191,15 +271,16 @@ export class AMapPlaceProvider {
       isAttractionSearch(query) ? "all" : "base"
     )
 
-    return this.fetchCandidates(url, isAttractionSearch(query))
+    return this.fetchCandidates(url, isAttractionSearch(query), signal)
   }
 
   private async searchAround(
     query: NormalizedPlaceQuery,
-    key: string
+    key: string,
+    signal?: AbortSignal
   ): Promise<AMapSearchOutput> {
     if (!query.near) return { candidates: [], warnings: [] }
-    const location = await this.locationForAroundSearch(query, key)
+    const location = await this.locationForAroundSearch(query, key, signal)
     if (!location.location) {
       return { candidates: [], warnings: location.warnings }
     }
@@ -216,7 +297,11 @@ export class AMapPlaceProvider {
       isAttractionSearch(query) ? "all" : "base"
     )
 
-    const result = await this.fetchCandidates(url, isAttractionSearch(query))
+    const result = await this.fetchCandidates(
+      url,
+      isAttractionSearch(query),
+      signal
+    )
     return {
       candidates: result.candidates,
       warnings: [...location.warnings, ...result.warnings],
@@ -225,7 +310,8 @@ export class AMapPlaceProvider {
 
   private async locationForAroundSearch(
     query: NormalizedPlaceQuery,
-    key: string
+    key: string,
+    signal?: AbortSignal
   ): Promise<{ location: string | null; warnings: ProviderWarning[] }> {
     if (!query.near) return { location: null, warnings: [] }
     if (query.near.coordinateSystem === "GCJ02") {
@@ -244,57 +330,34 @@ export class AMapPlaceProvider {
     url.searchParams.set("coordsys", coordsys)
 
     try {
-      const response = await fetchJson(url, 1000)
+      const response = await fetchJson(url, 1000, signal)
       const location = response.locations?.split(";")[0]
       if (response.status === "1" && location && parseLngLat(location)) {
         return { location, warnings: [] }
       }
       return {
         location: null,
-        warnings: [
-          {
-            provider: "amap",
-            code: isQuotaError(response) ? "quota_exceeded" : "provider_error",
-            message: response.info ?? "高德坐标转换失败",
-          },
-        ],
+        warnings: [warningForResponse(response, "高德坐标转换失败")],
       }
     } catch (error) {
       return {
         location: null,
-        warnings: [
-          {
-            provider: "amap",
-            code:
-              error instanceof Error && error.name === "AbortError"
-                ? "timeout"
-                : "provider_error",
-            message:
-              error instanceof Error ? error.message : "高德坐标转换失败",
-          },
-        ],
+        warnings: [warningForError(error, "高德坐标转换失败")],
       }
     }
   }
 
   private async fetchCandidates(
     url: URL,
-    includeAttractionImages: boolean
+    includeAttractionImages: boolean,
+    signal?: AbortSignal
   ): Promise<AMapSearchOutput> {
     try {
-      const response = await fetchJson(url, 2500)
+      const response = await fetchJson(url, 2500, signal)
       if (response.status !== "1") {
         return {
           candidates: [],
-          warnings: [
-            {
-              provider: "amap",
-              code: isQuotaError(response)
-                ? "quota_exceeded"
-                : "provider_error",
-              message: response.info ?? "高德 POI 查询失败",
-            },
-          ],
+          warnings: [warningForResponse(response, "高德 POI 查询失败")],
         }
       }
 
@@ -309,17 +372,7 @@ export class AMapPlaceProvider {
     } catch (error) {
       return {
         candidates: [],
-        warnings: [
-          {
-            provider: "amap",
-            code:
-              error instanceof Error && error.name === "AbortError"
-                ? "timeout"
-                : "provider_error",
-            message:
-              error instanceof Error ? error.message : "高德 POI 查询失败",
-          },
-        ],
+        warnings: [warningForError(error, "高德 POI 查询失败")],
       }
     }
   }

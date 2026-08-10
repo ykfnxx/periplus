@@ -59,7 +59,10 @@ function amapCandidate(): PlaceCandidate {
   }
 }
 
-function serviceFor(confidenceSource = catalogCandidate()) {
+function serviceFor(
+  confidenceSource = catalogCandidate(),
+  retry: ConstructorParameters<typeof PlaceIntelligenceService>[4] = {}
+) {
   const repository = {
     search: vi.fn().mockResolvedValue({
       candidates: [confidenceSource],
@@ -82,7 +85,8 @@ function serviceFor(confidenceSource = catalogCandidate()) {
       repository,
       provider,
       logUsage,
-      imageProbe
+      imageProbe,
+      retry
     ),
     repository,
     provider,
@@ -183,19 +187,137 @@ describe("PlaceIntelligenceService", () => {
     })
   })
 
-  it("accepts a unique actionable live result and honors requireExact", async () => {
-    const { service, provider } = serviceFor(amapCandidate())
-    provider.search.mockResolvedValue({ candidates: [], warnings: [] })
-
-    const result = await service.resolvePlace({ text: "故宫", city: "北京" })
-    const exact = await service.resolvePlace({
-      text: "故宫",
-      city: "北京",
-      requireExact: true,
+  it("selects an exact actionable name and city match despite a close second result", async () => {
+    const { service, repository, provider } = serviceFor()
+    repository.search.mockResolvedValue({ candidates: [], topConfidence: 0 })
+    provider.search.mockResolvedValue({
+      candidates: [
+        amapCandidate(),
+        {
+          ...amapCandidate(),
+          candidateId: "amap-palace-north-gate",
+          providerId: "B000A8UIN8-NORTH",
+          name: "故宫博物院北门",
+          normalizedName: "故宫博物院北门",
+          sources: [{ provider: "amap", providerId: "B000A8UIN8-NORTH" }],
+        },
+      ],
+      warnings: [],
     })
 
-    expect(result).toMatchObject({ status: "resolved" })
-    expect(exact).toMatchObject({ status: "ambiguous" })
+    const result = await service.resolvePlace({
+      text: "故宫博物院",
+      city: "北京",
+    })
+
+    expect(result).toMatchObject({
+      status: "resolved",
+      place: { name: "故宫博物院" },
+    })
+  })
+
+  it("retries transient provider failures twice before returning a result", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    const { service, repository, provider } = serviceFor(catalogCandidate(), {
+      sleep,
+      random: () => 0.5,
+    })
+    repository.search.mockResolvedValue({ candidates: [], topConfidence: 0 })
+    provider.search
+      .mockResolvedValueOnce({
+        candidates: [],
+        warnings: [
+          {
+            provider: "amap",
+            code: "timeout",
+            message: "temporary timeout",
+            retryable: true,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        candidates: [],
+        warnings: [
+          {
+            provider: "amap",
+            code: "provider_error",
+            message: "temporary 503",
+            retryable: true,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ candidates: [amapCandidate()], warnings: [] })
+
+    await expect(
+      service.resolvePlace({ text: "故宫博物院", city: "北京" })
+    ).resolves.toMatchObject({ status: "resolved", providerAttempts: 3 })
+    expect(provider.search).toHaveBeenCalledTimes(3)
+    expect(sleep).toHaveBeenNthCalledWith(1, 200)
+    expect(sleep).toHaveBeenNthCalledWith(2, 400)
+  })
+
+  it("permits attributed fallback only after retryable provider exhaustion", async () => {
+    const { service, repository, provider } = serviceFor(catalogCandidate(), {
+      sleep: vi.fn().mockResolvedValue(undefined),
+      random: () => 0.5,
+    })
+    repository.search.mockResolvedValue({ candidates: [], topConfidence: 0 })
+    provider.search.mockResolvedValue({
+      candidates: [],
+      warnings: [
+        {
+          provider: "amap",
+          code: "timeout",
+          message: "provider timed out",
+          retryable: true,
+        },
+      ],
+    })
+
+    const result = await service.resolvePlace({
+      text: "大理古城",
+      city: "大理",
+    })
+
+    expect(provider.search).toHaveBeenCalledTimes(3)
+    expect(result).toMatchObject({
+      status: "not_found",
+      fallbackAllowed: true,
+      warnings: [expect.objectContaining({ attempts: 3, exhausted: true })],
+    })
+  })
+
+  it("opens a run-level circuit after a hard provider quota failure", async () => {
+    const { service, repository, provider } = serviceFor(catalogCandidate(), {
+      now: () => 1000,
+    })
+    repository.search.mockResolvedValue({ candidates: [], topConfidence: 0 })
+    provider.search.mockResolvedValue({
+      candidates: [],
+      warnings: [
+        {
+          provider: "amap",
+          code: "quota_exceeded",
+          message: "hard quota exhausted",
+          retryable: false,
+        },
+      ],
+    })
+    const context = { agentRunId: "hard-quota-run" }
+
+    await expect(
+      service.resolvePlace({ text: "故宫", city: "北京" }, context)
+    ).resolves.toMatchObject({
+      status: "not_found",
+      warnings: [expect.objectContaining({ attempts: 1, exhausted: true })],
+    })
+    await expect(
+      service.resolvePlace({ text: "天坛", city: "北京" }, context)
+    ).resolves.toMatchObject({
+      status: "not_found",
+      warnings: [expect.objectContaining({ attempts: 0, exhausted: true })],
+    })
+    expect(provider.search).toHaveBeenCalledOnce()
   })
 
   it("records provider warning failures against the scoped request", async () => {

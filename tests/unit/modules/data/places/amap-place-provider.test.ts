@@ -29,8 +29,42 @@ describe("AMapPlaceProvider", () => {
 
     expect(result.candidates).toEqual([])
     expect(result.warnings).toMatchObject([
-      { provider: "amap", code: "provider_error" },
+      { provider: "amap", code: "provider_error", retryable: false },
     ])
+  })
+
+  it("classifies transient QPS failures separately from hard quota failures", async () => {
+    process.env.PERIPLUS_AMAP_WEB_SERVICE_KEY = "test-key"
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: "0",
+            infocode: "10021",
+            info: "CUQPS_HAS_EXCEEDED_THE_LIMIT",
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: "0",
+            infocode: "10004",
+            info: "USER_DAILY_QUERY_OVER_LIMIT",
+          })
+        )
+      )
+    global.fetch = fetchMock
+    const provider = new AMapPlaceProvider()
+    const query = normalizePlaceSearchInput({ query: "西湖", city: "杭州" })
+
+    await expect(provider.search(query)).resolves.toMatchObject({
+      warnings: [{ code: "rate_limited", retryable: true }],
+    })
+    await expect(provider.search(query)).resolves.toMatchObject({
+      warnings: [{ code: "quota_exceeded", retryable: false }],
+    })
   })
 
   it("requests expanded POI data and normalizes attraction photos", async () => {

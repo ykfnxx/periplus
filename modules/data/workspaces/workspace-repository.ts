@@ -127,6 +127,18 @@ function hasPrismaCode(error: unknown, code: string) {
   )
 }
 
+function isSQLiteBusy(error: unknown) {
+  return (
+    hasPrismaCode(error, "P2034") ||
+    (error instanceof Error &&
+      /SQLITE_BUSY|database is locked|write conflict/i.test(error.message))
+  )
+}
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+}
+
 function commandEnvelopeFromPatch(value: string | unknown) {
   try {
     const patch = typeof value === "string" ? JSON.parse(value) : value
@@ -895,32 +907,53 @@ export async function appendWorkspaceMessageDelta(
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return null
   await requireActiveWorkspace(workspace, now)
-  const record = await prisma.$transaction(async (tx) => {
-    const active = await tx.workspaceSession.updateMany({
-      where: { id: workspaceId, status: "ACTIVE" },
-      data: { lastAccessAt: now },
-    })
-    if (active.count !== 1) {
-      throw new WorkspaceInputError("Workspace is not active")
+  let record:
+    | {
+        id: string
+        workspaceId: string
+        role: string
+        content: string
+        blocksJson: string
+        agentRunId: string | null
+        createdAt: Date
+        updatedAt: Date
+      }
+    | undefined
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      record = await prisma.$transaction(async (tx) => {
+        const active = await tx.workspaceSession.updateMany({
+          where: { id: workspaceId, status: "ACTIVE" },
+          data: { lastAccessAt: now },
+        })
+        if (active.count !== 1) {
+          throw new WorkspaceInputError("Workspace is not active")
+        }
+        const message = await tx.workspaceMessage.findFirst({
+          where: {
+            id: messageId,
+            workspaceId,
+            agentRunId,
+            role: "ASSISTANT",
+          },
+        })
+        if (!message) {
+          throw new WorkspaceInputError(
+            "Assistant message does not belong to Agent run"
+          )
+        }
+        return tx.workspaceMessage.update({
+          where: { id: messageId },
+          data: { content: `${message.content}${text}` },
+        })
+      })
+      break
+    } catch (error) {
+      if (!isSQLiteBusy(error) || attempt === 3) throw error
+      await wait(25 * 2 ** (attempt - 1))
     }
-    const message = await tx.workspaceMessage.findFirst({
-      where: {
-        id: messageId,
-        workspaceId,
-        agentRunId,
-        role: "ASSISTANT",
-      },
-    })
-    if (!message) {
-      throw new WorkspaceInputError(
-        "Assistant message does not belong to Agent run"
-      )
-    }
-    return tx.workspaceMessage.update({
-      where: { id: messageId },
-      data: { content: `${message.content}${text}` },
-    })
-  })
+  }
+  if (!record) throw new Error("Workspace message delta was not persisted")
   return targetWorkspaceMessageSchema.parse({
     id: record.id,
     workspaceId: record.workspaceId,
