@@ -627,11 +627,38 @@ export default function periplusRuntimeExtension(pi: ExtensionAPI) {
         text: id,
         city: Type.Optional(Type.String()),
         intent: Type.Optional(placeIntent),
-        requireExact: Type.Optional(Type.Boolean()),
       },
       { additionalProperties: false }
     ),
     "place.resolve"
+  )
+  register(
+    "periplus_place_fallback",
+    "Register fallback place",
+    "Register a WebSearch-backed unverified place only after place.resolve reports fallbackAllowed=true. Coordinates must be supported by the supplied HTTP(S) sources and never guessed.",
+    Type.Object(
+      {
+        requestId: id,
+        failedRequestId: id,
+        name: id,
+        city: id,
+        address: Type.Optional(id),
+        category: placeCategory,
+        lat: Type.Number({ minimum: -90, maximum: 90 }),
+        lng: Type.Number({ minimum: -180, maximum: 180 }),
+        coordinateSystem,
+        sourceUrls: Type.Array(
+          Type.String({
+            format: "uri",
+            pattern: "^https?://",
+            maxLength: 2048,
+          }),
+          { minItems: 1, maxItems: 5 }
+        ),
+      },
+      { additionalProperties: false }
+    ),
+    "place.fallback"
   )
   register(
     "periplus_place_enrich",

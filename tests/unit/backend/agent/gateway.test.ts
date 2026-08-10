@@ -321,6 +321,42 @@ describe.sequential("AgentGateway run-scoped draft protocol", () => {
         idempotencyKey: "typed-draft",
       }).success
     ).toBe(true)
+    expect(
+      agentToolRequestSchema.safeParse({
+        type: "place.resolve",
+        requestId: "model-controlled-exactness",
+        text: "西湖",
+        requireExact: true,
+      }).success
+    ).toBe(false)
+    expect(
+      agentToolRequestSchema.safeParse({
+        type: "place.fallback",
+        requestId: "fallback-request",
+        failedRequestId: "failed-provider-request",
+        name: "西湖",
+        city: "杭州",
+        category: "SIGHT",
+        lat: 30.25,
+        lng: 120.15,
+        coordinateSystem: "GCJ02",
+        sourceUrls: ["https://example.com/west-lake"],
+      }).success
+    ).toBe(true)
+    expect(
+      agentToolRequestSchema.safeParse({
+        type: "place.fallback",
+        requestId: "unsafe-fallback-request",
+        failedRequestId: "failed-provider-request",
+        name: "西湖",
+        city: "杭州",
+        category: "SIGHT",
+        lat: 30.25,
+        lng: 120.15,
+        coordinateSystem: "GCJ02",
+        sourceUrls: ["file:///tmp/fabricated-place.json"],
+      }).success
+    ).toBe(false)
   })
 
   it("builds, validates, atomically commits, and confirms one draft", async () => {
@@ -531,6 +567,167 @@ describe.sequential("AgentGateway run-scoped draft protocol", () => {
 
     first.runtime.exit(0)
     second.runtime.exit(0)
+  })
+
+  it("registers an explicitly unverified WebSearch fallback only after provider exhaustion", async () => {
+    const placeService = {
+      searchPlaces: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+      resolvePlace: vi.fn().mockResolvedValue({
+        status: "not_found" as const,
+        fallbackQuery: { query: "西湖", city: "杭州" },
+        reason: "provider retries exhausted",
+        fallbackAllowed: true,
+        warnings: [
+          {
+            provider: "amap" as const,
+            code: "timeout" as const,
+            message: "provider timed out",
+            retryable: true,
+            attempts: 3,
+            exhausted: true,
+          },
+        ],
+      }),
+      enrichPlace: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+      verifyPlaceImages: vi
+        .fn()
+        .mockResolvedValue({ images: [], warnings: [] }),
+    }
+    const { workspace, commands, runtime, gateway, emit } = await setup({
+      placeService,
+    })
+    await gateway.start(context, workspace.id, "规划杭州行程", "auto", emit)
+    const token = capabilityToken(runtime)
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "place.fallback",
+        requestId: "unpermitted-fallback",
+        failedRequestId: "missing-provider-request",
+        name: "西湖",
+        city: "杭州",
+        category: "SIGHT",
+        lat: 30.25,
+        lng: 120.15,
+        coordinateSystem: "GCJ02",
+        sourceUrls: ["https://example.com/west-lake"],
+      })
+    ).rejects.toThrow("prior exhausted place.resolve")
+
+    const unresolved = await gateway.executeTool(token, {
+      type: "place.resolve",
+      requestId: "resolve-west-lake-fallback",
+      text: "西湖",
+      city: "杭州",
+    })
+    expect(unresolved).toMatchObject({
+      status: "not_found",
+      fallbackAllowed: true,
+    })
+    await expect(
+      gateway.executeTool(token, {
+        type: "place.resolve",
+        requestId: "repeat-provider-after-exhaustion",
+        text: "西湖",
+        city: "杭州",
+      })
+    ).rejects.toThrow("register place.fallback or ask the user")
+    const fallback = result<{ placeResolutionId: string }>(
+      await gateway.executeTool(token, {
+        type: "place.fallback",
+        requestId: "register-west-lake-fallback",
+        failedRequestId: "resolve-west-lake-fallback",
+        name: "西湖",
+        city: "杭州市",
+        category: "SIGHT",
+        lat: 30.25,
+        lng: 120.15,
+        coordinateSystem: "GCJ02",
+        sourceUrls: ["https://example.com/west-lake"],
+      })
+    )
+    const opened = result<{ draftId: string }>(
+      await gateway.executeTool(token, {
+        type: "draft.open",
+        expectedWorkspaceRevision: 0,
+        idempotencyKey: "open-fallback-place-draft",
+      })
+    )
+    const mutation = result<{ warnings: Array<{ code: string }> }>(
+      await gateway.executeTool(token, {
+        type: "draft.change_place",
+        draftId: opened.draftId,
+        operationId: "change-to-fallback-place",
+        cardId: `${workspace.headGraph.id}-visit`,
+        placeResolutionId: fallback.placeResolutionId,
+      })
+    )
+    expect(mutation.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "UNVERIFIED_FALLBACK" }),
+      ])
+    )
+    await expect(
+      gateway.executeTool(token, {
+        type: "draft.validate",
+        draftId: opened.draftId,
+        attemptId: "validate-fallback-place-draft",
+      })
+    ).resolves.toMatchObject({ validation: { valid: true } })
+    await gateway.executeTool(token, {
+      type: "draft.commit",
+      draftId: opened.draftId,
+      idempotencyKey: "commit-fallback-place-draft",
+    })
+    await gateway.executeTool(token, {
+      type: "journey.validate_current",
+      expectedWorkspaceRevision: 1,
+    })
+
+    const visit = (
+      await commands.getDocument(context, workspace.id)
+    )?.session.headGraph.events.find((event) => event.type === "VISIT")
+    expect(visit).toMatchObject({
+      title: "西湖",
+      detail: { coordinateProvider: "agent_fallback" },
+    })
+    expect(visit?.detail).not.toHaveProperty("providerPlaceId")
+    runtime.exit(0)
+  })
+
+  it("server-enforces the awaiting-user state after an ambiguous place", async () => {
+    const placeService = {
+      searchPlaces: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+      resolvePlace: vi.fn().mockResolvedValue({
+        status: "ambiguous" as const,
+        candidates: [resolvedPlace().place],
+        question: "请确认具体地点",
+        warnings: [],
+      }),
+      enrichPlace: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+      verifyPlaceImages: vi
+        .fn()
+        .mockResolvedValue({ images: [], warnings: [] }),
+    }
+    const { workspace, runtime, gateway, emit } = await setup({ placeService })
+    await gateway.start(context, workspace.id, "查找西湖", "auto", emit)
+    const token = capabilityToken(runtime)
+
+    await expect(
+      gateway.executeTool(token, {
+        type: "place.resolve",
+        requestId: "resolve-ambiguous-place",
+        text: "西湖",
+      })
+    ).resolves.toMatchObject({ status: "ambiguous" })
+    await expect(
+      gateway.executeTool(token, {
+        type: "place.search",
+        requestId: "search-after-ambiguous",
+        query: "西湖",
+      })
+    ).rejects.toThrow("请确认具体地点")
+    runtime.exit(0)
   })
 
   it("does not attach images from an unapproved enrichment candidate", async () => {
@@ -1220,6 +1417,80 @@ describe.sequential("AgentGateway run-scoped draft protocol", () => {
       expect(document?.suggestions).toHaveLength(1)
       expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
       expect(document?.session.headWorkspaceRevision).toBe(0)
+    })
+  })
+
+  it("flushes buffered stdout before terminalizing the run", async () => {
+    const { workspace, commands, runtime, events, gateway, emit } =
+      await setup()
+    await gateway.start(context, workspace.id, "分片输出", "auto", emit)
+
+    runtime.observer?.onStdout("第一段")
+    runtime.observer?.onStdout("第二段")
+    runtime.exit(0)
+
+    await vi.waitFor(async () => {
+      const document = await commands.getDocument(context, workspace.id)
+      expect(document?.messages.at(-1)?.content).toBe("第一段第二段")
+      expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
+    })
+    expect(
+      events.filter((event) => event.type === "agent.message.delta")
+    ).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({ text: "第一段第二段" }),
+      }),
+    ])
+  })
+
+  it("aborts and awaits an in-flight provider tool before finishing", async () => {
+    let providerSignal: AbortSignal | undefined
+    const placeService = {
+      searchPlaces: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+      resolvePlace: vi.fn(
+        async (
+          _input: unknown,
+          context?: { signal?: AbortSignal }
+        ): Promise<PlaceResolveResult> => {
+          providerSignal = context?.signal
+          await new Promise<void>((resolve) =>
+            context?.signal?.addEventListener("abort", () => resolve(), {
+              once: true,
+            })
+          )
+          return {
+            status: "not_found",
+            fallbackQuery: { query: "西湖" },
+            reason: "run ended",
+            fallbackAllowed: false,
+            warnings: [],
+          }
+        }
+      ),
+      enrichPlace: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+      verifyPlaceImages: vi
+        .fn()
+        .mockResolvedValue({ images: [], warnings: [] }),
+    }
+    const { workspace, commands, runtime, gateway, emit } = await setup({
+      placeService,
+    })
+    await gateway.start(context, workspace.id, "查找地点", "auto", emit)
+    const token = capabilityToken(runtime)
+    const pendingTool = gateway.executeTool(token, {
+      type: "place.resolve",
+      requestId: "in-flight-place",
+      text: "西湖",
+    })
+    await vi.waitFor(() => expect(providerSignal).toBeDefined())
+
+    runtime.exit(1)
+    await expect(pendingTool).resolves.toMatchObject({ status: "not_found" })
+    expect(providerSignal?.aborted).toBe(true)
+    await vi.waitFor(async () => {
+      expect(
+        (await commands.getDocument(context, workspace.id))?.agentRuns.at(-1)
+      ).toMatchObject({ status: "FAILED" })
     })
   })
 

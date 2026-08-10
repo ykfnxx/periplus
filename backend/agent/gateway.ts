@@ -35,6 +35,7 @@ import {
 } from "@/lib/places/attractions"
 import {
   placeEnrichInputSchema,
+  placeFallbackInputSchema,
   placeResolveInputSchema,
   placeSearchInputSchema,
 } from "@/backend/mcp/schemas/place"
@@ -125,8 +126,14 @@ interface RunningAgent {
   finished: boolean
   runtimeFailed: boolean
   stdout: string
+  stdoutBuffer: string
+  stdoutFlushTimer: ReturnType<typeof setTimeout> | null
   assistantMessageId: string
   outputWrite: Promise<void>
+  failureCode: string | null
+  failureMessage: string | null
+  toolAbortController: AbortController
+  inFlightTools: Set<Promise<void>>
   heartbeatTimer: ReturnType<typeof setInterval> | null
   traceRunSpanId: string
   traceFailure: Error | null
@@ -196,6 +203,7 @@ export const agentToolRequestSchema = z.union([
   draftCommitInputSchema.safeExtend({ type: z.literal("draft.commit") }),
   placeSearchInputSchema.safeExtend({ type: z.literal("place.search") }),
   placeResolveInputSchema.safeExtend({ type: z.literal("place.resolve") }),
+  placeFallbackInputSchema.safeExtend({ type: z.literal("place.fallback") }),
   placeEnrichInputSchema.safeExtend({ type: z.literal("place.enrich") }),
   hotelSearchInputSchema.safeExtend({ type: z.literal("hotel.search") }),
 ])
@@ -284,6 +292,9 @@ function draftPrompt(
 ) {
   return buildPrompt(messages, mode, JSON.stringify(snapshot, null, 2))
 }
+
+const STDOUT_FLUSH_DELAY_MS = 50
+const STDOUT_FLUSH_BYTES = 512
 
 export class AgentGateway {
   private readonly runs = new Map<string, RunningAgent>()
@@ -579,8 +590,14 @@ export class AgentGateway {
       finished: false,
       runtimeFailed: false,
       stdout: "",
+      stdoutBuffer: "",
+      stdoutFlushTimer: null,
       assistantMessageId,
       outputWrite: Promise.resolve(),
+      failureCode: null,
+      failureMessage: null,
+      toolAbortController: new AbortController(),
+      inFlightTools: new Set(),
       heartbeatTimer: null,
       traceRunSpanId: randomUUID(),
       traceFailure: null,
@@ -672,13 +689,20 @@ export class AgentGateway {
               },
               onError: (error) => {
                 running.runtimeFailed = true
+                running.failureCode ??= "AGENT_RUNTIME_FAILED"
+                running.failureMessage ??= error.message
+                running.toolAbortController.abort()
                 running.telemetry.recordRuntimeError(error.name)
                 running.telemetry.root.addEvent("runtime.error", {
                   "error.type": error.name,
                 })
                 emit(workspaceId, {
                   type: "agent.run.failed",
-                  payload: { runId: running.runId, message: error.message },
+                  payload: {
+                    runId: running.runId,
+                    code: running.failureCode,
+                    message: running.failureMessage,
+                  },
                 })
               },
               onModelTelemetry: (event) => {
@@ -734,6 +758,7 @@ export class AgentGateway {
     const running = this.runs.get(workspaceId)
     if (!running || running.finished) return
     running.cancelled = true
+    running.toolAbortController.abort()
     running.runtimeRun?.cancel()
   }
 
@@ -772,25 +797,30 @@ export class AgentGateway {
     if (otelDraftSpan) {
       otelDraftSpan.setAttribute("input.value", redactedInput(request) ?? "")
     }
-    await this.trace(running, {
-      type: "tool.started",
-      spanId: toolSpanId,
-      parentSpanId: running.traceRunSpanId,
-      status: "OK",
-      payload: {
-        toolType: request.type,
-        ...(isEvidenceToolRequest(request)
-          ? {
-              requestId: (
-                request as PlaceAgentToolRequest | HotelAgentToolRequest
-              ).requestId,
-            }
-          : {}),
-      },
+    let markToolComplete!: () => void
+    const toolCompletion = new Promise<void>((resolve) => {
+      markToolComplete = resolve
     })
-
+    running.inFlightTools.add(toolCompletion)
     try {
+      await this.trace(running, {
+        type: "tool.started",
+        spanId: toolSpanId,
+        parentSpanId: running.traceRunSpanId,
+        status: "OK",
+        payload: {
+          toolType: request.type,
+          ...(isEvidenceToolRequest(request)
+            ? {
+                requestId: (
+                  request as PlaceAgentToolRequest | HotelAgentToolRequest
+                ).requestId,
+              }
+            : {}),
+        },
+      })
       await this.heartbeat(running)
+      running.draftSession.assertToolAllowed(request.type)
       let output: unknown
       if (request.type === "workspace.get_context") {
         const document = await this.commands.getDocument(
@@ -967,6 +997,43 @@ export class AgentGateway {
       })
       otelToolSpan.setAttribute("output.value", redactedInput(output) ?? "")
       otelDraftSpan?.setAttribute("output.value", redactedInput(output) ?? "")
+      if (output && typeof output === "object") {
+        const semanticOutput = output as {
+          status?: unknown
+          count?: unknown
+          warnings?: Array<{ code?: unknown }>
+        }
+        if (typeof semanticOutput.status === "string") {
+          otelToolSpan.setAttribute(
+            "periplus.tool.outcome",
+            semanticOutput.status
+          )
+        } else if (
+          request.type === "hotel.search" &&
+          typeof semanticOutput.count === "number"
+        ) {
+          otelToolSpan.setAttribute(
+            "periplus.tool.outcome",
+            semanticOutput.count > 0 ? "candidates" : "empty"
+          )
+        }
+        const warnings = Array.isArray(semanticOutput.warnings)
+          ? semanticOutput.warnings
+          : []
+        otelToolSpan.setAttribute(
+          "periplus.tool.warning_count",
+          warnings.length
+        )
+        const warningCodes = warnings.flatMap((warning) =>
+          typeof warning.code === "string" ? [warning.code] : []
+        )
+        if (warningCodes.length) {
+          otelToolSpan.setAttribute(
+            "periplus.tool.warning_codes",
+            warningCodes.join(",")
+          )
+        }
+      }
       if (otelDraftSpan && request.type === "draft.validate") {
         const result = output as Awaited<
           ReturnType<AgentDraftSession["validate"]>
@@ -996,11 +1063,13 @@ export class AgentGateway {
       otelDraftSpan?.end("OK")
       running.telemetry.recordTool(
         request.type,
-        request.type.startsWith("place.")
-          ? "amap"
-          : request.type === "hotel.search"
-            ? "rollinggo"
-            : "workspace",
+        request.type === "place.fallback"
+          ? "agent_fallback"
+          : request.type.startsWith("place.")
+            ? "amap"
+            : request.type === "hotel.search"
+              ? "rollinggo"
+              : "workspace",
         "OK",
         performance.now() - startedAt
       )
@@ -1028,11 +1097,13 @@ export class AgentGateway {
       })
       running.telemetry.recordTool(
         request.type,
-        request.type.startsWith("place.")
-          ? "amap"
-          : request.type === "hotel.search"
-            ? "rollinggo"
-            : "workspace",
+        request.type === "place.fallback"
+          ? "agent_fallback"
+          : request.type.startsWith("place.")
+            ? "amap"
+            : request.type === "hotel.search"
+              ? "rollinggo"
+              : "workspace",
         "ERROR",
         performance.now() - startedAt
       )
@@ -1041,6 +1112,9 @@ export class AgentGateway {
         "periplus.tool.duration_ms": performance.now() - startedAt,
       })
       throw error
+    } finally {
+      markToolComplete()
+      running.inFlightTools.delete(toolCompletion)
     }
   }
 
@@ -1054,6 +1128,7 @@ export class AgentGateway {
       workspaceId: running.workspaceId,
       agentRunId: running.runId,
       requestId: request.requestId,
+      signal: running.toolAbortController.signal,
     }
     if (request.type === "place.search") {
       const rawInput = withoutToolType(request)
@@ -1141,6 +1216,7 @@ export class AgentGateway {
         }
       }
       if (result.status === "ambiguous") {
+        running.draftSession.requireUserInput(result.question)
         return {
           status: "ambiguous" as const,
           candidates: result.candidates.map((candidate) => ({
@@ -1153,6 +1229,15 @@ export class AgentGateway {
           warnings: result.warnings,
         }
       }
+      if (result.fallbackAllowed) {
+        running.draftSession.allowPlaceFallback(
+          request.requestId,
+          { text: input.text, city: input.city },
+          result.warnings
+        )
+      } else {
+        running.draftSession.requireUserInput(result.reason)
+      }
       return {
         status: "not_found" as const,
         fallbackQuery: {
@@ -1160,7 +1245,27 @@ export class AgentGateway {
           city: input.city,
         },
         reason: result.reason,
+        fallbackAllowed: result.fallbackAllowed,
         warnings: result.warnings,
+      }
+    }
+
+    if (request.type === "place.fallback") {
+      const rawInput = withoutToolType(request)
+      const parsed = placeFallbackInputSchema.parse(rawInput)
+      const fallback = running.draftSession.registerFallbackPlace(parsed)
+      return {
+        status: "fallback_registered" as const,
+        placeResolutionId: fallback.placeResolutionId,
+        place: {
+          canonicalName: fallback.place.name,
+          city: fallback.place.city,
+          address: fallback.place.address,
+          confidence: fallback.place.confidence,
+          coordinateSystem: fallback.place.bestCoordinate.coordinateSystem,
+          verificationStatus: "UNVERIFIED" as const,
+        },
+        warnings: [fallback.warning],
       }
     }
 
@@ -1189,7 +1294,11 @@ export class AgentGateway {
           parentSpan,
           "amap",
           "place.image.verify",
-          () => this.placeService.verifyPlaceImages(evidence.place.images ?? [])
+          () =>
+            this.placeService.verifyPlaceImages(
+              evidence.place.images ?? [],
+              running.toolAbortController.signal
+            )
         )
     const images =
       "results" in result
@@ -1235,6 +1344,7 @@ export class AgentGateway {
       workspaceId: running.workspaceId,
       agentRunId: running.runId,
       requestId: request.requestId,
+      signal: running.toolAbortController.signal,
     }
     const result = await this.withProviderSpan(
       running,
@@ -1244,6 +1354,11 @@ export class AgentGateway {
       () => this.hotelService.searchHotels(input, usageContext)
     )
     const firstCandidate = result.candidates[0]
+    if (!firstCandidate) {
+      running.draftSession.requireUserInput(
+        "酒店查询没有返回可用候选，需要用户补充酒店名称或条件"
+      )
+    }
     const hotelSelectionId = firstCandidate
       ? running.draftSession.registerHotelSelection(
           firstCandidate,
@@ -1305,7 +1420,56 @@ export class AgentGateway {
     try {
       const result = await running.telemetry.withSpan(span, callback)
       span.setAttribute("output.value", redactedInput(result) ?? "")
-      span.end("OK")
+      const output =
+        result && typeof result === "object"
+          ? (result as {
+              status?: unknown
+              matchStatus?: unknown
+              candidates?: unknown[]
+              warnings?: Array<{
+                provider?: unknown
+                code?: unknown
+                attempts?: unknown
+              }>
+              providerAttempts?: unknown
+            })
+          : undefined
+      if (typeof output?.status === "string") {
+        span.setAttribute("periplus.provider.outcome", output.status)
+      } else if (typeof output?.matchStatus === "string") {
+        span.setAttribute("periplus.provider.outcome", output.matchStatus)
+      } else if (Array.isArray(output?.candidates)) {
+        span.setAttribute(
+          "periplus.provider.outcome",
+          output.candidates.length > 0 ? "candidates" : "empty"
+        )
+      }
+      const warnings = Array.isArray(output?.warnings) ? output.warnings : []
+      const failureWarnings = warnings.filter(
+        (warning) =>
+          typeof warning.code === "string" &&
+          (warning.provider === undefined || warning.provider === provider) &&
+          warning.code !== "low_confidence" &&
+          warning.code !== "IMAGE_UNAVAILABLE" &&
+          warning.code !== "UNVERIFIED_FALLBACK"
+      )
+      span.end(failureWarnings.length ? "ERROR" : "OK", {
+        "periplus.provider.warning_count": warnings.length,
+        "periplus.provider.failure_count": failureWarnings.length,
+        "periplus.provider.attempts": Math.max(
+          typeof output?.providerAttempts === "number"
+            ? output.providerAttempts
+            : 1,
+          ...failureWarnings.flatMap((warning) =>
+            typeof warning.attempts === "number" ? [warning.attempts] : []
+          )
+        ),
+        ...(failureWarnings[0]?.code
+          ? {
+              "periplus.provider.failure_code": String(failureWarnings[0].code),
+            }
+          : {}),
+      })
       return result
     } catch (error) {
       span.end("ERROR", {
@@ -1348,24 +1512,61 @@ export class AgentGateway {
     text: string,
     emit: AgentEventEmitter
   ) {
+    if (running.failureCode === "OUTPUT_PERSIST_FAILED") return
+    running.stdoutBuffer += text
+    if (Buffer.byteLength(running.stdoutBuffer, "utf8") >= STDOUT_FLUSH_BYTES) {
+      this.flushStdout(running, emit)
+      return
+    }
+    if (running.stdoutFlushTimer) return
+    running.stdoutFlushTimer = setTimeout(() => {
+      running.stdoutFlushTimer = null
+      this.flushStdout(running, emit)
+    }, STDOUT_FLUSH_DELAY_MS)
+    running.stdoutFlushTimer.unref?.()
+  }
+
+  private flushStdout(running: RunningAgent, emit: AgentEventEmitter) {
+    if (running.stdoutFlushTimer) clearTimeout(running.stdoutFlushTimer)
+    running.stdoutFlushTimer = null
+    const text = running.stdoutBuffer
+    running.stdoutBuffer = ""
+    if (!text || running.failureCode === "OUTPUT_PERSIST_FAILED") return
     running.outputWrite = running.outputWrite
       .then(async () => {
         const persistStartedAt = performance.now()
-        await appendWorkspaceMessageDelta(
-          running.context,
-          running.workspaceId,
-          running.assistantMessageId,
-          running.runId,
-          text,
-          this.now()
-        )
+        try {
+          const persisted = await appendWorkspaceMessageDelta(
+            running.context,
+            running.workspaceId,
+            running.assistantMessageId,
+            running.runId,
+            text,
+            this.now()
+          )
+          if (!persisted) {
+            throw new Error("Workspace message was not found")
+          }
+        } catch (error) {
+          this.failOutputPersistence(running, error, emit)
+          return
+        }
         running.telemetry.recordStreamPersistence(
           text,
           performance.now() - persistStartedAt,
           this.now()
         )
         running.stdout += text
-        await this.heartbeat(running)
+        try {
+          await this.heartbeat(running)
+        } catch (error) {
+          running.runtimeFailed = true
+          running.failureCode ??= "AGENT_HEARTBEAT_FAILED"
+          running.failureMessage ??=
+            error instanceof Error ? error.message : "Agent heartbeat failed"
+          running.toolAbortController.abort()
+          running.runtimeRun?.cancel()
+        }
         emit(running.workspaceId, {
           type: "agent.message.delta",
           payload: {
@@ -1376,27 +1577,50 @@ export class AgentGateway {
           },
         })
       })
-      .catch((error) => {
-        running.runtimeFailed = true
-        running.cancelled = true
-        running.runtimeRun?.cancel()
-        emit(running.workspaceId, {
-          type: "agent.run.failed",
-          payload: {
-            runId: running.runId,
-            message:
-              error instanceof Error ? error.message : "Agent output failed",
-          },
-        })
-      })
+      .catch((error) => this.failOutputPersistence(running, error, emit))
+  }
+
+  private failOutputPersistence(
+    running: RunningAgent,
+    error: unknown,
+    emit: AgentEventEmitter
+  ) {
+    if (running.failureCode === "OUTPUT_PERSIST_FAILED") return
+    running.runtimeFailed = true
+    running.failureCode = "OUTPUT_PERSIST_FAILED"
+    running.failureMessage = "Agent output persistence failed"
+    running.telemetry.root.recordException(error)
+    running.telemetry.root.addEvent("output.persistence.failed", {
+      "error.type": error instanceof Error ? error.name : "Error",
+    })
+    running.toolAbortController.abort()
+    running.runtimeRun?.cancel()
+    emit(running.workspaceId, {
+      type: "agent.run.failed",
+      payload: {
+        runId: running.runId,
+        code: running.failureCode,
+        message: running.failureMessage,
+      },
+    })
+  }
+
+  private async settleInFlightTools(running: RunningAgent) {
+    running.toolAbortController.abort()
+    while (running.inFlightTools.size) {
+      await Promise.allSettled([...running.inFlightTools])
+    }
   }
 
   private startHeartbeat(running: RunningAgent) {
     if (this.heartbeatIntervalMs === null) return
     running.heartbeatTimer = setInterval(() => {
-      void this.heartbeat(running).catch(() => {
+      void this.heartbeat(running).catch((error) => {
         running.runtimeFailed = true
-        running.cancelled = true
+        running.failureCode ??= "AGENT_HEARTBEAT_FAILED"
+        running.failureMessage ??=
+          error instanceof Error ? error.message : "Agent heartbeat failed"
+        running.toolAbortController.abort()
         running.runtimeRun?.cancel()
       })
     }, this.heartbeatIntervalMs)
@@ -1415,10 +1639,13 @@ export class AgentGateway {
   }
 
   private heartbeatInBackground(running: RunningAgent) {
-    void this.heartbeat(running).catch(() => {
+    void this.heartbeat(running).catch((error) => {
       if (running.finished) return
       running.runtimeFailed = true
-      running.cancelled = true
+      running.failureCode ??= "AGENT_HEARTBEAT_FAILED"
+      running.failureMessage ??=
+        error instanceof Error ? error.message : "Agent heartbeat failed"
+      running.toolAbortController.abort()
       running.runtimeRun?.cancel()
     })
   }
@@ -1426,6 +1653,8 @@ export class AgentGateway {
   private releaseRuntime(running: RunningAgent) {
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
+    if (running.stdoutFlushTimer) clearTimeout(running.stdoutFlushTimer)
+    running.stdoutFlushTimer = null
     this.runs.delete(running.workspaceId)
     this.runsByCapability.delete(running.capabilityToken)
   }
@@ -1440,6 +1669,7 @@ export class AgentGateway {
     running.finished = true
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
+    this.flushStdout(running, emit)
 
     let failed =
       running.runtimeFailed || (!running.cancelled && result.code !== 0)
@@ -1447,6 +1677,7 @@ export class AgentGateway {
     try {
       await running.outputWrite
       failed ||= running.runtimeFailed
+      await this.settleInFlightTools(running)
       if (mode === "suggest" && result.code === 0 && !running.cancelled) {
         const suggestion = parseSuggestion(running.stdout)
         await createWorkspaceSuggestion(running.context, running.workspaceId, {
@@ -1517,6 +1748,10 @@ export class AgentGateway {
       }
     } catch (error) {
       failed = true
+      running.failureCode ??= "AGENT_FINISH_FAILED"
+      running.failureMessage ??=
+        error instanceof Error ? error.message : "Agent output failed"
+      running.telemetry.root.recordException(error)
       emit(running.workspaceId, {
         type: "agent.run.failed",
         payload: {
@@ -1543,9 +1778,12 @@ export class AgentGateway {
                   ? "CANCELLED"
                   : "SUCCEEDED",
               errorCode: failed
-                ? (validationErrorCode ?? "AGENT_RUNTIME_FAILED")
+                ? (running.failureCode ??
+                  validationErrorCode ??
+                  "AGENT_RUNTIME_FAILED")
                 : undefined,
-              errorMessage: validationErrorCode,
+              errorMessage:
+                running.failureMessage ?? validationErrorCode ?? undefined,
               runtimeOwnerId: this.runtimeOwnerId,
               now: this.now(),
             }
@@ -1559,6 +1797,7 @@ export class AgentGateway {
           cancelled: running.cancelled,
           exitCode: result.code,
           runtimeId: result.metadata.runtimeId,
+          ...(running.failureCode ? { errorCode: running.failureCode } : {}),
         },
       })
     } catch (error) {

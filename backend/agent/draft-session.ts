@@ -2,7 +2,10 @@ import { createHash, randomUUID } from "node:crypto"
 import type { z } from "zod"
 import type { AuthContext } from "@/modules/auth/server/context"
 import type { HotelCandidate, HotelProviderWarning } from "@/lib/hotels/types"
+import { normalizePlaceName } from "@/lib/places/normalize"
 import type {
+  CoordinateSystem,
+  PlaceCategory,
   PlaceImage,
   PlaceResolveResult,
   PlaceSearchResult,
@@ -77,6 +80,24 @@ type PlaceEvidence = {
   place: PlaceSearchResult
   verification: PlaceVerification
   warnings: ProviderWarning[]
+}
+
+type PlaceFallbackPermit = {
+  text: string
+  city?: string
+  warnings: ProviderWarning[]
+}
+
+interface PlaceFallbackInput {
+  failedRequestId: string
+  name: string
+  city: string
+  address?: string
+  category: PlaceCategory
+  lat: number
+  lng: number
+  coordinateSystem: CoordinateSystem
+  sourceUrls: string[]
 }
 
 export type HotelSelection = {
@@ -679,8 +700,11 @@ export class AgentDraftSession {
   private repairsUsed = 0
   private mutatedSinceValidation = false
   private readonly placeEvidence = new Map<string, PlaceEvidence>()
+  private readonly placeFallbackPermits = new Map<string, PlaceFallbackPermit>()
   private readonly hotelSelections = new Map<string, HotelSelection>()
   private readonly usedHotelSelectionIds = new Set<string>()
+  private awaitingUserReason: string | null = null
+  private pendingPlaceFallbackRequestId: string | null = null
   private readonly operations = new Map<
     string,
     StoredOperation<DraftMutationResult>
@@ -719,6 +743,26 @@ export class AgentDraftSession {
     return next
   }
 
+  assertToolAllowed(toolType: string) {
+    const readOnly =
+      toolType === "workspace.get_context" || toolType === "journey.project"
+    if (this.awaitingUserReason) {
+      if (readOnly) return
+      throw new WorkspaceInputError(this.awaitingUserReason)
+    }
+    if (!this.pendingPlaceFallbackRequestId) return
+    if (readOnly || toolType === "place.fallback") {
+      return
+    }
+    throw new WorkspaceInputError(
+      `place.resolve ${this.pendingPlaceFallbackRequestId} exhausted its provider; register place.fallback or ask the user before continuing`
+    )
+  }
+
+  requireUserInput(reason: string) {
+    this.awaitingUserReason = reason
+  }
+
   registerResolvedPlace(
     result: Extract<PlaceResolveResult, { status: "resolved" }>
   ) {
@@ -729,6 +773,118 @@ export class AgentDraftSession {
       warnings: result.warnings,
     })
     return placeResolutionId
+  }
+
+  allowPlaceFallback(
+    failedRequestId: string,
+    input: { text: string; city?: string },
+    warnings: ProviderWarning[]
+  ) {
+    this.placeFallbackPermits.set(failedRequestId, {
+      text: input.text,
+      city: input.city,
+      warnings,
+    })
+    this.pendingPlaceFallbackRequestId = failedRequestId
+  }
+
+  registerFallbackPlace(input: PlaceFallbackInput) {
+    const permit = this.placeFallbackPermits.get(input.failedRequestId)
+    if (!permit) {
+      throw new WorkspaceInputError(
+        "place fallback requires a prior exhausted place.resolve request in the same Agent run"
+      )
+    }
+    const permitCity = permit.city
+      ? normalizePlaceName(permit.city).replace(/市$/, "")
+      : undefined
+    const inputCity = normalizePlaceName(input.city).replace(/市$/, "")
+    if (
+      permitCity &&
+      !inputCity.includes(permitCity) &&
+      !permitCity.includes(inputCity)
+    ) {
+      throw new WorkspaceInputError(
+        "place fallback city must match the failed place.resolve request"
+      )
+    }
+    const permitName = normalizePlaceName(permit.text)
+    const fallbackName = normalizePlaceName(input.name)
+    if (
+      !fallbackName.includes(permitName) &&
+      !permitName.includes(fallbackName)
+    ) {
+      throw new WorkspaceInputError(
+        "place fallback name must match the failed place.resolve request"
+      )
+    }
+    this.placeFallbackPermits.delete(input.failedRequestId)
+    if (this.pendingPlaceFallbackRequestId === input.failedRequestId) {
+      this.pendingPlaceFallbackRequestId = null
+    }
+
+    const placeResolutionId = randomUUID()
+    const candidateId = `agent-fallback-${randomUUID()}`
+    const normalizedName = fallbackName
+    const coordinate = {
+      provider: "agent_fallback" as const,
+      coordinateSystem: input.coordinateSystem,
+      lat: input.lat,
+      lng: input.lng,
+      accuracy: "approximate" as const,
+      source: "web_search" as const,
+    }
+    const place: PlaceSearchResult = {
+      id: candidateId,
+      name: input.name,
+      normalizedName,
+      aliases: [],
+      category: input.category,
+      address: input.address,
+      city: input.city,
+      coordinates: [coordinate],
+      bestCoordinate: coordinate,
+      sources: [{ provider: "agent_fallback", confidence: 0.45 }],
+      confidence: 0.45,
+      quality: "candidate",
+      canAddToJourney: true,
+      needsUserConfirmation: false,
+      reason: `高德查询失败后由 Agent 根据 WebSearch 补全“${permit.text}”`,
+    }
+    const warning: ProviderWarning = {
+      provider: "agent_fallback",
+      code: "UNVERIFIED_FALLBACK",
+      message: "该地点由 Agent 根据 WebSearch 补全，尚未通过地点 provider 核验",
+      retryable: false,
+      exhausted: true,
+    }
+    this.placeEvidence.set(placeResolutionId, {
+      place,
+      verification: {
+        ref: {
+          provider: "agent_fallback",
+          canonicalName: input.name,
+          city: input.city,
+          address: input.address,
+          lat: input.lat,
+          lng: input.lng,
+          coordinateSystem: input.coordinateSystem,
+          confidence: 0.45,
+          candidates: [
+            {
+              id: candidateId,
+              name: input.name,
+              city: input.city,
+              confidence: 0.45,
+            },
+          ],
+        },
+        verificationStatus: "UNVERIFIED",
+        sourceUrls: input.sourceUrls,
+      },
+      warnings: [...permit.warnings, warning],
+    })
+    return { placeResolutionId, place, warning }
   }
 
   getPlaceEvidence(placeResolutionId: string) {

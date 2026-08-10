@@ -354,6 +354,7 @@ describe("Agent feature capability validators", () => {
         status: "not_found",
         fallbackQuery: { query: "不存在的地点" },
         reason: "no provider match",
+        fallbackAllowed: false,
         warnings: [],
       },
       {

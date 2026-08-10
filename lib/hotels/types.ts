@@ -42,11 +42,15 @@ export interface HotelCandidate {
 
 export interface HotelProviderWarning {
   provider: "rollinggo"
-  code: "timeout" | "provider_error" | "quota_exceeded"
+  code: "timeout" | "rate_limited" | "provider_error" | "quota_exceeded"
   message: string
+  retryable?: boolean
+  attempts?: number
+  exhausted?: boolean
 }
 
 export interface HotelSearchResponse {
   candidates: HotelCandidate[]
   warnings: HotelProviderWarning[]
+  providerAttempts?: number
 }

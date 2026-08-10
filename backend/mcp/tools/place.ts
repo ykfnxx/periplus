@@ -4,6 +4,7 @@ import { ZodError, type z, type ZodObject, type ZodRawShape } from "zod"
 import { mcpErrorResult, mcpJsonResult } from "../errors"
 import {
   placeEnrichInputSchema,
+  placeFallbackInputSchema,
   placeResolveInputSchema,
   placeSearchInputSchema,
 } from "../schemas/place"
@@ -84,6 +85,16 @@ export function registerPlaceTools(server: McpServer): void {
     placeResolveInputSchema,
     workspacePlaceHandler(placeResolveInputSchema, (input) =>
       callWorkspaceBackend({ type: "place.resolve", ...input })
+    )
+  )
+  registerPlaceTool(
+    server,
+    "periplus.place.fallback",
+    "Register fallback place",
+    "Register one WebSearch-backed, explicitly unverified place after a prior place.resolve request exhausted its provider fallback. Coordinates must be supported by the supplied HTTP(S) sources, never guessed.",
+    placeFallbackInputSchema,
+    workspacePlaceHandler(placeFallbackInputSchema, (input) =>
+      callWorkspaceBackend({ type: "place.fallback", ...input })
     )
   )
   registerPlaceTool(

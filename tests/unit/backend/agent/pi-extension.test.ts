@@ -8,7 +8,10 @@ import periplusRuntimeExtension, {
   responseText,
 } from "@/backend/agent/pi-extension/periplus-runtime-extension"
 
-async function registeredTools(webSearchEnabled: boolean) {
+async function registeredTools(
+  webSearchEnabled: boolean,
+  toolNames = ["periplus_workspace_get_context"]
+) {
   const workDir = await mkdtemp(join(tmpdir(), "periplus-pi-tools-"))
   const runConfigPath = join(workDir, "run.json")
   const previous = process.env.PERIPLUS_PI_RUN_CONFIG
@@ -16,7 +19,7 @@ async function registeredTools(webSearchEnabled: boolean) {
     runConfigPath,
     JSON.stringify({
       model: "deepseek-v4-flash",
-      toolNames: ["periplus_workspace_get_context"],
+      toolNames,
       webSearchEnabled,
       maxWebSearches: 3,
     })
@@ -66,6 +69,15 @@ describe("Periplus Pi extension", () => {
   it("registers web_search only when the run config enables it", async () => {
     await expect(registeredTools(false)).resolves.not.toContain("web_search")
     await expect(registeredTools(true)).resolves.toContain("web_search")
+  })
+
+  it("registers the attributed place fallback only when selected", async () => {
+    await expect(registeredTools(false)).resolves.not.toContain(
+      "periplus_place_fallback"
+    )
+    await expect(
+      registeredTools(false, ["periplus_place_fallback"])
+    ).resolves.toContain("periplus_place_fallback")
   })
 
   it("loads the selected Periplus tools in Pi RPC mode", async () => {

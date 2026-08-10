@@ -26,7 +26,7 @@ export class KimiCodeRuntime implements AgentRuntime {
     const workDir = await mkdtemp(join(tmpdir(), "periplus-agent-"))
     const kimiHome = join(workDir, "kimi-home")
     await this.prepareIdentity(kimiHome)
-    await this.writeToolPolicy(kimiHome)
+    await this.writeToolPolicy(kimiHome, request.toolServers.length > 0)
     await this.writeToolConfiguration(workDir, kimiHome, request)
 
     const metadata = { runtimeId: this.id, workDir }
@@ -59,12 +59,15 @@ export class KimiCodeRuntime implements AgentRuntime {
     }
   }
 
-  private async writeToolPolicy(kimiHome: string) {
+  private async writeToolPolicy(kimiHome: string, allowWebSearch: boolean) {
     const path = join(kimiHome, "config.toml")
     const source = await readFile(path, "utf8").catch(() => "")
     // Kimi treats an empty enabled list as unrestricted. Suggest runs expose no
     // MCP server, so this non-empty allowlist still yields a zero-tool runtime.
-    const section = '[tools]\nenabled = ["mcp__periplus-workspace__*"]\n'
+    const enabled = allowWebSearch
+      ? '["WebSearch", "mcp__periplus-workspace__*"]'
+      : '["mcp__periplus-workspace__*"]'
+    const section = `[tools]\nenabled = ${enabled}\n`
     const start = source.search(/^\[tools\]\s*$/m)
     let next = source
     if (start >= 0) {

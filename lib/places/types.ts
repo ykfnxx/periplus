@@ -19,6 +19,7 @@ export type CoordinateSystem = (typeof COORDINATE_SYSTEMS)[number]
 
 export type PlaceProvider =
   | "periplus"
+  | "agent_fallback"
   | "amap"
   | "fsq"
   | "wikidata"
@@ -77,7 +78,12 @@ export interface PlaceCoordinate {
   lat: number
   lng: number
   accuracy?: "exact" | "provider_poi" | "converted" | "approximate"
-  source: "catalog" | "provider_search" | "provider_convert" | "import"
+  source:
+    | "catalog"
+    | "provider_search"
+    | "provider_convert"
+    | "web_search"
+    | "import"
 }
 
 export interface PlaceResultSource {
@@ -141,23 +147,31 @@ export interface PlaceRef {
 export interface PlaceVerification {
   ref: PlaceRef
   coverImage?: PlaceImage
+  verificationStatus?: "VERIFIED" | "UNVERIFIED"
+  sourceUrls?: string[]
 }
 
 export interface ProviderWarning {
   provider: PlaceProvider
   code:
     | "timeout"
+    | "rate_limited"
     | "quota_exceeded"
     | "provider_error"
     | "low_confidence"
     | "IMAGE_UNAVAILABLE"
+    | "UNVERIFIED_FALLBACK"
   message: string
   image?: PlaceImage
+  retryable?: boolean
+  attempts?: number
+  exhausted?: boolean
 }
 
 export interface PlaceSearchResponse {
   results: PlaceSearchResult[]
   warnings: ProviderWarning[]
+  providerAttempts?: number
 }
 
 export interface PlaceResolveInput {
@@ -168,7 +182,6 @@ export interface PlaceResolveInput {
     currentCity?: string
     nearbyEventIds?: string[]
   }
-  requireExact?: boolean
 }
 
 export type PlaceResolveResult =
@@ -177,18 +190,22 @@ export type PlaceResolveResult =
       place: PlaceSearchResult
       placeRef: PlaceRef
       warnings: ProviderWarning[]
+      providerAttempts?: number
     }
   | {
       status: "ambiguous"
       candidates: PlaceSearchResult[]
       question: string
       warnings: ProviderWarning[]
+      providerAttempts?: number
     }
   | {
       status: "not_found"
       fallbackQuery: PlaceSearchInput
       reason: string
+      fallbackAllowed: boolean
       warnings: ProviderWarning[]
+      providerAttempts?: number
     }
 
 export interface PlaceEnrichInput {

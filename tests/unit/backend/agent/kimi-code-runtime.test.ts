@@ -35,7 +35,7 @@ describe("KimiCodeRuntime", () => {
     childProcessMock.spawn.mockReset()
   })
 
-  it("replaces inherited coding tools with the Periplus MCP allowlist", async () => {
+  it("allows WebSearch only for Auto runs and removes inherited coding tools", async () => {
     const identityHome = await mkdtemp(join(tmpdir(), "periplus-kimi-id-"))
     await mkdir(identityHome, { recursive: true })
     await writeFile(
@@ -77,7 +77,9 @@ describe("KimiCodeRuntime", () => {
       join(autoRun.metadata.workDir!, "kimi-home", "config.toml"),
       "utf8"
     )
-    expect(autoConfig).toContain('enabled = ["mcp__periplus-workspace__*"]')
+    expect(autoConfig).toContain(
+      'enabled = ["WebSearch", "mcp__periplus-workspace__*"]'
+    )
     expect(autoConfig).not.toContain('"Read"')
     expect(autoConfig).not.toContain('"Shell"')
     expect(autoConfig).not.toContain("mcp__other__*")
@@ -93,6 +95,7 @@ describe("KimiCodeRuntime", () => {
       "utf8"
     )
     expect(suggestConfig).toContain('enabled = ["mcp__periplus-workspace__*"]')
+    expect(suggestConfig).not.toContain('"WebSearch"')
     expect(suggestConfig).not.toContain('"Read"')
 
     await rm(autoRun.metadata.workDir!, { recursive: true, force: true })

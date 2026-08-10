@@ -2,6 +2,25 @@ import { z } from "zod"
 import { PLACE_CATEGORIES, PLACE_SEARCH_INTENTS } from "@/lib/places/types"
 
 const requestIdSchema = z.string().trim().min(1)
+const webSourceUrlSchema = z
+  .string()
+  .max(2048)
+  .url()
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value)
+        return (
+          ["http:", "https:"].includes(url.protocol) &&
+          !url.username &&
+          !url.password
+        )
+      } catch {
+        return false
+      }
+    },
+    { message: "source URL must use http or https without credentials" }
+  )
 
 export const placeCategorySchema = z.enum(PLACE_CATEGORIES)
 export const coordinateSystemSchema = z.enum(["WGS84", "GCJ02", "BD09LL"])
@@ -32,7 +51,21 @@ export const placeResolveInputSchema = z
     text: z.string().min(1),
     city: z.string().optional(),
     intent: placeSearchIntentSchema.optional(),
-    requireExact: z.boolean().default(false),
+  })
+  .strict()
+
+export const placeFallbackInputSchema = z
+  .object({
+    requestId: requestIdSchema,
+    failedRequestId: requestIdSchema,
+    name: z.string().trim().min(1),
+    city: z.string().trim().min(1),
+    address: z.string().trim().min(1).optional(),
+    category: placeCategorySchema,
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    coordinateSystem: coordinateSystemSchema,
+    sourceUrls: z.array(webSourceUrlSchema).min(1).max(5),
   })
   .strict()
 
