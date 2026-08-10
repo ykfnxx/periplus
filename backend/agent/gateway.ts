@@ -81,7 +81,6 @@ import type {
 } from "./runtime"
 import { parseSuggestion } from "./suggestion"
 import {
-  evalContentHash,
   type EvalTraceInput,
   type EvalTraceSink,
 } from "./evals"
@@ -974,7 +973,6 @@ export class AgentGateway {
             evidenceId: `${running.runId}:${request.requestId}`,
             toolType: request.type,
             requestId: request.requestId,
-            contentHash: evalContentHash(output),
             ...(output != null &&
             typeof output === "object" &&
             "status" in output &&
@@ -992,7 +990,6 @@ export class AgentGateway {
         status: "OK",
         payload: {
           toolType: request.type,
-          outputHash: evalContentHash(output),
         },
       })
       otelToolSpan.setAttribute("output.value", redactedInput(output) ?? "")

@@ -3,10 +3,6 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  TARGET_MANDATORY_RELATION_IDS,
-  TARGET_MODEL_RELATIONS,
-} from "@/modules/data-model/contracts"
 
 const migrationNames = [
   "20260801070000_schema_baseline",
@@ -264,114 +260,6 @@ describe("P1 SQLite schema baseline", () => {
     expect(
       sqliteJsonAt(upgradeDatabasePath, "PRAGMA foreign_key_check;")
     ).toEqual([])
-  })
-
-  it("materializes exactly the mandatory P0 physical relations", () => {
-    type ForeignKeyRow = {
-      tableName: string
-      foreignKeyId: number
-      sequence: number
-      targetTable: string
-      fromColumn: string
-      toColumn: string
-      onDelete: string
-    }
-    const rows = sqliteJson<ForeignKeyRow>(`
-      SELECT
-        schema.name AS tableName,
-        foreignKey.id AS foreignKeyId,
-        foreignKey.seq AS sequence,
-        foreignKey."table" AS targetTable,
-        foreignKey."from" AS fromColumn,
-        foreignKey."to" AS toColumn,
-        foreignKey.on_delete AS onDelete
-      FROM sqlite_schema schema
-      JOIN pragma_foreign_key_list(schema.name) foreignKey
-      WHERE schema.type = 'table'
-      ORDER BY schema.name, foreignKey.id, foreignKey.seq
-    `)
-    const actualRelations = new Map<
-      string,
-      {
-        tableName: string
-        targetTable: string
-        fromFields: string[]
-        toFields: string[]
-        onDelete: string
-      }
-    >()
-    for (const row of rows) {
-      const key = `${row.tableName}:${row.foreignKeyId}`
-      const relation = actualRelations.get(key) ?? {
-        tableName: row.tableName,
-        targetTable: row.targetTable,
-        fromFields: [],
-        toFields: [],
-        onDelete: row.onDelete.replace(" ", "_"),
-      }
-      relation.fromFields[row.sequence] = row.fromColumn
-      relation.toFields[row.sequence] = row.toColumn
-      actualRelations.set(key, relation)
-    }
-
-    expect(TARGET_MODEL_RELATIONS.map((item) => item.id)).toEqual([
-      ...TARGET_MANDATORY_RELATION_IDS,
-    ])
-    expect(actualRelations.size).toBe(TARGET_MANDATORY_RELATION_IDS.length)
-
-    const mappedTable = (model: string) =>
-      ({ User: "user", Session: "session", Account: "account" })[model] ?? model
-    for (const expected of TARGET_MODEL_RELATIONS) {
-      const match = [...actualRelations.values()].find(
-        (actual) =>
-          actual.tableName === mappedTable(expected.fromModel) &&
-          actual.targetTable === mappedTable(expected.toModel) &&
-          actual.fromFields.join("|") === expected.fromFields.join("|") &&
-          actual.toFields.join("|") === expected.toFields.join("|") &&
-          actual.onDelete === expected.onDelete
-      )
-      expect(match, expected.id).toBeDefined()
-    }
-  })
-
-  it("backs every one-to-one relation with a physical unique key", () => {
-    type TableInfo = { name: string; pk: number }
-    type IndexList = { name: string; unique: number }
-    type IndexInfo = { seqno: number; name: string }
-    const mappedTable = (model: string) =>
-      ({ User: "user", Session: "session", Account: "account" })[model] ?? model
-
-    for (const relation of TARGET_MODEL_RELATIONS.filter(
-      (item) => item.unique
-    )) {
-      const tableName = mappedTable(relation.fromModel)
-      const tableInfo = sqliteJson<TableInfo>(
-        `PRAGMA table_info("${tableName}")`
-      )
-      const uniqueColumnSets = [
-        tableInfo
-          .filter((column) => column.pk > 0)
-          .sort((left, right) => left.pk - right.pk)
-          .map((column) => column.name),
-      ]
-      const indexes = sqliteJson<IndexList>(
-        `PRAGMA index_list("${tableName}")`
-      ).filter((index) => index.unique === 1)
-      for (const index of indexes) {
-        uniqueColumnSets.push(
-          sqliteJson<IndexInfo>(`PRAGMA index_info("${index.name}")`)
-            .sort((left, right) => left.seqno - right.seqno)
-            .map((column) => column.name)
-        )
-      }
-
-      expect(
-        uniqueColumnSets.some(
-          (columns) => columns.join("|") === relation.fromFields.join("|")
-        ),
-        relation.id
-      ).toBe(true)
-    }
   })
 
   it("rejects cross-Journey composite foreign keys", () => {

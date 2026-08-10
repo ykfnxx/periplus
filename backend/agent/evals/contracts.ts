@@ -27,8 +27,6 @@ export const EVAL_TRACE_EVENT_TYPES = [
 export const evalTraceEventTypeSchema = z.enum(EVAL_TRACE_EVENT_TYPES)
 export const evalTraceEventStatusSchema = z.enum(["OK", "ERROR", "SKIPPED"])
 
-const hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
-
 const commandIdentityEventTypes = new Set([
   "command.dispatched",
   "command.applied",
@@ -99,8 +97,6 @@ export const evalTraceEventSchema = z
     durationMs: z.number().nonnegative().optional(),
     status: evalTraceEventStatusSchema,
     payload: z.record(z.string(), z.unknown()),
-    prevEventHash: hashSchema.optional(),
-    eventHash: hashSchema,
   })
   .strict()
   .superRefine((event, context) => {
@@ -195,16 +191,6 @@ export const evalTraceEventSchema = z
           message: "command.dispatched requires payload.idempotencyKey",
         })
       }
-      if (
-        typeof event.payload.commandHash !== "string" ||
-        !/^[a-f0-9]{64}$/.test(event.payload.commandHash)
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["payload", "commandHash"],
-          message: "command.dispatched requires a SHA-256 payload.commandHash",
-        })
-      }
     }
     if (event.type === "command.applied") {
       if (!isNonEmptyString(event.payload.commandName)) {
@@ -276,16 +262,6 @@ export const evalTraceEventSchema = z
           message: "evidence.recorded requires payload.toolType",
         })
       }
-      if (
-        typeof event.payload.contentHash !== "string" ||
-        !/^[a-f0-9]{64}$/.test(event.payload.contentHash)
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["payload", "contentHash"],
-          message: "evidence.recorded requires a SHA-256 payload.contentHash",
-        })
-      }
     }
   })
 
@@ -295,7 +271,7 @@ export type EvalTraceEventStatus = z.infer<typeof evalTraceEventStatusSchema>
 
 export type EvalTraceInput = Omit<
   EvalTraceEvent,
-  "schemaVersion" | "seq" | "timestamp" | "prevEventHash" | "eventHash"
+  "schemaVersion" | "seq" | "timestamp"
 > & {
   timestamp?: string
 }

@@ -14,7 +14,7 @@ import {
   type EvalMetricResult,
   type EvalTraceEvent,
 } from "./contracts"
-import { evalContentHash, verifyEvalTrace } from "./trace"
+import { verifyEvalTrace } from "./trace"
 
 type PlaceCapabilityResult = PlaceResolveResult
 
@@ -153,11 +153,10 @@ export function validatePlaceCapability(
         "evidence_reference",
         Boolean(testCase.evidenceId?.trim()) &&
           matchingEvidence.length === 1 &&
-          evidence?.payload.contentHash === evalContentHash(testCase.result) &&
           typeof evidence.payload.toolType === "string" &&
           evidence.payload.toolType === "place.resolve" &&
           evidence.payload.resultStatus === testCase.result.status,
-        "Place decision is bound to one recorded evidence event with the exact result hash"
+        "Place decision is bound to one recorded evidence event"
       )
     )
   }

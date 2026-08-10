@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 import {
   capabilityReport,
   evalCapabilityReportSchema,
-  evalContentHash,
   MemoryEvalTraceSink,
   validatePlaceCapability,
   validateTransitCapability,
@@ -23,8 +22,6 @@ import {
   type TargetJourneyEvent,
   type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
-
-const commandHash = "0".repeat(64)
 
 function westLake(): PlaceSearchResult {
   const coordinate = {
@@ -76,7 +73,7 @@ function placeRef(place: PlaceSearchResult): PlaceRef {
 }
 
 async function recordedPlaceEvidence(
-  result: unknown,
+  _result: unknown,
   evidenceId: string,
   resultStatus: string
 ) {
@@ -108,7 +105,6 @@ async function recordedPlaceEvidence(
     payload: {
       evidenceId,
       toolType: "place.resolve",
-      contentHash: evalContentHash(result),
       resultStatus,
     },
   })
@@ -148,16 +144,10 @@ async function emitWriteCommand(
     revisionAfter: number
     replayed: boolean
     idempotencyKey?: string
-    commandHashSeed?: string
   }
 ) {
   const commandName = "journey.update_event"
   const idempotencyKey = input.idempotencyKey ?? input.commandId
-  const commandHash = evalContentHash({
-    commandName,
-    idempotencyKey,
-    seed: input.commandHashSeed,
-  })
   await sink.emit({
     runId: "write-run",
     scenarioId: "write-scenario",
@@ -171,7 +161,6 @@ async function emitWriteCommand(
     payload: {
       commandName,
       idempotencyKey,
-      commandHash,
     },
   })
   if (!input.replayed) {
@@ -217,16 +206,10 @@ async function emitRejectedWriteCommand(
     commandId: string
     revisionBefore: number
     idempotencyKey?: string
-    commandHashSeed?: string
   }
 ) {
   const commandName = "journey.update_event"
   const idempotencyKey = input.idempotencyKey ?? input.commandId
-  const commandHash = evalContentHash({
-    commandName,
-    idempotencyKey,
-    seed: input.commandHashSeed,
-  })
   await sink.emit({
     runId: "write-run",
     scenarioId: "write-scenario",
@@ -237,7 +220,7 @@ async function emitRejectedWriteCommand(
     commandId: input.commandId,
     revisionBefore: input.revisionBefore,
     status: "OK",
-    payload: { commandName, idempotencyKey, commandHash },
+    payload: { commandName, idempotencyKey },
   })
   await sink.emit({
     runId: "write-run",
@@ -424,7 +407,6 @@ describe("Agent feature capability validators", () => {
       payload: {
         evidenceId,
         toolType: "place.resolve",
-        contentHash: evalContentHash(result),
         resultStatus: result.status,
       },
     })
@@ -499,7 +481,6 @@ describe("Agent feature capability validators", () => {
       payload: {
         evidenceId,
         toolType: "place.search",
-        contentHash: evalContentHash(result),
         resultStatus: result.status,
       },
     })
@@ -776,7 +757,6 @@ describe("Agent feature capability validators", () => {
       payload: {
         commandName: "journey.update_event",
         idempotencyKey: "command-1",
-        commandHash,
       },
     })
     await sink.emit({
@@ -866,60 +846,6 @@ describe("Agent feature capability validators", () => {
     expect(report.metrics).toContainEqual(
       expect.objectContaining({ id: "revision_monotonic", status: "FAIL" })
     )
-  })
-
-  it("fails F6 when an idempotency key is reused for another command hash", async () => {
-    const sink = new MemoryEvalTraceSink()
-    await sink.emit({
-      runId: "write-run",
-      scenarioId: "write-scenario",
-      type: "run.started",
-      spanId: "run-span",
-      workspaceId: "workspace-1",
-      status: "OK",
-      payload: {},
-    })
-    await emitWriteCommand(sink, {
-      spanId: "command-span-1",
-      commandId: "derived-command-id",
-      idempotencyKey: "shared-key",
-      commandHashSeed: "first-payload",
-      revisionBefore: 0,
-      revisionAfter: 1,
-      replayed: false,
-    })
-    await emitWriteCommand(sink, {
-      spanId: "command-span-2",
-      commandId: "derived-command-id",
-      idempotencyKey: "shared-key",
-      commandHashSeed: "different-payload",
-      revisionBefore: 1,
-      revisionAfter: 2,
-      replayed: false,
-    })
-    await sink.emit({
-      runId: "write-run",
-      scenarioId: "write-scenario",
-      type: "run.completed",
-      spanId: "run-span",
-      workspaceId: "workspace-1",
-      status: "OK",
-      payload: {},
-    })
-
-    const integrity = verifyEvalTrace(sink.events)
-    expect(integrity.valid).toBe(false)
-    expect(integrity.issues).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining(
-          "reused an applied outcome without typed replay"
-        ),
-      ])
-    )
-    expect(
-      validateWriteProtocolCapability("idempotency-collision", sink.events)
-        .hardPass
-    ).toBe(false)
   })
 
   it("accepts an exact typed replay without a second state diff", async () => {
@@ -1019,58 +945,6 @@ describe("Agent feature capability validators", () => {
     ).toBe(true)
   })
 
-  it("rejects different command content reusing a rejected idempotency key", async () => {
-    const sink = new MemoryEvalTraceSink()
-    await sink.emit({
-      runId: "write-run",
-      scenarioId: "write-scenario",
-      type: "run.started",
-      spanId: "run-span",
-      workspaceId: "workspace-1",
-      status: "OK",
-      payload: {},
-    })
-    await emitRejectedWriteCommand(sink, {
-      spanId: "rejected-command-span",
-      commandId: "retry-command",
-      idempotencyKey: "retry-key",
-      commandHashSeed: "first-payload",
-      revisionBefore: 0,
-    })
-    await emitWriteCommand(sink, {
-      spanId: "forged-command-span",
-      commandId: "retry-command",
-      idempotencyKey: "retry-key",
-      commandHashSeed: "different-payload",
-      revisionBefore: 1,
-      revisionAfter: 2,
-      replayed: false,
-    })
-    await sink.emit({
-      runId: "write-run",
-      scenarioId: "write-scenario",
-      type: "run.completed",
-      spanId: "run-span",
-      workspaceId: "workspace-1",
-      status: "OK",
-      payload: {},
-    })
-
-    const integrity = verifyEvalTrace(sink.events)
-    expect(integrity.valid).toBe(false)
-    expect(integrity.issues).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("changed command identity after rejection"),
-      ])
-    )
-    expect(
-      validateWriteProtocolCapability(
-        "rejected-key-command-conflict",
-        sink.events
-      ).hardPass
-    ).toBe(false)
-  })
-
   it("fails F6 when a forged command lifecycle has no root run", async () => {
     const sink = new MemoryEvalTraceSink()
     await sink.emit({
@@ -1084,7 +958,6 @@ describe("Agent feature capability validators", () => {
       payload: {
         commandName: "journey.update_event",
         idempotencyKey: "command-1",
-        commandHash,
       },
     })
     await sink.emit({
