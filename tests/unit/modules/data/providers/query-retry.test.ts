@@ -53,7 +53,7 @@ describe("queryWithRetry", () => {
     expect(sleep).not.toHaveBeenCalled()
   })
 
-  it("wakes a retry backoff when its parent run is aborted", async () => {
+  it("terminates a retry backoff when its parent run is aborted", async () => {
     const controller = new AbortController()
     const operation = vi
       .fn()
@@ -71,9 +71,7 @@ describe("queryWithRetry", () => {
     await vi.waitFor(() => expect(sleep).toHaveBeenCalledOnce())
     controller.abort()
 
-    await expect(pending).resolves.toMatchObject({
-      result: { value: "aborted" },
-      attempts: 2,
-    })
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" })
+    expect(operation).toHaveBeenCalledOnce()
   })
 })

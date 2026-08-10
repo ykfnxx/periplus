@@ -32,11 +32,11 @@ async function waitForRetry(
   signal?: AbortSignal
 ) {
   if (!signal) return sleep(milliseconds)
-  if (signal.aborted) return
+  signal.throwIfAborted()
   await new Promise<void>((resolve, reject) => {
     const onAbort = () => {
       signal.removeEventListener("abort", onAbort)
-      resolve()
+      reject(signal.reason)
     }
     signal.addEventListener("abort", onAbort, { once: true })
     void sleep(milliseconds).then(
@@ -60,7 +60,9 @@ export async function queryWithRetry<T>(
   const random = options.random ?? Math.random
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    options.signal?.throwIfAborted()
     const result = await options.operation()
+    options.signal?.throwIfAborted()
     const failure = options.failure(result)
     if (!failure) return { result, attempts: attempt, exhausted: false }
 
@@ -78,6 +80,7 @@ export async function queryWithRetry<T>(
       sleep,
       options.signal
     )
+    options.signal?.throwIfAborted()
   }
 
   throw new Error("Provider retry loop ended without a result")
