@@ -1,4 +1,3 @@
-export * from "./authority"
 export * from "./commands"
 export * from "./common"
 export * from "./content"

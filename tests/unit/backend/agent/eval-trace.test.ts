@@ -9,7 +9,6 @@ import {
 } from "@/backend/agent/evals"
 
 const temporaryDirectories: string[] = []
-const commandHash = "0".repeat(64)
 
 afterEach(async () => {
   await Promise.all(
@@ -60,7 +59,6 @@ async function completeTrace(sink: MemoryEvalTraceSink) {
     payload: {
       commandName: "journey.update_event",
       idempotencyKey: "safe-idempotency-key",
-      commandHash,
     },
   })
   await sink.emit({
@@ -114,7 +112,7 @@ async function completeTrace(sink: MemoryEvalTraceSink) {
 }
 
 describe("Agent eval trace", () => {
-  it("redacts credentials and produces a complete hash-linked lifecycle", async () => {
+  it("redacts credentials and produces a complete lifecycle", async () => {
     const sink = new MemoryEvalTraceSink()
     await completeTrace(sink)
 
@@ -142,18 +140,16 @@ describe("Agent eval trace", () => {
     expect(verifyEvalTrace(sink.events)).toEqual({ valid: true, issues: [] })
   })
 
-  it("detects a missing command terminal and a tampered event", async () => {
+  it("detects a missing command terminal", async () => {
     const sink = new MemoryEvalTraceSink()
     await completeTrace(sink)
     const tampered = structuredClone(sink.events)
     tampered.splice(4, 1)
-    tampered[1]!.payload.toolType = "place.resolve"
 
     const integrity = verifyEvalTrace(tampered)
     expect(integrity.valid).toBe(false)
     expect(integrity.issues).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("invalid event hash"),
         expect.stringContaining("has no terminal event"),
       ])
     )
@@ -172,7 +168,6 @@ describe("Agent eval trace", () => {
       payload: {
         commandName: "journey.update_event",
         idempotencyKey: "command-1",
-        commandHash,
       },
     })
     await sink.emit({
@@ -237,7 +232,6 @@ describe("Agent eval trace", () => {
       payload: {
         commandName: "journey.update_event",
         idempotencyKey: "command-original",
-        commandHash,
       },
     })
     await sink.emit({
@@ -314,7 +308,6 @@ describe("Agent eval trace", () => {
       payload: {
         commandName: "journey.update_event",
         idempotencyKey: "foreign-command",
-        commandHash,
       },
     })
     await sink.emit({

@@ -1,6 +1,5 @@
 import {
   MemoryEvalTraceSink,
-  evalContentHash,
   validatePlaceCapability,
   validateTransitCapability,
   validateWriteProtocolCapability,
@@ -93,7 +92,6 @@ async function writeProtocolReport() {
     payload: {
       commandName: "journey.update_event",
       idempotencyKey: "smoke-command",
-      commandHash: evalContentHash({ name: "journey.update_event" }),
     },
   })
   await sink.emit({
@@ -194,7 +192,6 @@ async function placeReport() {
       evidenceId,
       toolType: "place.resolve",
       resultStatus: result.status,
-      contentHash: evalContentHash(result),
     },
   })
   await sink.emit({

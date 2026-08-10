@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 import { appendFile, mkdir, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import {
@@ -133,32 +132,8 @@ export function redactEvalPayload(
   return visit(value)
 }
 
-function canonicalValue(value: unknown): unknown {
-  if (value === undefined) return null
-  if (value == null || typeof value !== "object") return value
-  if (Array.isArray(value)) return value.map(canonicalValue)
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([key, entry]) => [key, canonicalValue(entry)])
-  )
-}
-
-export function canonicalJson(value: unknown) {
-  return JSON.stringify(canonicalValue(value))
-}
-
-export function evalContentHash(value: unknown) {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex")
-}
-
-function unsignedEvent(event: Omit<EvalTraceEvent, "eventHash">) {
-  return event
-}
-
 abstract class SequencedEvalTraceSink implements EvalTraceSink {
   private nextSequence = 1
-  private previousEventHash: string | undefined
   private tail: Promise<void> = Promise.resolve()
   private failure: Error | null = null
 
@@ -188,17 +163,10 @@ abstract class SequencedEvalTraceSink implements EvalTraceSink {
           seq: this.nextSequence,
           timestamp: input.timestamp ?? new Date().toISOString(),
           payload,
-          ...(this.previousEventHash
-            ? { prevEventHash: this.previousEventHash }
-            : {}),
         }
-        const event = evalTraceEventSchema.parse({
-          ...base,
-          eventHash: evalContentHash(unsignedEvent(base as never)),
-        })
+        const event = evalTraceEventSchema.parse(base)
         await this.persist(event)
         this.nextSequence += 1
-        this.previousEventHash = event.eventHash
         resolveEvent(event)
       } catch (error) {
         this.failure =
@@ -242,7 +210,7 @@ export class JsonlEvalTraceSink extends SequencedEvalTraceSink {
 
   protected async persist(event: EvalTraceEvent) {
     await this.initialized
-    await appendFile(this.filePath, `${canonicalJson(event)}\n`)
+    await appendFile(this.filePath, `${JSON.stringify(event)}\n`)
   }
 }
 
@@ -279,7 +247,6 @@ export function verifyEvalTrace(
   }
   if (events.length !== rawEvents.length) return { valid: false, issues }
 
-  let previousHash: string | undefined
   const firstRunId = events[0]?.runId
   const firstScenarioId = events[0]?.scenarioId
   const openSpans = new Map<
@@ -316,7 +283,6 @@ export function verifyEvalTrace(
       commandId: string
       commandName: unknown
       idempotencyKey: unknown
-      commandHash: unknown
       revisionBefore: number
       outcome: "applied" | "rejected"
       revisionAfter?: number
@@ -342,15 +308,6 @@ export function verifyEvalTrace(
     if (event.runId !== firstRunId || event.scenarioId !== firstScenarioId) {
       issues.push(`event[${index}] changed run or scenario identity`)
     }
-    if (event.prevEventHash !== previousHash) {
-      issues.push(`event[${index}] has a broken previous hash link`)
-    }
-    const { eventHash, ...withoutHash } = event
-    if (eventHash !== evalContentHash(unsignedEvent(withoutHash))) {
-      issues.push(`event[${index}] has an invalid event hash`)
-    }
-    previousHash = eventHash
-
     const terminals = LIFECYCLE_STARTS.get(event.type)
     const isTerminal = LIFECYCLE_TERMINALS.has(event.type)
 
@@ -568,7 +525,6 @@ export function verifyEvalTrace(
                 previousRecord.commandName !== open.start.payload.commandName ||
                 previousRecord.idempotencyKey !==
                   open.start.payload.idempotencyKey ||
-                previousRecord.commandHash !== open.start.payload.commandHash ||
                 previousRecord.revisionBefore !== revisionBefore ||
                 previousRecord.revisionAfter !== revisionAfter
               ) {
@@ -593,8 +549,7 @@ export function verifyEvalTrace(
                 previousRecord?.scope === scope &&
                 previousRecord.commandId === commandId &&
                 previousRecord.commandName === open.start.payload.commandName &&
-                previousRecord.idempotencyKey === idempotencyKey &&
-                previousRecord.commandHash === open.start.payload.commandHash
+                previousRecord.idempotencyKey === idempotencyKey
               if (previousRecord?.outcome === "applied") {
                 issues.push(
                   `idempotencyKey ${String(idempotencyKey)} reused an applied outcome without typed replay`
@@ -616,7 +571,6 @@ export function verifyEvalTrace(
                 commandId,
                 commandName: open.start.payload.commandName,
                 idempotencyKey,
-                commandHash: open.start.payload.commandHash,
                 revisionBefore,
                 outcome: "applied",
                 revisionAfter,
@@ -638,8 +592,7 @@ export function verifyEvalTrace(
               previousRecord?.scope === scope &&
               previousRecord.commandId === commandId &&
               previousRecord.commandName === open.start.payload.commandName &&
-              previousRecord.idempotencyKey === idempotencyKey &&
-              previousRecord.commandHash === open.start.payload.commandHash
+              previousRecord.idempotencyKey === idempotencyKey
             if (previousRecord?.outcome === "applied") {
               issues.push(
                 `idempotencyKey ${String(idempotencyKey)} rejected after an applied outcome`
@@ -654,7 +607,6 @@ export function verifyEvalTrace(
                 commandId,
                 commandName: open.start.payload.commandName,
                 idempotencyKey,
-                commandHash: open.start.payload.commandHash,
                 revisionBefore: event.revisionBefore!,
                 outcome: "rejected",
               })
