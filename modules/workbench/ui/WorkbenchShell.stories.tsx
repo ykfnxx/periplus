@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import MapSurface from "@/modules/map-renderer/ui/MapSurface"
 import type {
   TargetJourneyGraphSnapshot,
-  TargetWorkspaceHistoryEntry,
+  TargetWorkspaceSummary,
 } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { dispatchMapIntent } from "@/modules/workspace/ui/WorkspaceController"
@@ -21,7 +21,7 @@ import type { WorkspaceSwitcherController } from "./WorkspaceSwitcherPanel"
 
 const STORY_NOW = Date.parse("2026-08-12T10:00:00+08:00")
 
-const workspaceHistory: TargetWorkspaceHistoryEntry[] = [
+const workspaceHistory: TargetWorkspaceSummary[] = [
   {
     id: "storybook-workspace",
     sourceJourneyId: silkRoadJourneyWithPlans.id,
@@ -74,7 +74,7 @@ function WorkspaceManagementSurface() {
     workspaces.find((workspace) => workspace.id === currentWorkspaceId)
       ?.title ?? "新工作区"
 
-  const activateWorkspace = (workspace: TargetWorkspaceHistoryEntry) => {
+  const activateWorkspace = (workspace: TargetWorkspaceSummary) => {
     setCurrentWorkspaceId(workspace.id)
     const document = workspaceDocumentForStory(
       graphForWorkspaceStory(workspace)
@@ -84,7 +84,7 @@ function WorkspaceManagementSurface() {
   }
 
   const createWorkspace = () => {
-    const workspace: TargetWorkspaceHistoryEntry = {
+    const workspace: TargetWorkspaceSummary = {
       id: "workspace-new",
       sourceJourneyId: null,
       title: "新的旅行计划",
@@ -142,7 +142,7 @@ function WorkspaceManagementSurface() {
   )
 }
 
-function graphForWorkspaceStory(workspace: TargetWorkspaceHistoryEntry) {
+function graphForWorkspaceStory(workspace: TargetWorkspaceSummary) {
   const baseGraph =
     workspace.id === "workspace-dunhuang"
       ? dunhuangRouteStoryJourney

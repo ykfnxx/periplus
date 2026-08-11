@@ -1,4 +1,4 @@
-import type { TargetWorkspaceHistoryEntry } from "@/modules/data-model/contracts"
+import type { TargetWorkspaceSummary } from "@/modules/data-model/contracts"
 
 interface WorkspaceErrorResponse {
   error?: {
@@ -40,7 +40,7 @@ export async function listWorkspaces() {
     cache: "no-store",
   })
   const body = await parseWorkspaceResponse<{
-    workspaces: TargetWorkspaceHistoryEntry[]
+    workspaces: TargetWorkspaceSummary[]
   }>(response)
   return body.workspaces
 }
@@ -56,7 +56,7 @@ export async function renameWorkspace(workspaceId: string, title: string) {
     }
   )
   const body = await parseWorkspaceResponse<{
-    workspace: TargetWorkspaceHistoryEntry
+    workspace: TargetWorkspaceSummary
   }>(response)
   return body.workspace
 }

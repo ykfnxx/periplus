@@ -12,7 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react"
-import type { TargetWorkspaceHistoryEntry } from "@/modules/data-model/contracts"
+import type { TargetWorkspaceSummary } from "@/modules/data-model/contracts"
 
 export type WorkspaceAction = {
   type: "rename" | "delete"
@@ -20,7 +20,7 @@ export type WorkspaceAction = {
 }
 
 export interface WorkspaceSwitcherController {
-  workspaces: TargetWorkspaceHistoryEntry[]
+  workspaces: TargetWorkspaceSummary[]
   currentWorkspaceId: string
   currentTitle: string
   listStatus: "idle" | "loading" | "ready" | "error"
@@ -93,7 +93,7 @@ export default function WorkspaceSwitcherPanel({
     onClearActionError()
   }
 
-  const beginRename = (workspace: TargetWorkspaceHistoryEntry) => {
+  const beginRename = (workspace: TargetWorkspaceSummary) => {
     setEditingWorkspaceId(workspace.id)
     setEditingTitle(workspace.title)
     setMenuWorkspaceId(null)

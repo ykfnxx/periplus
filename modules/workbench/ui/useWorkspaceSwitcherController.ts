@@ -1,10 +1,7 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import type {
-  TargetWorkspaceDocument,
-  TargetWorkspaceHistoryEntry,
-} from "@/modules/data-model/contracts"
+import type { TargetWorkspaceSummary } from "@/modules/data-model/contracts"
 import {
   archiveWorkspace,
   listWorkspaces,
@@ -16,21 +13,13 @@ import type {
   WorkspaceSwitcherController,
 } from "./WorkspaceSwitcherPanel"
 
-type WorkspaceDocumentWithTitle = TargetWorkspaceDocument & {
-  session: TargetWorkspaceDocument["session"] & { title: string }
-}
-
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "工作区请求失败"
 }
 
 export default function useWorkspaceSwitcherController(): WorkspaceSwitcherController {
-  const document = useWorkspaceStore(
-    (state) => state.workspaceDocument as WorkspaceDocumentWithTitle | null
-  )
-  const [workspaces, setWorkspaces] = useState<TargetWorkspaceHistoryEntry[]>(
-    []
-  )
+  const document = useWorkspaceStore((state) => state.workspaceDocument)
+  const [workspaces, setWorkspaces] = useState<TargetWorkspaceSummary[]>([])
   const [listStatus, setListStatus] =
     useState<WorkspaceSwitcherController["listStatus"]>("idle")
   const [listError, setListError] = useState<string | null>(null)
@@ -78,10 +67,9 @@ export default function useWorkspaceSwitcherController(): WorkspaceSwitcherContr
           ...current.filter((workspace) => workspace.id !== workspaceId),
         ])
 
-        const currentDocument = useWorkspaceStore.getState()
-          .workspaceDocument as WorkspaceDocumentWithTitle | null
+        const currentDocument = useWorkspaceStore.getState().workspaceDocument
         if (currentDocument?.session.id === workspaceId) {
-          const updatedDocument: WorkspaceDocumentWithTitle = {
+          const updatedDocument = {
             ...currentDocument,
             session: {
               ...currentDocument.session,
