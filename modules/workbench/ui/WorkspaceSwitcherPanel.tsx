@@ -14,21 +14,24 @@ import {
 } from "lucide-react"
 import type { TargetWorkspaceHistoryEntry } from "@/modules/data-model/contracts"
 
-interface WorkspaceSwitcherPanelProps {
+export interface WorkspaceSwitcherController {
   workspaces: TargetWorkspaceHistoryEntry[]
   currentWorkspaceId: string
-  children: ReactNode
-  className?: string
-  framed?: boolean
-  locked?: boolean
   defaultOpen?: boolean
   now?: number
-  onBack?: () => void
-  onCollapse?: () => void
   onCreate: () => void
   onSelect: (workspaceId: string) => void
   onRename: (workspaceId: string, title: string) => void
   onDelete: (workspaceId: string) => void
+}
+
+interface WorkspaceSwitcherPanelProps extends WorkspaceSwitcherController {
+  children: ReactNode
+  className?: string
+  framed?: boolean
+  locked?: boolean
+  onBack?: () => void
+  onCollapse?: () => void
 }
 
 export default function WorkspaceSwitcherPanel({
