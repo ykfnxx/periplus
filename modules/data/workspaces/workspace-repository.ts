@@ -902,8 +902,7 @@ export async function appendWorkspaceMessage(
     if (!session || session.status !== "ACTIVE") {
       throw new WorkspaceInputError("Workspace is not active")
     }
-    const title =
-      input.role === "USER" ? input.content.trim().slice(0, 48) : ""
+    const title = input.role === "USER" ? input.content.trim().slice(0, 48) : ""
     const existingUserMessage = title
       ? await tx.workspaceMessage.findFirst({
           where: { workspaceId, role: "USER" },
