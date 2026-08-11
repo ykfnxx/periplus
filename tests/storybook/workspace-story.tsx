@@ -20,6 +20,7 @@ export function workspaceDocumentForStory(
       baseJourneyRevision: null,
       headWorkspaceRevision: 0,
       status: "ACTIVE",
+      title: "新工作区",
       headGraph: graph,
       lastAccessAt: storyTimestamp,
       createdAt: storyTimestamp,

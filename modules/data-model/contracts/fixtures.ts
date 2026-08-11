@@ -821,6 +821,7 @@ const workspaceDocument: TargetWorkspaceDocument = {
     baseJourneyRevision: 1,
     headWorkspaceRevision: 1,
     status: "ACTIVE",
+    title: "西湖行程",
     headGraph: workspaceGraph,
     lastAccessAt: NOW,
     createdAt: NOW,

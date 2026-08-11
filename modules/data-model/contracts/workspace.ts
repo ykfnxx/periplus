@@ -15,6 +15,8 @@ import { targetJourneyGraphSnapshotSchema } from "./journey"
 
 export const WORKSPACE_WEBSOCKET_TICKET_SECONDS = 300
 export const WORKSPACE_AGENT_RUN_LEASE_SECONDS = 60
+export const WORKSPACE_DEFAULT_TITLE = "新工作区"
+export const targetWorkspaceTitleSchema = z.string().trim().min(1).max(48)
 
 export const targetWorkspaceSessionSchema = z
   .object({
@@ -24,6 +26,7 @@ export const targetWorkspaceSessionSchema = z
     baseJourneyRevision: z.number().int().positive().nullable(),
     headWorkspaceRevision: z.number().int().nonnegative(),
     status: z.enum(TARGET_WORKSPACE_STATUSES),
+    title: targetWorkspaceTitleSchema,
     headGraph: targetJourneyGraphSnapshotSchema,
     lastAccessAt: dateTimeSchema,
     createdAt: dateTimeSchema,
@@ -211,10 +214,10 @@ export const targetWorkspaceDocumentSchema = z.object({
   agentRuns: z.array(targetWorkspaceAgentRunSchema),
 })
 
-export const targetWorkspaceHistoryEntrySchema = z.object({
+export const targetWorkspaceSummarySchema = z.object({
   id: idSchema,
   sourceJourneyId: idSchema.nullable(),
-  title: z.string().trim().min(1),
+  title: targetWorkspaceTitleSchema,
   preview: z.string(),
   updatedAt: dateTimeSchema,
 })
@@ -253,6 +256,6 @@ export type TargetWorkspaceMessage = z.infer<
 export type TargetWorkspaceDocument = z.infer<
   typeof targetWorkspaceDocumentSchema
 >
-export type TargetWorkspaceHistoryEntry = z.infer<
-  typeof targetWorkspaceHistoryEntrySchema
+export type TargetWorkspaceSummary = z.infer<
+  typeof targetWorkspaceSummarySchema
 >

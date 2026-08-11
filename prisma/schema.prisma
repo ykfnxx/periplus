@@ -777,6 +777,7 @@ model WorkspaceSession {
   baseJourneyRevision   Int?
   headWorkspaceRevision Int             @default(0)
   status                WorkspaceStatus @default(ACTIVE)
+  title                 String          @default("新工作区")
   headGraphJson         String
   lastAccessAt          DateTime
   createdAt             DateTime        @default(now())
