@@ -294,6 +294,11 @@ function buildJourneyGraph(): TargetJourneyGraphSnapshot {
     ],
   }
 
+  graph.events.sort(
+    (left, right) =>
+      left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
+  )
+
   return targetJourneyGraphSnapshotSchema.parse(graph)
 }
 
