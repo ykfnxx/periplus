@@ -70,6 +70,9 @@ function WorkspaceManagementSurface() {
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(
     workspaceHistory[0].id
   )
+  const currentTitle =
+    workspaces.find((workspace) => workspace.id === currentWorkspaceId)
+      ?.title ?? "新工作区"
 
   const activateWorkspace = (workspace: TargetWorkspaceHistoryEntry) => {
     setCurrentWorkspaceId(workspace.id)
@@ -115,8 +118,16 @@ function WorkspaceManagementSurface() {
       workspaceSwitcher={{
         workspaces,
         currentWorkspaceId,
+        currentTitle,
+        listStatus: "ready",
+        listError: null,
+        pendingAction: null,
+        actionError: null,
         defaultOpen: true,
         now: STORY_NOW,
+        onOpen: () => undefined,
+        onRetry: () => undefined,
+        onClearActionError: () => undefined,
         onCreate: createWorkspace,
         onSelect: selectWorkspace,
         onRename: (workspaceId, title) =>

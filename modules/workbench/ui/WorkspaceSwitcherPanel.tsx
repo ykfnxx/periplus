@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useState, type ReactNode } from "react"
+import { Activity, useId, useState, type ReactNode } from "react"
 import {
   ArrowLeft,
   Check,
@@ -14,15 +14,28 @@ import {
 } from "lucide-react"
 import type { TargetWorkspaceHistoryEntry } from "@/modules/data-model/contracts"
 
+export type WorkspaceAction = {
+  type: "rename" | "delete"
+  workspaceId: string
+}
+
 export interface WorkspaceSwitcherController {
   workspaces: TargetWorkspaceHistoryEntry[]
   currentWorkspaceId: string
+  currentTitle: string
+  listStatus: "idle" | "loading" | "ready" | "error"
+  listError: string | null
+  pendingAction: WorkspaceAction | null
+  actionError: { workspaceId: string; message: string } | null
   defaultOpen?: boolean
   now?: number
+  onOpen: () => void
+  onRetry: () => void
+  onClearActionError: () => void
   onCreate: () => void
   onSelect: (workspaceId: string) => void
-  onRename: (workspaceId: string, title: string) => void
-  onDelete: (workspaceId: string) => void
+  onRename: (workspaceId: string, title: string) => Promise<void> | void
+  onDelete: (workspaceId: string) => Promise<void> | void
 }
 
 interface WorkspaceSwitcherPanelProps extends WorkspaceSwitcherController {
@@ -37,6 +50,11 @@ interface WorkspaceSwitcherPanelProps extends WorkspaceSwitcherController {
 export default function WorkspaceSwitcherPanel({
   workspaces,
   currentWorkspaceId,
+  currentTitle,
+  listStatus,
+  listError,
+  pendingAction,
+  actionError,
   children,
   className = "",
   framed = true,
@@ -45,6 +63,9 @@ export default function WorkspaceSwitcherPanel({
   now = Date.now(),
   onBack,
   onCollapse,
+  onOpen,
+  onRetry,
+  onClearActionError,
   onCreate,
   onSelect,
   onRename,
@@ -60,16 +81,16 @@ export default function WorkspaceSwitcherPanel({
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(
     null
   )
-  const currentWorkspace = workspaces.find(
-    (workspace) => workspace.id === currentWorkspaceId
-  )
-  const currentTitle = currentWorkspace?.title ?? "新的旅行计划"
+  const isMutating = pendingAction !== null
 
   const toggleManager = () => {
-    setIsOpen((open) => !open)
+    const nextOpen = !isOpen
+    setIsOpen(nextOpen)
+    if (nextOpen) onOpen()
     setMenuWorkspaceId(null)
     setEditingWorkspaceId(null)
     setDeletingWorkspaceId(null)
+    onClearActionError()
   }
 
   const beginRename = (workspace: TargetWorkspaceHistoryEntry) => {
@@ -77,17 +98,28 @@ export default function WorkspaceSwitcherPanel({
     setEditingTitle(workspace.title)
     setMenuWorkspaceId(null)
     setDeletingWorkspaceId(null)
+    onClearActionError()
   }
 
-  const finishRename = () => {
+  const finishRename = async () => {
     if (!editingWorkspaceId) return
     const title = editingTitle.trim()
-    if (title) onRename(editingWorkspaceId, title)
-    setEditingWorkspaceId(null)
+    if (!title) return
+    try {
+      await onRename(editingWorkspaceId, title)
+      setEditingWorkspaceId(null)
+    } catch {
+      // The controller keeps the server error visible in this row.
+    }
   }
 
   const selectWorkspace = (workspaceId: string) => {
-    if (locked || workspaceId === currentWorkspaceId) return
+    if (locked || isMutating) return
+    if (workspaceId === currentWorkspaceId) {
+      setIsOpen(false)
+      setMenuWorkspaceId(null)
+      return
+    }
     onSelect(workspaceId)
     setIsOpen(false)
     setMenuWorkspaceId(null)
@@ -115,10 +147,11 @@ export default function WorkspaceSwitcherPanel({
 
         <button
           type="button"
+          disabled={!currentWorkspaceId || isMutating}
           onClick={toggleManager}
           aria-expanded={isOpen}
           aria-controls={managerId}
-          className="group min-w-0 flex-1 text-left"
+          className="group min-w-0 flex-1 text-left disabled:cursor-wait"
         >
           <span className="block text-[10px] font-black tracking-[0.12em] text-teak">
             AI 旅行助手
@@ -148,12 +181,14 @@ export default function WorkspaceSwitcherPanel({
         ) : null}
       </header>
 
+      <Activity mode={isOpen ? "hidden" : "visible"}>{children}</Activity>
+
       {isOpen ? (
         <div id={managerId} className="flex min-h-0 flex-1 flex-col">
           <div className="shrink-0 border-b border-ink-10 bg-soft-white px-4 py-3">
             <button
               type="button"
-              disabled={locked}
+              disabled={locked || isMutating}
               onClick={() => {
                 onCreate()
                 setIsOpen(false)
@@ -180,196 +215,257 @@ export default function WorkspaceSwitcherPanel({
               </p>
             </div>
 
-            <div className="space-y-2">
-              {workspaces.map((workspace) => {
-                const isCurrent = workspace.id === currentWorkspaceId
-                const isEditing = editingWorkspaceId === workspace.id
-                const isDeleting = deletingWorkspaceId === workspace.id
-                const isMenuOpen = menuWorkspaceId === workspace.id
+            {listStatus === "idle" || listStatus === "loading" ? (
+              <WorkspaceListMessage>正在加载工作区…</WorkspaceListMessage>
+            ) : listStatus === "error" ? (
+              <div className="rounded-[11px] border border-coral/30 bg-coral/5 px-4 py-5 text-center">
+                <p className="text-[11px] leading-5 font-bold text-coral">
+                  {listError}
+                </p>
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="mt-3 h-8 rounded-lg border border-coral/35 bg-soft-white px-3 text-[11px] font-black text-coral transition hover:bg-coral hover:text-white"
+                >
+                  重新加载
+                </button>
+              </div>
+            ) : workspaces.length === 0 ? (
+              <WorkspaceListMessage>还没有可继续的工作区</WorkspaceListMessage>
+            ) : (
+              <div className="space-y-2">
+                {workspaces.map((workspace) => {
+                  const isCurrent = workspace.id === currentWorkspaceId
+                  const isEditing = editingWorkspaceId === workspace.id
+                  const isDeleting = deletingWorkspaceId === workspace.id
+                  const isMenuOpen = menuWorkspaceId === workspace.id
+                  const isPending = pendingAction?.workspaceId === workspace.id
+                  const rowError =
+                    actionError?.workspaceId === workspace.id
+                      ? actionError.message
+                      : null
 
-                return (
-                  <article
-                    key={workspace.id}
-                    className={`relative overflow-visible rounded-[11px] border transition ${
-                      isCurrent
-                        ? "border-russet/50 bg-selected-soft shadow-periplus-soft"
-                        : "border-ink-10 bg-white/70 hover:border-russet/45"
-                    }`}
-                  >
-                    {isCurrent ? (
-                      <span
-                        className="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-russet"
-                        aria-hidden="true"
-                      />
-                    ) : null}
+                  return (
+                    <article
+                      key={workspace.id}
+                      className={`relative overflow-visible rounded-[11px] border transition ${
+                        isCurrent
+                          ? "border-russet/50 bg-selected-soft shadow-periplus-soft"
+                          : "border-ink-10 bg-white/70 hover:border-russet/45"
+                      }`}
+                    >
+                      {isCurrent ? (
+                        <span
+                          className="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-russet"
+                          aria-hidden="true"
+                        />
+                      ) : null}
 
-                    {isEditing ? (
-                      <form
-                        className="p-3"
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          finishRename()
-                        }}
-                      >
-                        <label
-                          htmlFor={`workspace-title-${workspace.id}`}
-                          className="text-[10px] font-black tracking-[0.08em] text-teak"
-                        >
-                          重命名工作区
-                        </label>
-                        <div className="mt-2 flex gap-2">
-                          <input
-                            id={`workspace-title-${workspace.id}`}
-                            autoFocus
-                            value={editingTitle}
-                            maxLength={48}
-                            onChange={(event) =>
-                              setEditingTitle(event.target.value)
-                            }
-                            onKeyDown={(event) => {
-                              if (event.key === "Escape") {
-                                setEditingWorkspaceId(null)
-                              }
-                            }}
-                            className="min-w-0 flex-1 rounded-lg border border-russet bg-soft-white px-3 text-[12px] font-bold text-ink ring-russet/20 outline-none focus:ring-2"
-                          />
-                          <button
-                            type="submit"
-                            disabled={!editingTitle.trim()}
-                            aria-label="保存名称"
-                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-russet text-soft-white transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <Check className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingWorkspaceId(null)}
-                            aria-label="取消重命名"
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-ink-10 bg-cream text-walnut transition hover:border-russet hover:text-russet"
-                          >
-                            <X className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </form>
-                    ) : isDeleting ? (
-                      <div className="p-3">
-                        <p className="pr-1 text-[12px] font-black text-ink">
-                          删除“{workspace.title}”？
-                        </p>
-                        <p className="mt-1 text-[10px] leading-4 text-walnut">
-                          {isCurrent
-                            ? "将打开最近使用的工作区；已保存行程不受影响。"
-                            : "聊天与草稿会被删除；已保存行程不受影响。"}
-                        </p>
-                        <div className="mt-3 flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setDeletingWorkspaceId(null)}
-                            className="h-8 rounded-lg border border-ink-10 bg-cream px-3 text-[11px] font-black text-walnut transition hover:border-russet"
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onDelete(workspace.id)
-                              setDeletingWorkspaceId(null)
-                            }}
-                            className="h-8 rounded-lg bg-coral px-3 text-[11px] font-black text-white transition hover:bg-ink"
-                          >
-                            确认删除
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled={locked || isCurrent}
-                          onClick={() => selectWorkspace(workspace.id)}
-                          aria-current={isCurrent ? "page" : undefined}
-                          className="block w-full rounded-[11px] p-3 pr-11 text-left disabled:cursor-default"
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-[12px] font-black text-ink">
-                              {workspace.title}
-                            </span>
-                            {isCurrent ? (
-                              <span className="shrink-0 text-[9px] font-black tracking-[0.08em] text-russet">
-                                当前
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="mt-1 block truncate text-[10px] leading-4 text-walnut">
-                            {workspace.preview || "尚未开始对话"}
-                          </span>
-                          <span className="mt-2 block text-[9px] font-bold text-teak">
-                            {formatRelativeTime(workspace.updatedAt, now)}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={locked}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setMenuWorkspaceId((current) =>
-                              current === workspace.id ? null : workspace.id
-                            )
-                            setDeletingWorkspaceId(null)
+                      {isEditing ? (
+                        <form
+                          className="p-3"
+                          onSubmit={(event) => {
+                            event.preventDefault()
+                            void finishRename()
                           }}
-                          aria-label={`${workspace.title}的更多操作`}
-                          aria-expanded={isMenuOpen}
-                          className="absolute top-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-lg text-walnut transition hover:bg-cream hover:text-russet disabled:cursor-not-allowed disabled:opacity-35"
                         >
-                          <MoreHorizontal
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
-                        </button>
-
-                        {isMenuOpen ? (
-                          <div className="absolute top-10 right-2 z-20 w-28 overflow-hidden rounded-[10px] border border-ink-10 bg-soft-white p-1 shadow-periplus-soft">
+                          <label
+                            htmlFor={`workspace-title-${workspace.id}`}
+                            className="text-[10px] font-black tracking-[0.08em] text-teak"
+                          >
+                            重命名工作区
+                          </label>
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              id={`workspace-title-${workspace.id}`}
+                              autoFocus
+                              value={editingTitle}
+                              maxLength={48}
+                              disabled={isPending || locked}
+                              onChange={(event) =>
+                                setEditingTitle(event.target.value)
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "Escape" && !isPending) {
+                                  setEditingWorkspaceId(null)
+                                  onClearActionError()
+                                }
+                              }}
+                              className="min-w-0 flex-1 rounded-lg border border-russet bg-soft-white px-3 text-[12px] font-bold text-ink ring-russet/20 outline-none focus:ring-2"
+                            />
                             <button
-                              type="button"
-                              onClick={() => beginRename(workspace)}
-                              className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[11px] font-bold text-ink transition hover:bg-cream"
+                              type="submit"
+                              disabled={
+                                isPending ||
+                                locked ||
+                                !editingTitle.trim() ||
+                                editingTitle.trim() === workspace.title
+                              }
+                              aria-label="保存名称"
+                              className="flex h-9 w-9 items-center justify-center rounded-lg bg-russet text-soft-white transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              <Pencil
-                                className="h-3.5 w-3.5"
-                                aria-hidden="true"
-                              />
-                              重命名
+                              <Check className="h-4 w-4" aria-hidden="true" />
                             </button>
                             <button
                               type="button"
+                              disabled={isPending}
                               onClick={() => {
-                                setDeletingWorkspaceId(workspace.id)
-                                setMenuWorkspaceId(null)
                                 setEditingWorkspaceId(null)
+                                onClearActionError()
                               }}
-                              className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[11px] font-bold text-coral transition hover:bg-cream"
+                              aria-label="取消重命名"
+                              className="flex h-9 w-9 items-center justify-center rounded-lg border border-ink-10 bg-cream text-walnut transition hover:border-russet hover:text-russet"
                             >
-                              <Trash2
-                                className="h-3.5 w-3.5"
-                                aria-hidden="true"
-                              />
-                              删除
+                              <X className="h-4 w-4" aria-hidden="true" />
                             </button>
                           </div>
-                        ) : null}
-                      </>
-                    )}
-                  </article>
-                )
-              })}
-            </div>
+                          {rowError ? (
+                            <p className="mt-2 text-[10px] leading-4 font-bold text-coral">
+                              {rowError}
+                            </p>
+                          ) : null}
+                        </form>
+                      ) : isDeleting ? (
+                        <div className="p-3">
+                          <p className="pr-1 text-[12px] font-black text-ink">
+                            删除“{workspace.title}”？
+                          </p>
+                          <p className="mt-1 text-[10px] leading-4 text-walnut">
+                            {isCurrent
+                              ? "将打开最近使用的工作区；已保存行程不受影响。"
+                              : "聊天与草稿会被删除；已保存行程不受影响。"}
+                          </p>
+                          <div className="mt-3 flex justify-end gap-2">
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => {
+                                setDeletingWorkspaceId(null)
+                                onClearActionError()
+                              }}
+                              className="h-8 rounded-lg border border-ink-10 bg-cream px-3 text-[11px] font-black text-walnut transition hover:border-russet"
+                            >
+                              取消
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isPending || locked}
+                              onClick={async () => {
+                                try {
+                                  await onDelete(workspace.id)
+                                  setDeletingWorkspaceId(null)
+                                } catch {
+                                  // The controller keeps the server error visible here.
+                                }
+                              }}
+                              className="h-8 rounded-lg bg-coral px-3 text-[11px] font-black text-white transition hover:bg-ink disabled:cursor-wait disabled:opacity-60"
+                            >
+                              {isPending ? "删除中…" : "确认删除"}
+                            </button>
+                          </div>
+                          {rowError ? (
+                            <p className="mt-2 text-[10px] leading-4 font-bold text-coral">
+                              {rowError}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={locked || isMutating}
+                            onClick={() => selectWorkspace(workspace.id)}
+                            aria-current={isCurrent ? "page" : undefined}
+                            className="block w-full rounded-[11px] p-3 pr-11 text-left disabled:cursor-default"
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-[12px] font-black text-ink">
+                                {workspace.title}
+                              </span>
+                              {isCurrent ? (
+                                <span className="shrink-0 text-[9px] font-black tracking-[0.08em] text-russet">
+                                  当前
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="mt-1 block truncate text-[10px] leading-4 text-walnut">
+                              {workspace.preview || "尚未开始对话"}
+                            </span>
+                            <span className="mt-2 block text-[9px] font-bold text-teak">
+                              {formatRelativeTime(workspace.updatedAt, now)}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={locked || isMutating}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setMenuWorkspaceId((current) =>
+                                current === workspace.id ? null : workspace.id
+                              )
+                              setDeletingWorkspaceId(null)
+                            }}
+                            aria-label={`${workspace.title}的更多操作`}
+                            aria-expanded={isMenuOpen}
+                            className="absolute top-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-lg text-walnut transition hover:bg-cream hover:text-russet disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            <MoreHorizontal
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          </button>
+
+                          {isMenuOpen ? (
+                            <div className="absolute top-10 right-2 z-20 w-28 overflow-hidden rounded-[10px] border border-ink-10 bg-soft-white p-1 shadow-periplus-soft">
+                              <button
+                                type="button"
+                                onClick={() => beginRename(workspace)}
+                                className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[11px] font-bold text-ink transition hover:bg-cream"
+                              >
+                                <Pencil
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden="true"
+                                />
+                                重命名
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeletingWorkspaceId(workspace.id)
+                                  setMenuWorkspaceId(null)
+                                  setEditingWorkspaceId(null)
+                                  onClearActionError()
+                                }}
+                                className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[11px] font-bold text-coral transition hover:bg-cream"
+                              >
+                                <Trash2
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden="true"
+                                />
+                                删除
+                              </button>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
-      ) : (
-        children
-      )}
+      ) : null}
     </div>
+  )
+}
+
+function WorkspaceListMessage({ children }: { children: ReactNode }) {
+  return (
+    <p className="rounded-[11px] border border-ink-10 bg-white/60 px-4 py-8 text-center text-[11px] leading-5 font-bold text-walnut">
+      {children}
+    </p>
   )
 }
 
