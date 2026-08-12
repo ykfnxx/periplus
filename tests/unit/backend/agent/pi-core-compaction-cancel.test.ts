@@ -81,6 +81,13 @@ describe("Pi core context compaction cancellation", () => {
     )
 
     expect(saveCheckpoint).not.toHaveBeenCalled()
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "model_end",
+        requestId: "compact-cancel:compaction",
+        stopReason: "aborted",
+      })
+    )
     expect(
       events.some(
         (event) =>

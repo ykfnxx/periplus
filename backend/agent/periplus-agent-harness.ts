@@ -495,17 +495,34 @@ export class PeriplusAgentHarness {
         }),
         startedAt,
       })
-      const summary = await generateSummaryWithUsage(
-        summarizedMessages,
-        this.models,
-        this.model,
-        DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-        signal,
-        undefined,
-        checkpoint?.summary,
-        "high"
-      )
-      throwIfAborted(signal)
+      let summary
+      try {
+        summary = await generateSummaryWithUsage(
+          summarizedMessages,
+          this.models,
+          this.model,
+          DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+          signal,
+          undefined,
+          checkpoint?.summary,
+          "high"
+        )
+        throwIfAborted(signal)
+      } catch (error) {
+        observer.onEvent({
+          type: "model_end",
+          requestId,
+          output:
+            error instanceof Error
+              ? error.message
+              : "Context compaction failed",
+          toolCalls: [],
+          usage: EMPTY_USAGE,
+          stopReason: signal.aborted ? "aborted" : "error",
+          endedAt: performance.now(),
+        })
+        throw error
+      }
       if (!summary.ok) {
         observer.onEvent({
           type: "model_end",

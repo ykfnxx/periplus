@@ -53,6 +53,21 @@ interface PeriplusToolDefinition {
 const providerToolName = (canonicalName: string) =>
   canonicalName.replaceAll(".", "__")
 
+function providerToolResult(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(providerToolResult)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      key === "allowedTools" && Array.isArray(entry)
+        ? entry.map((tool) =>
+            typeof tool === "string" ? providerToolName(tool) : tool
+          )
+        : providerToolResult(entry),
+    ])
+  )
+}
+
 export interface PiCoreToolOptions {
   execute: ToolExecutor
   webSearch?: {
@@ -64,7 +79,12 @@ export interface PiCoreToolOptions {
 
 function result(value: unknown) {
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(providerToolResult(value), null, 2),
+      },
+    ],
     details: value,
   }
 }

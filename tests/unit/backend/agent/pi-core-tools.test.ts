@@ -26,4 +26,52 @@ describe("Pi core tool catalog", () => {
       "periplus.workspace.get_context"
     )
   })
+
+  it("projects validator allowed tools into the provider-safe model result", async () => {
+    const execute = vi.fn().mockResolvedValue({
+      draftId: "draft-1",
+      validation: {
+        valid: false,
+        issues: [
+          {
+            issueId: "issue-1",
+            allowedTools: [
+              "periplus.draft.update_schedule",
+              "periplus.draft.prepare_transit",
+            ],
+          },
+        ],
+      },
+    })
+    const tools = createPiCoreTools({ execute })
+    const validateTool = tools.find(
+      (tool) => tool.name === "periplus__draft__validate"
+    )
+
+    const output = await validateTool!.execute(
+      "tool-call-1",
+      { draftId: "draft-1", attemptId: "attempt-1" },
+      undefined
+    )
+
+    expect(output.details).toMatchObject({
+      validation: {
+        issues: [
+          {
+            allowedTools: [
+              "periplus.draft.update_schedule",
+              "periplus.draft.prepare_transit",
+            ],
+          },
+        ],
+      },
+    })
+    const modelText = output.content
+      .filter((content) => content.type === "text")
+      .map((content) => content.text)
+      .join("\n")
+    expect(modelText).toContain("periplus__draft__update_schedule")
+    expect(modelText).toContain("periplus__draft__prepare_transit")
+    expect(modelText).not.toContain("periplus.draft.update_schedule")
+  })
 })
