@@ -104,6 +104,129 @@ function graph(id: string): TargetJourneyGraphSnapshot {
   }
 }
 
+function twoCityHotelGraph(id: string): TargetJourneyGraphSnapshot {
+  const result = graph(id)
+  const timestamp = "2026-08-12T00:00:00.000Z"
+  const firstCityId = `${id}-city`
+  const firstVisitId = `${id}-visit`
+  const secondVisitId = `${id}-visit-next-day`
+  const rootTransitId = `${id}-root-transit`
+  const secondCityId = `${id}-city-b`
+  const secondCityVisitId = `${id}-city-b-visit`
+  result.events.push(
+    {
+      id: secondVisitId,
+      journeyId: id,
+      parentSectionEventId: firstCityId,
+      placementStatus: "SCHEDULED",
+      origin: "ORIGINAL",
+      title: "灵隐寺",
+      executionStatus: "PLANNED",
+      plannedStartAt: "2026-08-14T09:00:00+08:00",
+      introducedRevision: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      type: "VISIT",
+      detail: {
+        plannedLat: 30.2403,
+        plannedLng: 120.1015,
+        coordinateSystem: "GCJ02",
+        coordinateProvider: "amap",
+      },
+    },
+    {
+      id: rootTransitId,
+      journeyId: id,
+      parentSectionEventId: null,
+      placementStatus: "SCHEDULED",
+      origin: "ORIGINAL",
+      title: "杭州到上海",
+      executionStatus: "PLANNED",
+      introducedRevision: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      type: "TRANSIT",
+      detail: {
+        plannedFromEventId: firstCityId,
+        plannedToEventId: secondCityId,
+        transportMode: "TRAIN",
+        requestMode: "TRANSIT",
+        preference: "RECOMMENDED",
+        routeState: "EMPTY",
+      },
+    },
+    {
+      id: secondCityId,
+      journeyId: id,
+      parentSectionEventId: null,
+      placementStatus: "SCHEDULED",
+      origin: "ORIGINAL",
+      title: "上海",
+      introducedRevision: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      type: "SECTION",
+      detail: {
+        kind: "CITY",
+        timeZone: "Asia/Shanghai",
+        lat: 31.2304,
+        lng: 121.4737,
+        coordinateSystem: "GCJ02",
+      },
+    },
+    {
+      id: secondCityVisitId,
+      journeyId: id,
+      parentSectionEventId: secondCityId,
+      placementStatus: "SCHEDULED",
+      origin: "ORIGINAL",
+      title: "外滩",
+      executionStatus: "PLANNED",
+      plannedStartAt: "2026-08-13T10:00:00+08:00",
+      introducedRevision: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      type: "VISIT",
+      detail: {
+        plannedLat: 31.2401,
+        plannedLng: 121.4905,
+        coordinateSystem: "GCJ02",
+        coordinateProvider: "amap",
+      },
+    }
+  )
+  result.links.push(
+    {
+      id: `${id}-city-a-link`,
+      journeyId: id,
+      fromEventId: firstVisitId,
+      toEventId: secondVisitId,
+      kind: "MAIN",
+      rank: 1024,
+      introducedRevision: 1,
+    },
+    {
+      id: `${id}-root-link-a`,
+      journeyId: id,
+      fromEventId: firstCityId,
+      toEventId: rootTransitId,
+      kind: "MAIN",
+      rank: 1024,
+      introducedRevision: 1,
+    },
+    {
+      id: `${id}-root-link-b`,
+      journeyId: id,
+      fromEventId: rootTransitId,
+      toEventId: secondCityId,
+      kind: "MAIN",
+      rank: 2048,
+      introducedRevision: 1,
+    }
+  )
+  return result
+}
+
 beforeAll(async () => {
   await prisma.user.create({
     data: {
@@ -275,5 +398,125 @@ describe("Pi Agent Core gateway integration", () => {
       })
       expect(events.at(-1)?.type).toBe("agent.run.failed")
     })
+  })
+
+  it("terminates PLANNER_CHOICE resolution when the provider is exhausted", async () => {
+    const journeyId = `pi-core-place-provider-${randomUUID()}`
+    const workspace = await createWorkspace(context, {
+      graph: graph(journeyId),
+      now: new Date("2026-08-12T00:00:00.000Z"),
+    })
+    const harness = new FakePiHarness()
+    const commands = new WorkspaceCommandService()
+    const gateway = new AgentGateway(
+      commands,
+      harness as unknown as PeriplusAgentHarness,
+      {
+        heartbeatIntervalMs: null,
+        placeService: {
+          searchPlaces: vi.fn(),
+          resolvePlace: vi.fn().mockResolvedValue({
+            status: "not_found",
+            reason: "provider exhausted",
+            warnings: [
+              {
+                provider: "amap",
+                code: "timeout",
+                message: "provider timed out",
+                retryable: true,
+                attempts: 3,
+                exhausted: true,
+              },
+            ],
+            providerAttempts: 3,
+          }),
+          enrichPlace: vi.fn(),
+          verifyPlaceImages: vi.fn(),
+        },
+      }
+    )
+
+    await gateway.start(context, workspace.id, "安排一个景点", () => undefined)
+    await harness.request!.executeTool({ type: "draft.open" }, "open-provider")
+    await expect(
+      harness.request!.executeTool(
+        {
+          type: "place.resolve",
+          cityCardId: `${journeyId}-city`,
+          cardType: "VISIT",
+          query: "大理古城",
+          origin: "PLANNER_CHOICE",
+        },
+        "resolve-provider"
+      )
+    ).resolves.toMatchObject({
+      status: "terminal_error",
+      code: "PLACE_PROVIDER_UNAVAILABLE",
+    })
+
+    harness.emit({
+      type: "run_end",
+      result: { status: "failed", error: new Error("provider unavailable") },
+    })
+  })
+
+  it("binds a hotel selection to the CITY that produced it", async () => {
+    const journeyId = `pi-core-hotel-city-${randomUUID()}`
+    const workspace = await createWorkspace(context, {
+      graph: twoCityHotelGraph(journeyId),
+      now: new Date("2026-08-12T00:00:00.000Z"),
+    })
+    const harness = new FakePiHarness()
+    const commands = new WorkspaceCommandService()
+    const gateway = new AgentGateway(
+      commands,
+      harness as unknown as PeriplusAgentHarness,
+      {
+        heartbeatIntervalMs: null,
+        hotelService: {
+          searchHotels: vi.fn().mockResolvedValue({
+            candidates: [
+              {
+                candidateId: "hotel-candidate-a",
+                provider: "rollinggo",
+                providerHotelId: "hotel-provider-a",
+                name: "杭州湖畔酒店",
+                coordinates: { lat: 30.25, lng: 120.15 },
+                fetchedAt: "2026-08-12T00:00:00.000Z",
+              },
+            ],
+            warnings: [],
+            providerAttempts: 1,
+          }),
+        },
+      }
+    )
+
+    await gateway.start(context, workspace.id, "杭州住一晚", () => undefined)
+    await harness.request!.executeTool({ type: "draft.open" }, "open-hotel")
+    const searched = await harness.request!.executeTool(
+      { type: "hotel.search", cityCardId: `${journeyId}-city` },
+      "search-hotel"
+    )
+    expect(searched).toMatchObject({ status: "ok" })
+    const hotelSelectionId = (
+      searched as { data: { hotelSelectionId: string } }
+    ).data.hotelSelectionId
+
+    await expect(
+      harness.request!.executeTool(
+        {
+          type: "stay.add",
+          cityCardId: `${journeyId}-city-b`,
+          hotelSelectionId,
+        },
+        "stay-wrong-city"
+      )
+    ).resolves.toMatchObject({
+      status: "retryable_error",
+      code: "HOTEL_SELECTION_CITY_MISMATCH",
+    })
+
+    harness.emit({ type: "run_end", result: { status: "succeeded" } })
   })
 })

@@ -985,6 +985,12 @@ export class AgentGateway {
         "Skip hotel search and STAY for this same-day City"
       )
     }
+    if (message.startsWith("HOTEL_SELECTION_CITY_MISMATCH")) {
+      return retryableError(
+        "HOTEL_SELECTION_CITY_MISMATCH",
+        "Run hotel.search for the same CITY used by stay.add"
+      )
+    }
     if (/COMMITTED|repair limit|SUMMARY_UNAVAILABLE/.test(message)) {
       return terminalError("DRAFT_TERMINAL", message)
     }
@@ -1243,6 +1249,18 @@ export class AgentGateway {
         )
     )
     if (resolved.status !== "resolved") {
+      const providerUnavailable = resolved.warnings.some(
+        (warning) =>
+          warning.exhausted === true &&
+          warning.code !== "low_confidence" &&
+          warning.code !== "IMAGE_UNAVAILABLE"
+      )
+      if (providerUnavailable) {
+        return terminalError(
+          "PLACE_PROVIDER_UNAVAILABLE",
+          "Place provider was exhausted before a writable place could be resolved"
+        )
+      }
       return request.origin === "USER_EXPLICIT"
         ? terminalError("EXPLICIT_PLACE_NOT_FOUND", resolved.reason)
         : retryableError(
@@ -1346,6 +1364,7 @@ export class AgentGateway {
     const hotelSelectionId = running.draftSession.registerHotelSelection(
       selected,
       response.warnings,
+      request.cityCardId,
       context.schedule
     )
     await appendWorkspaceMessage(running.context, running.workspaceId, {

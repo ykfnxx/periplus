@@ -195,6 +195,7 @@ type PlaceEvidence = {
 }
 
 export type HotelSelection = {
+  cityCardId: string
   candidate: HotelCandidate
   verification: PlaceVerification
   stayDetail: {
@@ -972,10 +973,12 @@ export class AgentDraftSession {
   registerHotelSelection(
     candidate: HotelCandidate,
     warnings: HotelProviderWarning[],
+    cityCardId: string,
     schedule: HotelSelection["schedule"]
   ) {
     const hotelSelectionId = randomUUID()
     this.hotelSelections.set(hotelSelectionId, {
+      cityCardId,
       candidate,
       verification: {
         ref: {
@@ -1384,6 +1387,11 @@ export class AgentDraftSession {
     if (!selection) {
       throw new WorkspaceInputError(
         "hotelSelectionId is invalid or belongs to another Agent run"
+      )
+    }
+    if (selection.cityCardId !== input.cityCardId) {
+      throw new WorkspaceInputError(
+        "HOTEL_SELECTION_CITY_MISMATCH: hotelSelectionId belongs to a different CITY"
       )
     }
     return this.modelMutation(
@@ -1915,6 +1923,11 @@ export class AgentDraftSession {
         if (!selection) {
           throw new WorkspaceInputError(
             "hotelSelectionId is invalid or belongs to another Agent run"
+          )
+        }
+        if (selection.cityCardId !== request.cityCardId) {
+          throw new WorkspaceInputError(
+            "HOTEL_SELECTION_CITY_MISMATCH: hotelSelectionId belongs to a different CITY"
           )
         }
         if (this.usedHotelSelectionIds.has(request.card.hotelSelectionId)) {
