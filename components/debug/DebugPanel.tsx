@@ -111,6 +111,7 @@ export default function DebugPanel() {
           baseJourneyRevision: null,
           headWorkspaceRevision: 0,
           status: "ACTIVE",
+          title: "新工作区",
           headGraph: graph,
           lastAccessAt: now,
           createdAt: now,

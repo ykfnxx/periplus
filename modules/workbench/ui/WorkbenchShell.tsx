@@ -34,11 +34,20 @@ import ChatHistory from "./ChatHistory"
 import InitialChatState from "./InitialChatState"
 import OverlayScrollArea from "./OverlayScrollArea"
 import RoutePreview from "./RoutePreview"
+import WorkspaceSwitcherPanel, {
+  type WorkspaceSwitcherController,
+} from "./WorkspaceSwitcherPanel"
 
 type WorkbenchLayout = "mobile" | "compact" | "wide"
 type WidePanel = "chat" | "preview"
 
-export default function WorkbenchShell() {
+interface WorkbenchShellProps {
+  workspaceSwitcher?: WorkspaceSwitcherController
+}
+
+export default function WorkbenchShell({
+  workspaceSwitcher,
+}: WorkbenchShellProps = {}) {
   const sectionRef = useRef<HTMLElement>(null)
   const returnSurfaceRef = useRef<WorkbenchTab>("preview")
   const previousMobileSnapRef = useRef<MobileSheetSnap>("half")
@@ -127,6 +136,7 @@ export default function WorkbenchShell() {
             className="pointer-events-auto flex w-[340px]"
             showInitialState={showInitialState}
             onCollapse={() => toggleWidePanel("chat")}
+            workspaceSwitcher={workspaceSwitcher}
           />
         )}
         {collapsedPanels.has("preview") ? (
@@ -191,6 +201,7 @@ export default function WorkbenchShell() {
                   showInitialState={showInitialState}
                   framed={false}
                   onMobileBack={returnFromAssistant}
+                  workspaceSwitcher={workspaceSwitcher}
                 />
               )}
             </div>
@@ -218,6 +229,7 @@ export default function WorkbenchShell() {
             className="flex h-full"
             showInitialState={showInitialState}
             framed={false}
+            workspaceSwitcher={workspaceSwitcher}
           />
         )}
       </div>
@@ -231,14 +243,31 @@ function AIWorkbenchPanel({
   onCollapse,
   onMobileBack,
   framed = true,
+  workspaceSwitcher,
 }: {
   className: string
   showInitialState: boolean
   onCollapse?: () => void
   onMobileBack?: () => void
   framed?: boolean
+  workspaceSwitcher?: WorkspaceSwitcherController
 }) {
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+
+  if (workspaceSwitcher) {
+    return (
+      <WorkspaceSwitcherPanel
+        {...workspaceSwitcher}
+        className={className}
+        framed={framed}
+        locked={isWorkspaceLocked}
+        onBack={onMobileBack}
+        onCollapse={onCollapse}
+      >
+        <AIWorkbenchContent showInitialState={showInitialState} />
+      </WorkspaceSwitcherPanel>
+    )
+  }
 
   return (
     <div
@@ -253,6 +282,20 @@ function AIWorkbenchPanel({
         onCollapse={onCollapse}
         onBack={onMobileBack}
       />
+      <AIWorkbenchContent showInitialState={showInitialState} />
+    </div>
+  )
+}
+
+function AIWorkbenchContent({
+  showInitialState,
+}: {
+  showInitialState: boolean
+}) {
+  const graph = useWorkspaceStore(selectWorkspaceGraph)
+
+  return (
+    <>
       {graph ? (
         <div className="shrink-0">
           <p className="px-5 pb-2 text-[11px] font-black text-teak">
@@ -273,7 +316,7 @@ function AIWorkbenchPanel({
           </div>
         </>
       )}
-    </div>
+    </>
   )
 }
 

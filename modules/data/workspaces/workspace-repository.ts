@@ -8,16 +8,18 @@ import {
   targetJourneyGraphSnapshotSchema,
   targetWorkspaceAgentRunSchema,
   targetWorkspaceDocumentSchema,
-  targetWorkspaceHistoryEntrySchema,
+  targetWorkspaceSummarySchema,
   targetWorkspaceMessageSchema,
   targetWorkspaceRevisionSchema,
   targetWorkspaceSessionSchema,
   targetWorkspaceSuggestionSchema,
+  targetWorkspaceTitleSchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
+  WORKSPACE_DEFAULT_TITLE,
   type TargetActorReference,
   type TargetJourneyGraphSnapshot,
   type TargetWorkspaceDocument,
-  type TargetWorkspaceHistoryEntry,
+  type TargetWorkspaceSummary,
   type TargetWorkspaceRevision,
   type TargetWorkspaceSession,
 } from "@/modules/data-model/contracts"
@@ -37,6 +39,20 @@ export class WorkspaceInputError extends Error {
   constructor(message: string) {
     super(message)
     this.name = "WorkspaceInputError"
+  }
+}
+
+export class WorkspaceArchivedError extends Error {
+  constructor(message = "Workspace is archived") {
+    super(message)
+    this.name = "WorkspaceArchivedError"
+  }
+}
+
+export class WorkspaceRunningError extends Error {
+  constructor(message = "Workspace has a running Agent") {
+    super(message)
+    this.name = "WorkspaceRunningError"
   }
 }
 
@@ -69,6 +85,21 @@ const workspaceInclude = {
 
 type WorkspaceRecord = Prisma.WorkspaceSessionGetPayload<{
   include: typeof workspaceInclude
+}>
+
+const workspaceHistorySelect = {
+  id: true,
+  sourceJourneyId: true,
+  title: true,
+  updatedAt: true,
+  messages: {
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { content: true },
+  },
+} satisfies Prisma.WorkspaceSessionSelect
+
+type WorkspaceHistoryRecord = Prisma.WorkspaceSessionGetPayload<{
+  select: typeof workspaceHistorySelect
 }>
 
 type TargetWorkspaceMessage = z.infer<typeof targetWorkspaceMessageSchema>
@@ -273,12 +304,36 @@ function mapSession(record: WorkspaceRecord): TargetWorkspaceSession {
     baseJourneyRevision: record.baseJourneyRevision,
     headWorkspaceRevision: record.headWorkspaceRevision,
     status: record.status,
+    title: record.title,
     headGraph: parseGraph(record.headGraphJson, `Workspace ${record.id} head`),
     lastAccessAt: record.lastAccessAt.toISOString(),
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
     archivedAt: record.archivedAt?.toISOString(),
   })
+}
+
+function mapWorkspaceHistoryEntry(
+  record: WorkspaceHistoryRecord
+): TargetWorkspaceSummary {
+  const latestMessage = [...record.messages]
+    .reverse()
+    .find((message) => message.content.trim())
+  return targetWorkspaceSummarySchema.parse({
+    id: record.id,
+    sourceJourneyId: record.sourceJourneyId,
+    title: record.title,
+    preview: latestMessage?.content.trim().slice(0, 96) ?? "",
+    updatedAt: record.updatedAt.toISOString(),
+  })
+}
+
+function normalizeWorkspaceTitle(title: string) {
+  const parsed = targetWorkspaceTitleSchema.safeParse(title)
+  if (!parsed.success) {
+    throw new WorkspaceInputError("Workspace title must be 1 to 48 characters")
+  }
+  return parsed.data
 }
 
 function mapRevision(
@@ -495,6 +550,9 @@ export async function createWorkspace(
       ownerId: graph.ownerId,
       sourceJourneyId: input.sourceJourneyId ?? null,
       baseJourneyRevision: input.baseJourneyRevision ?? null,
+      title: input.sourceJourneyId
+        ? normalizeWorkspaceTitle(graph.title.slice(0, 48))
+        : WORKSPACE_DEFAULT_TITLE,
       headGraphJson: json(graph),
       lastAccessAt: now,
       createdAt: now,
@@ -567,35 +625,13 @@ export async function getWorkspaceDocument(
 
 export async function listWorkspaceHistory(
   context: AuthContext
-): Promise<TargetWorkspaceHistoryEntry[]> {
+): Promise<TargetWorkspaceSummary[]> {
   const records = await prisma.workspaceSession.findMany({
     where: { ownerId: context.userId, status: "ACTIVE" },
     orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      sourceJourneyId: true,
-      updatedAt: true,
-      messages: {
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        select: { role: true, content: true },
-      },
-    },
+    select: workspaceHistorySelect,
   })
-  return records.map((record) => {
-    const firstUserMessage = record.messages.find(
-      (message) => message.role === "USER" && message.content.trim()
-    )
-    const latestMessage = [...record.messages]
-      .reverse()
-      .find((message) => message.content.trim())
-    return targetWorkspaceHistoryEntrySchema.parse({
-      id: record.id,
-      sourceJourneyId: record.sourceJourneyId,
-      title: firstUserMessage?.content.trim().slice(0, 48) ?? "新对话",
-      preview: latestMessage?.content.trim().slice(0, 96) ?? "",
-      updatedAt: record.updatedAt.toISOString(),
-    })
-  })
+  return records.map(mapWorkspaceHistoryEntry)
 }
 
 export async function appendWorkspaceRevision(
@@ -859,13 +895,31 @@ export async function appendWorkspaceMessage(
     )
   }
   const record = await prisma.$transaction(async (tx) => {
-    const active = await tx.workspaceSession.updateMany({
-      where: { id: workspaceId, status: "ACTIVE" },
-      data: { lastAccessAt: now },
+    const session = await tx.workspaceSession.findUnique({
+      where: { id: workspaceId },
+      select: { status: true, title: true },
     })
-    if (active.count !== 1) {
+    if (!session || session.status !== "ACTIVE") {
       throw new WorkspaceInputError("Workspace is not active")
     }
+    const title = input.role === "USER" ? input.content.trim().slice(0, 48) : ""
+    const existingUserMessage = title
+      ? await tx.workspaceMessage.findFirst({
+          where: { workspaceId, role: "USER" },
+          select: { id: true },
+        })
+      : null
+    await tx.workspaceSession.update({
+      where: { id: workspaceId },
+      data: {
+        lastAccessAt: now,
+        ...(session.title === WORKSPACE_DEFAULT_TITLE &&
+        title &&
+        !existingUserMessage
+          ? { title }
+          : {}),
+      },
+    })
     if (input.agentRunId) {
       const run = await tx.workspaceAgentRun.findFirst({
         where: { id: input.agentRunId, workspaceId },
@@ -1990,21 +2044,52 @@ export async function archiveWorkspace(
 ) {
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return false
-  await prisma.$transaction(async (tx) => {
-    if (workspace.status !== "ARCHIVED") {
-      await tx.workspaceSession.update({
-        where: { id: workspaceId },
-        data: { status: "ARCHIVED", archivedAt: now },
-      })
-    }
-    await tx.workspaceAgentRun.updateMany({
-      where: { workspaceId, status: "RUNNING" },
-      data: {
-        status: "CANCELLED",
-        completedAt: now,
-        leaseExpiresAt: null,
-      },
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.workspaceSession.findUnique({
+      where: { id: workspaceId },
+      select: { status: true },
     })
+    if (!current) return false
+    if (current.status === "ARCHIVED") throw new WorkspaceArchivedError()
+    const running = await tx.workspaceAgentRun.findFirst({
+      where: { workspaceId, status: "RUNNING" },
+      select: { id: true },
+    })
+    if (running) throw new WorkspaceRunningError()
+    await tx.workspaceSession.update({
+      where: { id: workspaceId },
+      data: { status: "ARCHIVED", archivedAt: now },
+    })
+    return true
   })
-  return true
+}
+
+export async function renameWorkspace(
+  context: AuthContext,
+  workspaceId: string,
+  title: string,
+  now = new Date()
+): Promise<TargetWorkspaceSummary | null> {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  const normalizedTitle = normalizeWorkspaceTitle(title)
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.workspaceSession.findUnique({
+      where: { id: workspaceId },
+      select: { status: true },
+    })
+    if (!current) return null
+    if (current.status === "ARCHIVED") throw new WorkspaceArchivedError()
+    const running = await tx.workspaceAgentRun.findFirst({
+      where: { workspaceId, status: "RUNNING" },
+      select: { id: true },
+    })
+    if (running) throw new WorkspaceRunningError()
+    const updated = await tx.workspaceSession.update({
+      where: { id: workspaceId },
+      data: { title: normalizedTitle, lastAccessAt: now },
+      select: workspaceHistorySelect,
+    })
+    return mapWorkspaceHistoryEntry(updated)
+  })
 }

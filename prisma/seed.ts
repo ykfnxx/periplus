@@ -294,6 +294,12 @@ function buildJourneyGraph(): TargetJourneyGraphSnapshot {
     ],
   }
 
+  graph.events.sort(
+    (left, right) =>
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.id.localeCompare(right.id)
+  )
+
   return targetJourneyGraphSnapshotSchema.parse(graph)
 }
 
@@ -402,6 +408,7 @@ async function seedJourney(graph: TargetJourneyGraphSnapshot) {
             : undefined,
         introducedRevision: event.introducedRevision,
         createdAt: new Date(event.createdAt),
+        updatedAt: new Date(event.updatedAt),
       },
     })
   }
@@ -628,6 +635,7 @@ async function seedWorkspace(graph: TargetJourneyGraphSnapshot) {
       baseJourneyRevision: 1,
       headWorkspaceRevision: 0,
       status: "ACTIVE",
+      title: graph.title,
       headGraphJson: graphJson,
       lastAccessAt: new Date(NOW),
       createdAt: new Date(NOW),

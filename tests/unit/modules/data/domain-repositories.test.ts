@@ -53,6 +53,7 @@ import {
   forkWorkspace,
   getWorkspaceDocument,
   startWorkspaceAgentRun,
+  WorkspaceRunningError,
 } from "@/modules/data/workspaces/workspace-repository"
 import {
   issueWorkspaceTicket,
@@ -389,7 +390,7 @@ describe.sequential("P2B-P2D repositories", () => {
     ).toThrow("between 1 and 300")
   })
 
-  it("atomically terminalizes Agent runs when a Workspace is archived", async () => {
+  it("refuses to archive a Workspace with a running Agent", async () => {
     const archiveNow = new Date("2026-08-01T11:00:00.000Z")
     const archived = await createWorkspace(context, {
       id: `workspace-archive-${randomUUID()}`,
@@ -402,22 +403,27 @@ describe.sequential("P2B-P2D repositories", () => {
       archiveNow,
       `runtime-${randomUUID()}`
     )
-    await Promise.allSettled([
+    await expect(
       archiveWorkspace(
         context,
         archived.id,
         new Date("2026-08-01T11:01:00.000Z")
-      ),
-      finishWorkspaceAgentRun(context, archived.id, archivedRun!.id, {
-        status: "SUCCEEDED",
-        now: new Date("2026-08-01T11:01:00.000Z"),
-      }),
-    ])
+      )
+    ).rejects.toBeInstanceOf(WorkspaceRunningError)
     expect(
       await prisma.workspaceAgentRun.count({
         where: { workspaceId: archived.id, status: "RUNNING" },
       })
-    ).toBe(0)
+    ).toBe(1)
+    await finishWorkspaceAgentRun(context, archived.id, archivedRun!.id, {
+      status: "SUCCEEDED",
+      now: new Date("2026-08-01T11:01:00.000Z"),
+    })
+    await archiveWorkspace(
+      context,
+      archived.id,
+      new Date("2026-08-01T11:02:00.000Z")
+    )
     expect(
       await prisma.workspaceSession.findUnique({ where: { id: archived.id } })
     ).toMatchObject({ status: "ARCHIVED" })
