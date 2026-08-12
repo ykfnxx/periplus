@@ -771,18 +771,20 @@ model TransitSegment {
 }
 
 model WorkspaceSession {
-  id                    String          @id @default(uuid())
-  ownerId               String
-  sourceJourneyId       String?
-  baseJourneyRevision   Int?
-  headWorkspaceRevision Int             @default(0)
-  status                WorkspaceStatus @default(ACTIVE)
-  title                 String          @default("新工作区")
-  headGraphJson         String
-  lastAccessAt          DateTime
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
-  archivedAt            DateTime?
+  id                           String          @id @default(uuid())
+  ownerId                      String
+  sourceJourneyId              String?
+  baseJourneyRevision          Int?
+  headWorkspaceRevision        Int             @default(0)
+  status                       WorkspaceStatus @default(ACTIVE)
+  title                        String          @default("新工作区")
+  headGraphJson                String
+  agentContextSummary          String?
+  agentContextThroughMessageId String?
+  lastAccessAt                 DateTime
+  createdAt                    DateTime        @default(now())
+  updatedAt                    DateTime        @updatedAt
+  archivedAt                   DateTime?
 
   owner             User                  @relation("OwnedWorkspaces", fields: [ownerId], references: [id], onDelete: Restrict)
   sourceJourney     Journey?              @relation("JourneyWorkspaces", fields: [sourceJourneyId], references: [id], onDelete: Restrict)

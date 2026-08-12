@@ -111,7 +111,7 @@ npm run dev
 
 - `NEXT_PUBLIC_*`：浏览器可见的产品、后端与高德 JS API 配置。
 - `PERIPLUS_AMAP_*` / `PERIPLUS_ROLLINGGO_*`：服务端地点、交通与酒店 provider。
-- `PERIPLUS_AGENT_RUNTIME` 与 Kimi/Pi/DeepSeek 变量：Agent 运行时。
+- `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` 与 `PERIPLUS_AGENT_*`：Pi Agent Core 的模型、搜索与超时配置。
 - `BETTER_AUTH_SECRET` / `DATABASE_URL`：认证与数据库。
 - `PERIPLUS_OBSERVABILITY_*` / `OTEL_*`：可观测性。
 

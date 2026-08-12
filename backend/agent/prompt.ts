@@ -1,29 +1,7 @@
 import { createHash } from "node:crypto"
-import type { AgentConversationMessage } from "@/backend/types"
 import type { AgentMode } from "../types"
 
-function formatConversationMessage(message: AgentConversationMessage) {
-  return `${message.role === "user" ? "用户" : "Agent"}：\n${message.content}`
-}
-
-function splitConversation(messages: AgentConversationMessage[]) {
-  const latestUserIndex = messages.findLastIndex(
-    (message) => message.role === "user"
-  )
-  const latestIndex =
-    latestUserIndex >= 0 ? latestUserIndex : messages.length - 1
-  const latest = messages[latestIndex]
-  return {
-    history: messages
-      .slice(0, Math.max(0, latestIndex))
-      .map(formatConversationMessage)
-      .join("\n\n"),
-    latest: latest ? formatConversationMessage(latest) : "（无）",
-  }
-}
-
-function autoPrompt(messages: AgentConversationMessage[]) {
-  const conversation = splitConversation(messages)
+function autoPrompt() {
   return [
     '<PERIPLUS_AUTO_PROTOCOL version="2">',
     "",
@@ -32,10 +10,10 @@ function autoPrompt(messages: AgentConversationMessage[]) {
     "只执行最后一条用户请求；更早的对话仅提供上下文。",
     "",
     "[RUNTIME_BOUNDARY]",
-    "- 只允许调用当前列出的 Periplus MCP 工具与 WebSearch/web_search；禁止调用文件读取、源码搜索、文件编辑、Shell、子 Agent 或其他内建工具。",
+    "- 只允许调用当前列出的 Periplus 工具与 WebSearch/web_search；禁止调用文件读取、源码搜索、文件编辑、Shell、子 Agent 或其他内建工具。",
     "- WebSearch 用于时效性资料与查询 provider 明确允许 fallback 后的地点补全；它不能伪造高德、RollingGo 或 Workspace evidence。",
     "- 不允许读取项目文件、搜索源码、运行 Shell、连接数据库或猜测内部 command DSL。",
-    "- MCP schema 是唯一字段来源；接口没有的字段不得自行补造。",
+    "- Tool schema 是唯一字段来源；接口没有的字段不得自行补造。",
     "",
     "[DATA_MODEL]",
     "- Root Scope：CITY 与跨城 TRANSIT 组成一条线性事件卡片链。",
@@ -108,21 +86,11 @@ function autoPrompt(messages: AgentConversationMessage[]) {
     "TOOL: none",
     "OUTPUT: 地点歧义询问城市或完整名称；酒店条件缺失询问缺失字段；不可自动修复说明 issue.message；禁止 commit 部分行程",
     "",
-    "[CONVERSATION_HISTORY]",
-    conversation.history || "（无）",
-    "",
-    "[LATEST_USER_REQUEST]",
-    conversation.latest,
-    "",
     "</PERIPLUS_AUTO_PROTOCOL>",
   ].join("\n")
 }
 
-function suggestPrompt(
-  messages: AgentConversationMessage[],
-  workspaceSnapshot: string
-) {
-  const conversation = splitConversation(messages)
+function suggestPrompt(workspaceSnapshot: string) {
   return [
     '<PERIPLUS_SUGGEST_PROTOCOL version="2">',
     "",
@@ -158,12 +126,6 @@ function suggestPrompt(
     ),
     "commands.command 必须符合 TargetCommandBody。",
     "",
-    "[CONVERSATION_HISTORY]",
-    conversation.history || "（无）",
-    "",
-    "[LATEST_USER_REQUEST]",
-    conversation.latest,
-    "",
     "[WORKSPACE_SNAPSHOT]",
     workspaceSnapshot,
     "",
@@ -172,13 +134,10 @@ function suggestPrompt(
 }
 
 export function buildPrompt(
-  messages: AgentConversationMessage[],
   mode: AgentMode = "auto",
   workspaceSnapshot = "{}"
 ) {
-  return mode === "suggest"
-    ? suggestPrompt(messages, workspaceSnapshot)
-    : autoPrompt(messages)
+  return mode === "suggest" ? suggestPrompt(workspaceSnapshot) : autoPrompt()
 }
 
 export function promptVersion(mode: AgentMode) {
@@ -187,7 +146,7 @@ export function promptVersion(mode: AgentMode) {
       JSON.stringify({
         schemaVersion: 2,
         mode,
-        template: buildPrompt([], mode, "{}"),
+        template: buildPrompt(mode, "{}"),
       })
     )
     .digest("hex")

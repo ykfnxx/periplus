@@ -111,7 +111,7 @@ See [`.env.example`](./.env.example) for the complete configuration template:
 
 - `NEXT_PUBLIC_*`: browser-visible product, backend, and AMap JS API settings.
 - `PERIPLUS_AMAP_*` / `PERIPLUS_ROLLINGGO_*`: server-side place, transit, and hotel providers.
-- `PERIPLUS_AGENT_RUNTIME` and Kimi/Pi/DeepSeek variables: Agent runtime.
+- `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, and `PERIPLUS_AGENT_*`: Pi Agent Core model, search, and timeout configuration.
 - `BETTER_AUTH_SECRET` / `DATABASE_URL`: authentication and database.
 - `PERIPLUS_OBSERVABILITY_*` / `OTEL_*`: observability.
 
