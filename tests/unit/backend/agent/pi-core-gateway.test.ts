@@ -137,6 +137,7 @@ describe("Pi Agent Core gateway integration", () => {
       type: "model_end",
       requestId: "model-1",
       output: "已安排西湖。",
+      toolCalls: [],
       usage: {
         input: 10,
         output: 5,

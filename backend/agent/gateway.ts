@@ -129,6 +129,7 @@ interface RunningAgent {
   traceFailure: Error | null
   telemetry: AgentRunTelemetry
   modelSpans: Map<string, TelemetrySpan>
+  externalToolSpans: Map<string, TelemetrySpan>
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
   draftSession: AgentDraftSession
@@ -585,6 +586,7 @@ export class AgentGateway {
       traceFailure: null,
       telemetry,
       modelSpans: new Map(),
+      externalToolSpans: new Map(),
       requiresPlanValidation: false,
       lastPlanValidation: null,
       draftSession: new AgentDraftSession(
@@ -720,16 +722,26 @@ export class AgentGateway {
       const span = running.modelSpans.get(event.requestId)
       if (!span) return
       running.modelSpans.delete(event.requestId)
-      span.setAttribute("output.value", redactedInput(event.output) ?? "")
-      span.end(event.stopReason === "error" ? "ERROR" : "OK", {
-        "llm.token_count.prompt": event.usage.input,
-        "llm.token_count.completion": event.usage.output,
-        "llm.token_count.total": event.usage.totalTokens,
-        "llm.token_count.cache_read": event.usage.cacheRead,
-        "llm.token_count.cache_write": event.usage.cacheWrite,
-        "periplus.llm.duration_ms": event.endedAt - span.startedAt,
-        "periplus.llm.stop_reason": event.stopReason,
-      })
+      span.setAttribute(
+        "output.value",
+        redactedInput({ text: event.output, toolCalls: event.toolCalls }) ?? ""
+      )
+      span.end(
+        event.stopReason === "error"
+          ? "ERROR"
+          : event.stopReason === "aborted"
+            ? "CANCELLED"
+            : "OK",
+        {
+          "llm.token_count.prompt": event.usage.input,
+          "llm.token_count.completion": event.usage.output,
+          "llm.token_count.total": event.usage.totalTokens,
+          "llm.token_count.cache_read": event.usage.cacheRead,
+          "llm.token_count.cache_write": event.usage.cacheWrite,
+          "periplus.llm.duration_ms": event.endedAt - span.startedAt,
+          "periplus.llm.stop_reason": event.stopReason,
+        }
+      )
       return
     }
     if (event.type === "message_delta") {
@@ -750,15 +762,37 @@ export class AgentGateway {
       running.telemetry.root.addEvent("agent.tool.start", {
         "periplus.tool.call_id": event.toolCallId,
         "periplus.tool.name": event.toolName,
+        "periplus.tool.provider_name": event.providerToolName,
       })
+      if (event.toolName === "web_search") {
+        const span = running.telemetry.startSpan(
+          "agent.tool",
+          OpenInferenceSpanKind.TOOL,
+          {
+            [TOOL_NAME]: event.toolName,
+            "periplus.tool.call_id": event.toolCallId,
+            "periplus.tool.provider": "deepseek",
+          },
+          running.telemetry.context
+        )
+        span.setAttribute("input.value", redactedInput(event.args) ?? "")
+        running.externalToolSpans.set(event.toolCallId, span)
+      }
       return
     }
     if (event.type === "tool_end") {
       running.telemetry.root.addEvent("agent.tool.end", {
         "periplus.tool.call_id": event.toolCallId,
         "periplus.tool.name": event.toolName,
+        "periplus.tool.provider_name": event.providerToolName,
         "periplus.tool.error": event.isError,
       })
+      const span = running.externalToolSpans.get(event.toolCallId)
+      if (span) {
+        running.externalToolSpans.delete(event.toolCallId)
+        span.setAttribute("output.value", redactedInput(event.result) ?? "")
+        span.end(event.isError ? "ERROR" : "OK")
+      }
       return
     }
     if (event.type === "run_end") {
@@ -1792,6 +1826,10 @@ export class AgentGateway {
         span.end("ERROR", { "error.type": "AgentRunEnded" })
       }
       running.modelSpans.clear()
+      for (const span of running.externalToolSpans.values()) {
+        span.end("ERROR", { "error.type": "AgentRunEnded" })
+      }
+      running.externalToolSpans.clear()
       if (result.status === "failed" && !running.runtimeFailed) {
         running.telemetry.recordRuntimeError("harness_failed")
       }

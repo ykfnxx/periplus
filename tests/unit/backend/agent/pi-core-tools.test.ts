@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest"
-import { createPiCoreTools } from "@/backend/agent/pi-core-tools"
+import {
+  canonicalPiCoreToolName,
+  createPiCoreTools,
+} from "@/backend/agent/pi-core-tools"
 
 describe("Pi core tool catalog", () => {
   it("maps canonical schemas to direct AgentTools without an MCP bridge", async () => {
     const execute = vi.fn().mockResolvedValue({ workspaceRevision: 3 })
     const tools = createPiCoreTools({ execute })
     const workspaceTool = tools.find(
-      (tool) => tool.name === "periplus.workspace.get_context"
+      (tool) => tool.name === "periplus__workspace__get_context"
     )
 
     expect(workspaceTool).toBeDefined()
@@ -18,5 +21,9 @@ describe("Pi core tool catalog", () => {
     )
     expect(output.details).toEqual({ workspaceRevision: 3 })
     expect(tools.some((tool) => tool.name.includes("mcp"))).toBe(false)
+    expect(tools.every((tool) => /^[A-Za-z0-9_-]+$/.test(tool.name))).toBe(true)
+    expect(canonicalPiCoreToolName(workspaceTool!.name)).toBe(
+      "periplus.workspace.get_context"
+    )
   })
 })

@@ -19,7 +19,7 @@ import {
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy"
 import type { AgentMode } from "../types"
 import type { AgentToolRequest } from "./gateway"
-import { createPiCoreTools } from "./pi-core-tools"
+import { canonicalPiCoreToolName, createPiCoreTools } from "./pi-core-tools"
 
 const EMPTY_USAGE = {
   input: 0,
@@ -81,17 +81,25 @@ export type PeriplusHarnessEvent =
       type: "model_end"
       requestId: string
       output: string
+      toolCalls: Array<{ id: string; name: string; arguments: unknown }>
       usage: Usage
       stopReason: string
       endedAt: number
     }
   | { type: "message_delta"; text: string }
   | { type: "message_end"; text: string }
-  | { type: "tool_start"; toolCallId: string; toolName: string; args: unknown }
+  | {
+      type: "tool_start"
+      toolCallId: string
+      toolName: string
+      providerToolName: string
+      args: unknown
+    }
   | {
       type: "tool_end"
       toolCallId: string
       toolName: string
+      providerToolName: string
       result: unknown
       isError: boolean
     }
@@ -136,7 +144,10 @@ function deepSeekModel(model: string): Model<"openai-responses"> {
   }
 }
 
-function createDeepSeekModels(model: Model<"openai-responses">) {
+function createDeepSeekModels(
+  model: Model<"openai-responses">,
+  apiKey: string
+) {
   const models = createModels()
   models.setProvider(
     createProvider({
@@ -146,7 +157,7 @@ function createDeepSeekModels(model: Model<"openai-responses">) {
       auth: {
         apiKey: {
           name: "DeepSeek API key",
-          resolve: async () => ({ auth: {} }),
+          resolve: async () => ({ auth: { apiKey } }),
         },
       },
       models: [model],
@@ -199,13 +210,38 @@ function assistantText(message: AssistantMessage) {
     .join("")
 }
 
-function contextInput(context: Context) {
+function assistantToolCalls(message: AssistantMessage) {
+  return message.content.flatMap((content) =>
+    content.type === "toolCall"
+      ? [
+          {
+            id: content.id,
+            name: canonicalPiCoreToolName(content.name) ?? content.name,
+            arguments: content.arguments,
+          },
+        ]
+      : []
+  )
+}
+
+function contextInput(context: {
+  systemPrompt?: string
+  messages: unknown
+  tools?: ReadonlyArray<{
+    name: string
+    description: string
+    parameters: unknown
+    executionMode?: string
+  }>
+}) {
   return JSON.stringify({
-    systemPrompt: context.systemPrompt,
+    systemPrompt: context.systemPrompt ?? "",
     messages: context.messages,
     tools: context.tools?.map((tool) => ({
       name: tool.name,
       description: tool.description,
+      parameters: tool.parameters,
+      executionMode: tool.executionMode,
     })),
   })
 }
@@ -217,7 +253,7 @@ export class PeriplusAgentHarness {
 
   constructor(private readonly options: PeriplusAgentHarnessOptions) {
     this.model = deepSeekModel(options.model)
-    this.models = createDeepSeekModels(this.model)
+    this.models = createDeepSeekModels(this.model, options.apiKey)
   }
 
   async start(
@@ -228,12 +264,48 @@ export class PeriplusAgentHarness {
       throw new Error("DEEPSEEK_API_KEY is required for the Pi core harness")
     }
 
-    const prepared = await this.prepareContext(request, observer)
+    const abortController = new AbortController()
+    let cancelled = false
+    let activeAgent: Agent | null = null
+    const timeout = setTimeout(() => {
+      cancelled = true
+      abortController.abort()
+      activeAgent?.abort()
+    }, this.options.timeoutMs)
+    timeout.unref?.()
+
+    let prepared
+    try {
+      prepared = await this.prepareContext(
+        request,
+        observer,
+        abortController.signal
+      )
+    } catch (error) {
+      clearTimeout(timeout)
+      throw error
+    }
+    const tools =
+      request.mode === "auto"
+        ? createPiCoreTools({
+            execute: request.executeTool,
+            ...(this.options.webSearchEnabled
+              ? {
+                  webSearch: {
+                    apiKey: this.options.apiKey,
+                    model: this.options.model,
+                    maxSearches: 3,
+                  },
+                }
+              : {}),
+          })
+        : []
     observer.onEvent({
       type: "context_prepared",
-      input: JSON.stringify({
+      input: contextInput({
         systemPrompt: prepared.systemPrompt,
         messages: prepared.messages,
+        tools,
       }),
       messageCount: prepared.messages.length,
       estimatedTokens: estimateContextTokens(prepared.messages).tokens,
@@ -256,7 +328,14 @@ export class PeriplusAgentHarness {
         input: contextInput(context),
         startedAt,
       })
-      return this.models.streamSimple(model, context, options)
+      const signal = options?.signal
+        ? AbortSignal.any([abortController.signal, options.signal])
+        : abortController.signal
+      return this.models.streamSimple(model, context, {
+        ...options,
+        apiKey: this.options.apiKey,
+        signal,
+      })
     }
     const agent = new Agent({
       initialState: {
@@ -264,40 +343,20 @@ export class PeriplusAgentHarness {
         model: this.model,
         thinkingLevel: "high",
         messages: prepared.messages,
-        tools:
-          request.mode === "auto"
-            ? createPiCoreTools({
-                execute: request.executeTool,
-                ...(this.options.webSearchEnabled
-                  ? {
-                      webSearch: {
-                        apiKey: this.options.apiKey,
-                        model: this.options.model,
-                        maxSearches: 3,
-                      },
-                    }
-                  : {}),
-              })
-            : [],
+        tools,
       },
       streamFn,
       getApiKey: () => this.options.apiKey,
       toolExecution: "sequential",
     })
+    activeAgent = agent
 
-    let cancelled = false
     let settled = false
     const settle = (result: PeriplusAgentHarnessResult) => {
       if (settled) return
       settled = true
       observer.onEvent({ type: "run_end", result })
     }
-    const timeout = setTimeout(() => {
-      cancelled = true
-      agent.abort()
-    }, this.options.timeoutMs)
-    timeout.unref?.()
-
     agent.subscribe((event) => {
       if (
         event.type === "message_update" &&
@@ -315,24 +374,31 @@ export class PeriplusAgentHarness {
           type: "model_end",
           requestId: `${request.runId}:model:${requestSequence - 1}`,
           output,
+          toolCalls: assistantToolCalls(event.message),
           usage: event.message.usage,
           stopReason: event.message.stopReason,
           endedAt: performance.now(),
         })
       }
       if (event.type === "tool_execution_start") {
+        const toolName =
+          canonicalPiCoreToolName(event.toolName) ?? event.toolName
         observer.onEvent({
           type: "tool_start",
           toolCallId: event.toolCallId,
-          toolName: event.toolName,
+          toolName,
+          providerToolName: event.toolName,
           args: event.args,
         })
       }
       if (event.type === "tool_execution_end") {
+        const toolName =
+          canonicalPiCoreToolName(event.toolName) ?? event.toolName
         observer.onEvent({
           type: "tool_end",
           toolCallId: event.toolCallId,
-          toolName: event.toolName,
+          toolName,
+          providerToolName: event.toolName,
           result: event.result,
           isError: event.isError,
         })
@@ -361,6 +427,7 @@ export class PeriplusAgentHarness {
     return {
       cancel: () => {
         cancelled = true
+        abortController.abort()
         agent.abort()
       },
     }
@@ -368,7 +435,8 @@ export class PeriplusAgentHarness {
 
   private async prepareContext(
     request: PeriplusAgentHarnessRequest,
-    observer: PeriplusAgentHarnessObserver
+    observer: PeriplusAgentHarnessObserver,
+    signal: AbortSignal
   ) {
     let checkpoint = request.checkpoint
     const checkpointIndex = checkpoint
@@ -420,7 +488,7 @@ export class PeriplusAgentHarness {
         this.models,
         this.model,
         DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-        undefined,
+        signal,
         undefined,
         checkpoint?.summary,
         "high"
@@ -430,6 +498,7 @@ export class PeriplusAgentHarness {
           type: "model_end",
           requestId,
           output: summary.error.message,
+          toolCalls: [],
           usage: EMPTY_USAGE,
           stopReason: "error",
           endedAt: performance.now(),
@@ -440,6 +509,7 @@ export class PeriplusAgentHarness {
         type: "model_end",
         requestId,
         output: summary.value.text,
+        toolCalls: [],
         usage: summary.value.usage,
         stopReason: "stop",
         endedAt: performance.now(),

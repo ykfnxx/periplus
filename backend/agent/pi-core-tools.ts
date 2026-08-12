@@ -42,13 +42,16 @@ type ToolExecutor = (
 ) => Promise<unknown>
 
 interface PeriplusToolDefinition {
-  name: string
+  canonicalName: string
   label: string
   description: string
   input: z.ZodType
   requestType: AgentToolRequest["type"]
   sequential?: boolean
 }
+
+const providerToolName = (canonicalName: string) =>
+  canonicalName.replaceAll(".", "__")
 
 export interface PiCoreToolOptions {
   execute: ToolExecutor
@@ -72,7 +75,7 @@ function parameters(input: z.ZodType): TSchema {
 
 const definitions: PeriplusToolDefinition[] = [
   {
-    name: "periplus.workspace.get_context",
+    canonicalName: "periplus.workspace.get_context",
     label: "Get planning context",
     description:
       "Read the current Workspace revision and City cards needed to plan.",
@@ -80,7 +83,7 @@ const definitions: PeriplusToolDefinition[] = [
     requestType: "workspace.get_context",
   },
   {
-    name: "periplus.journey.project",
+    canonicalName: "periplus.journey.project",
     label: "Read ordered card chain",
     description:
       "Read the authoritative PLANNER order for Root or one City scope.",
@@ -88,7 +91,7 @@ const definitions: PeriplusToolDefinition[] = [
     requestType: "journey.project",
   },
   {
-    name: "periplus.journey.validate_current",
+    canonicalName: "periplus.journey.validate_current",
     label: "Validate committed journey",
     description:
       "Validate the committed Journey at the exact revision returned by draft commit.",
@@ -96,7 +99,7 @@ const definitions: PeriplusToolDefinition[] = [
     requestType: "journey.validate_current",
   },
   {
-    name: "periplus.draft.open",
+    canonicalName: "periplus.draft.open",
     label: "Open Agent draft",
     description: "Open the single non-persistent draft for this Agent run.",
     input: draftOpenInputSchema,
@@ -104,14 +107,14 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.get",
+    canonicalName: "periplus.draft.get",
     label: "Get Agent draft",
     description: "Recover the current run-scoped draft summary.",
     input: draftGetInputSchema,
     requestType: "draft.get",
   },
   {
-    name: "periplus.draft.add_city_card",
+    canonicalName: "periplus.draft.add_city_card",
     label: "Add City card",
     description: "Add one CITY card to the Root chain.",
     input: draftAddCityCardInputSchema,
@@ -119,7 +122,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.add_place_card",
+    canonicalName: "periplus.draft.add_place_card",
     label: "Add place card",
     description:
       "Add one VISIT, MEAL, or ACTIVITY card from a resolved place handle.",
@@ -128,7 +131,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.add_hotel_stay_card",
+    canonicalName: "periplus.draft.add_hotel_stay_card",
     label: "Add recommended hotel stay",
     description:
       "Add one STAY card from the first hotel-search selection handle.",
@@ -137,7 +140,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.add_place_stay_card",
+    canonicalName: "periplus.draft.add_place_stay_card",
     label: "Add named hotel stay",
     description: "Add one STAY card from a resolved place handle.",
     input: draftAddPlaceStayCardInputSchema,
@@ -145,7 +148,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.add_transit_card",
+    canonicalName: "periplus.draft.add_transit_card",
     label: "Add Transit card",
     description:
       "Insert one TRANSIT card between adjacent cards without fetching a route.",
@@ -154,7 +157,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.update_city_card",
+    canonicalName: "periplus.draft.update_city_card",
     label: "Update City card",
     description: "Update one CITY card's display fields or time zone.",
     input: draftUpdateCityCardInputSchema,
@@ -162,7 +165,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.update_schedule",
+    canonicalName: "periplus.draft.update_schedule",
     label: "Update card schedule",
     description: "Update planned start or end time on one executable card.",
     input: draftUpdateScheduleInputSchema,
@@ -170,7 +173,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.change_place",
+    canonicalName: "periplus.draft.change_place",
     label: "Change card place",
     description:
       "Replace a location card's place binding from a resolved handle.",
@@ -179,7 +182,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.update_transit_card",
+    canonicalName: "periplus.draft.update_transit_card",
     label: "Update Transit card",
     description:
       "Update only schedule and route-request fields on one TRANSIT card.",
@@ -188,7 +191,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.move_card",
+    canonicalName: "periplus.draft.move_card",
     label: "Move card",
     description: "Move one card while the backend maintains linear MAIN links.",
     input: draftMoveCardInputSchema,
@@ -196,7 +199,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.remove_card",
+    canonicalName: "periplus.draft.remove_card",
     label: "Remove card",
     description:
       "Remove one card; non-empty CITY cards require a child policy.",
@@ -205,7 +208,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.connect_cards",
+    canonicalName: "periplus.draft.connect_cards",
     label: "Repair missing card connection",
     description:
       "Connect cards only when the latest validator issue allows it.",
@@ -214,7 +217,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.disconnect_cards",
+    canonicalName: "periplus.draft.disconnect_cards",
     label: "Repair invalid card connection",
     description:
       "Disconnect cards only when the latest validator issue allows it.",
@@ -223,7 +226,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.validate",
+    canonicalName: "periplus.draft.validate",
     label: "Validate Agent draft",
     description:
       "Purely validate the draft; at most five non-Transit repair validations are allowed.",
@@ -232,7 +235,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.prepare_transit",
+    canonicalName: "periplus.draft.prepare_transit",
     label: "Prepare Transit route",
     description:
       "Fetch and select one validator-approved Transit route without using a repair attempt.",
@@ -241,7 +244,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.draft.commit",
+    canonicalName: "periplus.draft.commit",
     label: "Commit validated Agent draft",
     description:
       "Atomically commit one VALID draft as a single Workspace revision.",
@@ -250,7 +253,7 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    name: "periplus.place.search",
+    canonicalName: "periplus.place.search",
     label: "Search places",
     description:
       "Discover place names; a selected result must still be resolved.",
@@ -258,7 +261,7 @@ const definitions: PeriplusToolDefinition[] = [
     requestType: "place.search",
   },
   {
-    name: "periplus.place.resolve",
+    canonicalName: "periplus.place.resolve",
     label: "Resolve place",
     description:
       "Resolve one place phrase into a run-scoped evidence handle or ambiguity.",
@@ -266,7 +269,7 @@ const definitions: PeriplusToolDefinition[] = [
     requestType: "place.resolve",
   },
   {
-    name: "periplus.place.fallback",
+    canonicalName: "periplus.place.fallback",
     label: "Register fallback place",
     description:
       "Register a WebSearch-backed unverified place after place.resolve permits fallback.",
@@ -274,7 +277,7 @@ const definitions: PeriplusToolDefinition[] = [
     requestType: "place.fallback",
   },
   {
-    name: "periplus.place.enrich",
+    canonicalName: "periplus.place.enrich",
     label: "Enrich resolved place",
     description:
       "Optionally verify available images for a resolved place handle.",
@@ -282,7 +285,7 @@ const definitions: PeriplusToolDefinition[] = [
     requestType: "place.enrich",
   },
   {
-    name: "periplus.hotel.search",
+    canonicalName: "periplus.hotel.search",
     label: "Search hotel recommendations",
     description:
       "Search hotel cards and return the first valid run-scoped selection handle.",
@@ -342,7 +345,7 @@ function webSearchTool(options: NonNullable<PiCoreToolOptions["webSearch"]>) {
 
 export function createPiCoreTools(options: PiCoreToolOptions): AgentTool[] {
   const tools: AgentTool[] = definitions.map((definition) => ({
-    name: definition.name,
+    name: providerToolName(definition.canonicalName),
     label: definition.label,
     description: definition.description,
     parameters: parameters(definition.input),
@@ -362,4 +365,10 @@ export function createPiCoreTools(options: PiCoreToolOptions): AgentTool[] {
   }))
   if (options.webSearch) tools.push(webSearchTool(options.webSearch))
   return tools
+}
+
+export function canonicalPiCoreToolName(providerName: string) {
+  return definitions.find(
+    (definition) => providerToolName(definition.canonicalName) === providerName
+  )?.canonicalName
 }
