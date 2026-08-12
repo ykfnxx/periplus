@@ -19,7 +19,6 @@ export type CoordinateSystem = (typeof COORDINATE_SYSTEMS)[number]
 
 export type PlaceProvider =
   | "periplus"
-  | "agent_fallback"
   | "amap"
   | "fsq"
   | "wikidata"
@@ -160,7 +159,6 @@ export interface ProviderWarning {
     | "provider_error"
     | "low_confidence"
     | "IMAGE_UNAVAILABLE"
-    | "UNVERIFIED_FALLBACK"
   message: string
   image?: PlaceImage
   retryable?: boolean
@@ -193,17 +191,8 @@ export type PlaceResolveResult =
       providerAttempts?: number
     }
   | {
-      status: "ambiguous"
-      candidates: PlaceSearchResult[]
-      question: string
-      warnings: ProviderWarning[]
-      providerAttempts?: number
-    }
-  | {
       status: "not_found"
-      fallbackQuery: PlaceSearchInput
       reason: string
-      fallbackAllowed: boolean
       warnings: ProviderWarning[]
       providerAttempts?: number
     }

@@ -1,11 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
-import type { z } from "zod"
 import type { AuthContext } from "@/modules/auth/server/context"
 import type { HotelCandidate, HotelProviderWarning } from "@/lib/hotels/types"
-import { normalizePlaceName } from "@/lib/places/normalize"
 import type {
-  CoordinateSystem,
-  PlaceCategory,
   PlaceImage,
   PlaceResolveResult,
   PlaceSearchResult,
@@ -25,20 +21,135 @@ import {
   type JourneyCommand,
   type PreparedAgentDraft,
 } from "@/modules/workspace/server/workspace-command-service"
-import {
-  MAX_AGENT_DRAFT_REPAIRS,
-  draftMutationRequestSchemas,
-  type DraftMutationToolName,
-} from "@/backend/mcp/schemas/draft"
 import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
+import { endpointToGcj02 } from "@/lib/journeys/coordinates"
+import type { ParsedAgentToolRequest } from "./tool-contract"
 
-type DraftState = "BUILDING" | "INVALID" | "VALID" | "COMMITTED"
+type DraftState = "NO_DRAFT" | "BUILDING" | "INVALID" | "VALID" | "COMMITTED"
 
-export type DraftMutationRequest = {
-  [TName in DraftMutationToolName]: { type: TName } & z.infer<
-    (typeof draftMutationRequestSchemas)[TName]
-  >
-}[DraftMutationToolName]
+export const MAX_AGENT_DRAFT_REPAIRS = 5
+
+type CardPosition =
+  | {
+      placement: "START" | "END"
+      scopeCityCardId: string | null
+    }
+  | {
+      placement: "BEFORE" | "AFTER"
+      anchorCardId: string
+    }
+
+type DraftMutationMeta = {
+  draftId: string
+  operationId: string
+  issueId?: string
+}
+
+export type DraftMutationRequest = DraftMutationMeta &
+  (
+    | {
+        type: "draft.add_city_card"
+        card: {
+          cardId: string
+          title: string
+          description?: string
+          timeZone: string
+          placeId?: string
+          lat?: number
+          lng?: number
+          coordinateSystem?: "WGS84" | "GCJ02" | "BD09"
+        }
+        position: CardPosition
+      }
+    | {
+        type: "draft.add_place_card"
+        cityCardId: string
+        card:
+          | {
+              cardId: string
+              type: "VISIT"
+              description?: string
+              plannedStartAt: string
+              plannedEndAt?: string
+              placeResolutionId: string
+              plannedDurationMinutes?: number
+              includeAvailableCoverImage: boolean
+            }
+          | {
+              cardId: string
+              type: "MEAL"
+              description?: string
+              plannedStartAt: string
+              plannedEndAt?: string
+              placeResolutionId: string
+              plannedDurationMinutes?: number
+              cuisine?: string
+            }
+          | {
+              cardId: string
+              type: "ACTIVITY"
+              description?: string
+              plannedStartAt: string
+              plannedEndAt?: string
+              placeResolutionId: string
+              plannedDurationMinutes?: number
+              bookingReference?: string
+            }
+        position: CardPosition
+      }
+    | {
+        type: "draft.add_hotel_stay_card"
+        cityCardId: string
+        card: {
+          cardId: string
+          description?: string
+          plannedStartAt: string
+          plannedEndAt?: string
+          hotelSelectionId: string
+          checkInNote?: string
+        }
+        position: CardPosition
+      }
+    | {
+        type: "draft.add_transit_card"
+        card: {
+          cardId: string
+          fromCardId: string
+          toCardId: string
+          plannedStartAt: string
+          plannedEndAt?: string
+          title?: string
+          description?: string
+          transportMode: Extract<
+            TargetJourneyEvent,
+            { type: "TRANSIT" }
+          >["detail"]["transportMode"]
+          requestMode?: Extract<
+            TargetJourneyEvent,
+            { type: "TRANSIT" }
+          >["detail"]["requestMode"]
+          preference?: Extract<
+            TargetJourneyEvent,
+            { type: "TRANSIT" }
+          >["detail"]["preference"]
+          plannedDepartAt?: string
+          notes?: string
+        }
+      }
+    | {
+        type: "draft.move_card"
+        cardId: string
+        position: CardPosition
+      }
+    | {
+        type: "draft.remove_card"
+        cardId: string
+        cityChildrenPolicy?: "REMOVE_ALL" | "MOVE_TO_CITY"
+        destinationCityCardId?: string
+      }
+  )
+
+type DraftMutationToolName = DraftMutationRequest["type"]
 
 export type DraftWarning = {
   provider?: string
@@ -52,7 +163,7 @@ export type DraftIssue = {
   code: string
   severity: "ERROR" | "WARNING"
   message: string
-  repairability: "AGENT" | "USER" | "NONE"
+  repairability: "AGENT" | "NONE"
   scopeCityCardId?: string | null
   cardIds: string[]
   linkIds: string[]
@@ -69,35 +180,18 @@ export type DraftValidation = {
 export type DraftMutationResult = {
   draftId: string
   acceptedOperationId: string
+  draftSequence: number
   changedCardIds: string[]
+  touchedScopeCityCardIds: Array<string | null>
   draftState: Exclude<DraftState, "COMMITTED">
   warnings: DraftWarning[]
   canonicalTitle?: string
-  linkId?: string
 }
 
 type PlaceEvidence = {
   place: PlaceSearchResult
   verification: PlaceVerification
   warnings: ProviderWarning[]
-}
-
-type PlaceFallbackPermit = {
-  text: string
-  city?: string
-  warnings: ProviderWarning[]
-}
-
-interface PlaceFallbackInput {
-  failedRequestId: string
-  name: string
-  city: string
-  address?: string
-  category: PlaceCategory
-  lat: number
-  lng: number
-  coordinateSystem: CoordinateSystem
-  sourceUrls: string[]
 }
 
 export type HotelSelection = {
@@ -120,6 +214,10 @@ export type HotelSelection = {
     }
   }
   warnings: HotelProviderWarning[]
+  schedule: {
+    plannedStartAt: string
+    plannedEndAt: string
+  }
 }
 
 type StoredOperation<T> = {
@@ -127,7 +225,30 @@ type StoredOperation<T> = {
   result: T
 }
 
+type TransitPreparationResult = {
+  draftId: string
+  draftSequence: number
+  transitCardId: string
+  routeStatus: "READY" | "FAILED"
+  selectedPlanSummary?: {
+    provider: string
+    durationMinutes: number
+    distanceKm: number
+  }
+  validation: DraftValidation
+  warnings: DraftWarning[]
+}
+
 const LOCATION_TYPES = new Set(["VISIT", "STAY", "MEAL", "ACTIVITY"])
+
+const CANONICAL_MUTATION_TOOL: Record<DraftMutationToolName, string> = {
+  "draft.add_city_card": "periplus.city.add",
+  "draft.add_place_card": "periplus.placeEvent.add",
+  "draft.add_hotel_stay_card": "periplus.stay.add",
+  "draft.add_transit_card": "periplus.transit.add",
+  "draft.move_card": "periplus.card.move",
+  "draft.remove_card": "periplus.card.remove",
+}
 
 function isLocationEvent(
   event: TargetJourneyEvent
@@ -160,6 +281,32 @@ function activeLinks(graph: TargetJourneyGraphSnapshot) {
   return graph.links.filter((link) => activeAtRevision(link, graph.revision))
 }
 
+function localDate(value: string, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value))
+  const field = (type: "year" | "month" | "day") =>
+    parts.find((part) => part.type === type)?.value
+  return `${field("year")}-${field("month")}-${field("day")}`
+}
+
+function localDateTime(date: string, hour: number, timeZone: string) {
+  const offsetPart = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "longOffset",
+  })
+    .formatToParts(new Date(`${date}T12:00:00Z`))
+    .find((part) => part.type === "timeZoneName")?.value
+  const match = offsetPart?.match(/^GMT([+-])(\d{2}):(\d{2})$/)
+  if (!match) {
+    throw new WorkspaceInputError(`Unsupported CITY timeZone ${timeZone}`)
+  }
+  return `${date}T${String(hour).padStart(2, "0")}:00:00${match[1]}${match[2]}:${match[3]}`
+}
+
 function requireEvent(graph: TargetJourneyGraphSnapshot, cardId: string) {
   const event = graph.events.find(
     (candidate) =>
@@ -170,11 +317,7 @@ function requireEvent(graph: TargetJourneyGraphSnapshot, cardId: string) {
   return event
 }
 
-function canonicalPosition(
-  position: z.infer<
-    (typeof draftMutationRequestSchemas)["draft.move_card"]
-  >["position"]
-) {
+function canonicalPosition(position: CardPosition) {
   if ("scopeCityCardId" in position) {
     return {
       placement: position.placement,
@@ -193,9 +336,7 @@ function eventScope(graph: TargetJourneyGraphSnapshot, cardId: string) {
 
 function assertPositionScope(
   graph: TargetJourneyGraphSnapshot,
-  position: z.infer<
-    (typeof draftMutationRequestSchemas)["draft.move_card"]
-  >["position"],
+  position: CardPosition,
   expectedScope: string | null
 ) {
   const scope =
@@ -221,6 +362,19 @@ function targetCoordinateSystem(
   coordinateSystem: PlaceVerification["ref"]["coordinateSystem"]
 ): "WGS84" | "GCJ02" | "BD09" {
   return coordinateSystem === "BD09LL" ? "BD09" : coordinateSystem
+}
+
+function transitRequestMode(
+  transportMode: Extract<
+    TargetJourneyEvent,
+    { type: "TRANSIT" }
+  >["detail"]["transportMode"]
+) {
+  if (transportMode === "WALK") return "WALK" as const
+  if (["CAR", "TAXI", "RENTAL"].includes(transportMode)) {
+    return "DRIVE" as const
+  }
+  return "TRANSIT" as const
 }
 
 function placeDetail(
@@ -250,37 +404,6 @@ function placeDetail(
           },
         }
       : {}),
-  }
-}
-
-function placeDetailPatch(
-  evidence: PlaceEvidence,
-  cardType: "VISIT" | "STAY" | "MEAL" | "ACTIVITY",
-  coverImage?: PlaceImage
-) {
-  const ref = evidence.verification.ref
-  return {
-    plannedPlaceId: evidence.place.placeId ?? null,
-    plannedLat: ref.lat,
-    plannedLng: ref.lng,
-    coordinateSystem: targetCoordinateSystem(ref.coordinateSystem),
-    coordinateProvider: ref.provider,
-    providerPlaceId: ref.providerId ?? null,
-    ...(cardType === "VISIT"
-      ? {
-          providerCoverImage:
-            coverImage?.provider === "amap"
-              ? {
-                  provider: "amap" as const,
-                  url: coverImage.url,
-                  fetchedAt: coverImage.fetchedAt,
-                  ...(coverImage.width ? { width: coverImage.width } : {}),
-                  ...(coverImage.height ? { height: coverImage.height } : {}),
-                }
-              : null,
-        }
-      : {}),
-    ...(cardType === "STAY" ? { hotelOffer: null } : {}),
   }
 }
 
@@ -343,58 +466,40 @@ function allowedToolsForIssue(
     case "TRANSIT_ROUTE_NOT_READY":
       return ["periplus.draft.prepare_transit"]
     case "TRANSIT_ENDPOINT_MISMATCH":
-      return [
-        "periplus.draft.move_card",
-        "periplus.draft.remove_card",
-        ...(issue.eventIds.length > 1
-          ? ["periplus.draft.connect_cards", "periplus.draft.disconnect_cards"]
-          : []),
-      ]
+      return ["periplus.card.move", "periplus.card.remove"]
     case "TIME_ORDER_INVALID":
-      return ["periplus.draft.update_schedule", "periplus.draft.move_card"]
+      return ["periplus.card.update", "periplus.card.move"]
     case "PLANNED_START_MISSING":
-      return ["periplus.draft.update_schedule"]
+      return ["periplus.card.update"]
     case "CITY_TIMEZONE_INVALID":
-      return ["periplus.draft.update_city_card"]
+      return []
     case "CITY_ROUTE_EMPTY":
-      return [
-        "periplus.draft.add_place_card",
-        "periplus.draft.add_hotel_stay_card",
-        "periplus.draft.add_place_stay_card",
-      ]
+      return ["periplus.placeEvent.add", "periplus.stay.add"]
     case "MISSING_TRANSIT_BETWEEN":
-      return ["periplus.draft.add_transit_card"]
+      return ["periplus.transit.add"]
     case "CROSS_CITY_CONNECTION":
-      return ["periplus.draft.disconnect_cards"]
+      return ["periplus.card.move", "periplus.card.remove"]
     case "PROJECTION_INVALID":
-      return ["periplus.draft.connect_cards", "periplus.draft.disconnect_cards"]
+      return ["periplus.card.move", "periplus.card.remove"]
     case "ROOT_EVENT_TYPE_INVALID":
     case "CITY_EVENT_TYPE_INVALID":
-      return ["periplus.draft.move_card", "periplus.draft.remove_card"]
+      return ["periplus.card.move", "periplus.card.remove"]
     case "ROOT_ROUTE_DISCONNECTED":
-      if (!firstEvent) return ["periplus.draft.add_city_card"]
+      if (!firstEvent) return ["periplus.city.add"]
       if (firstEvent.type === "TRANSIT") {
         return [
-          "periplus.draft.add_city_card",
-          "periplus.draft.move_card",
-          "periplus.draft.remove_card",
+          "periplus.city.add",
+          "periplus.card.move",
+          "periplus.card.remove",
         ]
       }
       return [
-        "periplus.draft.add_transit_card",
-        "periplus.draft.move_card",
-        "periplus.draft.remove_card",
+        "periplus.transit.add",
+        "periplus.card.move",
+        "periplus.card.remove",
       ]
-    case "PLACE_UNVERIFIED": {
-      const tools = ["periplus.place.resolve", "periplus.draft.change_place"]
-      if (issue.allowedOperations.includes("place.enrich")) {
-        tools.splice(1, 0, "periplus.place.enrich")
-      }
-      if (issue.allowedOperations.includes("journey.move_event")) {
-        tools.push("periplus.draft.move_card")
-      }
-      return tools
-    }
+    case "PLACE_UNVERIFIED":
+      return []
     case "IMAGE_UNAVAILABLE":
     default:
       return []
@@ -443,10 +548,10 @@ function externalIssue(
     issue.severity === "WARNING"
       ? "NONE"
       : allowedTools.length === 0
-        ? "USER"
+        ? "NONE"
         : issue.code !== "TRANSIT_ROUTE_NOT_READY" &&
             repairsUsed >= MAX_AGENT_DRAFT_REPAIRS
-          ? "USER"
+          ? "NONE"
           : "AGENT"
   return {
     issueId: issueId(draftId, issue, index),
@@ -489,6 +594,37 @@ function changedCards(
         JSON.stringify(beforeById.get(id)) !== JSON.stringify(afterById.get(id))
     )
     .sort()
+}
+
+function compactCard(event: TargetJourneyEvent) {
+  return {
+    cardId: event.id,
+    type:
+      event.type === "SECTION" && event.detail.kind === "CITY"
+        ? ("CITY" as const)
+        : event.type,
+    title: event.title,
+    scopeCityCardId: event.parentSectionEventId,
+    ...(event.type !== "SECTION" && event.type !== "NOTE"
+      ? {
+          ...(event.plannedStartAt
+            ? { plannedStartAt: event.plannedStartAt }
+            : {}),
+          ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
+        }
+      : {}),
+  }
+}
+
+function scopeOrder(
+  graph: TargetJourneyGraphSnapshot,
+  scopeCityCardId: string | null
+) {
+  return resolveJourneyProjection({
+    graph,
+    scopeSectionEventId: scopeCityCardId,
+    mode: "PLANNER",
+  }).events.map((entry) => entry.eventId)
 }
 
 function updateChangesEvent(
@@ -628,7 +764,19 @@ function repairCommandTargetsIssue(
     return false
   }
   if (issue.code === "PROJECTION_INVALID") {
-    const scope = issue.cityEventId ?? null
+    const disconnectedScope = issue.message.match(
+      /^active scope (.+) is disconnected at Events /
+    )?.[1]
+    const scope =
+      disconnectedScope === "<root>"
+        ? null
+        : (disconnectedScope ?? issue.cityEventId ?? null)
+    if (
+      command.name === "journey.move_event" ||
+      command.name === "journey.retire_event"
+    ) {
+      return isScopeEvent(draft, command.payload.eventId, scope)
+    }
     if (command.name === "journey.add_link") {
       return (
         isScopeEvent(draft, command.payload.link.fromEventId, scope) &&
@@ -693,18 +841,16 @@ function repairCommandTargetsIssue(
 export class AgentDraftSession {
   private draftId: string | null = null
   private openKey: string | null = null
-  private state: DraftState = "BUILDING"
+  private state: DraftState = "NO_DRAFT"
   private candidate: AgentDraftCandidate | null = null
   private prepared: PreparedAgentDraft | null = null
   private validation: DraftValidation | null = null
   private repairsUsed = 0
+  private draftSequence = 0
   private mutatedSinceValidation = false
   private readonly placeEvidence = new Map<string, PlaceEvidence>()
-  private readonly placeFallbackPermits = new Map<string, PlaceFallbackPermit>()
   private readonly hotelSelections = new Map<string, HotelSelection>()
   private readonly usedHotelSelectionIds = new Set<string>()
-  private awaitingUserReason: string | null = null
-  private pendingPlaceFallbackRequestId: string | null = null
   private readonly operations = new Map<
     string,
     StoredOperation<DraftMutationResult>
@@ -715,12 +861,13 @@ export class AgentDraftSession {
   >()
   private readonly transitOperations = new Map<
     string,
-    StoredOperation<unknown>
+    StoredOperation<TransitPreparationResult>
   >()
   private commitOperation:
     | StoredOperation<{
         workspaceId: string
         newWorkspaceRevision: number
+        projectionHash: string
         changedCardIds: string[]
         replayed: boolean
       }>
@@ -731,7 +878,8 @@ export class AgentDraftSession {
     private readonly workspaceId: string,
     private readonly runId: string,
     private readonly context: AuthContext,
-    private readonly commands: WorkspaceCommandService
+    private readonly commands: WorkspaceCommandService,
+    private readonly baselineRevision: number
   ) {}
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -744,23 +892,42 @@ export class AgentDraftSession {
   }
 
   assertToolAllowed(toolType: string) {
-    const readOnly =
-      toolType === "workspace.get_context" || toolType === "journey.project"
-    if (this.awaitingUserReason) {
-      if (readOnly) return
-      throw new WorkspaceInputError(this.awaitingUserReason)
+    if (this.state === "NO_DRAFT" && toolType !== "draft.open") {
+      throw new WorkspaceInputError("NO_DRAFT: call draft.open first")
     }
-    if (!this.pendingPlaceFallbackRequestId) return
-    if (readOnly || toolType === "place.fallback") {
+    if (toolType === "draft.open") {
+      if (this.state === "COMMITTED") {
+        throw new WorkspaceInputError("COMMITTED draft accepts no more tools")
+      }
       return
     }
-    throw new WorkspaceInputError(
-      `place.resolve ${this.pendingPlaceFallbackRequestId} exhausted its provider; register place.fallback or ask the user before continuing`
-    )
-  }
-
-  requireUserInput(reason: string) {
-    this.awaitingUserReason = reason
+    if (this.state === "COMMITTED") {
+      throw new WorkspaceInputError("COMMITTED draft accepts no more tools")
+    }
+    if (
+      this.state === "VALID" &&
+      toolType !== "draft.commit" &&
+      toolType !== "draft.project"
+    ) {
+      throw new WorkspaceInputError(
+        "VALID draft accepts only project or commit"
+      )
+    }
+    if (this.state === "INVALID") {
+      if (toolType === "draft.project" || toolType === "draft.validate") return
+      const canonical = `periplus.${toolType}`
+      if (
+        toolType === "draft.prepare_transit" ||
+        this.validation?.issues.some((issue) =>
+          issue.allowedTools.includes(canonical)
+        )
+      ) {
+        return
+      }
+      throw new WorkspaceInputError(
+        `${canonical} is not allowed by the latest INVALID draft issues`
+      )
+    }
   }
 
   registerResolvedPlace(
@@ -769,122 +936,19 @@ export class AgentDraftSession {
     const placeResolutionId = randomUUID()
     this.placeEvidence.set(placeResolutionId, {
       place: result.place,
-      verification: { ref: result.placeRef },
+      verification: {
+        ref: result.placeRef,
+        ...(result.place.images?.find((image) => image.provider === "amap")
+          ? {
+              coverImage: result.place.images.find(
+                (image) => image.provider === "amap"
+              ),
+            }
+          : {}),
+      },
       warnings: result.warnings,
     })
     return placeResolutionId
-  }
-
-  allowPlaceFallback(
-    failedRequestId: string,
-    input: { text: string; city?: string },
-    warnings: ProviderWarning[]
-  ) {
-    this.placeFallbackPermits.set(failedRequestId, {
-      text: input.text,
-      city: input.city,
-      warnings,
-    })
-    this.pendingPlaceFallbackRequestId = failedRequestId
-  }
-
-  registerFallbackPlace(input: PlaceFallbackInput) {
-    const permit = this.placeFallbackPermits.get(input.failedRequestId)
-    if (!permit) {
-      throw new WorkspaceInputError(
-        "place fallback requires a prior exhausted place.resolve request in the same Agent run"
-      )
-    }
-    const permitCity = permit.city
-      ? normalizePlaceName(permit.city).replace(/市$/, "")
-      : undefined
-    const inputCity = normalizePlaceName(input.city).replace(/市$/, "")
-    if (
-      permitCity &&
-      !inputCity.includes(permitCity) &&
-      !permitCity.includes(inputCity)
-    ) {
-      throw new WorkspaceInputError(
-        "place fallback city must match the failed place.resolve request"
-      )
-    }
-    const permitName = normalizePlaceName(permit.text)
-    const fallbackName = normalizePlaceName(input.name)
-    if (
-      !fallbackName.includes(permitName) &&
-      !permitName.includes(fallbackName)
-    ) {
-      throw new WorkspaceInputError(
-        "place fallback name must match the failed place.resolve request"
-      )
-    }
-    this.placeFallbackPermits.delete(input.failedRequestId)
-    if (this.pendingPlaceFallbackRequestId === input.failedRequestId) {
-      this.pendingPlaceFallbackRequestId = null
-    }
-
-    const placeResolutionId = randomUUID()
-    const candidateId = `agent-fallback-${randomUUID()}`
-    const normalizedName = fallbackName
-    const coordinate = {
-      provider: "agent_fallback" as const,
-      coordinateSystem: input.coordinateSystem,
-      lat: input.lat,
-      lng: input.lng,
-      accuracy: "approximate" as const,
-      source: "web_search" as const,
-    }
-    const place: PlaceSearchResult = {
-      id: candidateId,
-      name: input.name,
-      normalizedName,
-      aliases: [],
-      category: input.category,
-      address: input.address,
-      city: input.city,
-      coordinates: [coordinate],
-      bestCoordinate: coordinate,
-      sources: [{ provider: "agent_fallback", confidence: 0.45 }],
-      confidence: 0.45,
-      quality: "candidate",
-      canAddToJourney: true,
-      needsUserConfirmation: false,
-      reason: `高德查询失败后由 Agent 根据 WebSearch 补全“${permit.text}”`,
-    }
-    const warning: ProviderWarning = {
-      provider: "agent_fallback",
-      code: "UNVERIFIED_FALLBACK",
-      message: "该地点由 Agent 根据 WebSearch 补全，尚未通过地点 provider 核验",
-      retryable: false,
-      exhausted: true,
-    }
-    this.placeEvidence.set(placeResolutionId, {
-      place,
-      verification: {
-        ref: {
-          provider: "agent_fallback",
-          canonicalName: input.name,
-          city: input.city,
-          address: input.address,
-          lat: input.lat,
-          lng: input.lng,
-          coordinateSystem: input.coordinateSystem,
-          confidence: 0.45,
-          candidates: [
-            {
-              id: candidateId,
-              name: input.name,
-              city: input.city,
-              confidence: 0.45,
-            },
-          ],
-        },
-        verificationStatus: "UNVERIFIED",
-        sourceUrls: input.sourceUrls,
-      },
-      warnings: [...permit.warnings, warning],
-    })
-    return { placeResolutionId, place, warning }
   }
 
   getPlaceEvidence(placeResolutionId: string) {
@@ -907,7 +971,8 @@ export class AgentDraftSession {
 
   registerHotelSelection(
     candidate: HotelCandidate,
-    warnings: HotelProviderWarning[]
+    warnings: HotelProviderWarning[],
+    schedule: HotelSelection["schedule"]
   ) {
     const hotelSelectionId = randomUUID()
     this.hotelSelections.set(hotelSelectionId, {
@@ -933,6 +998,7 @@ export class AgentDraftSession {
       },
       stayDetail: selectedHotelStay(candidate),
       warnings,
+      schedule,
     })
     return hotelSelectionId
   }
@@ -944,6 +1010,176 @@ export class AgentDraftSession {
       )
     }
     return this.candidate
+  }
+
+  currentGraph() {
+    if (!this.candidate) {
+      throw new WorkspaceInputError("NO_DRAFT: call draft.open first")
+    }
+    return this.candidate.after
+  }
+
+  hotelSearchContext(
+    cityCardId: string,
+    preference: string | undefined,
+    adultCount: number
+  ) {
+    const graph = this.currentGraph()
+    const city = assertCity(graph, cityCardId)
+    const byId = new Map(graph.events.map((event) => [event.id, event]))
+    const events = resolveJourneyProjection({
+      graph,
+      scopeSectionEventId: cityCardId,
+      mode: "PLANNER",
+    }).events.flatMap((entry) => {
+      const event = byId.get(entry.eventId)
+      return event ? [event] : []
+    })
+    const dates = Array.from(
+      new Set(
+        events.flatMap((event) =>
+          event.type !== "SECTION" &&
+          event.type !== "NOTE" &&
+          event.plannedStartAt
+            ? [localDate(event.plannedStartAt, city.detail.timeZone)]
+            : []
+        )
+      )
+    ).sort()
+    if (dates.length < 2) {
+      throw new WorkspaceInputError(
+        "SAME_DAY_CITY_HAS_NO_STAY: hotel search is not allowed"
+      )
+    }
+    const firstDate = dates[0]!
+    const lastDate = dates.at(-1)!
+    const stayNights = Math.max(
+      1,
+      Math.round(
+        (Date.parse(`${lastDate}T00:00:00Z`) -
+          Date.parse(`${firstDate}T00:00:00Z`)) /
+          86_400_000
+      )
+    )
+    const locationEvents = events.flatMap((event) =>
+      isLocationEvent(event) && event.plannedStartAt
+        ? [
+            {
+              event,
+              date: localDate(event.plannedStartAt, city.detail.timeZone),
+            },
+          ]
+        : []
+    )
+    const previous = locationEvents
+      .filter((entry) => entry.date === firstDate)
+      .at(-1)?.event
+    const next = locationEvents.find((entry) => entry.date > firstDate)?.event
+    const checkout = locationEvents.find(
+      (entry) => entry.date === lastDate
+    )?.event
+    const anchors = [previous, next].flatMap((event) =>
+      event
+        ? [
+            endpointToGcj02({
+              name: event.title,
+              lat: event.detail.plannedLat,
+              lng: event.detail.plannedLng,
+              coordinateSystem: event.detail.coordinateSystem,
+            }),
+          ]
+        : []
+    )
+    const plannedStartAt =
+      previous?.plannedEndAt ??
+      previous?.plannedStartAt ??
+      localDateTime(firstDate, 15, city.detail.timeZone)
+    const plannedEndAt =
+      checkout?.plannedStartAt ??
+      localDateTime(lastDate, 11, city.detail.timeZone)
+    return {
+      providerInput: {
+        originQuery: preference ?? city.title,
+        place: preference ?? city.title,
+        placeType: "城市" as const,
+        checkInDate: firstDate,
+        stayNights,
+        adultCount,
+        size: 10,
+      },
+      schedule: {
+        plannedStartAt,
+        plannedEndAt,
+      },
+      anchors,
+      cityName: city.title,
+    }
+  }
+
+  currentState() {
+    return this.state
+  }
+
+  private currentDraftId() {
+    if (!this.draftId) {
+      throw new WorkspaceInputError("NO_DRAFT: call draft.open first")
+    }
+    return this.draftId
+  }
+
+  private operationId(toolCallId: string, suffix = "operation") {
+    return `${suffix}-${createHash("sha256")
+      .update(`${this.runId}:${toolCallId}:${suffix}`)
+      .digest("hex")
+      .slice(0, 24)}`
+  }
+
+  private cardId(toolCallId: string) {
+    return `card-${createHash("sha256")
+      .update(`${this.runId}:${toolCallId}:card`)
+      .digest("hex")
+      .slice(0, 24)}`
+  }
+
+  async openCurrent(toolCallId: string) {
+    const opened = await this.open({
+      expectedWorkspaceRevision: this.baselineRevision,
+      idempotencyKey: this.operationId(toolCallId, "draft-open"),
+    })
+    return {
+      draftState: opened.draftState,
+      repairsUsed: opened.repairsUsed,
+      repairsRemaining: opened.repairsRemaining,
+    }
+  }
+
+  private visibleMutation(operation: string, result: DraftMutationResult) {
+    const {
+      draftId: _draftId,
+      acceptedOperationId: _operationId,
+      touchedScopeCityCardIds,
+      ...visible
+    } = result
+    const graph = this.currentGraph()
+    const affectedCards = visible.changedCardIds.flatMap((cardId) => {
+      const event = graph.events.find(
+        (candidate) =>
+          candidate.id === cardId && activeAtRevision(candidate, graph.revision)
+      )
+      return event ? [compactCard(event)] : []
+    })
+    const touchedScopes = touchedScopeCityCardIds.map((scopeCityCardId) => ({
+      scopeCityCardId,
+      orderedCardIds: scopeOrder(graph, scopeCityCardId),
+    }))
+    return { operation, ...visible, affectedCards, touchedScopes }
+  }
+
+  private async modelMutation(
+    operation: string,
+    promise: Promise<DraftMutationResult>
+  ) {
+    return this.visibleMutation(operation, await promise)
   }
 
   async open(input: {
@@ -1026,6 +1262,402 @@ export class AgentDraftSession {
     }
   }
 
+  projectCurrent(scopeCityCardId?: string | null) {
+    const graph = this.currentGraph()
+    const scope = scopeCityCardId ?? null
+    const byId = new Map(graph.events.map((event) => [event.id, event]))
+    const projection = resolveJourneyProjection({
+      graph,
+      scopeSectionEventId: scope,
+      mode: "PLANNER",
+    })
+    return {
+      draftState: this.state,
+      scopeCityCardId: scope,
+      cards: projection.events.flatMap((entry) => {
+        const event = byId.get(entry.eventId)
+        if (!event) return []
+        return [
+          {
+            cardId: event.id,
+            type:
+              event.type === "SECTION" && event.detail.kind === "CITY"
+                ? "CITY"
+                : event.type,
+            title: event.title,
+            ...(event.type !== "SECTION" &&
+            event.type !== "NOTE" &&
+            event.plannedStartAt
+              ? { plannedStartAt: event.plannedStartAt }
+              : {}),
+            ...(event.type === "TRANSIT"
+              ? {
+                  fromCardId: event.detail.plannedFromEventId,
+                  toCardId: event.detail.plannedToEventId,
+                  routeState: event.detail.routeState,
+                }
+              : {}),
+          },
+        ]
+      }),
+      ...(this.validation ? { latestValidation: this.validation } : {}),
+      repairsUsed: this.repairsUsed,
+      repairsRemaining: Math.max(0, MAX_AGENT_DRAFT_REPAIRS - this.repairsUsed),
+    }
+  }
+
+  addCity(
+    input: Extract<ParsedAgentToolRequest, { type: "city.add" }>,
+    toolCallId: string,
+    location: PlaceVerification["ref"]
+  ) {
+    return this.modelMutation(
+      "city.add",
+      this.mutate({
+        type: "draft.add_city_card",
+        draftId: this.currentDraftId(),
+        operationId: this.operationId(toolCallId),
+        issueId: input.issueId,
+        card: {
+          cardId: this.cardId(toolCallId),
+          title: location.canonicalName,
+          description: input.description,
+          timeZone: "Asia/Shanghai",
+          lat: location.lat,
+          lng: location.lng,
+          coordinateSystem: targetCoordinateSystem(location.coordinateSystem),
+        },
+        position: input.afterCardId
+          ? { placement: "AFTER", anchorCardId: input.afterCardId }
+          : { placement: "START", scopeCityCardId: null },
+      })
+    )
+  }
+
+  addPlaceEvent(
+    input: Extract<ParsedAgentToolRequest, { type: "placeEvent.add" }>,
+    toolCallId: string
+  ) {
+    const common = {
+      cardId: this.cardId(toolCallId),
+      plannedStartAt: input.plannedStartAt,
+      plannedEndAt: input.plannedEndAt,
+      description: input.description,
+      placeResolutionId: input.placeResolutionId,
+      plannedDurationMinutes: input.plannedDurationMinutes,
+    }
+    const card =
+      input.cardType === "VISIT"
+        ? {
+            ...common,
+            type: "VISIT" as const,
+            includeAvailableCoverImage: true,
+          }
+        : input.cardType === "MEAL"
+          ? { ...common, type: "MEAL" as const, cuisine: input.cuisine }
+          : {
+              ...common,
+              type: "ACTIVITY" as const,
+              bookingReference: input.bookingReference,
+            }
+    return this.modelMutation(
+      "placeEvent.add",
+      this.mutate({
+        type: "draft.add_place_card",
+        draftId: this.currentDraftId(),
+        operationId: this.operationId(toolCallId),
+        issueId: input.issueId,
+        cityCardId: input.cityCardId,
+        card,
+        position: input.afterCardId
+          ? { placement: "AFTER", anchorCardId: input.afterCardId }
+          : { placement: "START", scopeCityCardId: input.cityCardId },
+      })
+    )
+  }
+
+  addStay(
+    input: Extract<ParsedAgentToolRequest, { type: "stay.add" }>,
+    toolCallId: string
+  ) {
+    const selection = this.hotelSelections.get(input.hotelSelectionId)
+    if (!selection) {
+      throw new WorkspaceInputError(
+        "hotelSelectionId is invalid or belongs to another Agent run"
+      )
+    }
+    return this.modelMutation(
+      "stay.add",
+      this.mutate({
+        type: "draft.add_hotel_stay_card",
+        draftId: this.currentDraftId(),
+        operationId: this.operationId(toolCallId),
+        issueId: input.issueId,
+        cityCardId: input.cityCardId,
+        card: {
+          cardId: this.cardId(toolCallId),
+          hotelSelectionId: input.hotelSelectionId,
+          plannedStartAt: selection.schedule.plannedStartAt,
+          plannedEndAt: selection.schedule.plannedEndAt,
+          description: input.description,
+          checkInNote: input.checkInNote,
+        },
+        position: input.afterCardId
+          ? { placement: "AFTER", anchorCardId: input.afterCardId }
+          : { placement: "START", scopeCityCardId: input.cityCardId },
+      })
+    )
+  }
+
+  addTransit(
+    input: Extract<ParsedAgentToolRequest, { type: "transit.add" }>,
+    toolCallId: string
+  ) {
+    const graph = this.currentGraph()
+    const from = requireEvent(graph, input.fromCardId)
+    const plannedStartAt =
+      input.plannedStartAt ??
+      (from.type === "SECTION" || from.type === "NOTE"
+        ? undefined
+        : (from.plannedEndAt ?? from.plannedStartAt))
+    if (!plannedStartAt) {
+      throw new WorkspaceInputError(
+        "Transit requires a plannedStartAt when its previous card has no schedule"
+      )
+    }
+    const transportMode = input.modePreference ?? "WALK"
+    const requestMode = transitRequestMode(transportMode)
+    return this.modelMutation(
+      "transit.add",
+      this.mutate({
+        type: "draft.add_transit_card",
+        draftId: this.currentDraftId(),
+        operationId: this.operationId(toolCallId),
+        issueId: input.issueId,
+        card: {
+          cardId: this.cardId(toolCallId),
+          fromCardId: input.fromCardId,
+          toCardId: input.toCardId,
+          plannedStartAt,
+          plannedEndAt: input.plannedEndAt,
+          title: input.title,
+          description: input.description,
+          transportMode,
+          requestMode,
+          preference: input.routePreference,
+          notes: input.notes,
+        },
+      })
+    )
+  }
+
+  moveCard(
+    input: Extract<ParsedAgentToolRequest, { type: "card.move" }>,
+    toolCallId: string
+  ) {
+    const event = requireEvent(this.currentGraph(), input.cardId)
+    return this.modelMutation(
+      "card.move",
+      this.mutate({
+        type: "draft.move_card",
+        draftId: this.currentDraftId(),
+        operationId: this.operationId(toolCallId),
+        issueId: input.issueId,
+        cardId: input.cardId,
+        position: input.afterCardId
+          ? { placement: "AFTER", anchorCardId: input.afterCardId }
+          : {
+              placement: "START",
+              scopeCityCardId: event.parentSectionEventId,
+            },
+      })
+    )
+  }
+
+  removeCard(
+    input: Extract<ParsedAgentToolRequest, { type: "card.remove" }>,
+    toolCallId: string
+  ) {
+    return this.modelMutation(
+      "card.remove",
+      this.mutate({
+        type: "draft.remove_card",
+        draftId: this.currentDraftId(),
+        operationId: this.operationId(toolCallId),
+        issueId: input.issueId,
+        cardId: input.cardId,
+        ...(input.removeCityChildren
+          ? { cityChildrenPolicy: "REMOVE_ALL" as const }
+          : {}),
+      })
+    )
+  }
+
+  updateCard(
+    input: Extract<ParsedAgentToolRequest, { type: "card.update" }>,
+    toolCallId: string
+  ) {
+    return this.serialize(async () => {
+      const draft = this.requireDraft(this.currentDraftId())
+      const operationId = this.operationId(toolCallId)
+      const fingerprint = JSON.stringify(input)
+      const existing = this.operations.get(operationId)
+      if (existing) {
+        if (existing.fingerprint !== fingerprint) {
+          throw new WorkspaceInputError(
+            "toolCallId was already used for a different card update"
+          )
+        }
+        return this.visibleMutation("card.update", existing.result)
+      }
+      if (this.state === "VALID" || this.state === "COMMITTED") {
+        throw new WorkspaceInputError(`${this.state} draft cannot be changed`)
+      }
+      if (
+        this.state === "INVALID" &&
+        this.repairsUsed >= MAX_AGENT_DRAFT_REPAIRS
+      ) {
+        throw new WorkspaceInputError("Agent draft repair limit is exhausted")
+      }
+      const event = requireEvent(draft.after, input.cardId)
+      const actualType =
+        event.type === "SECTION" && event.detail.kind === "CITY"
+          ? "CITY"
+          : event.type
+      if (actualType !== input.changes.type) {
+        throw new WorkspaceInputError(
+          "card.update changes type must match the target card type"
+        )
+      }
+      const {
+        type: _type,
+        modePreference,
+        routePreference,
+        ...fields
+      } = input.changes as Record<string, unknown> & {
+        type: string
+        modePreference?: Extract<
+          TargetJourneyEvent,
+          { type: "TRANSIT" }
+        >["detail"]["transportMode"]
+        routePreference?: Extract<
+          TargetJourneyEvent,
+          { type: "TRANSIT" }
+        >["detail"]["preference"]
+      }
+      let detail: Record<string, unknown> | undefined
+      if (event.type === "TRANSIT") {
+        detail = {
+          ...(modePreference
+            ? {
+                transportMode: modePreference,
+                requestMode: transitRequestMode(modePreference),
+              }
+            : {}),
+          ...(routePreference ? { preference: routePreference } : {}),
+          ...(fields.notes !== undefined ? { notes: fields.notes } : {}),
+        }
+        delete fields.notes
+      }
+      if (isLocationEvent(event)) {
+        for (const key of [
+          "plannedDurationMinutes",
+          "cuisine",
+          "bookingReference",
+          "checkInNote",
+        ]) {
+          if (fields[key] !== undefined) {
+            detail = { ...detail, [key]: fields[key] }
+            delete fields[key]
+          }
+        }
+      }
+      const command: JourneyCommand = {
+        name: "journey.update_event",
+        payload: {
+          eventId: event.id,
+          patch: {
+            type: event.type,
+            ...fields,
+            ...(detail ? { detail } : {}),
+          } as never,
+        },
+      }
+      if (this.state === "INVALID") {
+        this.assertIssueToolAllowed(input.issueId, "periplus.card.update", [
+          command,
+        ])
+      } else if (input.issueId) {
+        throw new WorkspaceInputError(
+          "issueId is only valid while repairing an INVALID draft"
+        )
+      }
+      const previous = draft.after
+      const next = await this.commands.applyAgentDraftMutation(this.context, {
+        draft,
+        operationId,
+        commands: [command],
+      })
+      this.candidate = next
+      this.state = this.state === "INVALID" ? "INVALID" : "BUILDING"
+      this.mutatedSinceValidation = true
+      const changedCardIds = changedCards(previous, next.after)
+      const result: DraftMutationResult = {
+        draftId: this.currentDraftId(),
+        acceptedOperationId: operationId,
+        draftSequence: ++this.draftSequence,
+        changedCardIds,
+        touchedScopeCityCardIds: Array.from(
+          new Set(
+            changedCardIds.flatMap((cardId) => {
+              const before = previous.events.find(
+                (candidate) => candidate.id === cardId
+              )
+              const after = next.after.events.find(
+                (candidate) => candidate.id === cardId
+              )
+              return [
+                ...(before ? [before.parentSectionEventId] : []),
+                ...(after ? [after.parentSectionEventId] : []),
+              ]
+            })
+          )
+        ),
+        draftState: this.state,
+        warnings: [],
+      }
+      this.operations.set(operationId, { fingerprint, result })
+      return this.visibleMutation("card.update", result)
+    })
+  }
+
+  async validateCurrent(toolCallId: string) {
+    const result = await this.validate({
+      draftId: this.currentDraftId(),
+      attemptId: this.operationId(toolCallId, "draft-validate"),
+    })
+    return { validation: result.validation }
+  }
+
+  async prepareTransitCurrent(transitCardId: string, toolCallId: string) {
+    const result = await this.prepareTransit({
+      draftId: this.currentDraftId(),
+      operationId: this.operationId(toolCallId, "transit-prepare"),
+      transitCardId,
+    })
+    const { draftId: _draftId, ...visible } = result as Awaited<
+      ReturnType<AgentDraftSession["prepareTransit"]>
+    >
+    return visible
+  }
+
+  commitCurrent(toolCallId: string) {
+    return this.commit({
+      draftId: this.currentDraftId(),
+      idempotencyKey: this.operationId(toolCallId, "draft-commit"),
+    })
+  }
+
   mutate(request: DraftMutationRequest) {
     return this.serialize(async () => {
       const draft = this.requireDraft(request.draftId)
@@ -1046,15 +1678,6 @@ export class AgentDraftSession {
         throw new WorkspaceInputError("VALID draft must be committed")
       }
       if (
-        this.state !== "INVALID" &&
-        (request.type === "draft.connect_cards" ||
-          request.type === "draft.disconnect_cards")
-      ) {
-        throw new WorkspaceInputError(
-          "Card connection tools require a validator issue"
-        )
-      }
-      if (
         this.state === "INVALID" &&
         this.repairsUsed >= MAX_AGENT_DRAFT_REPAIRS
       ) {
@@ -1073,7 +1696,9 @@ export class AgentDraftSession {
         const result: DraftMutationResult = {
           draftId: request.draftId,
           acceptedOperationId: request.operationId,
+          draftSequence: ++this.draftSequence,
           changedCardIds: [],
+          touchedScopeCityCardIds: [],
           draftState: this.state,
           warnings: built.warnings,
           ...(built.canonicalTitle
@@ -1096,16 +1721,30 @@ export class AgentDraftSession {
       this.candidate = next
       this.state = wasRepairing ? "INVALID" : "BUILDING"
       this.mutatedSinceValidation = true
+      const changedCardIds = changedCards(previous, next.after)
+      const touchedScopeCityCardIds = Array.from(
+        new Set(
+          changedCardIds.flatMap((cardId) => {
+            const before = previous.events.find((event) => event.id === cardId)
+            const after = next.after.events.find((event) => event.id === cardId)
+            return [
+              ...(before ? [before.parentSectionEventId] : []),
+              ...(after ? [after.parentSectionEventId] : []),
+            ]
+          })
+        )
+      )
       const result: DraftMutationResult = {
         draftId: request.draftId,
         acceptedOperationId: request.operationId,
-        changedCardIds: changedCards(previous, next.after),
+        draftSequence: ++this.draftSequence,
+        changedCardIds,
+        touchedScopeCityCardIds,
         draftState: this.state,
         warnings: built.warnings,
         ...(built.canonicalTitle
           ? { canonicalTitle: built.canonicalTitle }
           : {}),
-        ...(built.linkId ? { linkId: built.linkId } : {}),
       }
       this.operations.set(request.operationId, { fingerprint, result })
       return result
@@ -1116,22 +1755,33 @@ export class AgentDraftSession {
     request: DraftMutationRequest,
     commands: JourneyCommand[]
   ) {
-    if (!request.issueId || !this.prepared) {
+    this.assertIssueToolAllowed(
+      request.issueId,
+      CANONICAL_MUTATION_TOOL[request.type],
+      commands
+    )
+  }
+
+  private assertIssueToolAllowed(
+    issueId: string | undefined,
+    toolName: string,
+    commands: JourneyCommand[]
+  ) {
+    if (!issueId || !this.prepared) {
       throw new WorkspaceInputError(
         "INVALID draft mutations require the latest issueId"
       )
     }
     const external = this.validation?.issues.find(
-      (issue) => issue.issueId === request.issueId
+      (issue) => issue.issueId === issueId
     )
     const index = this.validation?.issues.findIndex(
-      (issue) => issue.issueId === request.issueId
+      (issue) => issue.issueId === issueId
     )
     const internal =
       index === undefined || index < 0
         ? undefined
         : this.prepared.validation.issues[index]
-    const toolName = `periplus.${request.type}`
     if (
       !external ||
       !internal ||
@@ -1154,7 +1804,6 @@ export class AgentDraftSession {
     commands: JourneyCommand[]
     warnings: DraftWarning[]
     canonicalTitle?: string
-    linkId?: string
     hotelSelectionId?: string
   } {
     const graph = draft.after
@@ -1171,7 +1820,22 @@ export class AgentDraftSession {
                   type: "SECTION",
                   title: request.card.title,
                   description: request.card.description,
-                  detail: { kind: "CITY", timeZone: request.card.timeZone },
+                  detail: {
+                    kind: "CITY",
+                    timeZone: request.card.timeZone,
+                    ...(request.card.placeId
+                      ? { placeId: request.card.placeId }
+                      : {}),
+                    ...(request.card.lat === undefined
+                      ? {}
+                      : { lat: request.card.lat }),
+                    ...(request.card.lng === undefined
+                      ? {}
+                      : { lng: request.card.lng }),
+                    ...(request.card.coordinateSystem
+                      ? { coordinateSystem: request.card.coordinateSystem }
+                      : {}),
+                  },
                 },
                 position: canonicalPosition(request.position),
               },
@@ -1284,35 +1948,6 @@ export class AgentDraftSession {
           hotelSelectionId: request.card.hotelSelectionId,
         }
       }
-      case "draft.add_place_stay_card": {
-        assertCity(graph, request.cityCardId)
-        assertPositionScope(graph, request.position, request.cityCardId)
-        const evidence = this.getPlaceEvidence(request.card.placeResolutionId)
-        return {
-          commands: [
-            {
-              name: "journey.add_event",
-              payload: {
-                event: {
-                  id: request.card.cardId,
-                  type: "STAY",
-                  title: evidence.verification.ref.canonicalName,
-                  description: request.card.description,
-                  plannedStartAt: request.card.plannedStartAt,
-                  plannedEndAt: request.card.plannedEndAt,
-                  detail: {
-                    ...placeDetail(evidence),
-                    checkInNote: request.card.checkInNote,
-                  },
-                },
-                position: canonicalPosition(request.position),
-              },
-            },
-          ],
-          warnings: warningOutput(evidence.warnings, request.card.cardId),
-          canonicalTitle: evidence.verification.ref.canonicalName,
-        }
-      }
       case "draft.add_transit_card": {
         const from = requireEvent(graph, request.card.fromCardId)
         const to = requireEvent(graph, request.card.toCardId)
@@ -1371,109 +2006,6 @@ export class AgentDraftSession {
                   },
                 },
                 position: { placement: "AFTER", anchorEventId: from.id },
-              },
-            },
-          ],
-          warnings: [],
-        }
-      }
-      case "draft.update_city_card": {
-        const city = assertCity(graph, request.cardId)
-        return {
-          commands: [
-            {
-              name: "journey.update_event",
-              payload: {
-                eventId: request.cardId,
-                patch: {
-                  type: "SECTION",
-                  ...(request.patch.title === undefined
-                    ? {}
-                    : { title: request.patch.title }),
-                  ...(request.patch.description === undefined
-                    ? {}
-                    : { description: request.patch.description }),
-                  ...(request.patch.timeZone
-                    ? {
-                        detail: {
-                          ...city.detail,
-                          timeZone: request.patch.timeZone,
-                        },
-                      }
-                    : {}),
-                },
-              },
-            },
-          ],
-          warnings: [],
-        }
-      }
-      case "draft.update_schedule": {
-        const event = requireEvent(graph, request.cardId)
-        if (event.type === "SECTION" || event.type === "NOTE") {
-          throw new WorkspaceInputError("Only executable cards have schedules")
-        }
-        return {
-          commands: [
-            {
-              name: "journey.update_event",
-              payload: {
-                eventId: event.id,
-                patch: { type: event.type, ...request.patch },
-              },
-            },
-          ],
-          warnings: [],
-        }
-      }
-      case "draft.change_place": {
-        const event = requireEvent(graph, request.cardId)
-        if (!isLocationEvent(event)) {
-          throw new WorkspaceInputError(
-            "Only VISIT, STAY, MEAL, or ACTIVITY cards have places"
-          )
-        }
-        const evidence = this.getPlaceEvidence(request.placeResolutionId)
-        const coverImage =
-          event.type === "VISIT" && request.includeAvailableCoverImage
-            ? evidence.verification.coverImage
-            : undefined
-        return {
-          commands: [
-            {
-              name: "journey.update_event",
-              payload: {
-                eventId: event.id,
-                patch: {
-                  type: event.type,
-                  title: evidence.verification.ref.canonicalName,
-                  detail: placeDetailPatch(evidence, event.type, coverImage),
-                },
-              },
-            },
-          ],
-          warnings: warningOutput(evidence.warnings, event.id),
-          canonicalTitle: evidence.verification.ref.canonicalName,
-        }
-      }
-      case "draft.update_transit_card": {
-        const event = requireEvent(graph, request.cardId)
-        if (event.type !== "TRANSIT") {
-          throw new WorkspaceInputError(`Card ${event.id} is not TRANSIT`)
-        }
-        const { plannedStartAt, plannedEndAt, ...detail } = request.patch
-        return {
-          commands: [
-            {
-              name: "journey.update_event",
-              payload: {
-                eventId: event.id,
-                patch: {
-                  type: "TRANSIT",
-                  ...(plannedStartAt === undefined ? {} : { plannedStartAt }),
-                  ...(plannedEndAt === undefined ? {} : { plannedEndAt }),
-                  ...(Object.keys(detail).length ? { detail } : {}),
-                },
               },
             },
           ],
@@ -1547,56 +2079,6 @@ export class AgentDraftSession {
                       : undefined,
                 destinationSectionEventId: request.destinationCityCardId,
               },
-            },
-          ],
-          warnings: [],
-        }
-      }
-      case "draft.connect_cards": {
-        const from = requireEvent(graph, request.fromCardId)
-        const to = requireEvent(graph, request.toCardId)
-        if (from.parentSectionEventId !== to.parentSectionEventId) {
-          throw new WorkspaceInputError("Connected cards must share one scope")
-        }
-        const linkId = `link-${createHash("sha256")
-          .update(`${request.draftId}:${request.operationId}`)
-          .digest("hex")
-          .slice(0, 20)}`
-        return {
-          commands: [
-            {
-              name: "journey.add_link",
-              payload: {
-                link: {
-                  id: linkId,
-                  fromEventId: from.id,
-                  toEventId: to.id,
-                  kind: "MAIN",
-                  rank: 1024,
-                },
-              },
-            },
-          ],
-          warnings: [],
-          linkId,
-        }
-      }
-      case "draft.disconnect_cards": {
-        const links = activeLinks(graph).filter(
-          (link) =>
-            link.fromEventId === request.fromCardId &&
-            link.toEventId === request.toCardId
-        )
-        if (links.length !== 1) {
-          throw new WorkspaceInputError(
-            "disconnect_cards requires exactly one active matching Link"
-          )
-        }
-        return {
-          commands: [
-            {
-              name: "journey.retire_link",
-              payload: { linkId: links[0]!.id },
             },
           ],
           warnings: [],
@@ -1734,8 +2216,9 @@ export class AgentDraftSession {
             },
           ]
         : []
-      const result = {
+      const result: TransitPreparationResult = {
         draftId: input.draftId,
+        draftSequence: ++this.draftSequence,
         transitCardId: transit.id,
         routeStatus: transit.detail.routeState === "READY" ? "READY" : "FAILED",
         ...(selectedPlan
@@ -1777,6 +2260,7 @@ export class AgentDraftSession {
       const output = {
         workspaceId: this.workspaceId,
         newWorkspaceRevision: result.newRevision,
+        projectionHash: this.prepared.validation.projectionHash,
         changedCardIds: result.changedEventIds,
         replayed: Boolean(result.replayedFromIdempotencyKey),
       }

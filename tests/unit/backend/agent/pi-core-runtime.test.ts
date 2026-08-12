@@ -79,7 +79,7 @@ describe("Pi core runtime semantics", () => {
 
     await agent.continue()
 
-    const promptToolNames = buildPrompt().match(/periplus__[a-z_]+/g) ?? []
+    const promptToolNames = buildPrompt().match(/periplus__[A-Za-z_]+/g) ?? []
     expect(promptToolNames).not.toHaveLength(0)
     expect(providerToolNames).toEqual(tools.map((entry) => entry.name))
     expect(

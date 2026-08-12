@@ -3,7 +3,6 @@ import {
   DEFAULT_COMPACTION_SETTINGS,
   estimateContextTokens,
   generateSummaryWithUsage,
-  shouldCompact,
   type AgentMessage,
 } from "@earendil-works/pi-agent-core"
 import {
@@ -17,9 +16,13 @@ import {
   type Usage,
 } from "@earendil-works/pi-ai"
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy"
-import type { AgentMode } from "../types"
-import type { AgentToolRequest } from "./gateway"
-import { canonicalPiCoreToolName, createPiCoreTools } from "./pi-core-tools"
+import type { PlannerBaseline } from "./planner-baseline"
+import type { AgentToolRequest } from "./tool-contract"
+import {
+  canonicalPiCoreToolName,
+  createPiCoreTools,
+  piCoreToolCatalogVersion,
+} from "./pi-core-tools"
 
 const EMPTY_USAGE = {
   input: 0,
@@ -37,23 +40,19 @@ export interface PersistedAgentMessage {
   createdAt: string
 }
 
-export interface AgentContextCheckpoint {
-  summary: string
-  throughMessageId: string
-}
-
 export interface PeriplusAgentHarnessRequest {
   runId: string
   workspaceId: string
-  mode: AgentMode
   systemPrompt: string
-  messages: PersistedAgentMessage[]
-  checkpoint: AgentContextCheckpoint | null
+  conversationSummary: string
+  baseline: PlannerBaseline
+  currentUserRequest: string
+  defaultTripStartDate: string
   executeTool: (
     request: AgentToolRequest,
+    toolCallId: string,
     signal?: AbortSignal
   ) => Promise<unknown>
-  saveCheckpoint: (checkpoint: AgentContextCheckpoint) => Promise<void>
 }
 
 export interface PeriplusAgentHarnessResult {
@@ -68,6 +67,9 @@ export type PeriplusHarnessEvent =
       messageCount: number
       estimatedTokens: number
       compacted: boolean
+      summaryStatus: "READY" | "EMPTY"
+      baselineRevision: number
+      toolCatalogVersion: string
     }
   | {
       type: "model_start"
@@ -191,18 +193,6 @@ function toPiMessages(
     })
 }
 
-function recentMessageStart(
-  messages: AgentMessage[],
-  keepRecentTokens: number
-) {
-  let tokens = 0
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    tokens += estimateContextTokens([messages[index]!]).tokens
-    if (tokens > keepRecentTokens) return index + 1
-  }
-  return 0
-}
-
 function assistantText(message: AssistantMessage) {
   return message.content
     .filter((content) => content.type === "text")
@@ -289,27 +279,20 @@ export class PeriplusAgentHarness {
     }
     void (async () => {
       try {
-        const prepared = await this.prepareContext(
-          request,
-          observer,
-          abortController.signal
-        )
+        const prepared = this.prepareContext(request, abortController.signal)
         throwIfAborted(abortController.signal)
-        const tools =
-          request.mode === "auto"
-            ? createPiCoreTools({
-                execute: request.executeTool,
-                ...(this.options.webSearchEnabled
-                  ? {
-                      webSearch: {
-                        apiKey: this.options.apiKey,
-                        model: this.options.model,
-                        maxSearches: 3,
-                      },
-                    }
-                  : {}),
-              })
-            : []
+        const tools = createPiCoreTools({
+          execute: request.executeTool,
+          ...(this.options.webSearchEnabled
+            ? {
+                webSearch: {
+                  apiKey: this.options.apiKey,
+                  model: this.options.model,
+                  maxSearches: 3,
+                },
+              }
+            : {}),
+        })
         observer.onEvent({
           type: "context_prepared",
           input: contextInput({
@@ -319,7 +302,10 @@ export class PeriplusAgentHarness {
           }),
           messageCount: prepared.messages.length,
           estimatedTokens: estimateContextTokens(prepared.messages).tokens,
-          compacted: prepared.compacted,
+          compacted: Boolean(request.conversationSummary),
+          summaryStatus: request.conversationSummary ? "READY" : "EMPTY",
+          baselineRevision: request.baseline.workspaceRevision,
+          toolCatalogVersion: piCoreToolCatalogVersion(),
         })
 
         let requestSequence = 0
@@ -444,125 +430,76 @@ export class PeriplusAgentHarness {
     }
   }
 
-  private async prepareContext(
+  private prepareContext(
     request: PeriplusAgentHarnessRequest,
-    observer: PeriplusAgentHarnessObserver,
     signal: AbortSignal
   ) {
     throwIfAborted(signal)
-    let checkpoint = request.checkpoint
-    const checkpointIndex = checkpoint
-      ? request.messages.findIndex(
-          (message) => message.id === checkpoint!.throughMessageId
-        )
-      : -1
-    let visibleMessages = request.messages.slice(checkpointIndex + 1)
-    const piMessages = toPiMessages(visibleMessages, this.options.model)
-    const checkpointTokens = checkpoint
-      ? Math.ceil(checkpoint.summary.length / 4)
-      : 0
-    const contextTokens =
-      estimateContextTokens(piMessages).tokens + checkpointTokens
-    let compacted = false
-    if (
-      shouldCompact(
-        contextTokens,
-        this.model.contextWindow,
-        DEFAULT_COMPACTION_SETTINGS
-      )
-    ) {
-      const retainedStart = recentMessageStart(
-        piMessages,
-        DEFAULT_COMPACTION_SETTINGS.keepRecentTokens
-      )
-      const summarizedMessages = piMessages.slice(0, retainedStart)
-      const summarizedPersisted = visibleMessages
-        .filter((message) => message.content.trim())
-        .slice(0, retainedStart)
-      if (!summarizedMessages.length || !summarizedPersisted.length) {
-        throw new Error("Pi context compaction has no durable message boundary")
-      }
-      const requestId = `${request.runId}:compaction`
-      const startedAt = performance.now()
-      observer.onEvent({
-        type: "model_start",
-        requestId,
-        provider: this.model.provider,
-        model: this.model.id,
-        input: JSON.stringify({
-          operation: "context_compaction",
-          messages: summarizedMessages,
-        }),
-        startedAt,
-      })
-      let summary
-      try {
-        summary = await generateSummaryWithUsage(
-          summarizedMessages,
-          this.models,
-          this.model,
-          DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-          signal,
-          undefined,
-          checkpoint?.summary,
-          "high"
-        )
-        throwIfAborted(signal)
-      } catch (error) {
-        observer.onEvent({
-          type: "model_end",
-          requestId,
-          output:
-            error instanceof Error
-              ? error.message
-              : "Context compaction failed",
-          toolCalls: [],
-          usage: EMPTY_USAGE,
-          stopReason: signal.aborted ? "aborted" : "error",
-          endedAt: performance.now(),
-        })
-        throw error
-      }
-      if (!summary.ok) {
-        observer.onEvent({
-          type: "model_end",
-          requestId,
-          output: summary.error.message,
-          toolCalls: [],
-          usage: EMPTY_USAGE,
-          stopReason: "error",
-          endedAt: performance.now(),
-        })
-        throw summary.error
-      }
-      observer.onEvent({
-        type: "model_end",
-        requestId,
-        output: summary.value.text,
-        toolCalls: [],
-        usage: summary.value.usage,
-        stopReason: "stop",
-        endedAt: performance.now(),
-      })
-      checkpoint = {
-        summary: summary.value.text,
-        throughMessageId: summarizedPersisted.at(-1)!.id,
-      }
-      throwIfAborted(signal)
-      await request.saveCheckpoint(checkpoint)
-      visibleMessages = request.messages.slice(
-        request.messages.findIndex(
-          (message) => message.id === checkpoint!.throughMessageId
-        ) + 1
-      )
-      compacted = true
-    }
+    const effectiveSystemPrompt = [
+      request.systemPrompt,
+      "",
+      "[CONVERSATION_SUMMARY]",
+      request.conversationSummary || "{}",
+      "",
+      "[WORKSPACE_BASELINE]",
+      JSON.stringify(request.baseline),
+      "",
+      "[CURRENT_USER_REQUEST_METADATA]",
+      JSON.stringify({
+        defaultTripStartDate: request.defaultTripStartDate,
+        runId: request.runId,
+      }),
+    ].join("\n")
+    const messages = toPiMessages(
+      [
+        {
+          id: `${request.runId}:current-user`,
+          role: "user",
+          content: request.currentUserRequest,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      this.options.model
+    )
     return {
-      systemPrompt: checkpoint
-        ? `${request.systemPrompt}\n\n[COMPACTED_CONVERSATION]\n${checkpoint.summary}`
-        : request.systemPrompt,
-      messages: toPiMessages(visibleMessages, this.options.model),
-      compacted,
+      systemPrompt: effectiveSystemPrompt,
+      messages,
     }
+  }
+
+  async generateConversationSummary(
+    messages: PersistedAgentMessage[],
+    previousSummary: string | undefined,
+    signal: AbortSignal
+  ) {
+    throwIfAborted(signal)
+    const piMessages = toPiMessages(messages, this.options.model)
+    if (!piMessages.length) return "{}"
+    const result = await generateSummaryWithUsage(
+      piMessages,
+      this.models,
+      this.model,
+      DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+      signal,
+      [
+        "Return one compact JSON object containing only durable business memory.",
+        "Allowed content: current user goals, preferences, constraints, confirmed decisions, unresolved business matters, and the previous run outcome.",
+        "Exclude route cards, provider candidates, tool transcripts, draft/evidence handles, validator issues, credentials, headers, file paths, and facts reconstructible from the Workspace baseline.",
+        "Fields may be absent and arrays may be empty. Output JSON only.",
+      ].join(" "),
+      previousSummary,
+      "high"
+    )
+    throwIfAborted(signal)
+    if (!result.ok) throw result.error
+    const text = result.value.text.trim()
+    const parsed = JSON.parse(text) as unknown
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Conversation summary must be a JSON object")
+    }
+    if (Buffer.byteLength(text, "utf8") > 32_768) {
+      throw new Error("Conversation summary exceeds 32 KiB")
+    }
+    return JSON.stringify(parsed)
   }
 }

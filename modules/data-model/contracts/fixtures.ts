@@ -840,7 +840,6 @@ const workspaceDocument: TargetWorkspaceDocument = {
       updatedAt: NOW,
     },
   ],
-  suggestions: [],
   agentRuns: [],
 }
 const workspaceNoAccess = clone(workspaceDocument)

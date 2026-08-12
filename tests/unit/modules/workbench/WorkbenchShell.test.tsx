@@ -130,7 +130,6 @@ describe("wide workbench presentation flow", () => {
     ).toBeVisible()
     expect(sendAgentEvent).toHaveBeenCalledWith("agent.run.start", {
       prompt: "把午餐改晚一点",
-      mode: "auto",
     })
   })
 })

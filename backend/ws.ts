@@ -7,7 +7,7 @@ import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-reposit
 import { verifyWorkspaceTicket } from "@/modules/data/workspaces/workspace-ticket"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { AgentGateway } from "./agent/gateway"
-import type { AgentEvent, AgentEventEmitter, AgentMode } from "./types"
+import type { AgentEvent, AgentEventEmitter } from "./types"
 import { domainErrorResponse } from "./domain-error"
 import { startTelemetrySpan } from "./observability"
 
@@ -31,7 +31,6 @@ const wireMessageSchema = z.discriminatedUnion("type", [
       payload: commandIdSchema
         .extend({
           prompt: z.string(),
-          mode: z.enum(["auto", "suggest"]).optional(),
         })
         .strict(),
     })
@@ -178,13 +177,10 @@ export function createAgentWebSocketServer(
             }
             if (message.type === "agent.run.start") {
               const payload = message.payload
-              const mode: AgentMode =
-                payload.mode === "suggest" ? "suggest" : "auto"
               await agentGateway.start(
                 context,
                 workspaceId,
                 payload.prompt,
-                mode,
                 broadcast
               )
               messageSpan.end("OK")

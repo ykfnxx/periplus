@@ -120,7 +120,6 @@ export default function DebugPanel() {
         accessState: "OWNER",
         draftState: "DIRTY",
         messages: [],
-        suggestions: [],
         agentRuns: [],
       }
       applyWorkspaceDocument(document)

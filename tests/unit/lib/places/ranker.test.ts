@@ -62,7 +62,7 @@ describe("rankPlaceCandidates", () => {
     expect(result.needsUserConfirmation).toBe(false)
   })
 
-  it("merges a live provider result into the matching catalog place", () => {
+  it("does not heuristically merge same-name candidates across providers", () => {
     const query = normalizePlaceSearchInput({
       query: "故宫博物院",
       city: "北京",
@@ -110,11 +110,45 @@ describe("rankPlaceCandidates", () => {
 
     const [result] = rankPlaceCandidates(query, [catalog, live])
 
-    expect(result.placeId).toBe("place-mct-palace")
-    expect(result.sources.map((source) => source.provider)).toEqual(
-      expect.arrayContaining(["mct", "amap"])
-    )
+    expect(result.placeId).toBeUndefined()
+    expect(result.sources.map((source) => source.provider)).toEqual(["amap"])
     expect(result.bestCoordinate.coordinateSystem).toBe("GCJ02")
     expect(result.canAddToJourney).toBe(true)
+  })
+
+  it("merges only identical provider and providerId records", () => {
+    const query = normalizePlaceSearchInput({ query: "西湖", city: "杭州" })
+    const first: PlaceCandidate = {
+      candidateId: "amap-west-lake-first",
+      provider: "amap",
+      providerId: "B023B0",
+      name: "西湖",
+      normalizedName: "西湖",
+      aliases: [],
+      category: "SIGHT",
+      city: "杭州市",
+      coordinates: [
+        {
+          provider: "amap",
+          coordinateSystem: "GCJ02",
+          lat: 30.247,
+          lng: 120.146,
+          source: "provider_search",
+        },
+      ],
+      sources: [{ provider: "amap", providerId: "B023B0" }],
+      sourceConfidence: 0.8,
+      fromLiveProvider: true,
+    }
+    const duplicate: PlaceCandidate = {
+      ...first,
+      candidateId: "amap-west-lake-duplicate",
+      aliases: ["西湖风景区"],
+    }
+
+    const results = rankPlaceCandidates(query, [first, duplicate])
+
+    expect(results).toHaveLength(1)
+    expect(results[0]?.aliases).toContain("西湖风景区")
   })
 })

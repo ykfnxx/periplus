@@ -154,18 +154,6 @@ export const targetWorkspaceMessageSchema = z.object({
   updatedAt: dateTimeSchema,
 })
 
-export const targetWorkspaceSuggestionSchema = z.object({
-  id: idSchema,
-  workspaceId: idSchema,
-  title: z.string().trim().min(1),
-  summary: z.string(),
-  commandPayloads: z.array(z.unknown()),
-  basedOnWorkspaceRevision: z.number().int().nonnegative(),
-  status: z.enum(["PENDING", "ACCEPTED", "REJECTED", "STALE"]),
-  createdAt: dateTimeSchema,
-  updatedAt: dateTimeSchema,
-})
-
 export const targetWorkspaceAgentRunSchema = z
   .object({
     id: idSchema,
@@ -210,7 +198,6 @@ export const targetWorkspaceDocumentSchema = z.object({
   accessState: z.enum(TARGET_WORKSPACE_ACCESS_STATES),
   draftState: z.enum(TARGET_WORKSPACE_DRAFT_STATES),
   messages: z.array(targetWorkspaceMessageSchema),
-  suggestions: z.array(targetWorkspaceSuggestionSchema),
   agentRuns: z.array(targetWorkspaceAgentRunSchema),
 })
 

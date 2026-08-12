@@ -9,7 +9,6 @@ import {
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
 import AIComposer from "./AIComposer"
-import AgentModeToggle from "./AgentModeToggle"
 import PresetPromptBubbles from "./PresetPromptBubbles"
 
 export default function InitialChatState() {
@@ -20,7 +19,6 @@ export default function InitialChatState() {
   const addUserMessage = useWorkspaceStore((state) => state.addUserMessage)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
-  const agentMode = useWorkspaceStore((state) => state.agentMode)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
 
   const sendPrompt = () => {
@@ -29,7 +27,7 @@ export default function InitialChatState() {
 
     addUserMessage(prompt)
     setWorkbenchTab("chat")
-    sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
+    sendAgentEvent("agent.run.start", { prompt })
     setComposerInput("")
   }
 
@@ -91,8 +89,7 @@ export default function InitialChatState() {
             disabled={isWorkspaceLocked || !canMutate}
             className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent text-sm leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <AgentModeToggle />
+          <div className="mt-2 flex items-center justify-end gap-3">
             <button
               type="submit"
               aria-label="发送"

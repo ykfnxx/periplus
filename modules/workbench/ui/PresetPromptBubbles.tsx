@@ -28,7 +28,6 @@ export default function PresetPromptBubbles({
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const addUserMessage = useWorkspaceStore((state) => state.addUserMessage)
   const setComposerInput = useWorkspaceStore((state) => state.setComposerInput)
-  const agentMode = useWorkspaceStore((state) => state.agentMode)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
 
   useLayoutEffect(() => {
@@ -43,7 +42,7 @@ export default function PresetPromptBubbles({
     if (!sendAgentEvent || isWorkspaceLocked || !canMutate) return
     addUserMessage(prompt)
     setWorkbenchTab("chat")
-    sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
+    sendAgentEvent("agent.run.start", { prompt })
     setComposerInput("")
   }
 

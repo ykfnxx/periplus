@@ -76,9 +76,7 @@ const PROVIDER_CIRCUIT_TTL_MS = 2 * 60 * 1_000
 function providerFailureWarning(warnings: PlaceSearchResponse["warnings"]) {
   return warnings.find(
     (warning) =>
-      warning.code !== "low_confidence" &&
-      warning.code !== "IMAGE_UNAVAILABLE" &&
-      warning.code !== "UNVERIFIED_FALLBACK"
+      warning.code !== "low_confidence" && warning.code !== "IMAGE_UNAVAILABLE"
   )
 }
 
@@ -187,71 +185,20 @@ export class PlaceIntelligenceService {
       usageContext
     )
 
-    const [first, second] = response.results
+    const [first] = response.results
     if (!first) {
       return {
         status: "not_found",
-        fallbackQuery: {
-          query: input.text,
-          city: input.city ?? input.journeyContext?.currentCity,
-        },
         reason: "本地地点库和实时 provider 都没有返回可用地点",
-        fallbackAllowed:
-          usageContext?.signal?.aborted !== true &&
-          response.warnings.some((warning) => warning.exhausted === true),
-        warnings: response.warnings,
-        providerAttempts: response.providerAttempts,
-      }
-    }
-
-    const normalized = normalizePlaceSearchInput({
-      query: input.text,
-    }).normalizedQuery
-    const exactMatch =
-      first.normalizedName === normalized ||
-      first.aliases.includes(normalized ?? "")
-    const requestedCity = input.city ?? input.journeyContext?.currentCity
-    const normalizedRequestedCity = requestedCity
-      ? normalizePlaceName(requestedCity).replace(/市$/, "")
-      : undefined
-    const cityMatches =
-      !normalizedRequestedCity ||
-      [first.city, first.province, first.district].some((value) => {
-        if (!value) return false
-        const normalizedValue = normalizePlaceName(value).replace(/市$/, "")
-        return (
-          normalizedValue.includes(normalizedRequestedCity) ||
-          normalizedRequestedCity.includes(normalizedValue)
-        )
-      })
-    const requestedCategories = normalizePlaceSearchInput({
-      intent: input.intent,
-    }).categories
-    const categoryMatches =
-      requestedCategories.length === 0 ||
-      requestedCategories.includes(first.category)
-    const exactActionableMatch =
-      exactMatch && cityMatches && categoryMatches && first.canAddToJourney
-    const isClearWinner =
-      first.canAddToJourney &&
-      (exactActionableMatch ||
-        !second ||
-        first.confidence - second.confidence >= 0.1)
-
-    if (isClearWinner) {
-      return {
-        status: "resolved",
-        place: first,
-        placeRef: placeRefFromResult(first, response.results),
         warnings: response.warnings,
         providerAttempts: response.providerAttempts,
       }
     }
 
     return {
-      status: "ambiguous",
-      candidates: response.results,
-      question: `找到多个可能的“${input.text}”，需要确认具体地点。`,
+      status: "resolved",
+      place: first,
+      placeRef: placeRefFromResult(first, response.results),
       warnings: response.warnings,
       providerAttempts: response.providerAttempts,
     }

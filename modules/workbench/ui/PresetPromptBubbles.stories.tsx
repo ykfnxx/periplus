@@ -37,7 +37,6 @@ export const Ready: Story = {
 
     await expect(sendAgentEvent).toHaveBeenCalledWith("agent.run.start", {
       prompt: "规划一条丝绸之路路线",
-      mode: "auto",
     })
   },
 }

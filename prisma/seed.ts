@@ -44,7 +44,6 @@ const ids = {
   workspaceRevision: "dev-user-1-workspace-r1",
   agentRun: "dev-user-1-agent-run",
   message: "dev-user-1-workspace-message",
-  suggestion: "dev-user-1-workspace-suggestion",
   placeWestLake: "place-west-lake",
   placeLingyin: "place-lingyin",
 } as const
@@ -678,18 +677,6 @@ async function seedWorkspace(graph: TargetJourneyGraphSnapshot) {
       role: "ASSISTANT",
       content: "已载入杭州一日行程。",
       agentRunId: ids.agentRun,
-      createdAt: new Date(NOW),
-    },
-  })
-  await prisma.workspaceSuggestion.create({
-    data: {
-      id: ids.suggestion,
-      workspaceId: ids.workspace,
-      title: "保留午餐缓冲",
-      summary: "灵隐寺之后预留一小时午餐。",
-      commandPayloadsJson: "[]",
-      basedOnWorkspaceRevision: 1,
-      status: "PENDING",
       createdAt: new Date(NOW),
     },
   })

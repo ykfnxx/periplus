@@ -107,34 +107,13 @@ function mergeKey(candidate: PlaceCandidate) {
   if (candidate.placeId) return `place:${candidate.placeId}`
   if (candidate.providerId)
     return `provider:${candidate.provider}:${candidate.providerId}`
-  return `name:${candidate.normalizedName}:${candidate.city ?? ""}:${candidate.district ?? ""}`
-}
-
-function locationsCompatible(a: PlaceCandidate, b: PlaceCandidate) {
-  if (a.city && b.city) {
-    return a.city.includes(b.city) || b.city.includes(a.city)
-  }
-  if (a.province && b.province) {
-    return a.province.includes(b.province) || b.province.includes(a.province)
-  }
-  return true
-}
-
-function samePlaceIdentity(a: PlaceCandidate, b: PlaceCandidate) {
-  if (!locationsCompatible(a, b)) return false
-  if (a.normalizedName === b.normalizedName) return true
-  return (
-    a.aliases.includes(b.normalizedName) || b.aliases.includes(a.normalizedName)
-  )
+  return `candidate:${candidate.provider}:${candidate.candidateId}`
 }
 
 function mergeCandidates(candidates: PlaceCandidate[]) {
   const groups = new Map<string, PlaceCandidate>()
   for (const candidate of candidates) {
-    const matchingEntry = Array.from(groups.entries()).find(([, existing]) =>
-      samePlaceIdentity(existing, candidate)
-    )
-    const key = matchingEntry?.[0] ?? mergeKey(candidate)
+    const key = mergeKey(candidate)
     const existing = groups.get(key)
     if (!existing) {
       groups.set(key, candidate)
@@ -161,25 +140,27 @@ function mergeCandidates(candidates: PlaceCandidate[]) {
   return Array.from(groups.values())
 }
 
-function actionability(
-  quality: PlaceQuality,
-  candidate: PlaceCandidate,
-  query: NormalizedPlaceQuery
-) {
+function actionability(candidate: PlaceCandidate, query: NormalizedPlaceQuery) {
   const bestCoordinate = selectBestCoordinate(candidate.coordinates, query)
-  const coordinateMatches =
-    query.coordinatePreference === "wgs84"
-      ? bestCoordinate?.coordinateSystem === "WGS84"
-      : bestCoordinate?.coordinateSystem === "GCJ02"
+  const hasName = candidate.name.trim().length > 0
+  const coordinateIsUsable = Boolean(
+    bestCoordinate &&
+    Number.isFinite(bestCoordinate.lat) &&
+    Number.isFinite(bestCoordinate.lng) &&
+    bestCoordinate.lat >= -90 &&
+    bestCoordinate.lat <= 90 &&
+    bestCoordinate.lng >= -180 &&
+    bestCoordinate.lng <= 180 &&
+    ["WGS84", "GCJ02", "BD09LL"].includes(bestCoordinate.coordinateSystem)
+  )
+  const trustedSource = candidate.sources.length > 0
+  const canAddToJourney = hasName && coordinateIsUsable && trustedSource
 
-  const canAddToJourney =
-    Boolean(bestCoordinate) &&
-    coordinateMatches &&
-    (quality === "verified" || quality === "probable")
-
-  const needsUserConfirmation = !canAddToJourney
-
-  return { bestCoordinate, canAddToJourney, needsUserConfirmation }
+  return {
+    bestCoordinate,
+    canAddToJourney,
+    needsUserConfirmation: false,
+  }
 }
 
 export function rankPlaceCandidates(
@@ -190,9 +171,9 @@ export function rankPlaceCandidates(
     const confidence = confidenceFor(query, candidate)
     const quality = qualityFor(confidence)
     const { bestCoordinate, canAddToJourney, needsUserConfirmation } =
-      actionability(quality, candidate, query)
+      actionability(candidate, query)
 
-    if (!bestCoordinate) return null
+    if (!bestCoordinate || !canAddToJourney) return null
 
     const result: PlaceSearchResult = {
       id: candidate.candidateId,
@@ -213,18 +194,27 @@ export function rankPlaceCandidates(
       quality,
       canAddToJourney,
       needsUserConfirmation,
-      reason:
-        quality === "verified"
-          ? "本地来源或 provider 匹配置信度较高"
-          : "结果需要用户确认或更多来源校验",
+      reason: "名称、坐标与可信来源均满足 AUTO 写入门槛",
     }
     if (candidate.placeId) result.placeId = candidate.placeId
     return result
   }
 
   return mergeCandidates(candidates)
-    .map(toSearchResult)
-    .filter((result): result is PlaceSearchResult => Boolean(result))
-    .sort((a, b) => b.confidence - a.confidence)
+    .map((candidate, providerOrder) => ({
+      result: toSearchResult(candidate),
+      providerOrder,
+    }))
+    .filter(
+      (entry): entry is { result: PlaceSearchResult; providerOrder: number } =>
+        Boolean(entry.result)
+    )
+    .sort(
+      (a, b) =>
+        b.result.confidence - a.result.confidence ||
+        a.providerOrder - b.providerOrder ||
+        a.result.id.localeCompare(b.result.id)
+    )
+    .map((entry) => entry.result)
     .slice(0, query.limit)
 }
