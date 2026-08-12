@@ -246,6 +246,13 @@ function contextInput(context: {
   })
 }
 
+function throwIfAborted(signal: AbortSignal) {
+  if (!signal.aborted) return
+  const error = new Error("Pi core run was cancelled")
+  error.name = "AbortError"
+  throw error
+}
+
 export class PeriplusAgentHarness {
   readonly id = "pi-agent-core"
   private readonly model: Model<"openai-responses">
@@ -256,10 +263,10 @@ export class PeriplusAgentHarness {
     this.models = createDeepSeekModels(this.model, options.apiKey)
   }
 
-  async start(
+  start(
     request: PeriplusAgentHarnessRequest,
     observer: PeriplusAgentHarnessObserver
-  ): Promise<PeriplusAgentHarnessRun> {
+  ): PeriplusAgentHarnessRun {
     if (!this.options.apiKey) {
       throw new Error("DEEPSEEK_API_KEY is required for the Pi core harness")
     }
@@ -274,161 +281,165 @@ export class PeriplusAgentHarness {
     }, this.options.timeoutMs)
     timeout.unref?.()
 
-    let prepared
-    try {
-      prepared = await this.prepareContext(
-        request,
-        observer,
-        abortController.signal
-      )
-    } catch (error) {
-      clearTimeout(timeout)
-      throw error
-    }
-    const tools =
-      request.mode === "auto"
-        ? createPiCoreTools({
-            execute: request.executeTool,
-            ...(this.options.webSearchEnabled
-              ? {
-                  webSearch: {
-                    apiKey: this.options.apiKey,
-                    model: this.options.model,
-                    maxSearches: 3,
-                  },
-                }
-              : {}),
-          })
-        : []
-    observer.onEvent({
-      type: "context_prepared",
-      input: contextInput({
-        systemPrompt: prepared.systemPrompt,
-        messages: prepared.messages,
-        tools,
-      }),
-      messageCount: prepared.messages.length,
-      estimatedTokens: estimateContextTokens(prepared.messages).tokens,
-      compacted: prepared.compacted,
-    })
-
-    let requestSequence = 0
-    const streamFn = (
-      model: Model<Api>,
-      context: Context,
-      options?: SimpleStreamOptions
-    ) => {
-      const requestId = `${request.runId}:model:${requestSequence++}`
-      const startedAt = performance.now()
-      observer.onEvent({
-        type: "model_start",
-        requestId,
-        provider: model.provider,
-        model: model.id,
-        input: contextInput(context),
-        startedAt,
-      })
-      const signal = options?.signal
-        ? AbortSignal.any([abortController.signal, options.signal])
-        : abortController.signal
-      return this.models.streamSimple(model, context, {
-        ...options,
-        apiKey: this.options.apiKey,
-        signal,
-      })
-    }
-    const agent = new Agent({
-      initialState: {
-        systemPrompt: prepared.systemPrompt,
-        model: this.model,
-        thinkingLevel: "high",
-        messages: prepared.messages,
-        tools,
-      },
-      streamFn,
-      getApiKey: () => this.options.apiKey,
-      toolExecution: "sequential",
-    })
-    activeAgent = agent
-
     let settled = false
     const settle = (result: PeriplusAgentHarnessResult) => {
       if (settled) return
       settled = true
       observer.onEvent({ type: "run_end", result })
     }
-    agent.subscribe((event) => {
-      if (
-        event.type === "message_update" &&
-        event.assistantMessageEvent.type === "text_delta"
-      ) {
+    void (async () => {
+      try {
+        const prepared = await this.prepareContext(
+          request,
+          observer,
+          abortController.signal
+        )
+        throwIfAborted(abortController.signal)
+        const tools =
+          request.mode === "auto"
+            ? createPiCoreTools({
+                execute: request.executeTool,
+                ...(this.options.webSearchEnabled
+                  ? {
+                      webSearch: {
+                        apiKey: this.options.apiKey,
+                        model: this.options.model,
+                        maxSearches: 3,
+                      },
+                    }
+                  : {}),
+              })
+            : []
         observer.onEvent({
-          type: "message_delta",
-          text: event.assistantMessageEvent.delta,
+          type: "context_prepared",
+          input: contextInput({
+            systemPrompt: prepared.systemPrompt,
+            messages: prepared.messages,
+            tools,
+          }),
+          messageCount: prepared.messages.length,
+          estimatedTokens: estimateContextTokens(prepared.messages).tokens,
+          compacted: prepared.compacted,
         })
-      }
-      if (event.type === "message_end" && event.message.role === "assistant") {
-        const output = assistantText(event.message)
-        observer.onEvent({ type: "message_end", text: output })
-        observer.onEvent({
-          type: "model_end",
-          requestId: `${request.runId}:model:${requestSequence - 1}`,
-          output,
-          toolCalls: assistantToolCalls(event.message),
-          usage: event.message.usage,
-          stopReason: event.message.stopReason,
-          endedAt: performance.now(),
-        })
-      }
-      if (event.type === "tool_execution_start") {
-        const toolName =
-          canonicalPiCoreToolName(event.toolName) ?? event.toolName
-        observer.onEvent({
-          type: "tool_start",
-          toolCallId: event.toolCallId,
-          toolName,
-          providerToolName: event.toolName,
-          args: event.args,
-        })
-      }
-      if (event.type === "tool_execution_end") {
-        const toolName =
-          canonicalPiCoreToolName(event.toolName) ?? event.toolName
-        observer.onEvent({
-          type: "tool_end",
-          toolCallId: event.toolCallId,
-          toolName,
-          providerToolName: event.toolName,
-          result: event.result,
-          isError: event.isError,
-        })
-      }
-    })
 
-    void agent
-      .continue()
-      .then(() => {
+        let requestSequence = 0
+        const streamFn = (
+          model: Model<Api>,
+          context: Context,
+          options?: SimpleStreamOptions
+        ) => {
+          const requestId = `${request.runId}:model:${requestSequence++}`
+          const startedAt = performance.now()
+          observer.onEvent({
+            type: "model_start",
+            requestId,
+            provider: model.provider,
+            model: model.id,
+            input: contextInput(context),
+            startedAt,
+          })
+          const signal = options?.signal
+            ? AbortSignal.any([abortController.signal, options.signal])
+            : abortController.signal
+          return this.models.streamSimple(model, context, {
+            ...options,
+            apiKey: this.options.apiKey,
+            signal,
+          })
+        }
+        const agent = new Agent({
+          initialState: {
+            systemPrompt: prepared.systemPrompt,
+            model: this.model,
+            thinkingLevel: "high",
+            messages: prepared.messages,
+            tools,
+          },
+          streamFn,
+          getApiKey: () => this.options.apiKey,
+        })
+        activeAgent = agent
+        agent.subscribe((event) => {
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_delta"
+          ) {
+            observer.onEvent({
+              type: "message_delta",
+              text: event.assistantMessageEvent.delta,
+            })
+          }
+          if (
+            event.type === "message_end" &&
+            event.message.role === "assistant"
+          ) {
+            const output = assistantText(event.message)
+            observer.onEvent({ type: "message_end", text: output })
+            observer.onEvent({
+              type: "model_end",
+              requestId: `${request.runId}:model:${requestSequence - 1}`,
+              output,
+              toolCalls: assistantToolCalls(event.message),
+              usage: event.message.usage,
+              stopReason: event.message.stopReason,
+              endedAt: performance.now(),
+            })
+          }
+          if (event.type === "tool_execution_start") {
+            const toolName =
+              canonicalPiCoreToolName(event.toolName) ?? event.toolName
+            observer.onEvent({
+              type: "tool_start",
+              toolCallId: event.toolCallId,
+              toolName,
+              providerToolName: event.toolName,
+              args: event.args,
+            })
+          }
+          if (event.type === "tool_execution_end") {
+            const toolName =
+              canonicalPiCoreToolName(event.toolName) ?? event.toolName
+            observer.onEvent({
+              type: "tool_end",
+              toolCallId: event.toolCallId,
+              toolName,
+              providerToolName: event.toolName,
+              result: event.result,
+              isError: event.isError,
+            })
+          }
+        })
+        await agent.continue()
         const error = agent.state.errorMessage
           ? new Error(agent.state.errorMessage)
           : undefined
-        return settle({
+        settle({
           status: cancelled ? "cancelled" : error ? "failed" : "succeeded",
           ...(error ? { error } : {}),
         })
-      })
-      .catch((error) =>
+      } catch (error) {
         settle({
-          status: cancelled ? "cancelled" : "failed",
-          error: error instanceof Error ? error : new Error(String(error)),
+          status:
+            cancelled || abortController.signal.aborted
+              ? "cancelled"
+              : "failed",
+          ...(cancelled || abortController.signal.aborted
+            ? {}
+            : {
+                error:
+                  error instanceof Error ? error : new Error(String(error)),
+              }),
         })
-      )
-      .finally(() => clearTimeout(timeout))
+      } finally {
+        clearTimeout(timeout)
+      }
+    })()
 
     return {
       cancel: () => {
         cancelled = true
         abortController.abort()
-        agent.abort()
+        activeAgent?.abort()
       },
     }
   }
@@ -438,6 +449,7 @@ export class PeriplusAgentHarness {
     observer: PeriplusAgentHarnessObserver,
     signal: AbortSignal
   ) {
+    throwIfAborted(signal)
     let checkpoint = request.checkpoint
     const checkpointIndex = checkpoint
       ? request.messages.findIndex(
@@ -493,6 +505,7 @@ export class PeriplusAgentHarness {
         checkpoint?.summary,
         "high"
       )
+      throwIfAborted(signal)
       if (!summary.ok) {
         observer.onEvent({
           type: "model_end",
@@ -518,6 +531,7 @@ export class PeriplusAgentHarness {
         summary: summary.value.text,
         throughMessageId: summarizedPersisted.at(-1)!.id,
       }
+      throwIfAborted(signal)
       await request.saveCheckpoint(checkpoint)
       visibleMessages = request.messages.slice(
         request.messages.findIndex(
