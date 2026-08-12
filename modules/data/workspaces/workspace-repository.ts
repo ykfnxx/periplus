@@ -857,6 +857,52 @@ export async function listWorkspaceRevisions(
   return records.map(mapRevision)
 }
 
+export async function getWorkspaceAgentContextCheckpoint(
+  context: AuthContext,
+  workspaceId: string
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (
+    !workspace?.agentContextSummary ||
+    !workspace.agentContextThroughMessageId
+  ) {
+    return null
+  }
+  return {
+    summary: workspace.agentContextSummary,
+    throughMessageId: workspace.agentContextThroughMessageId,
+  }
+}
+
+export async function saveWorkspaceAgentContextCheckpoint(
+  context: AuthContext,
+  workspaceId: string,
+  checkpoint: { summary: string; throughMessageId: string },
+  now = new Date()
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {})
+  if (!workspace) return null
+  await requireActiveWorkspace(workspace, now)
+  const message = await prisma.workspaceMessage.findFirst({
+    where: { id: checkpoint.throughMessageId, workspaceId },
+    select: { id: true },
+  })
+  if (!message) {
+    throw new WorkspaceInputError(
+      "Agent context checkpoint must end at a Workspace message"
+    )
+  }
+  await prisma.workspaceSession.update({
+    where: { id: workspaceId },
+    data: {
+      agentContextSummary: checkpoint.summary,
+      agentContextThroughMessageId: checkpoint.throughMessageId,
+      lastAccessAt: now,
+    },
+  })
+  return checkpoint
+}
+
 export async function appendWorkspaceMessage(
   context: AuthContext,
   workspaceId: string,

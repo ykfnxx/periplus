@@ -50,7 +50,6 @@ function asDelta(payload: unknown) {
   return payload as {
     text?: string
     message?: string
-    stream?: string
     commandId?: string
   }
 }
@@ -189,9 +188,7 @@ export default function AgentSync() {
 
           if (message.type === "agent.message.delta") {
             const delta = asDelta(message.payload)
-            if (delta.stream === "stdout") {
-              appendAssistantMessage(delta.text ?? "")
-            }
+            appendAssistantMessage(delta.text ?? "")
             return
           }
 

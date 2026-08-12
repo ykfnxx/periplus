@@ -1,5 +1,3 @@
-import { homedir } from "node:os"
-import { join } from "node:path"
 import { periplusPublicConfig } from "./periplus"
 
 function envString(name: string, fallback = "") {
@@ -75,13 +73,6 @@ export const periplusServerConfig = {
       return envNumber("PERIPLUS_BACKEND_PORT", 3002)
     },
   },
-  agentRuntime: {
-    get kind() {
-      return envString("PERIPLUS_AGENT_RUNTIME", "kimi") === "pi"
-        ? ("pi" as const)
-        : ("kimi" as const)
-    },
-  },
   observability: {
     get enabled() {
       return envString("PERIPLUS_OBSERVABILITY_ENABLED", "true") === "true"
@@ -116,32 +107,12 @@ export const periplusServerConfig = {
       return envString("DEEPSEEK_MODEL", "deepseek-v4-flash")
     },
   },
-  pi: {
-    get bin() {
-      return envString(
-        "PERIPLUS_PI_BIN",
-        join(process.cwd(), "node_modules/.bin/pi")
-      )
-    },
+  agent: {
     get webSearchEnabled() {
-      return envString("PERIPLUS_PI_WEB_SEARCH_ENABLED") === "true"
+      return envString("PERIPLUS_AGENT_WEB_SEARCH_ENABLED") === "true"
     },
     get timeoutMs() {
-      return envNumber("PERIPLUS_PI_TIMEOUT_MS", 120000)
-    },
-  },
-  kimi: {
-    get bin() {
-      return envString(
-        "PERIPLUS_KIMI_BIN",
-        join(homedir(), ".kimi-code/bin/kimi")
-      )
-    },
-    get homeSource() {
-      return envString(
-        "PERIPLUS_KIMI_HOME_SOURCE",
-        join(homedir(), ".kimi-code")
-      )
+      return envNumber("PERIPLUS_AGENT_TIMEOUT_MS", 120000)
     },
   },
 } as const

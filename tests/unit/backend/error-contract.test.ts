@@ -1,10 +1,6 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
-import { Readable } from "node:stream"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { z } from "zod"
-import type { AgentGateway } from "@/backend/agent/gateway"
 import { domainErrorResponse } from "@/backend/domain-error"
-import { errorResponse, handleInternalRequest } from "@/backend/internal-api"
 import {
   commandIdFromRawWireMessage,
   errorEvent,
@@ -24,7 +20,7 @@ import {
   WorkspaceRevisionConflictError,
 } from "@/modules/data/workspaces/workspace-repository"
 
-describe("Agent HTTP and WebSocket domain error contract", () => {
+describe("WebSocket domain error contract", () => {
   const cases: ReadonlyArray<{
     error: unknown
     status: 400 | 403 | 409 | 500
@@ -94,16 +90,6 @@ describe("Agent HTTP and WebSocket domain error contract", () => {
       ...(entry.message ? { message: entry.message } : {}),
       ...(entry.issues ? { issues: entry.issues } : {}),
     })
-    expect(errorResponse(entry.error)).toMatchObject({
-      status: entry.status,
-      body: {
-        error: {
-          code: entry.code,
-          ...(entry.message ? { message: entry.message } : {}),
-          ...(entry.issues ? { issues: entry.issues } : {}),
-        },
-      },
-    })
     expect(errorEvent(entry.error, "command-1")).toMatchObject({
       type: "error",
       payload: {
@@ -115,35 +101,7 @@ describe("Agent HTTP and WebSocket domain error contract", () => {
     })
   })
 
-  it("maps malformed Agent HTTP JSON and unsupported WebSocket envelopes to stable invalid_input", async () => {
-    const request = Readable.from(["{"]) as IncomingMessage
-    request.method = "POST"
-    request.url = "/internal/agent-tool"
-    let status: number | undefined
-    let responseBody = ""
-    const response = {
-      writeHead(value: number) {
-        status = value
-        return this
-      },
-      end(value?: string) {
-        responseBody = value ?? ""
-        return this
-      },
-    } as unknown as ServerResponse
-    const executeTool = vi.fn()
-    await handleInternalRequest(request, response, {
-      executeTool,
-    } as unknown as AgentGateway)
-    expect(status).toBe(400)
-    expect(JSON.parse(responseBody)).toEqual({
-      error: {
-        code: "invalid_input",
-        message: "Request body must be valid JSON",
-      },
-    })
-    expect(executeTool).not.toHaveBeenCalled()
-
+  it("maps malformed WebSocket envelopes to stable invalid_input", async () => {
     for (const raw of ["{", JSON.stringify({ type: "unsupported" })]) {
       let error: unknown
       try {

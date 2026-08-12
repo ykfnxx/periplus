@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { join } from "node:path"
 import { z } from "zod"
-import { context as otelContext } from "@opentelemetry/api"
 import type { AuthContext } from "@/modules/auth/server/context"
 import { hotelSearchInputSchema } from "@/backend/mcp/schemas/hotel"
 import {
@@ -60,30 +58,26 @@ import {
   appendWorkspaceMessageDelta,
   createWorkspaceSuggestion,
   finishWorkspaceAgentRun,
+  getWorkspaceAgentContextCheckpoint,
   heartbeatWorkspaceAgentRun,
   reconcileExpiredWorkspaceAgentRun,
+  saveWorkspaceAgentContextCheckpoint,
   startWorkspaceAgentRun,
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
 } from "@/modules/data/workspaces/workspace-repository"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
-import type {
-  AgentConversationMessage,
-  AgentEventEmitter,
-  AgentMode,
-} from "../types"
+import type { AgentEventEmitter, AgentMode } from "../types"
 import { buildPrompt, promptVersion } from "./prompt"
 import type {
-  AgentRuntime,
-  AgentRuntimeExit,
-  AgentRuntimeRun,
-  AgentToolServer,
-} from "./runtime"
+  PeriplusAgentHarness,
+  PeriplusAgentHarnessResult,
+  PeriplusAgentHarnessRun,
+  PeriplusHarnessEvent,
+  PersistedAgentMessage,
+} from "./periplus-agent-harness"
 import { parseSuggestion } from "./suggestion"
-import {
-  type EvalTraceInput,
-  type EvalTraceSink,
-} from "./evals"
+import { type EvalTraceInput, type EvalTraceSink } from "./evals"
 import {
   AgentRunTelemetry,
   redactedInput,
@@ -92,14 +86,11 @@ import {
 } from "../observability"
 import {
   OpenInferenceSpanKind,
-  PROMPT_TEMPLATE_VERSION,
   TOOL_NAME,
 } from "@arizeai/openinference-semantic-conventions"
 import { AgentDraftSession, type DraftMutationRequest } from "./draft-session"
 
 interface AgentGatewayOptions {
-  backendUrl: string
-  projectRoot: string
   runtimeOwnerId?: string
   agentRunLeaseSeconds?: number
   heartbeatIntervalMs?: number | null
@@ -119,14 +110,14 @@ interface RunningAgent {
   workspaceId: string
   context: AuthContext
   runId: string
-  capabilityToken: string
-  runtimeRun: AgentRuntimeRun | null
+  harnessRun: PeriplusAgentHarnessRun | null
   cancelled: boolean
   finished: boolean
   runtimeFailed: boolean
-  stdout: string
-  stdoutBuffer: string
-  stdoutFlushTimer: ReturnType<typeof setTimeout> | null
+  assistantOutput: string
+  assistantOutputBuffer: string
+  assistantOutputFlushTimer: ReturnType<typeof setTimeout> | null
+  currentAssistantMessageText: string
   assistantMessageId: string
   outputWrite: Promise<void>
   failureCode: string | null
@@ -137,6 +128,8 @@ interface RunningAgent {
   traceRunSpanId: string
   traceFailure: Error | null
   telemetry: AgentRunTelemetry
+  modelSpans: Map<string, TelemetrySpan>
+  externalToolSpans: Map<string, TelemetrySpan>
   requiresPlanValidation: boolean
   lastPlanValidation: PlanValidationReport | null
   draftSession: AgentDraftSession
@@ -271,33 +264,26 @@ function conversationMessages(
   document: NonNullable<
     Awaited<ReturnType<WorkspaceCommandService["getDocument"]>>
   >
-): AgentConversationMessage[] {
+): PersistedAgentMessage[] {
   return document.messages
-    .filter((message) => message.role !== "SYSTEM")
+    .filter((message) => message.role !== "SYSTEM" && message.content.trim())
     .map((message) => ({
       id: message.id,
       role: message.role === "USER" ? "user" : "assistant",
       content: message.content,
-      runId: message.agentRunId ?? null,
       createdAt: message.createdAt,
-      updatedAt: message.updatedAt,
     }))
 }
 
-function draftPrompt(
-  messages: AgentConversationMessage[],
-  mode: AgentMode,
-  snapshot: unknown
-) {
-  return buildPrompt(messages, mode, JSON.stringify(snapshot, null, 2))
+function draftPrompt(mode: AgentMode, snapshot: unknown) {
+  return buildPrompt(mode, JSON.stringify(snapshot, null, 2))
 }
 
-const STDOUT_FLUSH_DELAY_MS = 50
-const STDOUT_FLUSH_BYTES = 512
+const OUTPUT_FLUSH_DELAY_MS = 50
+const OUTPUT_FLUSH_BYTES = 512
 
 export class AgentGateway {
   private readonly runs = new Map<string, RunningAgent>()
-  private readonly runsByCapability = new Map<string, RunningAgent>()
   private readonly runtimeOwnerId: string
   private readonly agentRunLeaseSeconds: number
   private readonly heartbeatIntervalMs: number | null
@@ -311,7 +297,7 @@ export class AgentGateway {
 
   constructor(
     private readonly commands: WorkspaceCommandService,
-    private readonly runtime: AgentRuntime,
+    private readonly harness: PeriplusAgentHarness,
     private readonly options: AgentGatewayOptions
   ) {
     this.runtimeOwnerId = options.runtimeOwnerId ?? randomUUID()
@@ -401,10 +387,9 @@ export class AgentGateway {
       userId: context.userId,
       runId,
       mode,
-      runtimeId: this.runtime.id,
+      runtimeId: this.harness.id,
       promptVersion: promptVersion(mode),
     })
-    telemetry.setPromptInput(prompt)
 
     let initial
     try {
@@ -578,19 +563,18 @@ export class AgentGateway {
       )
       throw error
     }
-    const capabilityToken = randomUUID()
     const running: RunningAgent = {
       workspaceId,
       context,
       runId: persistedRun.id,
-      capabilityToken,
-      runtimeRun: null,
+      harnessRun: null,
       cancelled: false,
       finished: false,
       runtimeFailed: false,
-      stdout: "",
-      stdoutBuffer: "",
-      stdoutFlushTimer: null,
+      assistantOutput: "",
+      assistantOutputBuffer: "",
+      assistantOutputFlushTimer: null,
+      currentAssistantMessageText: "",
       assistantMessageId,
       outputWrite: Promise.resolve(),
       failureCode: null,
@@ -601,6 +585,8 @@ export class AgentGateway {
       traceRunSpanId: randomUUID(),
       traceFailure: null,
       telemetry,
+      modelSpans: new Map(),
+      externalToolSpans: new Map(),
       requiresPlanValidation: false,
       lastPlanValidation: null,
       draftSession: new AgentDraftSession(
@@ -611,7 +597,6 @@ export class AgentGateway {
       ),
     }
     this.runs.set(workspaceId, running)
-    this.runsByCapability.set(capabilityToken, running)
     this.startHeartbeat(running)
 
     try {
@@ -619,7 +604,7 @@ export class AgentGateway {
         type: "run.started",
         spanId: running.traceRunSpanId,
         status: "OK",
-        payload: { mode, runtimeId: this.runtime.id },
+        payload: { mode, runtimeId: this.harness.id },
       })
       const document = await this.withTelemetrySpan(
         running.telemetry,
@@ -632,7 +617,7 @@ export class AgentGateway {
         type: "agent.run.started",
         payload: {
           runId: running.runId,
-          runtimeId: this.runtime.id,
+          runtimeId: this.harness.id,
           ...(running.telemetry.traceId
             ? { traceId: running.telemetry.traceId }
             : {}),
@@ -643,113 +628,175 @@ export class AgentGateway {
         OpenInferenceSpanKind.PROMPT,
         { "periplus.prompt.version": promptVersion(mode) }
       )
-      const runtimePrompt = draftPrompt(
-        conversationMessages(document),
-        mode,
-        document
-      )
+      const runtimePrompt = draftPrompt(mode, document)
       promptSpan.end("OK", {
         "periplus.prompt.length": runtimePrompt.length,
       })
-      running.telemetry.setPromptInput(runtimePrompt)
 
       const runtimeStartSpan = running.telemetry.startSpan(
         "agent.runtime.start",
         OpenInferenceSpanKind.CHAIN,
         {
-          "periplus.agent.runtime": this.runtime.id,
+          "periplus.agent.runtime": this.harness.id,
           "periplus.agent.mode": mode,
         }
       )
-      const runtimeStreamSpan = running.telemetry.startRuntimeStream(
-        runtimeStartSpan.context
-      )
-      let runtimeRun
       try {
-        runtimeRun = await running.telemetry.withSpan(runtimeStartSpan, () =>
-          this.runtime.start(
-            {
-              runId: running.runId,
-              prompt: runtimePrompt,
-              traceCarrier: running.telemetry.carrierFor(runtimeStreamSpan),
-              toolServers: this.toolServers(running, mode),
-            },
-            {
-              onStdout: (text) => {
-                running.telemetry.recordStreamDelta(text)
-                this.persistStdout(running, text, emit)
+        const checkpoint = await getWorkspaceAgentContextCheckpoint(
+          context,
+          workspaceId
+        )
+        running.telemetry.startRuntimeStream(runtimeStartSpan.context)
+        const harnessRun = await running.telemetry.withSpan(
+          runtimeStartSpan,
+          () =>
+            this.harness.start(
+              {
+                runId: running.runId,
+                workspaceId,
+                mode,
+                systemPrompt: runtimePrompt,
+                messages: conversationMessages(document),
+                checkpoint,
+                executeTool: (request, signal) =>
+                  this.executeTool(running, request, signal),
+                saveCheckpoint: async (nextCheckpoint) => {
+                  await saveWorkspaceAgentContextCheckpoint(
+                    context,
+                    workspaceId,
+                    nextCheckpoint,
+                    this.now()
+                  )
+                },
               },
-              onStderr: (text) => {
-                this.heartbeatInBackground(running)
-                emit(workspaceId, {
-                  type: "agent.message.delta",
-                  payload: { runId: running.runId, stream: "stderr", text },
-                })
-              },
-              onError: (error) => {
-                running.runtimeFailed = true
-                running.failureCode ??= "AGENT_RUNTIME_FAILED"
-                running.failureMessage ??= error.message
-                running.toolAbortController.abort()
-                running.telemetry.recordRuntimeError(error.name)
-                running.telemetry.root.addEvent("runtime.error", {
-                  "error.type": error.name,
-                })
-                emit(workspaceId, {
-                  type: "agent.run.failed",
-                  payload: {
-                    runId: running.runId,
-                    code: running.failureCode,
-                    message: running.failureMessage,
-                  },
-                })
-              },
-              onModelTelemetry: (event) => {
-                const modelSpan = running.telemetry.startSpan(
-                  "llm.request",
-                  OpenInferenceSpanKind.LLM,
-                  {
-                    "llm.provider": event.provider,
-                    "llm.model_name": event.model,
-                    [PROMPT_TEMPLATE_VERSION]: promptVersion(mode),
-                    ...(event.inputTokens === undefined
-                      ? {}
-                      : { "llm.token_count.prompt": event.inputTokens }),
-                    ...(event.outputTokens === undefined
-                      ? {}
-                      : { "llm.token_count.completion": event.outputTokens }),
-                    ...(event.cacheReadTokens === undefined
-                      ? {}
-                      : {
-                          "llm.token_count.cache_read": event.cacheReadTokens,
-                        }),
-                    ...(event.cacheWriteTokens === undefined
-                      ? {}
-                      : {
-                          "llm.token_count.cache_write": event.cacheWriteTokens,
-                        }),
-                  },
-                  runtimeStreamSpan.context
-                )
-                modelSpan.end("OK")
-              },
-              onExit: (result) => {
-                void this.finish(running, mode, result, emit)
-              },
-            }
-          )
+              {
+                onEvent: (event) =>
+                  this.handleHarnessEvent(running, mode, event, emit),
+              }
+            )
         )
         runtimeStartSpan.end("OK")
+        running.harnessRun = harnessRun
       } catch (error) {
         runtimeStartSpan.end("ERROR", {
           "error.type": error instanceof Error ? error.name : "Error",
         })
         throw error
       }
-      running.runtimeRun = runtimeRun
-      if (running.cancelled) runtimeRun.cancel()
+      if (running.cancelled) running.harnessRun?.cancel()
     } catch (error) {
       await this.failToStart(running, error, emit)
+    }
+  }
+
+  private handleHarnessEvent(
+    running: RunningAgent,
+    mode: AgentMode,
+    event: PeriplusHarnessEvent,
+    emit: AgentEventEmitter
+  ) {
+    if (event.type === "context_prepared") {
+      running.telemetry.setPromptInput(event.input)
+      running.telemetry.root.setAttributes({
+        "periplus.context.message_count": event.messageCount,
+        "periplus.context.estimated_tokens": event.estimatedTokens,
+        "periplus.context.compacted": event.compacted,
+      })
+      return
+    }
+    if (event.type === "model_start") {
+      const span = running.telemetry.startSpan(
+        "llm.request",
+        OpenInferenceSpanKind.LLM,
+        {
+          "llm.provider": event.provider,
+          "llm.model_name": event.model,
+          "periplus.prompt.version": promptVersion(mode),
+        }
+      )
+      span.setAttribute("input.value", redactedInput(event.input) ?? "")
+      running.modelSpans.set(event.requestId, span)
+      return
+    }
+    if (event.type === "model_end") {
+      const span = running.modelSpans.get(event.requestId)
+      if (!span) return
+      running.modelSpans.delete(event.requestId)
+      span.setAttribute(
+        "output.value",
+        redactedInput({ text: event.output, toolCalls: event.toolCalls }) ?? ""
+      )
+      span.end(
+        event.stopReason === "error"
+          ? "ERROR"
+          : event.stopReason === "aborted"
+            ? "CANCELLED"
+            : "OK",
+        {
+          "llm.token_count.prompt": event.usage.input,
+          "llm.token_count.completion": event.usage.output,
+          "llm.token_count.total": event.usage.totalTokens,
+          "llm.token_count.cache_read": event.usage.cacheRead,
+          "llm.token_count.cache_write": event.usage.cacheWrite,
+          "periplus.llm.duration_ms": event.endedAt - span.startedAt,
+          "periplus.llm.stop_reason": event.stopReason,
+        }
+      )
+      return
+    }
+    if (event.type === "message_delta") {
+      running.currentAssistantMessageText += event.text
+      running.telemetry.recordStreamDelta(event.text)
+      this.persistAssistantOutput(running, event.text, emit)
+      return
+    }
+    if (event.type === "message_end") {
+      const remaining = event.text.slice(
+        running.currentAssistantMessageText.length
+      )
+      if (remaining) this.persistAssistantOutput(running, remaining, emit)
+      running.currentAssistantMessageText = ""
+      return
+    }
+    if (event.type === "tool_start") {
+      running.telemetry.root.addEvent("agent.tool.start", {
+        "periplus.tool.call_id": event.toolCallId,
+        "periplus.tool.name": event.toolName,
+        "periplus.tool.provider_name": event.providerToolName,
+      })
+      if (event.toolName === "web_search") {
+        const span = running.telemetry.startSpan(
+          "agent.tool",
+          OpenInferenceSpanKind.TOOL,
+          {
+            [TOOL_NAME]: event.toolName,
+            "periplus.tool.call_id": event.toolCallId,
+            "periplus.tool.provider": "deepseek",
+          },
+          running.telemetry.context
+        )
+        span.setAttribute("input.value", redactedInput(event.args) ?? "")
+        running.externalToolSpans.set(event.toolCallId, span)
+      }
+      return
+    }
+    if (event.type === "tool_end") {
+      running.telemetry.root.addEvent("agent.tool.end", {
+        "periplus.tool.call_id": event.toolCallId,
+        "periplus.tool.name": event.toolName,
+        "periplus.tool.provider_name": event.providerToolName,
+        "periplus.tool.error": event.isError,
+      })
+      const span = running.externalToolSpans.get(event.toolCallId)
+      if (span) {
+        running.externalToolSpans.delete(event.toolCallId)
+        span.setAttribute("output.value", redactedInput(event.result) ?? "")
+        span.end(event.isError ? "ERROR" : "OK")
+      }
+      return
+    }
+    if (event.type === "run_end") {
+      void this.finish(running, mode, event.result, emit)
     }
   }
 
@@ -758,19 +805,17 @@ export class AgentGateway {
     if (!running || running.finished) return
     running.cancelled = true
     running.toolAbortController.abort()
-    running.runtimeRun?.cancel()
+    running.harnessRun?.cancel()
   }
 
-  async executeTool(
-    capabilityToken: string,
-    rawRequest: AgentToolRequest
+  private async executeTool(
+    running: RunningAgent,
+    rawRequest: AgentToolRequest,
+    signal?: AbortSignal
   ): Promise<unknown> {
     const request = agentToolRequestSchema.parse(rawRequest)
-    const running = this.runsByCapability.get(capabilityToken)
-    if (!running || running.finished) {
-      throw new WorkspaceInputError(
-        "Agent tool capability is invalid or expired"
-      )
+    if (running.finished || signal?.aborted) {
+      throw new WorkspaceInputError("Agent tool execution is no longer active")
     }
     const toolSpanId = randomUUID()
     const startedAt = performance.now()
@@ -780,7 +825,7 @@ export class AgentGateway {
       {
         [TOOL_NAME]: request.type,
       },
-      otelContext.active()
+      running.telemetry.context
     )
     otelToolSpan.setAttribute("input.value", redactedInput(request) ?? "")
     const otelDraftSpan =
@@ -1476,58 +1521,35 @@ export class AgentGateway {
     }
   }
 
-  private toolServers(
-    running: RunningAgent,
-    mode: AgentMode
-  ): AgentToolServer[] {
-    if (mode !== "auto") return []
-    return [
-      {
-        id: "periplus-workspace",
-        command: join(this.options.projectRoot, "node_modules/.bin/tsx"),
-        args: ["backend/mcp/server.ts"],
-        cwd: this.options.projectRoot,
-        configFile: {
-          fileName: "workspace-mcp-config.json",
-          argument: "--config",
-          content: JSON.stringify(
-            {
-              backendUrl: this.options.backendUrl,
-              capabilityToken: running.capabilityToken,
-              traceCarrier: running.telemetry.traceCarrier,
-            },
-            null,
-            2
-          ),
-        },
-      },
-    ]
-  }
-
-  private persistStdout(
+  private persistAssistantOutput(
     running: RunningAgent,
     text: string,
     emit: AgentEventEmitter
   ) {
     if (running.failureCode === "OUTPUT_PERSIST_FAILED") return
-    running.stdoutBuffer += text
-    if (Buffer.byteLength(running.stdoutBuffer, "utf8") >= STDOUT_FLUSH_BYTES) {
-      this.flushStdout(running, emit)
+    running.assistantOutputBuffer += text
+    if (
+      Buffer.byteLength(running.assistantOutputBuffer, "utf8") >=
+      OUTPUT_FLUSH_BYTES
+    ) {
+      this.flushAssistantOutput(running, emit)
       return
     }
-    if (running.stdoutFlushTimer) return
-    running.stdoutFlushTimer = setTimeout(() => {
-      running.stdoutFlushTimer = null
-      this.flushStdout(running, emit)
-    }, STDOUT_FLUSH_DELAY_MS)
-    running.stdoutFlushTimer.unref?.()
+    if (running.assistantOutputFlushTimer) return
+    running.assistantOutputFlushTimer = setTimeout(() => {
+      running.assistantOutputFlushTimer = null
+      this.flushAssistantOutput(running, emit)
+    }, OUTPUT_FLUSH_DELAY_MS)
+    running.assistantOutputFlushTimer.unref?.()
   }
 
-  private flushStdout(running: RunningAgent, emit: AgentEventEmitter) {
-    if (running.stdoutFlushTimer) clearTimeout(running.stdoutFlushTimer)
-    running.stdoutFlushTimer = null
-    const text = running.stdoutBuffer
-    running.stdoutBuffer = ""
+  private flushAssistantOutput(running: RunningAgent, emit: AgentEventEmitter) {
+    if (running.assistantOutputFlushTimer) {
+      clearTimeout(running.assistantOutputFlushTimer)
+    }
+    running.assistantOutputFlushTimer = null
+    const text = running.assistantOutputBuffer
+    running.assistantOutputBuffer = ""
     if (!text || running.failureCode === "OUTPUT_PERSIST_FAILED") return
     running.outputWrite = running.outputWrite
       .then(async () => {
@@ -1553,7 +1575,7 @@ export class AgentGateway {
           performance.now() - persistStartedAt,
           this.now()
         )
-        running.stdout += text
+        running.assistantOutput += text
         try {
           await this.heartbeat(running)
         } catch (error) {
@@ -1562,14 +1584,13 @@ export class AgentGateway {
           running.failureMessage ??=
             error instanceof Error ? error.message : "Agent heartbeat failed"
           running.toolAbortController.abort()
-          running.runtimeRun?.cancel()
+          running.harnessRun?.cancel()
         }
         emit(running.workspaceId, {
           type: "agent.message.delta",
           payload: {
             runId: running.runId,
             messageId: running.assistantMessageId,
-            stream: "stdout",
             text,
           },
         })
@@ -1591,7 +1612,7 @@ export class AgentGateway {
       "error.type": error instanceof Error ? error.name : "Error",
     })
     running.toolAbortController.abort()
-    running.runtimeRun?.cancel()
+    running.harnessRun?.cancel()
     emit(running.workspaceId, {
       type: "agent.run.failed",
       payload: {
@@ -1618,7 +1639,7 @@ export class AgentGateway {
         running.failureMessage ??=
           error instanceof Error ? error.message : "Agent heartbeat failed"
         running.toolAbortController.abort()
-        running.runtimeRun?.cancel()
+        running.harnessRun?.cancel()
       })
     }, this.heartbeatIntervalMs)
     running.heartbeatTimer.unref?.()
@@ -1635,48 +1656,42 @@ export class AgentGateway {
     )
   }
 
-  private heartbeatInBackground(running: RunningAgent) {
-    void this.heartbeat(running).catch((error) => {
-      if (running.finished) return
-      running.runtimeFailed = true
-      running.failureCode ??= "AGENT_HEARTBEAT_FAILED"
-      running.failureMessage ??=
-        error instanceof Error ? error.message : "Agent heartbeat failed"
-      running.toolAbortController.abort()
-      running.runtimeRun?.cancel()
-    })
-  }
-
   private releaseRuntime(running: RunningAgent) {
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
-    if (running.stdoutFlushTimer) clearTimeout(running.stdoutFlushTimer)
-    running.stdoutFlushTimer = null
+    if (running.assistantOutputFlushTimer) {
+      clearTimeout(running.assistantOutputFlushTimer)
+    }
+    running.assistantOutputFlushTimer = null
     this.runs.delete(running.workspaceId)
-    this.runsByCapability.delete(running.capabilityToken)
   }
 
   private async finish(
     running: RunningAgent,
     mode: AgentMode,
-    result: AgentRuntimeExit,
+    result: PeriplusAgentHarnessResult,
     emit: AgentEventEmitter
   ) {
     if (running.finished) return
     running.finished = true
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
-    this.flushStdout(running, emit)
+    this.flushAssistantOutput(running, emit)
 
-    let failed =
-      running.runtimeFailed || (!running.cancelled && result.code !== 0)
+    running.cancelled ||= result.status === "cancelled"
+    let failed = running.runtimeFailed || result.status === "failed"
+    if (result.error) {
+      running.failureCode ??= "AGENT_HARNESS_FAILED"
+      running.failureMessage ??= result.error.message
+      running.telemetry.root.recordException(result.error)
+    }
     let validationErrorCode: string | undefined
     try {
       await running.outputWrite
       failed ||= running.runtimeFailed
       await this.settleInFlightTools(running)
-      if (mode === "suggest" && result.code === 0 && !running.cancelled) {
-        const suggestion = parseSuggestion(running.stdout)
+      if (mode === "suggest" && !failed && !running.cancelled) {
+        const suggestion = parseSuggestion(running.assistantOutput)
         await createWorkspaceSuggestion(running.context, running.workspaceId, {
           title: suggestion.title,
           summary: suggestion.summary,
@@ -1777,7 +1792,7 @@ export class AgentGateway {
               errorCode: failed
                 ? (running.failureCode ??
                   validationErrorCode ??
-                  "AGENT_RUNTIME_FAILED")
+                  "AGENT_HARNESS_FAILED")
                 : undefined,
               errorMessage:
                 running.failureMessage ?? validationErrorCode ?? undefined,
@@ -1792,8 +1807,7 @@ export class AgentGateway {
         status: failed || running.cancelled ? "ERROR" : "OK",
         payload: {
           cancelled: running.cancelled,
-          exitCode: result.code,
-          runtimeId: result.metadata.runtimeId,
+          runtimeId: this.harness.id,
           ...(running.failureCode ? { errorCode: running.failureCode } : {}),
         },
       })
@@ -1808,8 +1822,16 @@ export class AgentGateway {
         },
       })
     } finally {
-      if (result.code !== 0 && !running.cancelled && !running.runtimeFailed) {
-        running.telemetry.recordRuntimeError("exit_code")
+      for (const span of running.modelSpans.values()) {
+        span.end("ERROR", { "error.type": "AgentRunEnded" })
+      }
+      running.modelSpans.clear()
+      for (const span of running.externalToolSpans.values()) {
+        span.end("ERROR", { "error.type": "AgentRunEnded" })
+      }
+      running.externalToolSpans.clear()
+      if (result.status === "failed" && !running.runtimeFailed) {
+        running.telemetry.recordRuntimeError("harness_failed")
       }
       running.telemetry.finishRuntimeStream(
         failed ? "ERROR" : running.cancelled ? "CANCELLED" : "OK"
@@ -1839,10 +1861,9 @@ export class AgentGateway {
     } finally {
       running.telemetry.finish(
         failed ? "ERROR" : running.cancelled ? "CANCELLED" : "OK",
-        running.stdout,
+        failed || running.cancelled ? "" : running.assistantOutput,
         {
-          "periplus.agent.exit_code": result.code ?? -1,
-          "periplus.agent.runtime": result.metadata.runtimeId,
+          "periplus.agent.runtime": this.harness.id,
         }
       )
       this.releaseRuntime(running)
@@ -1855,8 +1876,7 @@ export class AgentGateway {
           : "agent.run.completed",
       payload: {
         runId: running.runId,
-        code: result.code,
-        ...result.metadata,
+        runtimeId: this.harness.id,
         ...(running.telemetry.traceId
           ? { traceId: running.telemetry.traceId }
           : {}),
@@ -1923,7 +1943,7 @@ export class AgentGateway {
         type: "workspace.unlocked",
         payload: document,
       })
-      running.telemetry.finish("ERROR", running.stdout, {
+      running.telemetry.finish("ERROR", "", {
         "periplus.agent.error_type":
           error instanceof Error ? error.name : "Error",
       })
@@ -1933,7 +1953,7 @@ export class AgentGateway {
       type: "agent.run.failed",
       payload: {
         runId: running.runId,
-        runtimeId: this.runtime.id,
+        runtimeId: this.harness.id,
         ...(running.telemetry.traceId
           ? { traceId: running.telemetry.traceId }
           : {}),
