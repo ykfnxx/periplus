@@ -286,6 +286,7 @@ export class PeriplusAgentHarness {
       activeAgent?.abort()
     }, this.options.timeoutMs)
     timeout.unref?.()
+    let commitCompleted = false
 
     let settled = false
     const settle = (result: PeriplusAgentHarnessResult) => {
@@ -298,7 +299,23 @@ export class PeriplusAgentHarness {
         const prepared = this.prepareContext(request, abortController.signal)
         throwIfAborted(abortController.signal)
         const tools = createPiCoreTools({
-          execute: request.executeTool,
+          execute: async (toolRequest, toolCallId, signal) => {
+            const result = await request.executeTool(
+              toolRequest,
+              toolCallId,
+              signal
+            )
+            if (
+              toolRequest.type === "path.commit" &&
+              result &&
+              typeof result === "object" &&
+              "status" in result &&
+              result.status === "ok"
+            ) {
+              commitCompleted = true
+            }
+            return result
+          },
           ...(this.options.webSearchEnabled
             ? {
                 webSearch: {
@@ -359,6 +376,7 @@ export class PeriplusAgentHarness {
           },
           streamFn,
           getApiKey: () => this.options.apiKey,
+          shouldStopAfterTurn: () => commitCompleted,
           transformContext: async (messages) => {
             const currentRequest = messages.find(
               (message) => message.role === "user"
@@ -431,7 +449,13 @@ export class PeriplusAgentHarness {
           ? assistantText(finalAssistantMessage)
           : ""
         settle({
-          status: cancelled ? "cancelled" : error ? "failed" : "succeeded",
+          status: commitCompleted
+            ? "succeeded"
+            : cancelled
+              ? "cancelled"
+              : error
+                ? "failed"
+                : "succeeded",
           ...(finalOutput.trim() ? { finalOutput } : {}),
           ...(error ? { error } : {}),
         })
