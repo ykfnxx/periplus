@@ -1,8 +1,6 @@
 import {
   Agent,
-  DEFAULT_COMPACTION_SETTINGS,
   estimateContextTokens,
-  generateSummaryWithUsage,
   type AgentMessage,
 } from "@earendil-works/pi-agent-core"
 import {
@@ -529,26 +527,45 @@ export class PeriplusAgentHarness {
     signal: AbortSignal
   ) {
     throwIfAborted(signal)
-    const piMessages = toPiMessages(messages, this.options.model)
-    if (!piMessages.length) return "{}"
-    const result = await generateSummaryWithUsage(
-      piMessages,
-      this.models,
+    const conversation = messages
+      .filter((message) => message.content.trim())
+      .map((message) => ({ role: message.role, content: message.content }))
+    if (!conversation.length) return "{}"
+    const response = await this.models.completeSimple(
       this.model,
-      DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-      signal,
-      [
-        "Return one compact JSON object containing only durable business memory.",
-        "Allowed content: current user goals, preferences, constraints, confirmed decisions, unresolved business matters, and the previous run outcome.",
-        "Exclude route cards, provider candidates, tool transcripts, draft/evidence handles, validator issues, credentials, headers, file paths, and facts reconstructible from the Workspace baseline.",
-        "Fields may be absent and arrays may be empty. Output JSON only.",
-      ].join(" "),
-      previousSummary,
-      "high"
+      {
+        systemPrompt: [
+          "You create a durable business-memory checkpoint for Periplus.",
+          "Return exactly one JSON object without Markdown, code fences, or commentary.",
+          "Allowed content: current user goals, preferences, constraints, confirmed decisions, unresolved business matters, and the previous run outcome.",
+          "Exclude route cards, provider candidates, tool transcripts, draft or evidence handles, validator issues, credentials, headers, file paths, and facts reconstructible from the Workspace baseline.",
+        ].join(" "),
+        messages: [
+          {
+            role: "user",
+            content: [
+              "Create the next checkpoint from this conversation.",
+              "Fields may be absent and arrays may be empty.",
+              previousSummary
+                ? `Previous checkpoint: ${previousSummary}`
+                : "Previous checkpoint: {}",
+              `Conversation: ${JSON.stringify(conversation)}`,
+              "Output JSON only.",
+            ].join("\n"),
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      { maxTokens: 2_048, signal }
     )
     throwIfAborted(signal)
-    if (!result.ok) throw result.error
-    const text = result.value.text.trim()
+    if (response.stopReason !== "stop") {
+      throw new Error(
+        response.errorMessage ??
+          `Conversation summary stopped with ${response.stopReason}`
+      )
+    }
+    const text = assistantText(response).trim()
     const parsed = JSON.parse(text) as unknown
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("Conversation summary must be a JSON object")
