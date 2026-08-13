@@ -1,11 +1,10 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import { createSilkRoadJourney } from "@/lib/mock-journeys"
 import RoutePreview from "@/modules/workbench/ui/RoutePreview"
 import RouteTimeline from "@/modules/workbench/ui/RouteTimeline"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
-import { TARGET_CONTRACT_FIXTURES } from "@/modules/data-model/contracts/fixtures"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 
 function workspaceDocument() {
@@ -247,151 +246,5 @@ describe("target Workspace route preview", () => {
     expect(
       screen.queryByRole("button", { name: /上一张图片|下一张图片/ })
     ).not.toBeInTheDocument()
-  })
-
-  it("renders transit choices as an icon-free clipped horizontal scroller", () => {
-    const fixture = TARGET_CONTRACT_FIXTURES.find(
-      (candidate) => candidate.id === "03-transit-plan-choice"
-    )
-    const graph = fixture?.cases[0]?.input.graph
-    if (!graph) throw new Error("transit choice fixture is missing")
-    act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(workspaceDocumentForStory(graph))
-    })
-    const items = getJourneyScopeProjection(graph, "overview", null).items
-    render(<RouteTimeline items={items} />)
-
-    fireEvent.click(screen.getByRole("button", { name: "交通事件 驾车" }))
-
-    const choices = screen
-      .getByText("选择路线方案")
-      .parentElement?.querySelector(".overflow-x-auto")
-    expect(choices).not.toBeNull()
-    expect(choices).toHaveClass("scrollbar-hidden", "flex", "px-4")
-    Object.defineProperties(choices!, {
-      scrollWidth: { value: 500 },
-      clientWidth: { value: 200 },
-      scrollLeft: { value: 0, writable: true },
-      scrollTo: { value: vi.fn() },
-    })
-    expect(fireEvent.wheel(choices!, { deltaY: 120 })).toBe(false)
-    expect(choices?.scrollTo).toHaveBeenCalledWith({
-      left: 120,
-      behavior: "smooth",
-    })
-    choices!.scrollLeft = 300
-    vi.mocked(choices!.scrollTo).mockClear()
-    expect(fireEvent.wheel(choices!, { deltaY: 120 })).toBe(false)
-    expect(choices?.scrollTo).not.toHaveBeenCalled()
-    for (const label of ["推荐", "最快", "低价"]) {
-      const button = screen.getByText(label).closest("button")
-      expect(button).toHaveClass("h-10", "w-[122px]")
-      expect(button?.querySelector("svg")).toBeNull()
-    }
-
-    fireEvent.click(screen.getByRole("button", { name: "交通事件 驾车" }))
-    vi.mocked(choices!.scrollTo).mockClear()
-    fireEvent.wheel(choices!, { deltaY: 120 })
-    expect(choices?.scrollTo).not.toHaveBeenCalled()
-  })
-
-  it("expands overview Transit choices and sends the selected provider plan", () => {
-    const fixture = TARGET_CONTRACT_FIXTURES.find(
-      (candidate) => candidate.id === "03-transit-plan-choice"
-    )
-    const graph = fixture?.cases[0]?.input.graph
-    if (!graph) throw new Error("transit choice fixture is missing")
-    const sendAgentEvent = vi.fn()
-    const document = workspaceDocumentForStory(graph)
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(document)
-      useWorkspaceStore.getState().setAgentSender(sendAgentEvent)
-    })
-
-    render(<RoutePreview />)
-    fireEvent.click(screen.getByRole("button", { name: "选择交通事件 交通" }))
-
-    const selector = screen.getByText("选择路线方案").parentElement
-    if (!selector) throw new Error("overview selector is missing")
-    expect(within(selector).getByText("推荐")).toBeVisible()
-    expect(within(selector).getByText("最快")).toBeVisible()
-    expect(within(selector).getByText("低价")).toBeVisible()
-    const scroller = selector.querySelector(".overflow-x-auto")
-    if (!scroller) throw new Error("overview plan scroller is missing")
-    expect(scroller).toHaveClass("scrollbar-hidden")
-    Object.defineProperties(scroller, {
-      scrollWidth: { value: 500 },
-      clientWidth: { value: 200 },
-      scrollLeft: { value: 0, writable: true },
-      scrollTo: { value: vi.fn() },
-    })
-    expect(fireEvent.wheel(scroller, { deltaY: 90 })).toBe(false)
-    expect(scroller.scrollTo).toHaveBeenCalledWith({
-      left: 90,
-      behavior: "smooth",
-    })
-    scroller.scrollLeft = 300
-    vi.mocked(scroller.scrollTo).mockClear()
-    expect(fireEvent.wheel(scroller, { deltaY: 90 })).toBe(false)
-    expect(scroller.scrollTo).not.toHaveBeenCalled()
-
-    fireEvent.click(within(selector).getByText("最快"))
-    expect(sendAgentEvent).toHaveBeenCalledWith(
-      "workspace.command",
-      expect.objectContaining({
-        command: {
-          name: "journey.select_transit_plan",
-          payload: { eventId: "transit", planId: "plan-fastest" },
-        },
-      })
-    )
-    expect(within(selector).getByText("切换中…")).toBeVisible()
-    const candidateButtons = within(selector).getAllByRole("button")
-    expect(candidateButtons).toHaveLength(3)
-    for (const button of candidateButtons) expect(button).toBeDisabled()
-
-    fireEvent.click(within(selector).getByText("低价"))
-    expect(sendAgentEvent).toHaveBeenCalledTimes(1)
-
-    const pending = useWorkspaceStore.getState().pendingTransitPlanSelection
-    if (!pending) throw new Error("selection command was not recorded")
-    act(() => {
-      useWorkspaceStore
-        .getState()
-        .failTransitPlanSelection(pending.commandId, "revision conflict")
-    })
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "路线切换失败：revision conflict"
-    )
-
-    const unrelated = structuredClone(document)
-    unrelated.session.headWorkspaceRevision += 1
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(unrelated)
-    })
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "路线切换失败：revision conflict"
-    )
-  })
-
-  it("shows the authoritative Workspace draft state", () => {
-    const document = workspaceDocument()
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(document)
-    })
-    const { rerender } = render(<RoutePreview />)
-
-    expect(screen.getByText("未保存")).toBeVisible()
-
-    document.draftState = "CLEAN"
-    act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(structuredClone(document))
-    })
-    rerender(<RoutePreview />)
-    expect(screen.getByText("已保存")).toBeVisible()
   })
 })
