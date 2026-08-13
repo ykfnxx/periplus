@@ -13,9 +13,7 @@ export function workspaceCanMutate(document: TargetWorkspaceDocument | null) {
   return Boolean(
     document &&
     document.accessState === "OWNER" &&
-    document.session.status === "ACTIVE" &&
-    document.draftState !== "STALE" &&
-    document.draftState !== "CONFLICT"
+    document.session.status === "ACTIVE"
   )
 }
 
@@ -104,9 +102,6 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
       transitPlanSelectionError: { ...pending, message },
     })
   },
-  workspaceCommitState: "idle",
-  setWorkspaceCommitState: (workspaceCommitState) =>
-    set({ workspaceCommitState }),
 })
 
 function workspaceDocumentPatch(

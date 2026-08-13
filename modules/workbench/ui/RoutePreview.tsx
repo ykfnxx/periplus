@@ -12,8 +12,10 @@ import {
 } from "@/lib/journeys/projections"
 import { totalDurationDays } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
-import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
+import {
+  selectWorkspaceGraph,
+  selectWorkspaceLocked,
+} from "@/modules/workspace/state/selectors"
 import RouteOverview from "./RouteOverview"
 import RouteScopeTabs from "./RouteScopeTabs"
 import RouteTimeline from "./RouteTimeline"
@@ -38,12 +40,7 @@ export default function RoutePreview({
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
   )
-  const workspaceCommitState = useWorkspaceStore(
-    (state) => state.workspaceCommitState
-  )
-  const workspaceDraftState = useWorkspaceStore(
-    (state) => state.workspaceDocument?.draftState ?? "CLEAN"
-  )
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const view = getJourneyScopeProjection(graph, viewLevel, activeSectionEventId)
   const dayProjection = useMemo(() => {
     if (view.level !== "section" || view.section?.detail.kind !== "CITY") {
@@ -166,10 +163,7 @@ export default function RoutePreview({
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <SaveState
-              state={workspaceCommitState}
-              draftState={workspaceDraftState}
-            />
+            <RevisionState planning={isWorkspaceLocked} />
             {onCollapse ? (
               <button
                 type="button"
@@ -211,52 +205,19 @@ export default function RoutePreview({
   )
 }
 
-function SaveState({
-  state,
-  draftState,
-}: {
-  state: ReturnType<typeof useWorkspaceStore.getState>["workspaceCommitState"]
-  draftState: TargetWorkspaceDocument["draftState"]
-}) {
-  const displayState =
-    state === "saving"
-      ? "saving"
-      : state === "error"
-        ? "failed"
-        : draftState === "CONFLICT"
-          ? "conflict"
-          : draftState === "STALE"
-            ? "stale"
-            : draftState === "DIRTY"
-              ? "dirty"
-              : "saved"
-  const label =
-    displayState === "saving"
-      ? "保存中"
-      : displayState === "failed"
-        ? "保存失败"
-        : displayState === "conflict"
-          ? "保存冲突"
-          : displayState === "stale"
-            ? "需要刷新"
-            : displayState === "dirty"
-              ? "未保存"
-              : "已保存"
-  const colors =
-    displayState === "failed" || displayState === "conflict"
-      ? { dot: "bg-coral", text: "text-coral" }
-      : displayState === "saving" ||
-          displayState === "dirty" ||
-          displayState === "stale"
-        ? { dot: "bg-mustard", text: "text-teak" }
-        : { dot: "bg-olive", text: "text-olive" }
-
+function RevisionState({ planning }: { planning: boolean }) {
   return (
     <span
-      className={`mt-1.5 flex items-center gap-2 text-[10px] font-black ${colors.text}`}
+      className={`mt-1.5 flex items-center gap-2 text-[10px] font-black ${
+        planning ? "text-teak" : "text-olive"
+      }`}
     >
-      <span className={`h-2.5 w-2.5 rounded-full ${colors.dot}`} />
-      {label}
+      <span
+        className={`h-2.5 w-2.5 rounded-full ${
+          planning ? "bg-mustard" : "bg-olive"
+        }`}
+      />
+      {planning ? "当前版本" : "已保存"}
     </span>
   )
 }

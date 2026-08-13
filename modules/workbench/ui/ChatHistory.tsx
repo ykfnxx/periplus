@@ -5,13 +5,11 @@ import remarkGfm from "remark-gfm"
 import { ExternalLink, MapPin } from "lucide-react"
 import type { TargetWorkspaceMessage } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { selectWorkspaceLocked } from "@/modules/workspace/state/selectors"
 import { ProviderImage } from "./ProviderImage"
 
 export default function ChatHistory() {
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
-  if (!chatMessages.length && !isWorkspaceLocked) {
+  if (!chatMessages.length) {
     return null
   }
 
@@ -37,9 +35,6 @@ export default function ChatHistory() {
             <SearchResultCards blocks={message.blocks} />
           </div>
         )
-      )}
-      {isWorkspaceLocked && (
-        <div className="text-xs font-bold text-teak">正在规划...</div>
       )}
     </div>
   )

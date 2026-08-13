@@ -14,13 +14,17 @@ import type {
 
 export type MapType = "standard" | "satellite" | "terrain"
 export type LocationSelectionMode = "none" | "photo" | "point" | "upload-photo"
-export type WorkspaceCommitState = "idle" | "saving" | "success" | "error"
 export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
 export type ChatMessageRole = "user" | "assistant"
 export type WorkbenchTab = "preview" | "chat"
 export type MobileSheetSnap = "collapsed" | "half" | "expanded"
 export type AgentSender = (type: string, payload?: unknown) => void
 export type AnchorType = "event" | "photo"
+export type AgentRunStage =
+  | "UNDERSTANDING"
+  | "VERIFYING_PLACES"
+  | "CHECKING_ROUTE"
+  | "COMMITTING"
 
 export interface ScatteredAnchor {
   id: string
@@ -103,8 +107,6 @@ export interface WorkspaceDocumentSlice {
   transitPlanSelectionError: TransitPlanSelectionError | null
   selectTransitPlan: (eventId: string, planId: string) => void
   failTransitPlanSelection: (commandId: string, message: string) => void
-  workspaceCommitState: WorkspaceCommitState
-  setWorkspaceCommitState: (state: WorkspaceCommitState) => void
 }
 
 export interface AgentSlice {
@@ -115,6 +117,8 @@ export interface AgentSlice {
   clearChatMessages: () => void
   sendAgentEvent: AgentSender | null
   setAgentSender: (sendAgentEvent: AgentSender | null) => void
+  agentRunStage: AgentRunStage | null
+  setAgentRunStage: (stage: AgentRunStage | null) => void
 }
 
 export interface WorkspaceUiSlice {

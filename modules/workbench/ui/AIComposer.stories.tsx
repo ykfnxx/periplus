@@ -53,28 +53,19 @@ export const Running: Story = {
       workspaceDocument: workspaceDocumentForStory(silkRoadJourney, {
         locked: true,
       }),
+      agentRunStage: "CHECKING_ROUTE",
       sendAgentEvent: sendLockedEvent,
     }),
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(
-      canvas.getByRole("textbox", { name: "AI 输入" })
-    ).toBeDisabled()
+    await expect(canvas.getByRole("status")).toHaveTextContent(
+      "正在检查路线是否可行"
+    )
 
-    await userEvent.click(canvas.getByRole("button", { name: "停止" }))
+    await userEvent.click(canvas.getByRole("button", { name: "取消规划" }))
     await expect(sendLockedEvent).toHaveBeenCalledWith("agent.run.cancel")
   },
-}
-
-export const SaveFailed: Story = {
-  decorators: [
-    withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
-      workspaceCommitState: "error",
-      sendAgentEvent: fn(),
-    }),
-  ],
 }
 
 const archivedDocument = workspaceDocumentForStory(silkRoadJourney)
@@ -93,7 +84,6 @@ export const ArchivedReadOnly: Story = {
     await expect(
       canvas.getByRole("textbox", { name: "AI 输入" })
     ).toBeDisabled()
-    await expect(canvas.getByRole("button", { name: "保存" })).toBeDisabled()
     await expect(canvas.getByRole("button", { name: "发送" })).toBeDisabled()
   },
 }

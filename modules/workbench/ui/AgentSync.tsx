@@ -10,6 +10,7 @@ import {
 } from "@/lib/agent/client"
 import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { agentRunStageFromPayload } from "./agent-run-presentation"
 
 const RECONNECT_DELAY_MS = 1_000
 
@@ -19,24 +20,6 @@ function workspaceFromPayload(payload: unknown) {
   return (
     "workspace" in record ? record.workspace : payload
   ) as TargetWorkspaceDocument | null
-}
-
-function commandNameFromPayload(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null
-  const result = (payload as Record<string, unknown>).result
-  if (!result || typeof result !== "object") return null
-  const commandName = (result as Record<string, unknown>).commandName
-  return typeof commandName === "string" ? commandName : null
-}
-
-function outcomeFromPayload(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null
-  const result = (payload as Record<string, unknown>).result
-  if (!result || typeof result !== "object") return null
-  const outcome = (result as Record<string, unknown>).outcome
-  return outcome && typeof outcome === "object"
-    ? (outcome as Record<string, unknown>)
-    : null
 }
 
 function retryableBootstrapError(error: unknown) {
@@ -78,9 +61,7 @@ export default function AgentSync() {
   const appendAssistantMessage = useWorkspaceStore(
     (state) => state.appendAssistantMessage
   )
-  const setWorkspaceCommitState = useWorkspaceStore(
-    (state) => state.setWorkspaceCommitState
-  )
+  const setAgentRunStage = useWorkspaceStore((state) => state.setAgentRunStage)
   const setFailedTransitPlanCommandId = useWorkspaceStore(
     (state) => state.setFailedTransitPlanCommandId
   )
@@ -99,6 +80,9 @@ export default function AgentSync() {
       if (!document) return false
       if (!applyWorkspaceDocument(document)) return false
       setChatMessages(conversationMessages(document))
+      if (!document.agentRuns.some((run) => run.status === "RUNNING")) {
+        setAgentRunStage(null)
+      }
       return true
     }
 
@@ -163,26 +147,16 @@ export default function AgentSync() {
               workspaceFromPayload(message.payload)
             )
             if (!documentAccepted) return
-            const commandName = commandNameFromPayload(message.payload)
-            const outcome = outcomeFromPayload(message.payload)
-            if (commandName) {
-              setWorkspaceCommitState(
-                commandName === "workspace.commit" ? "success" : "idle"
-              )
-            }
-            if (
-              commandName === "workspace.fork" &&
-              typeof outcome?.workspaceId === "string"
-            ) {
-              window.location.assign(
-                `/workspace?workspace=${encodeURIComponent(outcome.workspaceId)}`
-              )
-            }
             return
           }
 
           if (message.type === "agent.run.started") {
-            setWorkspaceCommitState("idle")
+            setAgentRunStage("UNDERSTANDING")
+            return
+          }
+
+          if (message.type === "agent.run.progress") {
+            setAgentRunStage(agentRunStageFromPayload(message.payload))
             return
           }
 
@@ -193,7 +167,18 @@ export default function AgentSync() {
           }
 
           if (message.type === "agent.run.cancelled") {
-            appendAssistantMessage("\n已停止。\n")
+            setAgentRunStage(null)
+            appendAssistantMessage("\n已停止规划，行程未发生变化。\n")
+            return
+          }
+
+          if (message.type === "agent.run.completed") {
+            setAgentRunStage(null)
+            return
+          }
+
+          if (message.type === "agent.run.needs_input") {
+            setAgentRunStage(null)
             return
           }
 
@@ -210,10 +195,10 @@ export default function AgentSync() {
               setFailedTransitPlanCommandId(error.commandId)
               return
             }
-            if (error.commandId?.startsWith("browser-commit:")) {
-              setWorkspaceCommitState("error")
-            }
-            appendAssistantMessage(`\n${error.message ?? "Agent 运行失败"}\n`)
+            setAgentRunStage(null)
+            appendAssistantMessage(
+              `\n${error.message ?? "Agent 运行失败"}，行程未发生变化。\n`
+            )
           }
         })
       } catch (error) {
@@ -236,9 +221,9 @@ export default function AgentSync() {
     applyWorkspaceDocument,
     failTransitPlanSelection,
     setAgentSender,
+    setAgentRunStage,
     setChatMessages,
     setFailedTransitPlanCommandId,
-    setWorkspaceCommitState,
   ])
 
   return null

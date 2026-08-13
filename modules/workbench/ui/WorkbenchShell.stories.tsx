@@ -250,6 +250,22 @@ export const WorkspaceManagementRunning: Story = {
       workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans, {
         locked: true,
       }),
+      agentRunStage: "VERIFYING_PLACES",
+      workbenchTab: "chat",
+    }),
+  ],
+}
+
+export const PlanningWhileBrowsingWide: Story = {
+  globals: {
+    viewport: { value: "productionWide", isRotated: false },
+  },
+  decorators: [
+    withWorkspaceState({
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans, {
+        locked: true,
+      }),
+      agentRunStage: "VERIFYING_PLACES",
       workbenchTab: "chat",
     }),
   ],
@@ -266,6 +282,22 @@ export const WorkspaceManagementMobile: Story = {
       workbenchTab: "chat",
       mobileSheetSnap: "expanded",
       composerInput: "继续调整这条路线",
+    }),
+  ],
+}
+
+export const PlanningWhileBrowsingMobile: Story = {
+  globals: {
+    viewport: { value: "workspaceMobile", isRotated: false },
+  },
+  decorators: [
+    withWorkspaceState({
+      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans, {
+        locked: true,
+      }),
+      agentRunStage: "CHECKING_ROUTE",
+      workbenchTab: "preview",
+      mobileSheetSnap: "half",
     }),
   ],
 }

@@ -30,6 +30,7 @@ import type {
 } from "@/modules/workspace/state/types"
 import AIComposer from "./AIComposer"
 import AIContextCard from "./AIContextCard"
+import { agentRunStageLabel } from "./agent-run-presentation"
 import ChatHistory from "./ChatHistory"
 import InitialChatState from "./InitialChatState"
 import OverlayScrollArea from "./OverlayScrollArea"
@@ -427,6 +428,7 @@ function CompactTabBar({
   activeTab: WorkbenchTab
   onSelect: (tab: WorkbenchTab) => void
 }) {
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   return (
     <div
       role="tablist"
@@ -441,9 +443,10 @@ function CompactTabBar({
       />
       <WorkbenchTabButton
         value="chat"
-        label="问问 AI"
+        label={isWorkspaceLocked ? "规划中" : "问问 AI"}
         selected={activeTab === "chat"}
         onSelect={onSelect}
+        attention={isWorkspaceLocked}
       />
     </div>
   )
@@ -454,11 +457,13 @@ function WorkbenchTabButton({
   label,
   selected,
   onSelect,
+  attention = false,
 }: {
   value: WorkbenchTab
   label: string
   selected: boolean
   onSelect: (tab: WorkbenchTab) => void
+  attention?: boolean
 }) {
   return (
     <button
@@ -476,6 +481,12 @@ function WorkbenchTabButton({
         <Sparkles className="h-4 w-4" aria-hidden="true" />
       )}
       {label}
+      {attention ? (
+        <span
+          className="ml-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-mustard align-middle"
+          aria-hidden="true"
+        />
+      ) : null}
       {selected ? (
         <span className="absolute right-5 bottom-0 left-5 h-0.5 bg-russet" />
       ) : null}
@@ -484,6 +495,8 @@ function WorkbenchTabButton({
 }
 
 function MobileAssistantCta({ onOpen }: { onOpen: () => void }) {
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const agentRunStage = useWorkspaceStore((state) => state.agentRunStage)
   return (
     <div className="shrink-0 border-t border-ink-10 bg-soft-white px-5 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
       <button
@@ -491,8 +504,15 @@ function MobileAssistantCta({ onOpen }: { onOpen: () => void }) {
         onClick={onOpen}
         className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-ink text-[13px] font-black text-soft-white shadow-periplus-soft transition active:scale-[0.99]"
       >
-        <Sparkles className="h-4 w-4" aria-hidden="true" />
-        打开 AI 助手
+        {isWorkspaceLocked ? (
+          <span
+            className="h-2 w-2 animate-pulse rounded-full bg-mustard"
+            aria-hidden="true"
+          />
+        ) : (
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+        )}
+        {isWorkspaceLocked ? agentRunStageLabel(agentRunStage) : "打开 AI 助手"}
       </button>
     </div>
   )

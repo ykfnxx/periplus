@@ -23,16 +23,6 @@ export function selectWorkspaceCanMutate(state: WorkspaceState) {
   return workspaceCanMutate(state.workspaceDocument)
 }
 
-export function selectWorkspaceCanRecover(state: WorkspaceState) {
-  const document = state.workspaceDocument
-  return Boolean(
-    document &&
-    document.accessState === "OWNER" &&
-    document.session.status === "ACTIVE" &&
-    (document.draftState === "STALE" || document.draftState === "CONFLICT")
-  )
-}
-
 export function useWorkspaceViewportInsets() {
   return useWorkspaceStore((state) =>
     state.isSelectingLocation && state.locationSelectionMode === "upload-photo"
