@@ -407,7 +407,7 @@ export class PlanningSession {
     request: Extract<ParsedAgentToolRequest, { type: "path.replace_event" }>
   ) {
     this.assertKnownItem(request.itemKey)
-    this.assertEventFacts(request.event)
+    this.assertEventFacts(request.event, request.itemKey)
     const order = this.currentItemOrder()
     if (
       request.event.proposalItemKey !== request.itemKey &&
@@ -498,7 +498,7 @@ export class PlanningSession {
     return order
   }
 
-  private assertEventFacts(event: PathEventInput) {
+  private assertEventFacts(event: PathEventInput, replacedItemKey?: string) {
     if (event.kind === "TRANSIT") {
       const route = this.routeFacts.get(event.proposalItemKey)
       if (
@@ -514,7 +514,17 @@ export class PlanningSession {
       }
       return
     }
-    if (!this.cityFacts.has(cityFactKey(event.cityQuery))) {
+    const cityKey = cityFactKey(event.cityQuery)
+    const replacedEvent = replacedItemKey
+      ? this.baseline.journey.events.find(
+          (candidate) => candidate.proposalItemKey === replacedItemKey
+        )
+      : undefined
+    const keepsCommittedCity =
+      replacedEvent?.kind !== "TRANSIT" &&
+      replacedEvent?.city !== undefined &&
+      cityFactKey(replacedEvent.city) === cityKey
+    if (!this.cityFacts.has(cityKey) && !keepsCommittedCity) {
       throw new WorkspaceInputError(
         `city.resolve is required for ${event.cityQuery}`
       )
@@ -562,34 +572,78 @@ export class PlanningSession {
     const itemToCardId = new Map(
       flat.events.map((event, index) => [baselineItemKey(index), event.eventId])
     )
-    const cityCardByName = new Map(
-      graph.events.flatMap((event) =>
-        event.type === "SECTION" && event.detail.kind === "CITY"
-          ? [[cityFactKey(event.title), event.id] as const]
-          : []
-      )
-    )
     const transitItemToCardId = new Map<string, string>()
     const logicalOrder = this.baseline.journey.events.map(
       (event) => event.proposalItemKey
     )
 
-    const ensureCity = async (cityQuery: string, suffix: string) => {
+    const cityForItem = (itemKey: string) => {
+      const eventId = itemToCardId.get(itemKey)
+      const event = eventId
+        ? draft
+            .currentGraph()
+            .events.find((candidate) => candidate.id === eventId)
+        : undefined
+      if (!event?.parentSectionEventId) return undefined
+      const city = draft
+        .currentGraph()
+        .events.find(
+          (candidate) =>
+            candidate.id === event.parentSectionEventId &&
+            candidate.type === "SECTION" &&
+            candidate.detail.kind === "CITY"
+        )
+      return city?.type === "SECTION" ? city : undefined
+    }
+
+    const ensureCity = async (
+      cityQuery: string,
+      afterItemKey: string | null,
+      suffix: string,
+      preferredCityCardId?: string
+    ) => {
       const normalized = cityFactKey(cityQuery)
-      const existing = cityCardByName.get(normalized)
-      if (existing) return existing
+      const preferredCity = preferredCityCardId
+        ? draft
+            .currentGraph()
+            .events.find(
+              (candidate) =>
+                candidate.id === preferredCityCardId &&
+                candidate.type === "SECTION" &&
+                candidate.detail.kind === "CITY"
+            )
+        : undefined
+      if (
+        preferredCity?.type === "SECTION" &&
+        cityFactKey(preferredCity.title) === normalized
+      ) {
+        return preferredCity.id
+      }
+      const anchorIndex =
+        afterItemKey === null ? -1 : logicalOrder.indexOf(afterItemKey)
+      const leftKeys = logicalOrder.slice(0, anchorIndex + 1).reverse()
+      const rightKeys = logicalOrder.slice(anchorIndex + 1)
+      const leftCities = leftKeys.flatMap((itemKey) => {
+        const city = cityForItem(itemKey)
+        return city ? [city] : []
+      })
+      const rightCities = rightKeys.flatMap((itemKey) => {
+        const city = cityForItem(itemKey)
+        return city ? [city] : []
+      })
+      const existing = [
+        ...leftCities.slice(0, 1),
+        ...rightCities.slice(0, 1),
+      ].find((city) => cityFactKey(city.title) === normalized)
+      if (existing) return existing.id
       const fact = this.cityFacts.get(normalized)
       if (!fact) throw new WorkspaceInputError(`Missing city fact ${cityQuery}`)
-      const rootCities = draft
-        .currentGraph()
-        .events.filter(
-          (event) => event.type === "SECTION" && event.detail.kind === "CITY"
-        )
+      const previousCity = leftCities[0]
       const result = await draft.addCity(
         {
           type: "city.add",
           name: fact.canonicalName,
-          afterCardId: rootCities.at(-1)?.id ?? null,
+          afterCardId: previousCity?.id ?? null,
         },
         `${toolCallId}:city:${suffix}`,
         fact.location
@@ -599,7 +653,6 @@ export class PlanningSession {
         .map((id) => current.events.find((event) => event.id === id))
         .find((event) => event?.type === "SECTION")
       if (!added) throw new WorkspaceInputError("City card was not created")
-      cityCardByName.set(normalized, added.id)
       return added.id
     }
 
@@ -620,7 +673,8 @@ export class PlanningSession {
     const addEvent = async (
       event: PathEventInput,
       afterItemKey: string | null,
-      suffix: string
+      suffix: string,
+      preferredCityCardId?: string
     ) => {
       if (event.kind === "TRANSIT") {
         const fromCardId = itemToCardId.get(event.fromItemKey)
@@ -630,12 +684,38 @@ export class PlanningSession {
             `Transit endpoints are not materialized for ${event.proposalItemKey}`
           )
         }
+        const current = draft.currentGraph()
+        const from = current.events.find(
+          (candidate) => candidate.id === fromCardId
+        )
+        const to = current.events.find((candidate) => candidate.id === toCardId)
+        if (!from || !to) {
+          throw new WorkspaceInputError(
+            `Transit endpoints are missing for ${event.proposalItemKey}`
+          )
+        }
+        const sameCity =
+          from.parentSectionEventId !== null &&
+          from.parentSectionEventId === to.parentSectionEventId
+        const compiledFromCardId = sameCity
+          ? from.id
+          : from.parentSectionEventId
+        const compiledToCardId = sameCity ? to.id : to.parentSectionEventId
+        if (!compiledFromCardId || !compiledToCardId) {
+          throw new WorkspaceInputError(
+            `Cross-City Transit endpoints require City segments for ${event.proposalItemKey}`
+          )
+        }
         const result = await draft.addTransit(
           {
             type: "transit.add",
-            fromCardId,
-            toCardId,
-            plannedStartAt: event.plannedStartAt,
+            fromCardId: compiledFromCardId,
+            toCardId: compiledToCardId,
+            plannedStartAt:
+              event.plannedStartAt ??
+              (from.type === "SECTION" || from.type === "NOTE"
+                ? undefined
+                : (from.plannedEndAt ?? from.plannedStartAt)),
             plannedEndAt: event.plannedEndAt,
             modePreference: event.transportMode,
             routePreference: event.preference,
@@ -645,9 +725,11 @@ export class PlanningSession {
           },
           `${toolCallId}:transit:${suffix}`
         )
-        const current = draft.currentGraph()
+        const afterTransit = draft.currentGraph()
         const added = result.changedCardIds
-          .map((id) => current.events.find((candidate) => candidate.id === id))
+          .map((id) =>
+            afterTransit.events.find((candidate) => candidate.id === id)
+          )
           .find((candidate) => candidate?.type === "TRANSIT")
         if (!added)
           throw new WorkspaceInputError("Transit card was not created")
@@ -656,7 +738,12 @@ export class PlanningSession {
         insertOrder(event.proposalItemKey, event.fromItemKey)
         return
       }
-      const cityCardId = await ensureCity(event.cityQuery, suffix)
+      const cityCardId = await ensureCity(
+        event.cityQuery,
+        afterItemKey,
+        suffix,
+        preferredCityCardId
+      )
       const requestedAnchorCardId = afterItemKey
         ? itemToCardId.get(afterItemKey)
         : undefined
@@ -758,13 +845,27 @@ export class PlanningSession {
       }
       const orderIndex = logicalOrder.indexOf(entry.itemKey)
       const previousKey = orderIndex > 0 ? logicalOrder[orderIndex - 1] : null
+      const currentCard = draft
+        .currentGraph()
+        .events.find((candidate) => candidate.id === currentCardId)
+      const preferredCityCardId =
+        entry.event.kind !== "TRANSIT" &&
+        currentCard?.parentSectionEventId &&
+        currentCard.type !== "TRANSIT"
+          ? currentCard.parentSectionEventId
+          : undefined
       await draft.removeCard(
         { type: "card.remove", cardId: currentCardId },
         `${toolCallId}:${index}:replace-remove`
       )
       itemToCardId.delete(entry.itemKey)
       if (orderIndex >= 0) logicalOrder.splice(orderIndex, 1)
-      await addEvent(entry.event, previousKey, `${index}:replace-add`)
+      await addEvent(
+        entry.event,
+        previousKey,
+        `${index}:replace-add`,
+        preferredCityCardId
+      )
     }
     return { draft, itemToCardId, transitItemToCardId }
   }
