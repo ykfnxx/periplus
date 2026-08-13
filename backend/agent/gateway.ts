@@ -94,7 +94,6 @@ interface RunningAgent {
   assistantOutput: string
   assistantOutputBuffer: string
   assistantOutputFlushTimer: ReturnType<typeof setTimeout> | null
-  currentAssistantMessageText: string
   assistantMessageId: string
   outputWrite: Promise<void>
   failureCode: string | null
@@ -111,6 +110,7 @@ interface RunningAgent {
   requiresPlanValidation: boolean
   committedRevision: number | null
   committedProjectionHash: string | null
+  committedSummary: string | null
   baseline: PlannerBaseline
   planningSession: PlanningSession
 }
@@ -714,7 +714,6 @@ export class AgentGateway {
       assistantOutput: "",
       assistantOutputBuffer: "",
       assistantOutputFlushTimer: null,
-      currentAssistantMessageText: "",
       assistantMessageId,
       outputWrite: Promise.resolve(),
       failureCode: null,
@@ -731,6 +730,7 @@ export class AgentGateway {
       requiresPlanValidation: false,
       committedRevision: null,
       committedProjectionHash: null,
+      committedSummary: null,
       baseline,
       planningSession: new PlanningSession(
         workspaceId,
@@ -886,17 +886,10 @@ export class AgentGateway {
       return
     }
     if (event.type === "message_delta") {
-      running.currentAssistantMessageText += event.text
       running.telemetry.recordStreamDelta(event.text)
-      this.persistAssistantOutput(running, event.text, emit)
       return
     }
     if (event.type === "message_end") {
-      const remaining = event.text.slice(
-        running.currentAssistantMessageText.length
-      )
-      if (remaining) this.persistAssistantOutput(running, remaining, emit)
-      running.currentAssistantMessageText = ""
       return
     }
     if (event.type === "tool_start") {
@@ -1158,6 +1151,7 @@ export class AgentGateway {
         running.requiresPlanValidation = true
         running.committedRevision = committed.newWorkspaceRevision
         running.committedProjectionHash = committed.projectionHash
+        running.committedSummary = committed.summary
         const document = await this.commands.getDocument(
           running.context,
           running.workspaceId
@@ -1655,7 +1649,6 @@ export class AgentGateway {
     running.finished = true
     if (running.heartbeatTimer) clearInterval(running.heartbeatTimer)
     running.heartbeatTimer = null
-    this.flushAssistantOutput(running, emit)
 
     running.cancelled ||= result.status === "cancelled"
     let failed = running.runtimeFailed || result.status === "failed"
@@ -1666,8 +1659,6 @@ export class AgentGateway {
     }
     let validationErrorCode: string | undefined
     try {
-      await running.outputWrite
-      failed ||= running.runtimeFailed
       await this.settleInFlightTools(running)
       if (running.requiresPlanValidation) {
         if (running.committedRevision === null) {
@@ -1748,6 +1739,16 @@ export class AgentGateway {
         },
       })
     }
+
+    const terminalAssistantOutput = this.terminalAssistantOutput(
+      running,
+      result,
+      failed
+    )
+    this.persistAssistantOutput(running, terminalAssistantOutput, emit)
+    this.flushAssistantOutput(running, emit)
+    await running.outputWrite
+    failed ||= running.runtimeFailed
 
     try {
       await this.withTelemetrySpan(
@@ -1848,7 +1849,7 @@ export class AgentGateway {
     } finally {
       running.telemetry.finish(
         failed ? "ERROR" : running.cancelled ? "CANCELLED" : "OK",
-        failed || running.cancelled ? "" : running.assistantOutput,
+        running.assistantOutput,
         {
           "periplus.agent.runtime": this.harness.id,
         }
@@ -1869,6 +1870,28 @@ export class AgentGateway {
           : {}),
       },
     })
+  }
+
+  private terminalAssistantOutput(
+    running: RunningAgent,
+    result: PeriplusAgentHarnessResult,
+    failed: boolean
+  ) {
+    if (running.cancelled) {
+      return "已停止规划，行程未发生变化。"
+    }
+    if (!failed && running.requiresPlanValidation) {
+      return (
+        running.committedSummary || result.finalOutput?.trim() || "行程已更新。"
+      )
+    }
+    if (running.requiresPlanValidation) {
+      return "行程已提交，但运行收尾失败。"
+    }
+    if (result.status === "succeeded" && result.finalOutput?.trim()) {
+      return result.finalOutput.trim()
+    }
+    return "本次规划未完成，行程未发生变化。"
   }
 
   private async scheduleConversationSummary(running: RunningAgent) {
