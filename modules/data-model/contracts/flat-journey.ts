@@ -1,6 +1,8 @@
 import { z } from "zod"
 import {
   TARGET_COORDINATE_SYSTEMS,
+  TARGET_GEOMETRY_KINDS,
+  TARGET_TRANSIT_SEGMENT_MODES,
   TARGET_TRANSIT_PREFERENCES,
   TARGET_TRANSPORT_MODES,
 } from "./enums"
@@ -125,8 +127,58 @@ const targetFlatJourneyTransitSchema = z
         plannedDurationMinutes: z.number().int().nonnegative().optional(),
         plannedDistanceKm: z.number().nonnegative().optional(),
         routeState: z.enum(["EMPTY", "READY", "ROUTE_STALE"]),
+        route: z
+          .object({
+            provider: z.string().trim().min(1),
+            calculatedAt: dateTimeSchema,
+            label: z.string().trim().min(1),
+            segments: z.array(
+              z
+                .object({
+                  mode: z.enum(TARGET_TRANSIT_SEGMENT_MODES),
+                  coordinateSystem: z.enum(TARGET_COORDINATE_SYSTEMS),
+                  geometryKind: z.enum(TARGET_GEOMETRY_KINDS),
+                  positions: z.array(z.tuple([z.number(), z.number()])),
+                  trafficSections: z
+                    .array(
+                      z
+                        .object({
+                          status: z.enum([
+                            "UNKNOWN",
+                            "FREE_FLOW",
+                            "SLOW",
+                            "CONGESTED",
+                            "SEVERE",
+                          ]),
+                          positions: z.array(z.tuple([z.number(), z.number()])),
+                        })
+                        .strict()
+                    )
+                    .optional(),
+                })
+                .strict()
+            ),
+          })
+          .strict()
+          .optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine((detail, context) => {
+        if (detail.routeState === "READY" && !detail.route) {
+          context.addIssue({
+            code: "custom",
+            path: ["route"],
+            message: "READY TRANSIT requires a selected route snapshot",
+          })
+        }
+        if (detail.routeState !== "READY" && detail.route) {
+          context.addIssue({
+            code: "custom",
+            path: ["route"],
+            message: "only READY TRANSIT may expose a selected route snapshot",
+          })
+        }
+      }),
   })
   .strict()
 
