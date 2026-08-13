@@ -202,6 +202,40 @@ export function projectFlatJourney(
       return projected ? [[event.id, projected] as const] : []
     })
   )
+  const selectedRoute = (
+    event: Extract<TargetJourneyEvent, { type: "TRANSIT" }>
+  ) => {
+    if (
+      event.detail.routeState !== "READY" ||
+      !event.detail.activePlanningRunId ||
+      !event.detail.selectedPlanId
+    ) {
+      return undefined
+    }
+    const run = graph.transitPlanningRuns.find(
+      (candidate) => candidate.id === event.detail.activePlanningRunId
+    )
+    const plan = run?.plans.find(
+      (candidate) => candidate.id === event.detail.selectedPlanId
+    )
+    if (!plan) return undefined
+    return {
+      provider: plan.provider,
+      calculatedAt: plan.calculatedAt,
+      label: plan.label,
+      segments: [...plan.segments]
+        .sort((left, right) => left.order - right.order)
+        .map((segment) => ({
+          mode: segment.mode,
+          coordinateSystem: segment.coordinateSystem,
+          geometryKind: segment.geometryKind,
+          positions: segment.positions,
+          ...(segment.trafficSections
+            ? { trafficSections: segment.trafficSections }
+            : {}),
+        })),
+    }
+  }
   const events = ordered.flatMap((event, index): TargetFlatJourneyEvent[] => {
     if (event.type !== "TRANSIT") {
       const projected = locationById.get(event.id)
@@ -219,6 +253,7 @@ export function projectFlatJourney(
     if (!from || !to || from.kind === "TRANSIT" || to.kind === "TRANSIT") {
       return []
     }
+    const route = selectedRoute(event)
     return [
       {
         eventId: event.id,
@@ -247,6 +282,7 @@ export function projectFlatJourney(
             ? {}
             : { plannedDistanceKm: event.detail.plannedDistanceKm }),
           routeState: event.detail.routeState,
+          ...(route ? { route } : {}),
         },
       },
     ]
