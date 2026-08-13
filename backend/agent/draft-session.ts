@@ -23,7 +23,8 @@ import {
 } from "@/modules/workspace/server/workspace-command-service"
 import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
 import { endpointToGcj02 } from "@/lib/journeys/coordinates"
-import type { ParsedAgentToolRequest } from "./tool-contract"
+import type { TransitPlanBundle } from "@/lib/journeys/planning"
+import type { LegacyParsedAgentToolRequest } from "./tool-contract"
 
 type DraftState = "NO_DRAFT" | "BUILDING" | "INVALID" | "VALID" | "COMMITTED"
 
@@ -1310,7 +1311,7 @@ export class AgentDraftSession {
   }
 
   addCity(
-    input: Extract<ParsedAgentToolRequest, { type: "city.add" }>,
+    input: Extract<LegacyParsedAgentToolRequest, { type: "city.add" }>,
     toolCallId: string,
     location: PlaceVerification["ref"]
   ) {
@@ -1338,7 +1339,7 @@ export class AgentDraftSession {
   }
 
   addPlaceEvent(
-    input: Extract<ParsedAgentToolRequest, { type: "placeEvent.add" }>,
+    input: Extract<LegacyParsedAgentToolRequest, { type: "placeEvent.add" }>,
     toolCallId: string
   ) {
     const common = {
@@ -1380,7 +1381,7 @@ export class AgentDraftSession {
   }
 
   addStay(
-    input: Extract<ParsedAgentToolRequest, { type: "stay.add" }>,
+    input: Extract<LegacyParsedAgentToolRequest, { type: "stay.add" }>,
     toolCallId: string
   ) {
     const selection = this.hotelSelections.get(input.hotelSelectionId)
@@ -1418,7 +1419,7 @@ export class AgentDraftSession {
   }
 
   addTransit(
-    input: Extract<ParsedAgentToolRequest, { type: "transit.add" }>,
+    input: Extract<LegacyParsedAgentToolRequest, { type: "transit.add" }>,
     toolCallId: string
   ) {
     const graph = this.currentGraph()
@@ -1460,7 +1461,7 @@ export class AgentDraftSession {
   }
 
   moveCard(
-    input: Extract<ParsedAgentToolRequest, { type: "card.move" }>,
+    input: Extract<LegacyParsedAgentToolRequest, { type: "card.move" }>,
     toolCallId: string
   ) {
     const event = requireEvent(this.currentGraph(), input.cardId)
@@ -1483,7 +1484,7 @@ export class AgentDraftSession {
   }
 
   removeCard(
-    input: Extract<ParsedAgentToolRequest, { type: "card.remove" }>,
+    input: Extract<LegacyParsedAgentToolRequest, { type: "card.remove" }>,
     toolCallId: string
   ) {
     return this.modelMutation(
@@ -1502,7 +1503,7 @@ export class AgentDraftSession {
   }
 
   updateCard(
-    input: Extract<ParsedAgentToolRequest, { type: "card.update" }>,
+    input: Extract<LegacyParsedAgentToolRequest, { type: "card.update" }>,
     toolCallId: string
   ) {
     return this.serialize(async () => {
@@ -1647,11 +1648,16 @@ export class AgentDraftSession {
     return { validation: result.validation }
   }
 
-  async prepareTransitCurrent(transitCardId: string, toolCallId: string) {
+  async prepareTransitCurrent(
+    transitCardId: string,
+    toolCallId: string,
+    resolvedBundle?: TransitPlanBundle
+  ) {
     const result = await this.prepareTransit({
       draftId: this.currentDraftId(),
       operationId: this.operationId(toolCallId, "transit-prepare"),
       transitCardId,
+      resolvedBundle,
     })
     const { draftId: _draftId, ...visible } = result as Awaited<
       ReturnType<AgentDraftSession["prepareTransit"]>
@@ -2151,6 +2157,7 @@ export class AgentDraftSession {
     draftId: string
     operationId: string
     transitCardId: string
+    resolvedBundle?: TransitPlanBundle
   }) {
     return this.serialize(async () => {
       const draft = this.requireDraft(input.draftId)
@@ -2189,6 +2196,7 @@ export class AgentDraftSession {
         draft,
         idempotencyKey: input.operationId,
         eventId: input.transitCardId,
+        resolvedBundle: input.resolvedBundle,
       })
       const prepared = this.commands.validateAgentDraft(
         next,

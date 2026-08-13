@@ -4,219 +4,158 @@ import {
   TARGET_TRANSPORT_MODES,
 } from "@/modules/data-model/contracts"
 
-const id = z.string().trim().min(1)
-const optionalText = z.string().trim().min(1).optional()
-const nullableText = z.string().trim().min(1).nullable().optional()
+const key = z.string().trim().min(1).max(80)
+const text = z.string().trim().min(1)
+const optionalText = text.optional()
+const nullableText = text.nullable().optional()
 const dateTime = z.iso.datetime({ offset: true })
 
-const issueReference = { issueId: id.optional() }
-const orderedInsertion = { afterCardId: id.nullable().optional() }
-
-export const draftOpenToolSchema = z.object({}).strict()
-
-export const cityAddToolSchema = z
-  .object({
-    name: z.string().trim().min(1),
-    description: optionalText,
-    ...orderedInsertion,
-    ...issueReference,
-  })
+export const cityResolveToolSchema = z
+  .object({ cityKey: key, query: text })
   .strict()
 
 export const placeResolveToolSchema = z
   .object({
-    cityCardId: id,
-    cardType: z.enum(["VISIT", "MEAL", "ACTIVITY"]),
-    query: z.string().trim().min(1),
+    proposalItemKey: key,
+    cityQuery: text,
+    query: text,
+    kind: z.enum(["VISIT", "MEAL", "ACTIVITY"]),
     origin: z.enum(["USER_EXPLICIT", "PLANNER_CHOICE"]),
-  })
-  .strict()
-
-export const placeEventAddToolSchema = z
-  .object({
-    cityCardId: id,
-    cardType: z.enum(["VISIT", "MEAL", "ACTIVITY"]),
-    placeResolutionId: id,
-    plannedStartAt: dateTime,
-    plannedEndAt: dateTime.optional(),
-    plannedDurationMinutes: z.number().int().positive().optional(),
-    description: optionalText,
-    cuisine: optionalText,
-    bookingReference: optionalText,
-    ...orderedInsertion,
-    ...issueReference,
   })
   .strict()
 
 export const hotelSearchToolSchema = z
   .object({
-    cityCardId: id,
+    proposalItemKey: key,
+    cityQuery: text,
+    checkInDate: z.iso.date(),
+    stayNights: z.number().int().positive().max(30),
+    adultCount: z.number().int().positive().max(10),
     preference: optionalText,
   })
   .strict()
 
-export const stayAddToolSchema = z
+export const routeResolveToolSchema = z
   .object({
-    cityCardId: id,
-    hotelSelectionId: id,
-    description: optionalText,
-    checkInNote: optionalText,
-    ...orderedInsertion,
-    ...issueReference,
+    proposalItemKey: key,
+    fromItemKey: key,
+    toItemKey: key,
+    transportMode: z.enum(TARGET_TRANSPORT_MODES).optional(),
+    preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
   })
   .strict()
 
-export const transitAddToolSchema = z
-  .object({
-    fromCardId: id,
-    toCardId: id,
-    plannedStartAt: dateTime.optional(),
-    plannedEndAt: dateTime.optional(),
-    modePreference: z.enum(TARGET_TRANSPORT_MODES).optional(),
-    routePreference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
-    title: optionalText,
-    description: optionalText,
-    notes: optionalText,
-    ...issueReference,
-  })
-  .strict()
-
-const scheduleChanges = {
-  plannedStartAt: dateTime.nullable().optional(),
-  plannedEndAt: dateTime.nullable().optional(),
+const locationSchedule = {
+  plannedStartAt: dateTime,
+  plannedEndAt: dateTime.optional(),
 }
 
-export const cardChangesSchema = z
-  .discriminatedUnion("type", [
-    z
-      .object({
-        type: z.literal("CITY"),
-        title: optionalText,
-        description: nullableText,
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("VISIT"),
-        ...scheduleChanges,
-        description: nullableText,
-        plannedDurationMinutes: z
-          .number()
-          .int()
-          .positive()
-          .nullable()
-          .optional(),
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("MEAL"),
-        ...scheduleChanges,
-        description: nullableText,
-        plannedDurationMinutes: z
-          .number()
-          .int()
-          .positive()
-          .nullable()
-          .optional(),
-        cuisine: nullableText,
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("ACTIVITY"),
-        ...scheduleChanges,
-        description: nullableText,
-        plannedDurationMinutes: z
-          .number()
-          .int()
-          .positive()
-          .nullable()
-          .optional(),
-        bookingReference: nullableText,
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("STAY"),
-        ...scheduleChanges,
-        description: nullableText,
-        checkInNote: nullableText,
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("TRANSIT"),
-        ...scheduleChanges,
-        title: optionalText,
-        description: nullableText,
-        modePreference: z.enum(TARGET_TRANSPORT_MODES).optional(),
-        routePreference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
-        notes: nullableText,
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("NOTE"),
-        title: optionalText,
-        description: nullableText,
-      })
-      .strict(),
-  ])
-  .refine((changes) => Object.keys(changes).length > 1, {
-    message: "card.update requires at least one business field",
-  })
+const commonEvent = {
+  proposalItemKey: key,
+  title: text,
+  description: optionalText,
+}
 
-export const cardUpdateToolSchema = z
-  .object({ cardId: id, changes: cardChangesSchema, ...issueReference })
-  .strict()
-
-export const cardMoveToolSchema = z
+const visitInputSchema = z
   .object({
-    cardId: id,
-    afterCardId: id.nullable(),
-    ...issueReference,
+    ...commonEvent,
+    ...locationSchedule,
+    kind: z.literal("VISIT"),
+    cityQuery: text,
+    plannedDurationMinutes: z.number().int().positive().optional(),
   })
   .strict()
 
-export const cardRemoveToolSchema = z
+const mealInputSchema = z
   .object({
-    cardId: id,
-    removeCityChildren: z.boolean().optional(),
-    ...issueReference,
+    ...commonEvent,
+    ...locationSchedule,
+    kind: z.literal("MEAL"),
+    cityQuery: text,
+    plannedDurationMinutes: z.number().int().positive().optional(),
+    cuisine: optionalText,
   })
   .strict()
 
-export const draftProjectToolSchema = z
-  .object({ scopeCityCardId: id.nullable().optional() })
+const activityInputSchema = z
+  .object({
+    ...commonEvent,
+    ...locationSchedule,
+    kind: z.literal("ACTIVITY"),
+    cityQuery: text,
+    plannedDurationMinutes: z.number().int().positive().optional(),
+    bookingReference: optionalText,
+  })
   .strict()
-export const draftValidateToolSchema = z.object({}).strict()
-export const draftPrepareTransitToolSchema = z
-  .object({ transitCardId: id })
+
+const stayInputSchema = z
+  .object({
+    ...commonEvent,
+    ...locationSchedule,
+    kind: z.literal("STAY"),
+    cityQuery: text,
+    checkInNote: optionalText,
+  })
   .strict()
-export const draftCommitToolSchema = z.object({}).strict()
+
+const transitInputSchema = z
+  .object({
+    ...commonEvent,
+    kind: z.literal("TRANSIT"),
+    plannedStartAt: dateTime.optional(),
+    plannedEndAt: dateTime.optional(),
+    fromItemKey: key,
+    toItemKey: key,
+    transportMode: z.enum(TARGET_TRANSPORT_MODES),
+    preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
+    notes: optionalText,
+  })
+  .strict()
+
+export const pathEventInputSchema = z.discriminatedUnion("kind", [
+  visitInputSchema,
+  mealInputSchema,
+  activityInputSchema,
+  stayInputSchema,
+  transitInputSchema,
+])
+
+export const pathAppendEventToolSchema = z
+  .object({
+    event: pathEventInputSchema,
+    afterItemKey: key.nullable(),
+    reason: text,
+  })
+  .strict()
+
+export const pathReplaceEventToolSchema = z
+  .object({ itemKey: key, event: pathEventInputSchema, reason: text })
+  .strict()
+
+export const pathRemoveEventToolSchema = z
+  .object({ itemKey: key, reason: text })
+  .strict()
+
+export const pathValidateToolSchema = z.object({}).strict()
+export const pathCommitToolSchema = z.object({}).strict()
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
-  draftOpenToolSchema.extend({ type: z.literal("draft.open") }),
-  cityAddToolSchema.extend({ type: z.literal("city.add") }),
+  cityResolveToolSchema.extend({ type: z.literal("city.resolve") }),
   placeResolveToolSchema.extend({ type: z.literal("place.resolve") }),
-  placeEventAddToolSchema.extend({ type: z.literal("placeEvent.add") }),
   hotelSearchToolSchema.extend({ type: z.literal("hotel.search") }),
-  stayAddToolSchema.extend({ type: z.literal("stay.add") }),
-  transitAddToolSchema.extend({ type: z.literal("transit.add") }),
-  cardUpdateToolSchema.extend({ type: z.literal("card.update") }),
-  cardMoveToolSchema.extend({ type: z.literal("card.move") }),
-  cardRemoveToolSchema.extend({ type: z.literal("card.remove") }),
-  draftProjectToolSchema.extend({ type: z.literal("draft.project") }),
-  draftValidateToolSchema.extend({ type: z.literal("draft.validate") }),
-  draftPrepareTransitToolSchema.extend({
-    type: z.literal("draft.prepare_transit"),
+  routeResolveToolSchema.extend({ type: z.literal("route.resolve") }),
+  pathAppendEventToolSchema.extend({ type: z.literal("path.append_event") }),
+  pathReplaceEventToolSchema.extend({
+    type: z.literal("path.replace_event"),
   }),
-  draftCommitToolSchema.extend({ type: z.literal("draft.commit") }),
+  pathRemoveEventToolSchema.extend({ type: z.literal("path.remove_event") }),
+  pathValidateToolSchema.extend({ type: z.literal("path.validate") }),
+  pathCommitToolSchema.extend({ type: z.literal("path.commit") }),
 ])
 
 export type AgentToolRequest = z.input<typeof agentToolRequestSchema>
 export type ParsedAgentToolRequest = z.output<typeof agentToolRequestSchema>
+export type PathEventInput = z.output<typeof pathEventInputSchema>
 
 export type AgentToolResult<T = unknown> =
   | { status: "ok"; data: T }
@@ -256,3 +195,116 @@ export const terminalError = (
   message,
   ...(details === undefined ? {} : { details }),
 })
+
+// The graph compiler still consumes the old command shapes internally while the
+// Agent-facing catalog is cut over. These types are not registered with Pi Core.
+export type LegacyParsedAgentToolRequest =
+  | {
+      type: "city.add"
+      name: string
+      description?: string
+      afterCardId?: string | null
+      issueId?: string
+    }
+  | {
+      type: "placeEvent.add"
+      cityCardId: string
+      cardType: "VISIT" | "MEAL" | "ACTIVITY"
+      placeResolutionId: string
+      plannedStartAt: string
+      plannedEndAt?: string
+      plannedDurationMinutes?: number
+      description?: string
+      cuisine?: string
+      bookingReference?: string
+      afterCardId?: string | null
+      issueId?: string
+    }
+  | {
+      type: "stay.add"
+      cityCardId: string
+      hotelSelectionId: string
+      description?: string
+      checkInNote?: string
+      afterCardId?: string | null
+      issueId?: string
+    }
+  | {
+      type: "transit.add"
+      fromCardId: string
+      toCardId: string
+      plannedStartAt?: string
+      plannedEndAt?: string
+      modePreference?: (typeof TARGET_TRANSPORT_MODES)[number]
+      routePreference?: (typeof TARGET_TRANSIT_PREFERENCES)[number]
+      title?: string
+      description?: string
+      notes?: string
+      issueId?: string
+    }
+  | {
+      type: "card.move"
+      cardId: string
+      afterCardId: string | null
+      issueId?: string
+    }
+  | {
+      type: "card.remove"
+      cardId: string
+      removeCityChildren?: boolean
+      issueId?: string
+    }
+  | {
+      type: "card.update"
+      cardId: string
+      issueId?: string
+      changes:
+        | {
+            type: "CITY"
+            title?: string
+            description?: string | null
+          }
+        | {
+            type: "VISIT"
+            plannedStartAt?: string | null
+            plannedEndAt?: string | null
+            description?: string | null
+            plannedDurationMinutes?: number | null
+          }
+        | {
+            type: "MEAL"
+            plannedStartAt?: string | null
+            plannedEndAt?: string | null
+            description?: string | null
+            plannedDurationMinutes?: number | null
+            cuisine?: string | null
+          }
+        | {
+            type: "ACTIVITY"
+            plannedStartAt?: string | null
+            plannedEndAt?: string | null
+            description?: string | null
+            plannedDurationMinutes?: number | null
+            bookingReference?: string | null
+          }
+        | {
+            type: "STAY"
+            plannedStartAt?: string | null
+            plannedEndAt?: string | null
+            description?: string | null
+            checkInNote?: string | null
+          }
+        | {
+            type: "TRANSIT"
+            plannedStartAt?: string | null
+            plannedEndAt?: string | null
+            title?: string
+            description?: string | null
+            modePreference?: (typeof TARGET_TRANSPORT_MODES)[number]
+            routePreference?: (typeof TARGET_TRANSIT_PREFERENCES)[number]
+            notes?: string | null
+          }
+        | { type: "NOTE"; title?: string; description?: string | null }
+    }
+
+export const legacyNullableText = nullableText

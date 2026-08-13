@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto"
 import type { AuthContext } from "@/modules/auth/server/context"
-import { coordinateDistanceMeters } from "@/lib/places/coordinates"
-import { endpointToGcj02 } from "@/lib/journeys/coordinates"
 import { normalizePlaceName } from "@/lib/places/normalize"
 import { WORKSPACE_AGENT_RUN_LEASE_SECONDS } from "@/modules/data-model/contracts"
 import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
@@ -15,6 +13,12 @@ import {
   type HotelSearchService,
   type HotelProviderUsageContext,
 } from "@/modules/data/hotels/hotel-search-service"
+import {
+  createCityResolver,
+  type CityResolver,
+} from "@/modules/data/cities/city-resolver"
+import { TransitPlanningService } from "@/modules/data/transit/transit-planning-service"
+import { requestModeForTransport } from "@/lib/journeys/planning"
 import {
   appendWorkspaceMessage,
   appendWorkspaceMessageDelta,
@@ -50,7 +54,7 @@ import {
   OpenInferenceSpanKind,
   TOOL_NAME,
 } from "@arizeai/openinference-semantic-conventions"
-import { AgentDraftSession } from "./draft-session"
+import { PlanningSession } from "./planning-session"
 import { buildPlannerBaseline, type PlannerBaseline } from "./planner-baseline"
 import {
   agentToolRequestSchema,
@@ -71,6 +75,8 @@ interface AgentGatewayOptions {
     "searchPlaces" | "resolvePlace" | "enrichPlace" | "verifyPlaceImages"
   >
   hotelService?: Pick<HotelSearchService, "searchHotels">
+  cityService?: Pick<CityResolver, "resolveCity">
+  transitService?: Pick<TransitPlanningService, "plan">
   evalTrace?: {
     scenarioId: string
     sink: EvalTraceSink
@@ -106,8 +112,7 @@ interface RunningAgent {
   committedRevision: number | null
   committedProjectionHash: string | null
   baseline: PlannerBaseline
-  draftSession: AgentDraftSession
-  currentUserRequest: string
+  planningSession: PlanningSession
 }
 
 function conversationMessages(
@@ -153,47 +158,6 @@ const OUTPUT_FLUSH_DELAY_MS = 50
 const OUTPUT_FLUSH_BYTES = 512
 const SUMMARY_ATTEMPT_TIMEOUT_MS = 20_000
 
-function adultCountFromRequest(request: string) {
-  const match = request.match(
-    /(?:^|[^\d])(\d{1,2})\s*(?:位?成人|名成人|个大人|大人|人(?:同行|出行|入住)?)/
-  )
-  if (!match) return 1
-  return Math.min(10, Math.max(1, Number(match[1])))
-}
-
-function hotelPreference(
-  currentUserRequest: string,
-  toolPreference: string | undefined
-) {
-  const budgetSource = `${currentUserRequest}\n${toolPreference ?? ""}`
-  const budgetMatch = budgetSource.match(
-    /(?:预算|不超过|不高于|低于|以内|以下|<=?)\s*[¥￥]?\s*(\d+(?:\.\d+)?)/
-  )
-  const requestTerms = Array.from(
-    currentUserRequest.matchAll(
-      /([\p{Script=Han}A-Za-z0-9·]{2,30}(?:酒店|宾馆|客栈|民宿))|([\p{Script=Han}A-Za-z0-9·]{2,20})(?:附近|周边|一带)/gu
-    )
-  ).flatMap((match) => [match[1], match[2]].filter(Boolean) as string[])
-  const termsSource = requestTerms.length
-    ? requestTerms.join(" ")
-    : (toolPreference ?? "")
-  const terms = normalizePlaceName(termsSource)
-    .split(/[\s,，;；、/]+/)
-    .filter(
-      (term) =>
-        term.length >= 2 &&
-        !/^(酒店|住宿|预算|以内|以下|附近|周边|靠近)$/.test(term) &&
-        !/^\d+(?:\.\d+)?(?:元)?$/.test(term)
-    )
-  return {
-    terms,
-    searchText: terms.join(" ") || toolPreference,
-    ...(budgetMatch
-      ? { maximumPrice: Number(budgetMatch[1]), maximumPriceCurrency: "CNY" }
-      : {}),
-  }
-}
-
 export class AgentGateway {
   private readonly runs = new Map<string, RunningAgent>()
   private readonly runtimeOwnerId: string
@@ -205,6 +169,10 @@ export class AgentGateway {
   >
   private readonly hotelService: NonNullable<
     AgentGatewayOptions["hotelService"]
+  >
+  private readonly cityService: NonNullable<AgentGatewayOptions["cityService"]>
+  private readonly transitService: NonNullable<
+    AgentGatewayOptions["transitService"]
   >
 
   constructor(
@@ -222,6 +190,8 @@ export class AgentGateway {
     this.now = options.now ?? (() => new Date())
     this.placeService = options.placeService ?? createPlaceIntelligenceService()
     this.hotelService = options.hotelService ?? createHotelSearchService()
+    this.cityService = options.cityService ?? createCityResolver()
+    this.transitService = options.transitService ?? new TransitPlanningService()
   }
 
   private defaultTripStartDate() {
@@ -762,13 +732,12 @@ export class AgentGateway {
       committedRevision: null,
       committedProjectionHash: null,
       baseline,
-      currentUserRequest: prompt,
-      draftSession: new AgentDraftSession(
+      planningSession: new PlanningSession(
         workspaceId,
         persistedRun.id,
         context,
         this.commands,
-        baseline.workspaceRevision
+        baseline
       ),
     }
     this.runs.set(workspaceId, running)
@@ -797,6 +766,10 @@ export class AgentGateway {
             ? { traceId: running.telemetry.traceId }
             : {}),
         },
+      })
+      emit(workspaceId, {
+        type: "agent.run.progress",
+        payload: { runId: running.runId, stage: "UNDERSTANDING" },
       })
       const promptSpan = running.telemetry.startSpan(
         "agent.prompt.build",
@@ -831,7 +804,9 @@ export class AgentGateway {
                 currentUserRequest: prompt,
                 defaultTripStartDate: this.defaultTripStartDate(),
                 executeTool: (request, toolCallId, signal) =>
-                  this.executeTool(running, request, toolCallId, signal),
+                  this.executeTool(running, request, toolCallId, emit, signal),
+                changeLogContext: () =>
+                  running.planningSession.changeLogContext(),
               },
               {
                 onEvent: (event) =>
@@ -991,8 +966,12 @@ export class AgentGateway {
         "Run hotel.search for the same CITY used by stay.add"
       )
     }
-    if (/COMMITTED|repair limit|SUMMARY_UNAVAILABLE/.test(message)) {
-      return terminalError("DRAFT_TERMINAL", message)
+    if (
+      /COMMITTED|SUMMARY_UNAVAILABLE|BASE_REVISION|PATH_REVISION_LIMIT/.test(
+        message
+      )
+    ) {
+      return terminalError("PATH_TERMINAL", message)
     }
     return retryableError("INVALID_TOOL_INPUT", message, {
       tool: request.type,
@@ -1003,15 +982,27 @@ export class AgentGateway {
     running: RunningAgent,
     rawRequest: AgentToolRequest,
     toolCallId: string,
+    emit: AgentEventEmitter,
     signal?: AbortSignal
   ): Promise<unknown> {
     const parsedRequest = agentToolRequestSchema.safeParse(rawRequest)
     if (!parsedRequest.success) {
-      return retryableError(
+      const result = retryableError(
         "INVALID_ARGUMENTS",
         "Agent tool arguments do not match the canonical schema",
         parsedRequest.error.issues
       )
+      running.planningSession.recordToolRejected(
+        typeof rawRequest === "object" &&
+          rawRequest &&
+          "type" in rawRequest &&
+          typeof rawRequest.type === "string"
+          ? rawRequest.type
+          : "unknown",
+        "INVALID_ARGUMENTS",
+        "Agent tool arguments do not match the canonical schema"
+      )
+      return result
     }
     const request = parsedRequest.data
     const fingerprint = JSON.stringify(request)
@@ -1054,47 +1045,51 @@ export class AgentGateway {
         payload: { toolType: request.type, toolCallId },
       })
       await this.heartbeat(running)
-      running.draftSession.assertToolAllowed(request.type)
-      if (request.type === "draft.open") {
-        result = ok(await running.draftSession.openCurrent(toolCallId))
-      } else if (request.type === "city.add") {
+      const stage =
+        request.type === "city.resolve" ||
+        request.type === "place.resolve" ||
+        request.type === "hotel.search"
+          ? "VERIFYING_PLACES"
+          : request.type === "route.resolve" || request.type === "path.validate"
+            ? "CHECKING_ROUTE"
+            : request.type === "path.commit"
+              ? "COMMITTING"
+              : "UNDERSTANDING"
+      emit(running.workspaceId, {
+        type: "agent.run.progress",
+        payload: { runId: running.runId, stage },
+      })
+      if (request.type === "city.resolve") {
         const resolved = await this.withProviderSpan(
           running,
           otelToolSpan,
           "amap",
           "city.resolve",
           () =>
-            this.placeService.resolvePlace(
-              { text: request.name, city: request.name },
-              {
-                userId: running.context.userId,
-                workspaceId: running.workspaceId,
-                agentRunId: running.runId,
-                requestId: toolCallId,
-                signal: running.toolAbortController.signal,
-              }
+            this.cityService.resolveCity(
+              request.query,
+              running.toolAbortController.signal
             )
         )
-        result =
-          resolved.status === "resolved"
-            ? ok(
-                await running.draftSession.addCity(
-                  request,
-                  toolCallId,
-                  resolved.placeRef
-                )
-              )
-            : terminalError("CITY_NOT_FOUND", resolved.reason)
+        if (resolved.status !== "resolved") {
+          result = terminalError(resolved.reason, "City could not be resolved")
+        } else {
+          result = ok(
+            running.planningSession.recordCity(
+              request,
+              resolved.city.name,
+              resolved.city.location,
+              resolved.city.timeZone,
+              resolved.city.administrativeLevel
+            )
+          )
+        }
       } else if (request.type === "place.resolve") {
         result = await this.executeAutoPlaceResolve(
           running,
           request,
           toolCallId,
           otelToolSpan
-        )
-      } else if (request.type === "placeEvent.add") {
-        result = ok(
-          await running.draftSession.addPlaceEvent(request, toolCallId)
         )
       } else if (request.type === "hotel.search") {
         result = await this.executeAutoHotelSearch(
@@ -1103,52 +1098,118 @@ export class AgentGateway {
           toolCallId,
           otelToolSpan
         )
-      } else if (request.type === "stay.add") {
-        result = ok(await running.draftSession.addStay(request, toolCallId))
-      } else if (request.type === "transit.add") {
-        result = ok(await running.draftSession.addTransit(request, toolCallId))
-      } else if (request.type === "card.update") {
-        result = ok(await running.draftSession.updateCard(request, toolCallId))
-      } else if (request.type === "card.move") {
-        result = ok(await running.draftSession.moveCard(request, toolCallId))
-      } else if (request.type === "card.remove") {
-        result = ok(await running.draftSession.removeCard(request, toolCallId))
-      } else if (request.type === "draft.project") {
-        result = ok(
-          running.draftSession.projectCurrent(request.scopeCityCardId)
-        )
-      } else if (request.type === "draft.validate") {
-        const validation =
-          await running.draftSession.validateCurrent(toolCallId)
+      } else if (request.type === "route.resolve") {
+        const endpoints = running.planningSession.routeEndpoints(request)
+        const transportMode = request.transportMode ?? "WALK"
+        const mode = requestModeForTransport(transportMode)
+        if (!mode) {
+          result = retryableError(
+            "ROUTE_MODE_UNSUPPORTED",
+            `No route provider mode exists for ${transportMode}`
+          )
+        } else {
+          const bundle = await this.withProviderSpan(
+            running,
+            otelToolSpan,
+            "amap",
+            "route.resolve",
+            () =>
+              this.transitService.plan(
+                {
+                  transitEventId: request.proposalItemKey,
+                  ...endpoints,
+                  mode,
+                  transportMode,
+                  preference: request.preference ?? "RECOMMENDED",
+                  alternatives: 3,
+                },
+                {
+                  userId: running.context.userId,
+                  workspaceId: running.workspaceId,
+                  agentRunId: running.runId,
+                  requestId: toolCallId,
+                }
+              )
+          )
+          result = ok(running.planningSession.recordRoute(request, bundle))
+        }
+      } else if (request.type === "path.append_event") {
+        result = ok(running.planningSession.appendEvent(request))
+      } else if (request.type === "path.replace_event") {
+        result = ok(running.planningSession.replaceEvent(request))
+      } else if (request.type === "path.remove_event") {
+        result = ok(running.planningSession.removeEvent(request))
+      } else if (request.type === "path.validate") {
+        const validation = await running.planningSession.validate(toolCallId)
         await this.trace(running, {
           type: "validator.completed",
           spanId: randomUUID(),
           parentSpanId: toolSpanId,
           status: "OK",
           payload: {
-            valid: validation.validation.valid,
-            issueCodes: validation.validation.issues.map((issue) => issue.code),
-            draft: true,
-            repairsUsed: validation.validation.repairsUsed,
+            valid: validation.valid,
+            issueCodes: validation.issues.map((issue) => issue.code),
+            changeLog: true,
           },
         })
         result = ok(validation)
-      } else if (request.type === "draft.prepare_transit") {
-        result = ok(
-          await running.draftSession.prepareTransitCurrent(
-            request.transitCardId,
-            toolCallId
-          )
-        )
-      } else if (request.type === "draft.commit") {
-        const committed = await running.draftSession.commitCurrent(toolCallId)
+      } else if (request.type === "path.commit") {
+        const committed = await running.planningSession.commit(toolCallId)
         running.requiresPlanValidation = true
         running.committedRevision = committed.newWorkspaceRevision
         running.committedProjectionHash = committed.projectionHash
+        const document = await this.commands.getDocument(
+          running.context,
+          running.workspaceId
+        )
+        if (!document) {
+          throw new WorkspaceInputError("COMMITTED_WORKSPACE_DOCUMENT_MISSING")
+        }
+        emit(running.workspaceId, {
+          type: "journey.committed",
+          payload: {
+            runId: running.runId,
+            revision: committed.newWorkspaceRevision,
+            document,
+            summary: committed.summary,
+            changedEventIds: committed.changedEventIds,
+          },
+        })
         result = ok(committed)
       }
     } catch (error) {
       result = this.toolFailure(request, error)
+    }
+    if (
+      result &&
+      typeof result === "object" &&
+      "status" in result &&
+      "code" in result &&
+      "message" in result &&
+      result.status !== "ok" &&
+      (request.type === "city.resolve" ||
+        request.type === "place.resolve" ||
+        request.type === "hotel.search" ||
+        request.type === "route.resolve")
+    ) {
+      running.planningSession.recordFactRejected(
+        request,
+        String(result.code),
+        String(result.message)
+      )
+    } else if (
+      result &&
+      typeof result === "object" &&
+      "status" in result &&
+      "code" in result &&
+      "message" in result &&
+      result.status !== "ok"
+    ) {
+      running.planningSession.recordToolRejected(
+        request.type,
+        String(result.code),
+        String(result.message)
+      )
     }
     if (
       result &&
@@ -1184,7 +1245,7 @@ export class AgentGateway {
       otelToolSpan.setAttribute("output.value", redactedInput(result) ?? "")
       running.telemetry.recordTool(
         request.type,
-        request.type === "place.resolve"
+        request.type === "place.resolve" || request.type === "city.resolve"
           ? "amap"
           : request.type === "hotel.search"
             ? "rollinggo"
@@ -1209,26 +1270,10 @@ export class AgentGateway {
     toolCallId: string,
     parentSpan: TelemetrySpan
   ) {
-    const graph = running.draftSession.currentGraph()
-    const city = graph.events.find(
-      (event) =>
-        event.id === request.cityCardId &&
-        event.type === "SECTION" &&
-        event.detail.kind === "CITY" &&
-        event.placementStatus === "SCHEDULED" &&
-        event.introducedRevision <= graph.revision &&
-        (!event.retiredRevision || event.retiredRevision > graph.revision)
-    )
-    if (!city) {
-      return retryableError(
-        "CITY_NOT_FOUND",
-        "cityCardId is not an active CITY"
-      )
-    }
     const intent =
-      request.cardType === "MEAL"
+      request.kind === "MEAL"
         ? ("food" as const)
-        : request.cardType === "ACTIVITY"
+        : request.kind === "ACTIVITY"
           ? ("performance" as const)
           : ("sightseeing" as const)
     const resolved = await this.withProviderSpan(
@@ -1238,7 +1283,7 @@ export class AgentGateway {
       "place.resolve",
       () =>
         this.placeService.resolvePlace(
-          { text: request.query, city: city.title, intent },
+          { text: request.query, city: request.cityQuery, intent },
           {
             userId: running.context.userId,
             workspaceId: running.workspaceId,
@@ -1268,14 +1313,42 @@ export class AgentGateway {
             "No writable place matched; choose another concrete place name"
           )
     }
-    const placeResolutionId =
-      running.draftSession.registerResolvedPlace(resolved)
-    return ok({
-      placeResolutionId,
-      canonicalName: resolved.placeRef.canonicalName,
-      category: resolved.place.category,
-      warnings: resolved.warnings,
-    })
+    const normalizedQuery = normalizePlaceName(request.query)
+    const exactName =
+      resolved.place.normalizedName === normalizedQuery ||
+      resolved.place.aliases.some((alias) => alias === normalizedQuery)
+    const acceptedCategories =
+      request.kind === "MEAL"
+        ? new Set(["RESTAURANT"])
+        : request.kind === "ACTIVITY"
+          ? new Set(["PERFORMANCE", "SPORTS", "ENTERTAINMENT", "CULTURE"])
+          : new Set(["SIGHT", "PARK", "MUSEUM", "CULTURE"])
+    if (!exactName || !acceptedCategories.has(resolved.place.category)) {
+      const message = exactName
+        ? `${resolved.placeRef.canonicalName} is not a valid ${request.kind} place`
+        : `${resolved.placeRef.canonicalName} is not an exact match for ${request.query}`
+      return request.origin === "USER_EXPLICIT"
+        ? terminalError("EXPLICIT_PLACE_NOT_FOUND", message)
+        : retryableError("PLANNER_PLACE_NOT_FOUND", message)
+    }
+    const expectedCity = normalizePlaceName(request.cityQuery)
+    const resolvedCity = normalizePlaceName(
+      resolved.placeRef.city ??
+        resolved.place.city ??
+        resolved.place.province ??
+        ""
+    )
+    if (
+      resolvedCity &&
+      !resolvedCity.includes(expectedCity) &&
+      !expectedCity.includes(resolvedCity)
+    ) {
+      return retryableError(
+        "PLACE_CITY_MISMATCH",
+        `${resolved.placeRef.canonicalName} is in ${resolved.placeRef.city ?? resolved.place.city ?? "another city"}; choose a place in ${request.cityQuery}`
+      )
+    }
+    return ok(running.planningSession.recordPlace(request, resolved))
   }
 
   private async executeAutoHotelSearch(
@@ -1284,98 +1357,47 @@ export class AgentGateway {
     toolCallId: string,
     parentSpan: TelemetrySpan
   ) {
-    const preference = hotelPreference(
-      running.currentUserRequest,
-      request.preference
-    )
-    const context = running.draftSession.hotelSearchContext(
-      request.cityCardId,
-      preference.searchText,
-      adultCountFromRequest(running.currentUserRequest)
-    )
     const response = await this.withProviderSpan(
       running,
       parentSpan,
       "rollinggo",
       "hotel.search",
       () =>
-        this.hotelService.searchHotels(context.providerInput, {
-          userId: running.context.userId,
-          workspaceId: running.workspaceId,
-          agentRunId: running.runId,
-          requestId: toolCallId,
-          signal: running.toolAbortController.signal,
-        })
-    )
-    const ranked = response.candidates
-      .map((candidate, providerOrder) => {
-        const coordinate = endpointToGcj02({
-          name: candidate.name,
-          lat: candidate.coordinates.lat,
-          lng: candidate.coordinates.lng,
-          coordinateSystem: "WGS84",
-        })
-        const distance = context.anchors.length
-          ? context.anchors.reduce(
-              (total, anchor) =>
-                total + coordinateDistanceMeters(anchor, coordinate),
-              0
-            ) / context.anchors.length
-          : 0
-        const normalizedCandidate = normalizePlaceName(
-          `${candidate.name} ${candidate.address ?? ""}`
+        this.hotelService.searchHotels(
+          {
+            originQuery: request.preference ?? request.cityQuery,
+            place: request.cityQuery,
+            placeType: "城市",
+            checkInDate: request.checkInDate,
+            stayNights: request.stayNights,
+            adultCount: request.adultCount,
+            size: 5,
+          },
+          {
+            userId: running.context.userId,
+            workspaceId: running.workspaceId,
+            agentRunId: running.runId,
+            requestId: toolCallId,
+            signal: running.toolAbortController.signal,
+          }
         )
-        const textPreferenceRank = preference.terms.length
-          ? preference.terms.every((term) => normalizedCandidate.includes(term))
-            ? 0
-            : 1
-          : 0
-        const price = candidate.startingPrice?.amount
-        const budgetPreferenceRank =
-          preference.maximumPrice === undefined
-            ? 0
-            : candidate.startingPrice?.currency ===
-                  preference.maximumPriceCurrency &&
-                price !== undefined &&
-                price <= preference.maximumPrice
-              ? 0
-              : 1
-        return {
-          candidate,
-          providerOrder,
-          distance,
-          preferenceRank: textPreferenceRank * 2 + budgetPreferenceRank,
-        }
-      })
-      .sort(
-        (a, b) =>
-          a.preferenceRank - b.preferenceRank ||
-          a.distance - b.distance ||
-          a.providerOrder - b.providerOrder ||
-          a.candidate.providerHotelId.localeCompare(b.candidate.providerHotelId)
-      )
-    const selected = ranked[0]?.candidate
+    )
+    const selected = response.candidates[0]
     if (!selected) {
       return retryableError(
         "HOTEL_NOT_FOUND",
         "No hotel candidate was returned for this overnight City"
       )
     }
-    const hotelSelectionId = running.draftSession.registerHotelSelection(
-      selected,
-      response.warnings,
-      request.cityCardId,
-      context.schedule
-    )
     await appendWorkspaceMessage(running.context, running.workspaceId, {
       role: "ASSISTANT",
       content: "",
       blocks: [
         {
           type: "hotel_search",
-          title: `${context.cityName}酒店推荐`,
+          title: `${request.cityQuery}酒店推荐`,
           fetchedAt: new Date().toISOString(),
-          candidates: ranked.map(({ candidate }) => ({
+          candidates: response.candidates.map((candidate) => ({
             candidateId: candidate.candidateId,
             provider: candidate.provider,
             providerHotelId: candidate.providerHotelId,
@@ -1389,17 +1411,9 @@ export class AgentGateway {
       ],
       agentRunId: running.runId,
     })
-    return ok({
-      hotelSelectionId,
-      selected: {
-        name: selected.name,
-        address: selected.address,
-        checkInDate: context.providerInput.checkInDate,
-        stayNights: context.providerInput.stayNights,
-        adultCount: context.providerInput.adultCount,
-      },
-      warnings: response.warnings,
-    })
+    return ok(
+      running.planningSession.recordHotel(request, selected, response.warnings)
+    )
   }
 
   private async withProviderSpan<T>(
