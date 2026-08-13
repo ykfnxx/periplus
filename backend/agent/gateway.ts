@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import type { AuthContext } from "@/modules/auth/server/context"
 import { normalizePlaceName } from "@/lib/places/normalize"
 import { WORKSPACE_AGENT_RUN_LEASE_SECONDS } from "@/modules/data-model/contracts"
@@ -80,6 +80,17 @@ interface AgentGatewayOptions {
   evalTrace?: {
     scenarioId: string
     sink: EvalTraceSink
+  }
+}
+
+const PHOENIX_LLM_THINKING_CHAR_LIMIT = 64_000
+
+function llmThinkingTelemetry(thinking: string) {
+  return {
+    value: thinking.slice(0, PHOENIX_LLM_THINKING_CHAR_LIMIT),
+    originalCharCount: thinking.length,
+    originalSha256: createHash("sha256").update(thinking).digest("hex"),
+    truncated: thinking.length > PHOENIX_LLM_THINKING_CHAR_LIMIT,
   }
 }
 
@@ -865,9 +876,14 @@ export class AgentGateway {
       const span = running.modelSpans.get(event.requestId)
       if (!span) return
       running.modelSpans.delete(event.requestId)
+      const thinking = llmThinkingTelemetry(event.thinking)
       span.setAttribute(
         "output.value",
-        redactedInput({ text: event.output, toolCalls: event.toolCalls }) ?? ""
+        redactedInput({
+          text: event.output,
+          thinking: thinking.value,
+          toolCalls: event.toolCalls,
+        }) ?? ""
       )
       span.end(
         event.stopReason === "error"
@@ -883,6 +899,9 @@ export class AgentGateway {
           "llm.token_count.cache_write": event.usage.cacheWrite,
           "periplus.llm.duration_ms": event.endedAt - span.startedAt,
           "periplus.llm.stop_reason": event.stopReason,
+          "periplus.llm.thinking_char_count": thinking.originalCharCount,
+          "periplus.llm.thinking_sha256": thinking.originalSha256,
+          "periplus.llm.thinking_truncated": thinking.truncated,
         }
       )
       return

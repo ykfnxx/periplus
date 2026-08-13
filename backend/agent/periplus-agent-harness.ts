@@ -83,6 +83,7 @@ export type PeriplusHarnessEvent =
       type: "model_end"
       requestId: string
       output: string
+      thinking: string
       toolCalls: Array<{ id: string; name: string; arguments: unknown }>
       usage: Usage
       stopReason: string
@@ -198,6 +199,13 @@ function assistantText(message: AssistantMessage) {
     .filter((content) => content.type === "text")
     .map((content) => content.text)
     .join("")
+}
+
+function assistantThinking(message: AssistantMessage) {
+  return message.content
+    .filter((content) => content.type === "thinking" && !content.redacted)
+    .map((content) => content.thinking)
+    .join("\n\n")
 }
 
 function assistantToolCalls(message: AssistantMessage) {
@@ -406,6 +414,7 @@ export class PeriplusAgentHarness {
               type: "model_end",
               requestId: `${request.runId}:model:${requestSequence - 1}`,
               output,
+              thinking: assistantThinking(event.message),
               toolCalls: assistantToolCalls(event.message),
               usage: event.message.usage,
               stopReason: event.message.stopReason,

@@ -334,6 +334,7 @@ describe("Pi Agent Core gateway integration", () => {
       type: "model_end",
       requestId: "model-1",
       output: "已安排西湖。",
+      thinking: "需要确认提交后的最终行程。",
       toolCalls: [],
       usage: {
         input: 10,
