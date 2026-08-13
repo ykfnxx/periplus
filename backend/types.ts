@@ -7,8 +7,6 @@ export interface AgentConversationMessage {
   updatedAt: string
 }
 
-export type AgentMode = "auto" | "suggest"
-
 export interface AgentEvent {
   type: string
   payload?: unknown

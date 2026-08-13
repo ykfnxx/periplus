@@ -171,18 +171,17 @@ enum WorkspaceMessageRole {
   SYSTEM
 }
 
-enum WorkspaceSuggestionStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  STALE
-}
-
 enum WorkspaceAgentRunStatus {
   RUNNING
   SUCCEEDED
   FAILED
   CANCELLED
+}
+
+enum AgentContextCheckpointStatus {
+  PENDING
+  READY
+  FAILED
 }
 
 enum AssetKind {
@@ -771,29 +770,33 @@ model TransitSegment {
 }
 
 model WorkspaceSession {
-  id                           String          @id @default(uuid())
+  id                           String                        @id @default(uuid())
   ownerId                      String
   sourceJourneyId              String?
   baseJourneyRevision          Int?
-  headWorkspaceRevision        Int             @default(0)
-  status                       WorkspaceStatus @default(ACTIVE)
-  title                        String          @default("新工作区")
+  headWorkspaceRevision        Int                           @default(0)
+  status                       WorkspaceStatus               @default(ACTIVE)
+  title                        String                        @default("新工作区")
   headGraphJson                String
   agentContextSummary          String?
   agentContextThroughMessageId String?
+  agentContextSourceRunId      String?
+  agentContextStatus           AgentContextCheckpointStatus?
+  agentContextAttemptCount     Int                           @default(0)
+  agentContextLastError        String?
+  agentContextUpdatedAt        DateTime?
   lastAccessAt                 DateTime
-  createdAt                    DateTime        @default(now())
-  updatedAt                    DateTime        @updatedAt
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
   archivedAt                   DateTime?
 
-  owner             User                  @relation("OwnedWorkspaces", fields: [ownerId], references: [id], onDelete: Restrict)
-  sourceJourney     Journey?              @relation("JourneyWorkspaces", fields: [sourceJourneyId], references: [id], onDelete: Restrict)
-  baseRevision      JourneyRevision?      @relation("WorkspaceBaseJourneyRevision", fields: [sourceJourneyId, baseJourneyRevision], references: [journeyId, revision], onDelete: Restrict)
-  revisions         WorkspaceRevision[]   @relation("WorkspaceRevisions")
-  messages          WorkspaceMessage[]    @relation("WorkspaceMessages")
-  suggestions       WorkspaceSuggestion[] @relation("WorkspaceSuggestions")
-  agentRuns         WorkspaceAgentRun[]   @relation("WorkspaceAgentRuns")
-  providerUsageLogs ProviderUsageLog[]    @relation("WorkspaceProviderUsage")
+  owner             User                @relation("OwnedWorkspaces", fields: [ownerId], references: [id], onDelete: Restrict)
+  sourceJourney     Journey?            @relation("JourneyWorkspaces", fields: [sourceJourneyId], references: [id], onDelete: Restrict)
+  baseRevision      JourneyRevision?    @relation("WorkspaceBaseJourneyRevision", fields: [sourceJourneyId, baseJourneyRevision], references: [journeyId, revision], onDelete: Restrict)
+  revisions         WorkspaceRevision[] @relation("WorkspaceRevisions")
+  messages          WorkspaceMessage[]  @relation("WorkspaceMessages")
+  agentRuns         WorkspaceAgentRun[] @relation("WorkspaceAgentRuns")
+  providerUsageLogs ProviderUsageLog[]  @relation("WorkspaceProviderUsage")
 
   @@index([ownerId, status])
   @@index([sourceJourneyId])
@@ -842,22 +845,6 @@ model WorkspaceMessage {
 
   @@index([workspaceId, createdAt])
   @@index([agentRunId])
-}
-
-model WorkspaceSuggestion {
-  id                       String                    @id @default(uuid())
-  workspaceId              String
-  title                    String
-  summary                  String
-  commandPayloadsJson      String
-  basedOnWorkspaceRevision Int
-  status                   WorkspaceSuggestionStatus @default(PENDING)
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
-
-  workspace WorkspaceSession @relation("WorkspaceSuggestions", fields: [workspaceId], references: [id], onDelete: Cascade)
-
-  @@index([workspaceId, status])
 }
 
 model WorkspaceAgentRun {

@@ -5,8 +5,6 @@ import type {
 } from "@/modules/workspace/state/types"
 
 export const createAgentSlice: WorkspaceSlice<AgentSlice> = (set) => ({
-  agentMode: "auto",
-  setAgentMode: (agentMode) => set({ agentMode }),
   chatMessages: [],
   addUserMessage: (content) =>
     set((state) => ({

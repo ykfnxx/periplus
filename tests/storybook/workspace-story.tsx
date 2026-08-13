@@ -29,7 +29,6 @@ export function workspaceDocumentForStory(
     accessState: "OWNER",
     draftState: "DIRTY",
     messages: [],
-    suggestions: [],
     agentRuns: options.locked
       ? [
           {

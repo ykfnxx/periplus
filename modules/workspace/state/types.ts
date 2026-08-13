@@ -17,7 +17,6 @@ export type LocationSelectionMode = "none" | "photo" | "point" | "upload-photo"
 export type WorkspaceCommitState = "idle" | "saving" | "success" | "error"
 export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
 export type ChatMessageRole = "user" | "assistant"
-export type AgentMode = "auto" | "suggest"
 export type WorkbenchTab = "preview" | "chat"
 export type MobileSheetSnap = "collapsed" | "half" | "expanded"
 export type AgentSender = (type: string, payload?: unknown) => void
@@ -109,8 +108,6 @@ export interface WorkspaceDocumentSlice {
 }
 
 export interface AgentSlice {
-  agentMode: AgentMode
-  setAgentMode: (agentMode: AgentMode) => void
   chatMessages: ChatMessage[]
   addUserMessage: (content: string) => void
   appendAssistantMessage: (content: string) => void

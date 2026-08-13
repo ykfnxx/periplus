@@ -7,10 +7,6 @@ vi.mock("@/modules/workspace/state/workspace-store", () => ({
   useWorkspaceStore: vi.fn(),
 }))
 
-vi.mock("@/modules/workbench/ui/AgentModeToggle", () => ({
-  default: () => <div data-testid="agent-mode-toggle">AgentModeToggle</div>,
-}))
-
 function mockStore(overrides: Record<string, unknown> = {}) {
   const base = {
     workspaceDocument: {
@@ -25,7 +21,6 @@ function mockStore(overrides: Record<string, unknown> = {}) {
       agentRuns: [],
     },
     composerInput: "",
-    agentMode: "auto",
     setWorkbenchTab: vi.fn(),
     setComposerInput: vi.fn(),
     sendAgentEvent: vi.fn(),
@@ -42,12 +37,11 @@ function mockStore(overrides: Record<string, unknown> = {}) {
 }
 
 describe("AIComposer", () => {
-  it("renders textarea, agent mode toggle, save and send buttons", () => {
+  it("renders the AUTO textarea, save and send buttons", () => {
     mockStore()
     render(<AIComposer />)
 
     expect(screen.getByLabelText("AI 输入")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-mode-toggle")).toBeInTheDocument()
     expect(screen.getByLabelText("保存")).toBeInTheDocument()
     expect(screen.getByLabelText("发送")).toBeInTheDocument()
   })
@@ -85,7 +79,6 @@ describe("AIComposer", () => {
     expect(setWorkbenchTab).toHaveBeenCalledWith("chat")
     expect(sendAgentEvent).toHaveBeenCalledWith("agent.run.start", {
       prompt: "hello",
-      mode: "auto",
     })
     expect(setComposerInput).toHaveBeenCalledWith("")
   })
@@ -225,7 +218,6 @@ describe("AIComposer", () => {
     expect(setWorkbenchTab).toHaveBeenCalledWith("chat")
     expect(sendAgentEvent).toHaveBeenCalledWith("agent.run.start", {
       prompt: "hello",
-      mode: "auto",
     })
     expect(setComposerInput).toHaveBeenCalledWith("")
   })

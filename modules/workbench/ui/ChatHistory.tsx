@@ -11,15 +11,7 @@ import { ProviderImage } from "./ProviderImage"
 export default function ChatHistory() {
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
-  const workspaceSuggestions = useWorkspaceStore(
-    (state) => state.workspaceDocument?.suggestions
-  )
-  const suggestions =
-    workspaceSuggestions?.filter(
-      (suggestion) => suggestion.status === "PENDING"
-    ) ?? []
-
-  if (!chatMessages.length && !suggestions.length && !isWorkspaceLocked) {
+  if (!chatMessages.length && !isWorkspaceLocked) {
     return null
   }
 
@@ -49,26 +41,6 @@ export default function ChatHistory() {
       {isWorkspaceLocked && (
         <div className="text-xs font-bold text-teak">正在规划...</div>
       )}
-      {suggestions.map((suggestion) => (
-        <div
-          key={suggestion.id}
-          className="rounded-xl border border-ink-10 bg-white p-3 shadow-periplus-soft"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-ink">
-                {suggestion.title}
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-walnut">
-                {suggestion.summary}
-              </p>
-              <p className="mt-1 text-[11px] font-bold text-teak">
-                {suggestion.commandPayloads.length} 项变更 · 建议模式待确认
-              </p>
-            </div>
-          </div>
-        </div>
-      ))}
     </div>
   )
 }

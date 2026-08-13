@@ -40,7 +40,6 @@ export const Ready: Story = {
 
     await expect(sendReadyEvent).toHaveBeenCalledWith("agent.run.start", {
       prompt: "增加一天敦煌停留",
-      mode: "auto",
     })
     await expect(input).toHaveValue("")
   },

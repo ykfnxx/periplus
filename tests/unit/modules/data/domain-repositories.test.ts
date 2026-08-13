@@ -47,11 +47,14 @@ import {
   appendWorkspaceMessage,
   appendWorkspaceRevision,
   archiveWorkspace,
-  createWorkspaceSuggestion,
   createWorkspace,
+  failWorkspaceAgentContextCheckpoint,
   finishWorkspaceAgentRun,
   forkWorkspace,
+  getWorkspaceAgentContextCheckpoint,
   getWorkspaceDocument,
+  saveWorkspaceAgentContextCheckpoint,
+  startWorkspaceAgentContextCheckpointAttempt,
   startWorkspaceAgentRun,
   WorkspaceRunningError,
 } from "@/modules/data/workspaces/workspace-repository"
@@ -320,19 +323,73 @@ describe.sequential("P2B-P2D repositories", () => {
     })
     expect(message).toMatchObject({ agentRunId: run!.id })
     expect(
-      await createWorkspaceSuggestion(context, workspace.id, {
-        title: "Add a stop",
-        summary: "One command",
-        commandPayloads: [{ command: "journey.add_event" }],
-        basedOnWorkspaceRevision: 1,
-      })
-    ).toMatchObject({ status: "PENDING", basedOnWorkspaceRevision: 1 })
-    expect(
       await finishWorkspaceAgentRun(context, workspace.id, run!.id, {
         status: "SUCCEEDED",
         now: new Date("2026-08-01T10:03:00.000Z"),
       })
     ).toMatchObject({ status: "SUCCEEDED" })
+    const firstSummaryAttempt =
+      await startWorkspaceAgentContextCheckpointAttempt(
+        context,
+        workspace.id,
+        { sourceRunId: run!.id, throughMessageId: message!.id },
+        new Date("2026-08-01T10:03:10.000Z")
+      )
+    expect(firstSummaryAttempt).toMatchObject({
+      status: "PENDING",
+      attemptCount: 1,
+    })
+    await expect(
+      failWorkspaceAgentContextCheckpoint(
+        context,
+        workspace.id,
+        {
+          sourceRunId: run!.id,
+          throughMessageId: message!.id,
+          attemptCount: 1,
+          error: "summary provider timeout",
+        },
+        new Date("2026-08-01T10:03:20.000Z")
+      )
+    ).resolves.toMatchObject({ status: "FAILED", attemptCount: 1 })
+    const retrySummaryAttempt =
+      await startWorkspaceAgentContextCheckpointAttempt(
+        context,
+        workspace.id,
+        { sourceRunId: run!.id, throughMessageId: message!.id },
+        new Date("2026-08-01T10:03:30.000Z")
+      )
+    expect(retrySummaryAttempt).toMatchObject({
+      status: "PENDING",
+      attemptCount: 2,
+    })
+    await expect(
+      saveWorkspaceAgentContextCheckpoint(
+        context,
+        workspace.id,
+        {
+          sourceRunId: run!.id,
+          throughMessageId: message!.id,
+          attemptCount: 2,
+          summary: '{"preferences":["安静酒店"]}',
+        },
+        new Date("2026-08-01T10:03:40.000Z")
+      )
+    ).resolves.toMatchObject({ status: "READY", attemptCount: 2 })
+    await expect(
+      getWorkspaceAgentContextCheckpoint(context, workspace.id)
+    ).resolves.toMatchObject({
+      status: "READY",
+      sourceRunId: run!.id,
+      throughMessageId: message!.id,
+      attemptCount: 2,
+    })
+    await expect(
+      startWorkspaceAgentContextCheckpointAttempt(context, workspace.id, {
+        sourceRunId: run!.id,
+        throughMessageId: message!.id,
+      })
+    ).rejects.toThrow("SUMMARY_UNAVAILABLE")
     await expect(
       getWorkspaceDocument(otherContext, workspace.id)
     ).rejects.toThrow("does not belong")

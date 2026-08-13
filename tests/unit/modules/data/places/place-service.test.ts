@@ -96,7 +96,7 @@ function serviceFor(
 }
 
 describe("PlaceIntelligenceService", () => {
-  it("aggregates catalog and live results into canonical resolved evidence", async () => {
+  it("selects the top writable candidate without cross-provider identity merging", async () => {
     const { service, logUsage } = serviceFor()
 
     const result = await service.resolvePlace(
@@ -114,7 +114,7 @@ describe("PlaceIntelligenceService", () => {
 
     expect(result).toMatchObject({
       status: "resolved",
-      place: { placeId: "palace", canAddToJourney: true },
+      place: { canAddToJourney: true },
       placeRef: {
         provider: "amap",
         providerId: "B000A8UIN8",
@@ -125,6 +125,7 @@ describe("PlaceIntelligenceService", () => {
         coordinateSystem: "GCJ02",
       },
     })
+    expect(result).not.toHaveProperty("place.placeId")
     expect(logUsage).toHaveBeenCalledWith(
       "place_search",
       "success",
@@ -256,7 +257,7 @@ describe("PlaceIntelligenceService", () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 400)
   })
 
-  it("permits attributed fallback only after retryable provider exhaustion", async () => {
+  it("returns not_found after retryable provider exhaustion without a fallback contract", async () => {
     const { service, repository, provider } = serviceFor(catalogCandidate(), {
       sleep: vi.fn().mockResolvedValue(undefined),
       random: () => 0.5,
@@ -282,9 +283,10 @@ describe("PlaceIntelligenceService", () => {
     expect(provider.search).toHaveBeenCalledTimes(3)
     expect(result).toMatchObject({
       status: "not_found",
-      fallbackAllowed: true,
       warnings: [expect.objectContaining({ attempts: 3, exhausted: true })],
     })
+    expect(result).not.toHaveProperty("fallbackAllowed")
+    expect(result).not.toHaveProperty("fallbackQuery")
   })
 
   it("opens a run-level circuit after a hard provider quota failure", async () => {

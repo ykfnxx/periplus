@@ -8,18 +8,15 @@ vi.mock("@earendil-works/pi-agent-core", async (importOriginal) => {
   return { ...actual, generateSummaryWithUsage }
 })
 
-import {
-  PeriplusAgentHarness,
-  type PeriplusHarnessEvent,
-} from "@/backend/agent/periplus-agent-harness"
+import { PeriplusAgentHarness } from "@/backend/agent/periplus-agent-harness"
 
 afterEach(() => vi.clearAllMocks())
 
-describe("Pi core context compaction cancellation", () => {
-  it("returns a cancel handle before compacting and never saves its checkpoint", async () => {
-    let markCompactionStarted!: () => void
-    const compactionStarted = new Promise<void>((resolve) => {
-      markCompactionStarted = resolve
+describe("Pi core conversation summary cancellation", () => {
+  it("passes the bounded checkpoint signal to Pi summary generation", async () => {
+    let markSummaryStarted!: () => void
+    const summaryStarted = new Promise<void>((resolve) => {
+      markSummaryStarted = resolve
     })
     generateSummaryWithUsage.mockImplementation(
       (
@@ -30,7 +27,7 @@ describe("Pi core context compaction cancellation", () => {
         signal: AbortSignal
       ) =>
         new Promise((_, reject) => {
-          markCompactionStarted()
+          markSummaryStarted()
           signal.addEventListener(
             "abort",
             () =>
@@ -41,59 +38,31 @@ describe("Pi core context compaction cancellation", () => {
           )
         })
     )
-    const saveCheckpoint = vi.fn()
-    const events: PeriplusHarnessEvent[] = []
     const harness = new PeriplusAgentHarness({
       apiKey: "test-key",
       model: "deepseek-v4-flash",
       webSearchEnabled: false,
       timeoutMs: 30_000,
     })
+    const controller = new AbortController()
 
-    const run = harness.start(
-      {
-        runId: "compact-cancel",
-        workspaceId: "workspace-1",
-        mode: "auto",
-        systemPrompt: "plan",
-        messages: [
-          {
-            id: "large-user-message",
-            role: "user",
-            content: "x".repeat(4_000_000),
-            createdAt: "2026-08-13T00:00:00.000Z",
-          },
-        ],
-        checkpoint: null,
-        executeTool: vi.fn(),
-        saveCheckpoint,
-      },
-      { onEvent: (event) => events.push(event) }
+    const summary = harness.generateConversationSummary(
+      [
+        {
+          id: "previous-user-message",
+          role: "user",
+          content: "请保留安静酒店偏好",
+          createdAt: "2026-08-13T00:00:00.000Z",
+        },
+      ],
+      undefined,
+      controller.signal
     )
 
-    await compactionStarted
-    run.cancel()
-    await vi.waitFor(() =>
-      expect(events).toContainEqual({
-        type: "run_end",
-        result: { status: "cancelled" },
-      })
-    )
+    await summaryStarted
+    controller.abort()
 
-    expect(saveCheckpoint).not.toHaveBeenCalled()
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "model_end",
-        requestId: "compact-cancel:compaction",
-        stopReason: "aborted",
-      })
-    )
-    expect(
-      events.some(
-        (event) =>
-          event.type === "model_start" &&
-          event.requestId === "compact-cancel:model:0"
-      )
-    ).toBe(false)
+    await expect(summary).rejects.toMatchObject({ name: "AbortError" })
+    expect(generateSummaryWithUsage).toHaveBeenCalledOnce()
   })
 })

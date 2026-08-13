@@ -331,19 +331,11 @@ describe("Agent feature capability validators", () => {
     )
   })
 
-  it("enforces required evidence for not_found and ambiguous Place decisions", () => {
+  it("enforces required evidence for a not_found Place decision", () => {
     const results: PlaceResolveResult[] = [
       {
         status: "not_found",
-        fallbackQuery: { query: "不存在的地点" },
         reason: "no provider match",
-        fallbackAllowed: false,
-        warnings: [],
-      },
-      {
-        status: "ambiguous",
-        candidates: [westLake()],
-        question: "请确认具体地点",
         warnings: [],
       },
     ]

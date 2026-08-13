@@ -14,7 +14,6 @@ import {
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
 import type { TargetCommandEnvelope } from "@/modules/data-model/contracts"
-import AgentModeToggle from "./AgentModeToggle"
 
 export default function AIComposer({
   onPromptSent,
@@ -23,7 +22,6 @@ export default function AIComposer({
 }) {
   const document = useWorkspaceStore((state) => state.workspaceDocument)
   const composerInput = useWorkspaceStore((state) => state.composerInput)
-  const agentMode = useWorkspaceStore((state) => state.agentMode)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
   const setComposerInput = useWorkspaceStore((state) => state.setComposerInput)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
@@ -84,7 +82,7 @@ export default function AIComposer({
 
     addUserMessage(prompt)
     setWorkbenchTab("chat")
-    sendAgentEvent("agent.run.start", { prompt, mode: agentMode })
+    sendAgentEvent("agent.run.start", { prompt })
     setComposerInput("")
     onPromptSent?.()
   }
@@ -173,8 +171,7 @@ export default function AIComposer({
             className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent py-1 text-[13px] leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
-        <div className="mt-1.5 flex items-center justify-between">
-          <AgentModeToggle />
+        <div className="mt-1.5 flex items-center justify-end">
           <div className="flex items-center gap-2">
             {!isWorkspaceLocked && (
               <button

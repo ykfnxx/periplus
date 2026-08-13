@@ -12,7 +12,6 @@ import {
   targetWorkspaceMessageSchema,
   targetWorkspaceRevisionSchema,
   targetWorkspaceSessionSchema,
-  targetWorkspaceSuggestionSchema,
   targetWorkspaceTitleSchema,
   WORKSPACE_AGENT_RUN_LEASE_SECONDS,
   WORKSPACE_DEFAULT_TITLE,
@@ -75,9 +74,6 @@ const workspaceInclude = {
   messages: {
     orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
   },
-  suggestions: {
-    orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
-  },
   agentRuns: {
     orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
   },
@@ -103,7 +99,6 @@ type WorkspaceHistoryRecord = Prisma.WorkspaceSessionGetPayload<{
 }>
 
 type TargetWorkspaceMessage = z.infer<typeof targetWorkspaceMessageSchema>
-type TargetWorkspaceSuggestion = z.infer<typeof targetWorkspaceSuggestionSchema>
 type TargetWorkspaceAgentRun = z.infer<typeof targetWorkspaceAgentRunSchema>
 
 const commandNames = {
@@ -376,22 +371,6 @@ function mapMessage(
   })
 }
 
-function mapSuggestion(
-  record: WorkspaceRecord["suggestions"][number]
-): TargetWorkspaceSuggestion {
-  return targetWorkspaceSuggestionSchema.parse({
-    id: record.id,
-    workspaceId: record.workspaceId,
-    title: record.title,
-    summary: record.summary,
-    commandPayloads: JSON.parse(record.commandPayloadsJson),
-    basedOnWorkspaceRevision: record.basedOnWorkspaceRevision,
-    status: record.status,
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
-  })
-}
-
 function mapAgentRun(
   record: WorkspaceRecord["agentRuns"][number]
 ): TargetWorkspaceAgentRun {
@@ -618,7 +597,6 @@ export async function getWorkspaceDocument(
     accessState: "OWNER",
     draftState,
     messages: record.messages.map(mapMessage),
-    suggestions: record.suggestions.map(mapSuggestion),
     agentRuns: record.agentRuns.map(mapAgentRun),
   })
 }
@@ -863,44 +841,179 @@ export async function getWorkspaceAgentContextCheckpoint(
 ) {
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (
-    !workspace?.agentContextSummary ||
-    !workspace.agentContextThroughMessageId
+    !workspace?.agentContextStatus ||
+    !workspace.agentContextThroughMessageId ||
+    !workspace.agentContextSourceRunId
   ) {
     return null
   }
   return {
-    summary: workspace.agentContextSummary,
+    status: workspace.agentContextStatus,
+    summary: workspace.agentContextSummary ?? undefined,
     throughMessageId: workspace.agentContextThroughMessageId,
+    sourceRunId: workspace.agentContextSourceRunId,
+    attemptCount: workspace.agentContextAttemptCount,
+    error: workspace.agentContextLastError ?? undefined,
+    updatedAt: workspace.agentContextUpdatedAt?.toISOString(),
   }
+}
+
+async function requireCheckpointBoundary(
+  context: AuthContext,
+  workspaceId: string,
+  sourceRunId: string,
+  throughMessageId: string,
+  now = new Date()
+) {
+  const workspace = await ownedWorkspace(context, workspaceId, {
+    agentRuns: true,
+  })
+  if (!workspace) return null
+  await requireActiveWorkspace(workspace, now)
+  const message = await prisma.workspaceMessage.findFirst({
+    where: {
+      id: throughMessageId,
+      workspaceId,
+      role: "ASSISTANT",
+      agentRunId: sourceRunId,
+    },
+    select: { id: true },
+  })
+  if (!message) {
+    throw new WorkspaceInputError(
+      "Agent context checkpoint must end at its source run assistant message"
+    )
+  }
+  const run = workspace.agentRuns.find(
+    (candidate) => candidate.id === sourceRunId
+  )
+  if (!run || run.status === "RUNNING") {
+    throw new WorkspaceInputError(
+      "Agent context checkpoint requires a terminal source run"
+    )
+  }
+  return workspace
+}
+
+export async function startWorkspaceAgentContextCheckpointAttempt(
+  context: AuthContext,
+  workspaceId: string,
+  checkpoint: { sourceRunId: string; throughMessageId: string },
+  now = new Date()
+) {
+  const workspace = await requireCheckpointBoundary(
+    context,
+    workspaceId,
+    checkpoint.sourceRunId,
+    checkpoint.throughMessageId,
+    now
+  )
+  if (!workspace) return null
+  const sameSource =
+    workspace.agentContextSourceRunId === checkpoint.sourceRunId &&
+    workspace.agentContextThroughMessageId === checkpoint.throughMessageId
+  const attemptCount = sameSource ? workspace.agentContextAttemptCount + 1 : 1
+  if (attemptCount > 2) {
+    throw new WorkspaceInputError("SUMMARY_UNAVAILABLE")
+  }
+  const updated = await prisma.workspaceSession.updateMany({
+    where: {
+      id: workspaceId,
+      agentContextSourceRunId: workspace.agentContextSourceRunId,
+      agentContextThroughMessageId: workspace.agentContextThroughMessageId,
+      agentContextAttemptCount: workspace.agentContextAttemptCount,
+    },
+    data: {
+      // Keep the last READY business memory as input for the new checkpoint.
+      // Its PENDING/FAILED status prevents it from being consumed by an Agent
+      // run as though it were current.
+      agentContextSummary: workspace.agentContextSummary,
+      agentContextThroughMessageId: checkpoint.throughMessageId,
+      agentContextSourceRunId: checkpoint.sourceRunId,
+      agentContextStatus: "PENDING",
+      agentContextAttemptCount: attemptCount,
+      agentContextLastError: null,
+      agentContextUpdatedAt: now,
+      lastAccessAt: now,
+    },
+  })
+  if (updated.count !== 1) {
+    throw new WorkspaceInputError("Agent context checkpoint attempt raced")
+  }
+  return { ...checkpoint, status: "PENDING" as const, attemptCount }
 }
 
 export async function saveWorkspaceAgentContextCheckpoint(
   context: AuthContext,
   workspaceId: string,
-  checkpoint: { summary: string; throughMessageId: string },
+  checkpoint: {
+    sourceRunId: string
+    throughMessageId: string
+    summary: string
+    attemptCount: number
+  },
+  now = new Date()
+) {
+  const workspace = await requireCheckpointBoundary(
+    context,
+    workspaceId,
+    checkpoint.sourceRunId,
+    checkpoint.throughMessageId,
+    now
+  )
+  if (!workspace) return null
+  const updated = await prisma.workspaceSession.updateMany({
+    where: {
+      id: workspaceId,
+      agentContextSourceRunId: checkpoint.sourceRunId,
+      agentContextThroughMessageId: checkpoint.throughMessageId,
+      agentContextStatus: "PENDING",
+      agentContextAttemptCount: checkpoint.attemptCount,
+    },
+    data: {
+      agentContextSummary: checkpoint.summary,
+      agentContextStatus: "READY",
+      agentContextLastError: null,
+      agentContextUpdatedAt: now,
+      lastAccessAt: now,
+    },
+  })
+  if (updated.count !== 1) {
+    throw new WorkspaceInputError("Agent context checkpoint attempt is stale")
+  }
+  return { ...checkpoint, status: "READY" as const }
+}
+
+export async function failWorkspaceAgentContextCheckpoint(
+  context: AuthContext,
+  workspaceId: string,
+  checkpoint: {
+    sourceRunId: string
+    throughMessageId: string
+    error: string
+    attemptCount: number
+  },
   now = new Date()
 ) {
   const workspace = await ownedWorkspace(context, workspaceId, {})
   if (!workspace) return null
-  await requireActiveWorkspace(workspace, now)
-  const message = await prisma.workspaceMessage.findFirst({
-    where: { id: checkpoint.throughMessageId, workspaceId },
-    select: { id: true },
-  })
-  if (!message) {
-    throw new WorkspaceInputError(
-      "Agent context checkpoint must end at a Workspace message"
-    )
-  }
-  await prisma.workspaceSession.update({
-    where: { id: workspaceId },
-    data: {
-      agentContextSummary: checkpoint.summary,
+  const updated = await prisma.workspaceSession.updateMany({
+    where: {
+      id: workspaceId,
+      agentContextSourceRunId: checkpoint.sourceRunId,
       agentContextThroughMessageId: checkpoint.throughMessageId,
+      agentContextStatus: "PENDING",
+      agentContextAttemptCount: checkpoint.attemptCount,
+    },
+    data: {
+      agentContextStatus: "FAILED",
+      agentContextLastError: checkpoint.error,
+      agentContextUpdatedAt: now,
       lastAccessAt: now,
     },
   })
-  return checkpoint
+  if (updated.count !== 1) return null
+  return { ...checkpoint, status: "FAILED" as const }
 }
 
 export async function appendWorkspaceMessage(
@@ -1061,40 +1174,6 @@ export async function appendWorkspaceMessageDelta(
     content: record.content,
     blocks: JSON.parse(record.blocksJson),
     agentRunId: record.agentRunId ?? undefined,
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
-  })
-}
-
-export async function createWorkspaceSuggestion(
-  context: AuthContext,
-  workspaceId: string,
-  input: {
-    title: string
-    summary: string
-    commandPayloads: unknown[]
-    basedOnWorkspaceRevision: number
-  },
-  now = new Date()
-) {
-  const workspace = await ownedWorkspace(context, workspaceId, {})
-  if (!workspace) return null
-  await requireActiveWorkspace(workspace, now)
-  if (input.basedOnWorkspaceRevision !== workspace.headWorkspaceRevision) {
-    throw new WorkspaceRevisionConflictError()
-  }
-  const record = await prisma.workspaceSuggestion.create({
-    data: {
-      workspaceId,
-      title: input.title.trim(),
-      summary: input.summary,
-      commandPayloadsJson: json(input.commandPayloads),
-      basedOnWorkspaceRevision: input.basedOnWorkspaceRevision,
-    },
-  })
-  return targetWorkspaceSuggestionSchema.parse({
-    ...record,
-    commandPayloads: input.commandPayloads,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   })
