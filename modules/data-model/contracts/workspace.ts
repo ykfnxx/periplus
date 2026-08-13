@@ -12,6 +12,7 @@ import {
   targetIdSchema as idSchema,
 } from "./common"
 import { targetJourneyGraphSnapshotSchema } from "./journey"
+import { targetFlatJourneySnapshotSchema } from "./flat-journey"
 
 export const WORKSPACE_WEBSOCKET_TICKET_SECONDS = 300
 export const WORKSPACE_AGENT_RUN_LEASE_SECONDS = 60
@@ -28,6 +29,7 @@ export const targetWorkspaceSessionSchema = z
     status: z.enum(TARGET_WORKSPACE_STATUSES),
     title: targetWorkspaceTitleSchema,
     headGraph: targetJourneyGraphSnapshotSchema,
+    flatJourney: targetFlatJourneySnapshotSchema,
     lastAccessAt: dateTimeSchema,
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
@@ -39,6 +41,20 @@ export const targetWorkspaceSessionSchema = z
         code: "custom",
         path: ["headGraph", "ownerId"],
         message: "workspace owner must own its draft graph",
+      })
+    }
+    if (session.flatJourney.journeyId !== session.headGraph.id) {
+      context.addIssue({
+        code: "custom",
+        path: ["flatJourney", "journeyId"],
+        message: "flat Journey must project the Workspace Journey",
+      })
+    }
+    if (session.flatJourney.revision !== session.headWorkspaceRevision) {
+      context.addIssue({
+        code: "custom",
+        path: ["flatJourney", "revision"],
+        message: "flat Journey revision must match Workspace head revision",
       })
     }
     if (

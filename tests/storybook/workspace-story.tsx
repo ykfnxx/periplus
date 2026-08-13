@@ -22,6 +22,13 @@ export function workspaceDocumentForStory(
       status: "ACTIVE",
       title: "新工作区",
       headGraph: graph,
+      flatJourney: {
+        schemaVersion: 1,
+        journeyId: graph.id,
+        revision: 0,
+        title: graph.title,
+        events: [],
+      },
       lastAccessAt: storyTimestamp,
       createdAt: storyTimestamp,
       updatedAt: storyTimestamp,
