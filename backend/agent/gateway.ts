@@ -157,7 +157,7 @@ function summarySourceMessages(
 
 const OUTPUT_FLUSH_DELAY_MS = 50
 const OUTPUT_FLUSH_BYTES = 512
-const SUMMARY_ATTEMPT_TIMEOUT_MS = 20_000
+const SUMMARY_ATTEMPT_TIMEOUT_MS = 120_000
 
 export class AgentGateway {
   private readonly runs = new Map<string, RunningAgent>()
