@@ -13,7 +13,7 @@ import {
 import { totalDurationDays } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
-  selectWorkspaceGraph,
+  selectWorkspaceJourneyView,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
 import RouteOverview from "./RouteOverview"
@@ -35,12 +35,15 @@ export default function RoutePreview({
   const dayNavigationLockedRef = useRef(false)
   const dayNavigationTimeoutRef = useRef<number | null>(null)
   const [activeDayKey, setActiveDayKey] = useState<string | null>(null)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
   )
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const commitPresentation = useWorkspaceStore(
+    (state) => state.journeyCommitPresentation
+  )
   const view = getJourneyScopeProjection(graph, viewLevel, activeSectionEventId)
   const dayProjection = useMemo(() => {
     if (view.level !== "section" || view.section?.detail.kind !== "CITY") {
@@ -184,12 +187,28 @@ export default function RoutePreview({
         />
       </header>
 
+      {commitPresentation ? (
+        <div
+          role="status"
+          className="mx-5 mt-2 rounded-xl border border-mustard/45 bg-mustard/10 px-4 py-3 text-walnut"
+        >
+          <p className="text-[10px] font-black tracking-[0.08em] text-ink">
+            行程已更新
+          </p>
+          <p className="mt-1 text-xs leading-5 font-bold">
+            {commitPresentation.summary}
+          </p>
+        </div>
+      ) : null}
+
       {view.events.length === 0 && view.level === "overview" ? (
         <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
           路线尚无地点，可以在 AI 面板中添加第一站。
         </div>
       ) : view.level === "overview" ? (
-        <RouteOverview />
+        <RouteOverview
+          changedEventIds={commitPresentation?.changedEventIds ?? []}
+        />
       ) : view.isEmptySection ? (
         <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
           这个城市还没有安排地点，可以在 AI 面板中继续规划。
@@ -199,6 +218,7 @@ export default function RoutePreview({
           items={view.items}
           dayProjection={dayProjection}
           onActiveDayChange={handleActiveDayChange}
+          changedEventIds={commitPresentation?.changedEventIds ?? []}
         />
       )}
     </div>

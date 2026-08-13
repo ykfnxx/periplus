@@ -21,7 +21,7 @@ import {
 } from "@/modules/workspace/viewport"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
-  selectWorkspaceGraph,
+  selectWorkspaceJourneyView,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
 import type {
@@ -57,7 +57,7 @@ export default function WorkbenchShell({
     () => new Set()
   )
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const workbenchTab = useWorkspaceStore((state) => state.workbenchTab)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
@@ -293,7 +293,7 @@ function AIWorkbenchContent({
 }: {
   showInitialState: boolean
 }) {
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
 
   return (
     <>

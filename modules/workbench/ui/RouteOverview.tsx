@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertCircle, ChevronRight, LoaderCircle } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import {
   getJourneyScopeProjection,
   getJourneyScopeTreeEvents,
@@ -10,7 +10,6 @@ import {
   formatTransitDuration,
 } from "@/lib/journeys/display"
 import {
-  activeTransitPlanningRun,
   selectedTransitPlan,
   type TransportMode,
 } from "@/lib/journeys/planning"
@@ -25,8 +24,7 @@ import type {
   TargetJourneyEvent,
   TargetTransitPlanningRun,
 } from "@/modules/data-model/contracts"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
-import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
+import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 
 type SectionEvent = Extract<TargetJourneyEvent, { type: "SECTION" }>
 type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
@@ -51,8 +49,12 @@ const markerClasses = [
   "bg-bluegray text-soft-white",
 ]
 
-export default function RouteOverview() {
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+export default function RouteOverview({
+  changedEventIds = [],
+}: {
+  changedEventIds?: readonly string[]
+}) {
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const enterSectionView = useWorkspaceStore((state) => state.enterSectionView)
   const selectedTransitEventId = useWorkspaceStore(
     (state) => state.selectedTransitEventId
@@ -60,16 +62,8 @@ export default function RouteOverview() {
   const setSelectedTransitEventId = useWorkspaceStore(
     (state) => state.setSelectedTransitEventId
   )
-  const selectTransitPlan = useWorkspaceStore(
-    (state) => state.selectTransitPlan
-  )
-  const pendingTransitPlanSelection = useWorkspaceStore(
-    (state) => state.pendingTransitPlanSelection
-  )
-  const transitPlanSelectionError = useWorkspaceStore(
-    (state) => state.transitPlanSelectionError
-  )
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
+  const changedEventIdSet = new Set(changedEventIds)
 
   if (!graph) return null
   const sequence = getJourneyScopeProjection(graph, "overview", null)
@@ -130,9 +124,16 @@ export default function RouteOverview() {
               key={event.id}
               section={event}
               locationOrdinal={resolved.locationOrdinal}
-              childTitles={getJourneyScopeProjection(graph, "section", event.id)
-                .items.filter((child) => child.event.type !== "TRANSIT")
-                .map((child) => child.resolved.title)}
+              childItems={getJourneyScopeProjection(
+                graph,
+                "section",
+                event.id
+              ).items.filter((child) => child.event.type !== "TRANSIT")}
+              changed={getJourneyScopeProjection(
+                graph,
+                "section",
+                event.id
+              ).events.some((child) => changedEventIdSet.has(child.id))}
               onSelect={() => openSection(event.id)}
             />
           ) : event.type === "TRANSIT" ? (
@@ -140,20 +141,9 @@ export default function RouteOverview() {
               key={event.id}
               event={event}
               selected={selectedTransitEventId === event.id}
+              changed={changedEventIdSet.has(event.id)}
               onSelect={() => selectTransit(event.id)}
-              onSelectPlan={(planId) => selectTransitPlan(event.id, planId)}
               planningRuns={graph.transitPlanningRuns}
-              pendingPlanId={
-                pendingTransitPlanSelection?.eventId === event.id
-                  ? pendingTransitPlanSelection.planId
-                  : null
-              }
-              selectionBlocked={Boolean(pendingTransitPlanSelection)}
-              selectionError={
-                transitPlanSelectionError?.eventId === event.id
-                  ? transitPlanSelectionError.message
-                  : null
-              }
             />
           ) : null
         )}
@@ -165,20 +155,25 @@ export default function RouteOverview() {
 function SectionSummaryCard({
   section,
   locationOrdinal,
-  childTitles,
+  childItems,
+  changed,
   onSelect,
 }: {
   section: SectionEvent
   locationOrdinal?: number
-  childTitles: string[]
+  childItems: Array<{ resolved: { title: string } }>
+  changed: boolean
   onSelect: () => void
 }) {
+  const childTitles = childItems.map((child) => child.resolved.title)
   return (
     <button
       type="button"
       aria-label={`查看城市 ${section.title}`}
       onClick={onSelect}
-      className="group relative w-full rounded-[10px] border border-ink-10 bg-white px-5 py-4 text-left transition hover:-translate-y-0.5 hover:border-russet hover:shadow-periplus-soft"
+      className={`group relative w-full rounded-[10px] border bg-white px-5 py-4 text-left transition hover:-translate-y-0.5 hover:border-russet hover:shadow-periplus-soft ${
+        changed ? "border-mustard ring-2 ring-mustard/25" : "border-ink-10"
+      }`}
     >
       <span className="flex items-center justify-between gap-3">
         <span className="flex min-w-0 items-center gap-3">
@@ -217,24 +212,16 @@ function SectionSummaryCard({
 function TransitSummaryCard({
   event,
   selected,
+  changed,
   onSelect,
-  onSelectPlan,
   planningRuns,
-  pendingPlanId,
-  selectionBlocked,
-  selectionError,
 }: {
   event: TransitEvent
   selected: boolean
+  changed: boolean
   onSelect: () => void
-  onSelectPlan: (planId: string) => void
   planningRuns: readonly TargetTransitPlanningRun[]
-  pendingPlanId: string | null
-  selectionBlocked: boolean
-  selectionError: string | null
 }) {
-  const planChoicesRef = usePlanChoiceWheelScroll()
-  const activeRun = activeTransitPlanningRun(event, planningRuns)
   const plan = selectedTransitPlan(event, planningRuns)
   const label =
     event.detail.requestMode === "TRANSIT"
@@ -255,10 +242,11 @@ function TransitSummaryCard({
       className={`ml-4 w-[calc(100%_-_16px)] rounded-lg border transition ${
         selected
           ? "border-russet bg-selected-soft"
-          : "border-transparent bg-route-blue-soft hover:border-bluegray/30"
+          : changed
+            ? "border-mustard bg-route-blue-soft ring-2 ring-mustard/25"
+            : "border-transparent bg-route-blue-soft hover:border-bluegray/30"
       }`}
       data-selected-plan-id={plan?.id}
-      aria-busy={Boolean(pendingPlanId)}
     >
       <button
         type="button"
@@ -267,73 +255,11 @@ function TransitSummaryCard({
         onClick={onSelect}
         className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left"
       >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-bluegray">
-          {pendingPlanId || activeRun?.status === "PLANNING" ? (
-            <LoaderCircle className="h-2.5 w-2.5 animate-spin text-soft-white" />
-          ) : activeRun?.status === "FAILED" ? (
-            <AlertCircle className="h-2.5 w-2.5 text-soft-white" />
-          ) : null}
-        </span>
+        <span className="h-4 w-4 shrink-0 rounded-full bg-bluegray" />
         <span className="min-w-0 flex-1 truncate text-[11px] font-black text-bluegray">
-          {pendingPlanId
-            ? "正在切换路线方案…"
-            : activeRun?.status === "PLANNING"
-              ? "正在规划真实路线"
-              : details}
+          {details}
         </span>
-        {(activeRun?.plans.length ?? 0) > 1 ? (
-          <span className="shrink-0 text-[10px] font-black text-bluegray">
-            {selected ? "收起" : `${activeRun!.plans.length} 个方案`}
-          </span>
-        ) : null}
       </button>
-      {selectionError ? (
-        <p
-          role="alert"
-          className="mx-3 mb-3 rounded-md bg-coral/10 px-2 py-1.5 text-[10px] leading-4 font-bold text-coral"
-        >
-          路线切换失败：{selectionError}
-        </p>
-      ) : null}
-      {selected && (activeRun?.plans.length ?? 0) > 1 ? (
-        <div className="border-t border-russet/15 px-3 pt-2 pb-3">
-          <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
-            选择路线方案
-          </p>
-          <div
-            ref={planChoicesRef}
-            className="scrollbar-hidden flex gap-2 overflow-x-auto pb-1"
-          >
-            {activeRun!.plans.map((candidate) => {
-              const isCurrent = plan?.id === candidate.id
-              const isPending = pendingPlanId === candidate.id
-              return (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  aria-pressed={isCurrent}
-                  aria-busy={isPending}
-                  disabled={selectionBlocked}
-                  onClick={() => onSelectPlan(candidate.id)}
-                  className={`h-11 w-[132px] shrink-0 rounded-lg border px-2.5 text-left transition disabled:cursor-wait disabled:opacity-60 ${
-                    isCurrent
-                      ? "border-russet bg-white shadow-sm"
-                      : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
-                  }`}
-                >
-                  <span className="block truncate text-[10px] font-black text-ink">
-                    {isPending ? "切换中…" : candidate.label}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[9px] font-bold text-teak">
-                    {formatTransitDuration(candidate.durationSeconds)} ·{" "}
-                    {formatTransitDistance(candidate.distanceMeters)}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }

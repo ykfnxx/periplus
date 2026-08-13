@@ -1,9 +1,15 @@
+import {
+  deriveFlatJourneyLayout,
+  nearestEventInReplacementSegment,
+  projectFlatJourneyForWorkspace,
+  replacementSegmentId,
+} from "@/lib/journeys/flat-workspace-projection"
+import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 import type {
   WorkspaceDocumentSlice,
   WorkspaceSlice,
   WorkspaceState,
 } from "@/modules/workspace/state/types"
-import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 
 export function workspaceIsLocked(document: TargetWorkspaceDocument | null) {
   return Boolean(document?.agentRuns.some((run) => run.status === "RUNNING"))
@@ -33,6 +39,7 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
   WorkspaceDocumentSlice
 > = (set, get) => ({
   workspaceDocument: null,
+  journeyCommitPresentation: null,
   applyWorkspaceDocument: (workspaceDocument) => {
     const state = get()
     if (
@@ -43,146 +50,142 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
     set(workspaceDocumentPatch(state, workspaceDocument))
     return true
   },
-  failedTransitPlanCommandId: null,
-  setFailedTransitPlanCommandId: (failedTransitPlanCommandId) =>
-    set({ failedTransitPlanCommandId }),
-  pendingTransitPlanSelection: null,
-  transitPlanSelectionError: null,
-  selectTransitPlan: (eventId, planId) => {
+  applyJourneyCommit: (workspaceDocument, summary, changedEventIds) => {
     const state = get()
-    const document = state.workspaceDocument
-    const event = document?.session.headGraph.events.find(
-      (candidate) => candidate.id === eventId
-    )
-    const planningRun =
-      event?.type === "TRANSIT" && event.detail.activePlanningRunId
-        ? document?.session.headGraph.transitPlanningRuns.find(
-            (run) => run.id === event.detail.activePlanningRunId
-          )
-        : null
     if (
-      !document ||
-      !event ||
-      event.type !== "TRANSIT" ||
-      !planningRun?.plans.some((plan) => plan.id === planId) ||
-      event.detail.selectedPlanId === planId ||
-      !workspaceCanMutate(document) ||
-      workspaceIsLocked(document) ||
-      state.pendingTransitPlanSelection ||
-      !state.sendAgentEvent
+      !shouldAcceptWorkspaceDocument(state.workspaceDocument, workspaceDocument)
     ) {
-      return
+      return false
     }
-    const revision = document.session.headWorkspaceRevision
-    const commandId = `browser-select:${document.session.id}:${eventId}:${planId}:${revision}`
     set({
-      pendingTransitPlanSelection: {
-        commandId,
-        eventId,
-        planId,
-        expectedRevision: revision,
-      },
-      transitPlanSelectionError: null,
-    })
-    state.sendAgentEvent("workspace.command", {
-      commandId,
-      expectedRevision: revision,
-      idempotencyKey: commandId,
-      command: {
-        name: "journey.select_transit_plan",
-        payload: { eventId, planId },
+      ...workspaceDocumentPatch(state, workspaceDocument),
+      journeyCommitPresentation: {
+        revision: workspaceDocument.session.flatJourney.revision,
+        summary,
+        changedEventIds,
       },
     })
+    return true
   },
-  failTransitPlanSelection: (commandId, message) => {
-    const pending = get().pendingTransitPlanSelection
-    if (!pending || pending.commandId !== commandId) return
-    set({
-      pendingTransitPlanSelection: null,
-      transitPlanSelectionError: { ...pending, message },
-    })
-  },
+  clearJourneyCommitPresentation: (revision) =>
+    set((state) =>
+      state.journeyCommitPresentation?.revision === revision
+        ? { journeyCommitPresentation: null }
+        : {}
+    ),
 })
 
 function workspaceDocumentPatch(
   state: WorkspaceState,
   workspaceDocument: TargetWorkspaceDocument | null
 ) {
-  const graph = workspaceDocument?.session.headGraph
-  const pendingSelection = state.pendingTransitPlanSelection
+  const previousDocument = state.workspaceDocument
+  const previousFlat = previousDocument?.session.flatJourney
+  const nextFlat = workspaceDocument?.session.flatJourney
   const workspaceChanged = Boolean(
-    state.workspaceDocument &&
+    previousDocument &&
     workspaceDocument &&
-    state.workspaceDocument.session.id !== workspaceDocument.session.id
-  )
-  const selectedPlanConfirmed = Boolean(
-    pendingSelection &&
-    workspaceDocument &&
-    workspaceDocument.session.headWorkspaceRevision >
-      pendingSelection.expectedRevision &&
-    graph?.events.some(
-      (event) =>
-        event.id === pendingSelection.eventId &&
-        event.type === "TRANSIT" &&
-        event.detail.selectedPlanId === pendingSelection.planId
-    )
-  )
-  const activeSectionStillExists = Boolean(
-    graph?.events.some(
-      (event) =>
-        event.id === state.activeSectionEventId &&
-        event.type === "SECTION" &&
-        !event.retiredRevision
-    )
+    previousDocument.session.id !== workspaceDocument.session.id
   )
   const topologyChanged =
-    topologyKey(state.workspaceDocument) !== topologyKey(workspaceDocument)
+    topologyKey(previousDocument) !== topologyKey(workspaceDocument)
+
+  if (!workspaceDocument || !nextFlat || workspaceChanged || !previousFlat) {
+    return {
+      workspaceDocument,
+      journeyCommitPresentation: null,
+      viewLevel: "overview" as const,
+      activeSectionEventId: null,
+      hoveredEventId: null,
+      selectedTransitEventId: null,
+      selectedLocationEvent: null,
+      selectedLocationAnchor: null,
+      ...(workspaceDocument && topologyChanged
+        ? {
+            mapFocusRequest: {
+              requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
+              target: { type: "active-journey" as const, maxZoom: 12 },
+            },
+          }
+        : {}),
+    }
+  }
+
+  const replacementSectionId = replacementSegmentId(
+    previousFlat,
+    nextFlat,
+    state.activeSectionEventId
+  )
+  const nextGraph = projectFlatJourneyForWorkspace(
+    nextFlat,
+    workspaceDocument.session.ownerId
+  )
+  const selectedEventId =
+    state.selectedLocationEvent?.id ?? state.selectedTransitEventId
+  const survivingSelected = selectedEventId
+    ? nextGraph.events.find((event) => event.id === selectedEventId)
+    : null
+  const nearestSelectedId =
+    !survivingSelected && selectedEventId && replacementSectionId
+      ? nearestEventInReplacementSegment(
+          previousFlat,
+          nextFlat,
+          selectedEventId,
+          replacementSectionId
+        )?.eventId
+      : null
+  const selectedEvent =
+    survivingSelected ??
+    nextGraph.events.find((event) => event.id === nearestSelectedId)
+  const selectedLocationEvent =
+    selectedEvent &&
+    (selectedEvent.type === "VISIT" ||
+      selectedEvent.type === "STAY" ||
+      selectedEvent.type === "MEAL" ||
+      selectedEvent.type === "ACTIVITY")
+      ? selectedEvent
+      : null
+  const selectedTransitEventId =
+    selectedEvent?.type === "TRANSIT" ? selectedEvent.id : null
+  const selectedSectionId = selectedEvent
+    ? (deriveFlatJourneyLayout(nextFlat).segmentByEventId.get(selectedEvent.id)
+        ?.id ?? null)
+    : null
+  const nextSectionId = selectedEventId
+    ? selectedSectionId
+    : replacementSectionId
+  const staysInSection = state.viewLevel === "section" && nextSectionId
+
   return {
     workspaceDocument,
-    ...(workspaceChanged || selectedPlanConfirmed
-      ? {
-          pendingTransitPlanSelection: null,
-          transitPlanSelectionError: null,
-        }
-      : {}),
-    ...(graph && topologyChanged
+    ...(topologyChanged
       ? {
           mapFocusRequest: {
             requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
             target: {
               type: "active-journey" as const,
-              maxZoom: activeSectionStillExists ? 15 : 12,
+              maxZoom: staysInSection ? 15 : 12,
             },
           },
         }
       : {}),
-    ...(graph && activeSectionStillExists
-      ? {}
-      : {
-          viewLevel: "overview" as const,
-          activeSectionEventId: null,
-          hoveredEventId: null,
-          selectedTransitEventId: null,
-          selectedLocationEvent: null,
-          selectedLocationAnchor: null,
-        }),
+    viewLevel: staysInSection ? ("section" as const) : ("overview" as const),
+    activeSectionEventId: staysInSection ? nextSectionId : null,
+    hoveredEventId: null,
+    selectedTransitEventId,
+    selectedLocationEvent,
+    selectedLocationAnchor: null,
   }
 }
 
 function topologyKey(document: TargetWorkspaceDocument | null) {
-  const graph = document?.session.headGraph
-  if (!graph) return ""
-  const events = graph.events
-    .map(
-      (event) =>
-        `${event.id}:${event.parentSectionEventId ?? "root"}:${event.type}:${event.retiredRevision ?? "active"}`
+  const flatJourney = document?.session.flatJourney
+  if (!flatJourney) return ""
+  return `${flatJourney.journeyId}:${flatJourney.events
+    .map((event) =>
+      event.kind === "TRANSIT"
+        ? `${event.eventId}:TRANSIT:${event.detail.fromEventKey}:${event.detail.toEventKey}`
+        : `${event.eventId}:${event.kind}:${event.city.key}`
     )
-    .join("|")
-  const links = graph.links
-    .map(
-      (link) =>
-        `${link.id}:${link.fromEventId}:${link.toEventId}:${link.kind}:${link.retiredRevision ?? "active"}`
-    )
-    .join("|")
-  return `${graph.id}:${events}:${links}`
+    .join("|")}`
 }

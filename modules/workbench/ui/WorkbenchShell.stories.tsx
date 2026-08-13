@@ -8,6 +8,7 @@ import type {
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { dispatchMapIntent } from "@/modules/workspace/ui/WorkspaceController"
 import WorkspaceInteractionLayer from "@/modules/workspace/ui/WorkspaceInteractionLayer"
+import { deriveFlatJourneyLayout } from "@/lib/journeys/flat-workspace-projection"
 import {
   dunhuangRouteStoryJourney,
   silkRoadJourneyWithPlans,
@@ -167,6 +168,21 @@ function graphForWorkspaceStory(workspace: TargetWorkspaceSummary) {
   }
 }
 
+function cityWorkspaceState(
+  graph: TargetJourneyGraphSnapshot,
+  cityName: string
+) {
+  const workspaceDocument = workspaceDocumentForStory(graph)
+  const segment = deriveFlatJourneyLayout(
+    workspaceDocument.session.flatJourney
+  ).segments.find((candidate) => candidate.city.name === cityName)
+  return {
+    workspaceDocument,
+    viewLevel: "section" as const,
+    activeSectionEventId: segment?.id ?? null,
+  }
+}
+
 const meta = {
   title: "Workbench/WorkbenchShell",
   component: WorkbenchShell,
@@ -213,9 +229,7 @@ export const DateNavigationWorkspace: Story = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(dunhuangRouteStoryJourney),
-      viewLevel: "section",
-      activeSectionEventId: "section-dunhuang",
+      ...cityWorkspaceState(dunhuangRouteStoryJourney, "敦煌"),
       workbenchTab: "preview",
       composerInput: "保留行程调整要求",
       mapFocusRequest: {
@@ -268,6 +282,31 @@ export const PlanningWhileBrowsingWide: Story = {
       agentRunStage: "VERIFYING_PLACES",
       workbenchTab: "chat",
     }),
+  ],
+}
+
+export const CommittedUpdateWide: Story = {
+  globals: {
+    viewport: { value: "productionWide", isRotated: false },
+  },
+  decorators: [
+    (() => {
+      const workspaceDocument = workspaceDocumentForStory(
+        silkRoadJourneyWithPlans
+      )
+      return withWorkspaceState({
+        workspaceDocument,
+        workbenchTab: "preview",
+        journeyCommitPresentation: {
+          revision: workspaceDocument.session.flatJourney.revision,
+          summary: "保留西安与敦煌重点，并把跨城交通顺序调整得更连贯。",
+          changedEventIds: workspaceDocument.session.flatJourney.events
+            .filter((event) => event.kind !== "TRANSIT")
+            .slice(0, 3)
+            .map((event) => event.eventId),
+        },
+      })
+    })(),
   ],
 }
 

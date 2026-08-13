@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import type { JourneyDayGroup } from "@/lib/journeys/day-groups"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
 import { routeDayTone } from "./route-day-theme"
@@ -20,7 +20,7 @@ export default function RouteScopeTabs({
   const wheelScrollRef = usePlanChoiceWheelScroll()
   const railRef = useRef<HTMLDivElement>(null)
   const dayTabRefs = useRef(new Map<string, HTMLButtonElement>())
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId

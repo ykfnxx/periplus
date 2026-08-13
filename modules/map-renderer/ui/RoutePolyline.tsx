@@ -22,7 +22,7 @@ import type {
   TargetJourneyEvent,
   TargetTransitPlanningRun,
 } from "@/modules/data-model/contracts"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 
 type TransitEvent = Extract<TargetJourneyEvent, { type: "TRANSIT" }>
 type TransitPlan = TargetTransitPlanningRun["plans"][number]
@@ -37,7 +37,7 @@ export default function RoutePolyline({
   onIntent?: (intent: MapIntent) => void
 }) {
   const map = useWorkspaceStore((state) => state.map)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId

@@ -59,17 +59,6 @@ export interface PendingPhotoUpload {
   imageDataUrl: string
 }
 
-export interface TransitPlanSelectionCommand {
-  commandId: string
-  eventId: string
-  planId: string
-  expectedRevision: number
-}
-
-export interface TransitPlanSelectionError extends TransitPlanSelectionCommand {
-  message: string
-}
-
 export interface MapAnchor {
   lat: number
   lng: number
@@ -101,12 +90,19 @@ export interface MapRuntimeSlice {
 export interface WorkspaceDocumentSlice {
   workspaceDocument: TargetWorkspaceDocument | null
   applyWorkspaceDocument: (document: TargetWorkspaceDocument | null) => boolean
-  failedTransitPlanCommandId: string | null
-  setFailedTransitPlanCommandId: (commandId: string | null) => void
-  pendingTransitPlanSelection: TransitPlanSelectionCommand | null
-  transitPlanSelectionError: TransitPlanSelectionError | null
-  selectTransitPlan: (eventId: string, planId: string) => void
-  failTransitPlanSelection: (commandId: string, message: string) => void
+  journeyCommitPresentation: JourneyCommitPresentation | null
+  applyJourneyCommit: (
+    document: TargetWorkspaceDocument,
+    summary: string,
+    changedEventIds: string[]
+  ) => boolean
+  clearJourneyCommitPresentation: (revision: number) => void
+}
+
+export interface JourneyCommitPresentation {
+  revision: number
+  summary: string
+  changedEventIds: string[]
 }
 
 export interface AgentSlice {

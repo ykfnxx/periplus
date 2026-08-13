@@ -5,6 +5,7 @@ import type {
   TargetJourneyGraphSnapshot,
   TargetWorkspaceDocument,
 } from "@/modules/data-model/contracts"
+import { projectFlatJourney } from "@/modules/data/journeys/flat-journey-projection"
 
 const storyTimestamp = "2026-07-29T00:00:00.000Z"
 
@@ -22,13 +23,7 @@ export function workspaceDocumentForStory(
       status: "ACTIVE",
       title: "新工作区",
       headGraph: graph,
-      flatJourney: {
-        schemaVersion: 1,
-        journeyId: graph.id,
-        revision: 0,
-        title: graph.title,
-        events: [],
-      },
+      flatJourney: projectFlatJourney(graph, 0),
       lastAccessAt: storyTimestamp,
       createdAt: storyTimestamp,
       updatedAt: storyTimestamp,

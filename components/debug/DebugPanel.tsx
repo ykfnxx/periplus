@@ -6,6 +6,7 @@ import type {
   TargetJourneyGraphSnapshot,
   TargetWorkspaceDocument,
 } from "@/modules/data-model/contracts"
+import { projectFlatJourney } from "@/modules/data/journeys/flat-journey-projection"
 
 const EXAMPLE_JSON = `[
   {"name": "北京", "lat": 39.9042, "lng": 116.4074},
@@ -113,13 +114,7 @@ export default function DebugPanel() {
           status: "ACTIVE",
           title: "新工作区",
           headGraph: graph,
-          flatJourney: {
-            schemaVersion: 1,
-            journeyId,
-            revision: 0,
-            title: graph.title,
-            events: [],
-          },
+          flatJourney: projectFlatJourney(graph, 0),
           lastAccessAt: now,
           createdAt: now,
           updatedAt: now,
