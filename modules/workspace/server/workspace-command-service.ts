@@ -2758,13 +2758,14 @@ export class WorkspaceCommandService {
     draft: AgentDraftCandidate,
     verifiedPlaces: readonly PlaceVerification[] = []
   ): PreparedAgentDraft {
+    const after = validateJourneyGraphTransition(draft.before, draft.after)
     const planValidation = validateJourneyPlan({
-      graph: draft.after,
+      graph: after,
       workspaceRevision: draft.expectedRevision + 1,
     })
     const issues = [
       ...planValidation.issues,
-      ...validateDraftPlaceBindings(draft.before, draft.after, verifiedPlaces),
+      ...validateDraftPlaceBindings(draft.before, after, verifiedPlaces),
     ]
     const validation: PlanValidationReport = {
       ...planValidation,
@@ -2773,6 +2774,7 @@ export class WorkspaceCommandService {
     }
     return {
       ...draft,
+      after,
       validation,
     }
   }
