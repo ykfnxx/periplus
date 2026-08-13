@@ -111,6 +111,7 @@ interface RunningAgent {
   committedRevision: number | null
   committedProjectionHash: string | null
   committedSummary: string | null
+  committedChangedEventIds: string[]
   baseline: PlannerBaseline
   planningSession: PlanningSession
 }
@@ -731,6 +732,7 @@ export class AgentGateway {
       committedRevision: null,
       committedProjectionHash: null,
       committedSummary: null,
+      committedChangedEventIds: [],
       baseline,
       planningSession: new PlanningSession(
         workspaceId,
@@ -1008,6 +1010,12 @@ export class AgentGateway {
         "A toolCallId cannot be reused with different arguments"
       return terminalError("TOOL_CALL_ID_REUSED", running.failureMessage)
     }
+    if (running.requiresPlanValidation) {
+      return terminalError(
+        "RUN_ALREADY_COMMITTED",
+        "The run has committed and cannot execute more tools"
+      )
+    }
     if (running.finished || running.runtimeFailed || signal?.aborted) {
       return terminalError(
         "RUN_NOT_ACTIVE",
@@ -1152,23 +1160,7 @@ export class AgentGateway {
         running.committedRevision = committed.newWorkspaceRevision
         running.committedProjectionHash = committed.projectionHash
         running.committedSummary = committed.summary
-        const document = await this.commands.getDocument(
-          running.context,
-          running.workspaceId
-        )
-        if (!document) {
-          throw new WorkspaceInputError("COMMITTED_WORKSPACE_DOCUMENT_MISSING")
-        }
-        emit(running.workspaceId, {
-          type: "journey.committed",
-          payload: {
-            runId: running.runId,
-            revision: committed.newWorkspaceRevision,
-            document,
-            summary: committed.summary,
-            changedEventIds: committed.changedEventIds,
-          },
-        })
+        running.committedChangedEventIds = committed.changedEventIds
         result = ok(committed)
       }
     } catch (error) {
@@ -1658,6 +1650,7 @@ export class AgentGateway {
       running.telemetry.root.recordException(result.error)
     }
     let validationErrorCode: string | undefined
+    let finalHeadPassed = false
     try {
       await this.settleInFlightTools(running)
       if (running.requiresPlanValidation) {
@@ -1683,6 +1676,7 @@ export class AgentGateway {
           finalValidation.valid &&
           running.committedRevision === finalValidation.workspaceRevision &&
           running.committedProjectionHash === finalValidation.projectionHash
+        finalHeadPassed = passed
         validationSpan.end(passed ? "OK" : "ERROR", {
           "periplus.validation.valid": finalValidation.valid,
           "periplus.validation.passed": passed,
@@ -1750,6 +1744,7 @@ export class AgentGateway {
     await running.outputWrite
     failed ||= running.runtimeFailed
 
+    let agentRunFinalized = false
     try {
       await this.withTelemetrySpan(
         running.telemetry,
@@ -1777,6 +1772,7 @@ export class AgentGateway {
             }
           )
       )
+      agentRunFinalized = true
       await this.trace(running, {
         type: failed || running.cancelled ? "run.failed" : "run.completed",
         spanId: running.traceRunSpanId,
@@ -1826,6 +1822,23 @@ export class AgentGateway {
         "agent.workspace.unlock.load",
         () => this.commands.getDocument(running.context, running.workspaceId)
       )
+      if (
+        finalHeadPassed &&
+        agentRunFinalized &&
+        running.committedRevision !== null &&
+        document
+      ) {
+        emit(running.workspaceId, {
+          type: "journey.committed",
+          payload: {
+            runId: running.runId,
+            revision: running.committedRevision,
+            document,
+            summary: running.committedSummary ?? "行程已更新。",
+            changedEventIds: running.committedChangedEventIds,
+          },
+        })
+      }
       emit(running.workspaceId, {
         type: "workspace.unlocked",
         payload: document,
