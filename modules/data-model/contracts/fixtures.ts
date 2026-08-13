@@ -823,6 +823,13 @@ const workspaceDocument: TargetWorkspaceDocument = {
     status: "ACTIVE",
     title: "西湖行程",
     headGraph: workspaceGraph,
+    flatJourney: {
+      schemaVersion: 1,
+      journeyId: workspaceGraph.id,
+      revision: 1,
+      title: workspaceGraph.title,
+      events: [],
+    },
     lastAccessAt: NOW,
     createdAt: NOW,
     updatedAt: NOW,

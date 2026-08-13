@@ -22,6 +22,7 @@ import {
   type TargetWorkspaceRevision,
   type TargetWorkspaceSession,
 } from "@/modules/data-model/contracts"
+import { projectFlatJourney } from "@/modules/data/journeys/flat-journey-projection"
 import { prisma } from "@/modules/data/db/prisma"
 import {
   commitJourneyRevisionChain,
@@ -292,6 +293,10 @@ async function assertWorkspaceActor(
 }
 
 function mapSession(record: WorkspaceRecord): TargetWorkspaceSession {
+  const headGraph = parseGraph(
+    record.headGraphJson,
+    `Workspace ${record.id} head`
+  )
   return targetWorkspaceSessionSchema.parse({
     id: record.id,
     ownerId: record.ownerId,
@@ -300,7 +305,8 @@ function mapSession(record: WorkspaceRecord): TargetWorkspaceSession {
     headWorkspaceRevision: record.headWorkspaceRevision,
     status: record.status,
     title: record.title,
-    headGraph: parseGraph(record.headGraphJson, `Workspace ${record.id} head`),
+    headGraph,
+    flatJourney: projectFlatJourney(headGraph, record.headWorkspaceRevision),
     lastAccessAt: record.lastAccessAt.toISOString(),
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),

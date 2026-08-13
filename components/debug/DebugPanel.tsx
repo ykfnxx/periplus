@@ -113,6 +113,13 @@ export default function DebugPanel() {
           status: "ACTIVE",
           title: "新工作区",
           headGraph: graph,
+          flatJourney: {
+            schemaVersion: 1,
+            journeyId,
+            revision: 0,
+            title: graph.title,
+            events: [],
+          },
           lastAccessAt: now,
           createdAt: now,
           updatedAt: now,
