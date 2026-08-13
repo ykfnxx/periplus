@@ -58,6 +58,7 @@ export interface PeriplusAgentHarnessRequest {
 
 export interface PeriplusAgentHarnessResult {
   status: "succeeded" | "cancelled" | "failed"
+  finalOutput?: string
   error?: Error
 }
 
@@ -423,8 +424,15 @@ export class PeriplusAgentHarness {
         const error = agent.state.errorMessage
           ? new Error(agent.state.errorMessage)
           : undefined
+        const finalAssistantMessage = [...agent.state.messages]
+          .reverse()
+          .find((message) => message.role === "assistant")
+        const finalOutput = finalAssistantMessage
+          ? assistantText(finalAssistantMessage)
+          : ""
         settle({
           status: cancelled ? "cancelled" : error ? "failed" : "succeeded",
+          ...(finalOutput.trim() ? { finalOutput } : {}),
           ...(error ? { error } : {}),
         })
       } catch (error) {
