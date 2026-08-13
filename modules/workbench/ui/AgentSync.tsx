@@ -204,7 +204,6 @@ export default function AgentSync() {
 
           if (message.type === "agent.run.cancelled") {
             setAgentRunStage(null)
-            appendAssistantMessage("\n已停止规划，行程未发生变化。\n")
             return
           }
 
@@ -218,7 +217,12 @@ export default function AgentSync() {
             return
           }
 
-          if (message.type === "agent.run.failed" || message.type === "error") {
+          if (message.type === "agent.run.failed") {
+            setAgentRunStage(null)
+            return
+          }
+
+          if (message.type === "error") {
             const error = asDelta(message.payload)
             setAgentRunStage(null)
             appendAssistantMessage(
