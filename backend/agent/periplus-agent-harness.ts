@@ -53,6 +53,7 @@ export interface PeriplusAgentHarnessRequest {
     toolCallId: string,
     signal?: AbortSignal
   ) => Promise<unknown>
+  changeLogContext: () => unknown
 }
 
 export interface PeriplusAgentHarnessResult {
@@ -243,6 +244,20 @@ function throwIfAborted(signal: AbortSignal) {
   throw error
 }
 
+function runContextMessage(request: PeriplusAgentHarnessRequest): AgentMessage {
+  return {
+    role: "user",
+    content: [
+      "[UNCOMMITTED_CHANGE_LOG]",
+      JSON.stringify(request.changeLogContext()),
+      "",
+      "[NEXT_ACTION]",
+      "Continue from the immutable committed baseline plus this bounded append-only log. Do not infer state from prior Tool transcript.",
+    ].join("\n"),
+    timestamp: Date.now(),
+  }
+}
+
 export class PeriplusAgentHarness {
   readonly id = "pi-agent-core"
   private readonly model: Model<"openai-responses">
@@ -343,6 +358,15 @@ export class PeriplusAgentHarness {
           },
           streamFn,
           getApiKey: () => this.options.apiKey,
+          transformContext: async (messages) => {
+            const currentRequest = messages.find(
+              (message) => message.role === "user"
+            )
+            return [
+              ...(currentRequest ? [currentRequest] : []),
+              runContextMessage(request),
+            ]
+          },
         })
         activeAgent = agent
         agent.subscribe((event) => {
