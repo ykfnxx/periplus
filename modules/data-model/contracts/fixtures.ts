@@ -866,6 +866,7 @@ workspaceRefreshed.messages = []
 const workspaceForked = clone(workspaceDocument)
 workspaceForked.session.id = "workspace-forked"
 workspaceForked.session.headWorkspaceRevision = 0
+workspaceForked.session.flatJourney.revision = 0
 workspaceForked.messages = []
 const workspaceRevision: TargetWorkspaceRevision = {
   id: "workspace-revision-1",

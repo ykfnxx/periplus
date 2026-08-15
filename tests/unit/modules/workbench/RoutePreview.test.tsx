@@ -38,10 +38,11 @@ describe("target Workspace route preview", () => {
   it("labels location cards by domain type without numeric circles", () => {
     act(() => {
       useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())
-      useWorkspaceStore.getState().enterSectionView("section-xian")
     })
 
     render(<RoutePreview />)
+
+    fireEvent.click(screen.getByRole("button", { name: "查看城市 西安" }))
 
     for (const title of ["西安城墙", "大雁塔", "回民街"]) {
       const card = screen.getByRole("button", { name: `选择事件 ${title}` })

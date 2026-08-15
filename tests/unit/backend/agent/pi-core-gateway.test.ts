@@ -285,9 +285,9 @@ describe("Pi Agent Core gateway integration", () => {
 
     const updated = await harness.request!.executeTool(
       {
-        type: "event.remove",
+        type: "event.update",
         itemKey: "baseline-0001",
-        reason: "replace the existing itinerary",
+        notes: "上午游览",
       },
       "update-1"
     )
@@ -342,7 +342,7 @@ describe("Pi Agent Core gateway integration", () => {
 
     await vi.waitFor(async () => {
       const document = await commands.getDocument(context, workspace.id)
-      expect(document?.messages.at(-1)?.content).toBe("已安排西湖。")
+      expect(document?.messages.at(-1)?.content).toBe("已更新 1 个行程事件")
       expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
       expect(events.at(-1)?.type).toBe("agent.run.completed")
     })
