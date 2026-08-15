@@ -440,7 +440,7 @@ describe("Pi Agent Core gateway integration", () => {
         "resolve-provider"
       )
     ).resolves.toMatchObject({
-      status: "terminal_error",
+      status: "non_retryable_error",
       code: "PLACE_PROVIDER_UNAVAILABLE",
     })
 
@@ -504,14 +504,6 @@ describe("Pi Agent Core gateway integration", () => {
     )
 
     await gateway.start(context, workspace.id, "杭州住一晚", () => undefined)
-    await harness.request!.executeTool(
-      { type: "city.resolve", cityKey: "city-hangzhou", query: "杭州" },
-      "resolve-hangzhou"
-    )
-    await harness.request!.executeTool(
-      { type: "city.resolve", cityKey: "city-shanghai", query: "上海" },
-      "resolve-shanghai"
-    )
     const searched = await harness.request!.executeTool(
       {
         type: "hotel.search",

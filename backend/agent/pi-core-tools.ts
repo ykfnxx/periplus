@@ -4,7 +4,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core"
 import { Type, type TSchema } from "typebox"
 import { z } from "zod"
 import {
-  cityResolveToolSchema,
   hotelSearchToolSchema,
   pathAppendEventToolSchema,
   pathCommitToolSchema,
@@ -59,6 +58,11 @@ export interface PiCoreToolOptions {
 }
 
 function result(value: unknown) {
+  const terminate =
+    value !== null &&
+    typeof value === "object" &&
+    "status" in value &&
+    value.status === "non_retryable_error"
   return {
     content: [
       {
@@ -67,6 +71,7 @@ function result(value: unknown) {
       },
     ],
     details: value,
+    ...(terminate ? { terminate: true } : {}),
   }
 }
 
@@ -76,19 +81,10 @@ function parameters(input: z.ZodType): TSchema {
 
 const definitions: PeriplusToolDefinition[] = [
   {
-    canonicalName: "city.resolve",
-    label: "Resolve canonical city",
-    description:
-      "Resolve one human city query. Canonical identity remains backend-only.",
-    input: cityResolveToolSchema,
-    requestType: "city.resolve",
-    sequential: true,
-  },
-  {
     canonicalName: "place.resolve",
     label: "Resolve canonical place",
     description:
-      "Resolve one explicit place inside a city and bind the fact to a proposal item key.",
+      "Resolve exactly one VISIT, MEAL, or ACTIVITY proposal item without changing the candidate path. Use one stable proposalItemKey for the later path event. cityQuery must contain only an administrative city name, while query must contain only one concrete place name; do not mix duration, exclusions, pace, or other itinerary constraints into either field. The backend first resolves the canonical city and then verifies the place inside that city. An ok result creates a run-scoped place fact only. For retryable_error, change only the rejected field or take allowedNextAction; never repeat identical arguments.",
     input: placeResolveToolSchema,
     requestType: "place.resolve",
     sequential: true,
@@ -97,7 +93,7 @@ const definitions: PeriplusToolDefinition[] = [
     canonicalName: "hotel.search",
     label: "Search hotel",
     description:
-      "Search one concrete stay request and bind the stable first result to a proposal item key.",
+      "Search and bind hotel facts for exactly one concrete overnight STAY proposal item without changing the candidate path. Use one stable proposalItemKey for the later STAY event. cityQuery must contain only an administrative city name. Provide the exact check-in date, nights, adults, and optional preference derived from the user's request; do not create a STAY for a same-day city segment. The backend resolves the city before searching. An ok result creates a run-scoped hotel fact only. Follow returned warnings and allowedNextAction; do not repeat identical arguments.",
     input: hotelSearchToolSchema,
     requestType: "hotel.search",
     sequential: true,
@@ -106,7 +102,7 @@ const definitions: PeriplusToolDefinition[] = [
     canonicalName: "route.resolve",
     label: "Resolve route",
     description:
-      "Resolve route facts between two already resolved proposal items without changing the path.",
+      "Resolve route facts for one planned TRANSIT between two already resolved non-transit proposal items without changing the candidate path. fromItemKey and toItemKey must identify the endpoints that will be adjacent in the ordered journey. Their cities, coordinates, and provider identities are derived from accepted facts or the committed snapshot; do not supply city names or coordinates. Use one stable proposalItemKey for the later TRANSIT event.",
     input: routeResolveToolSchema,
     requestType: "route.resolve",
     sequential: true,
@@ -115,7 +111,7 @@ const definitions: PeriplusToolDefinition[] = [
     canonicalName: "path.append_event",
     label: "Append path event",
     description:
-      "Append one strict typed event to the run-scoped ChangeLog. Workspace is not modified.",
+      "Append one complete typed event to the run-scoped planning state; this does not modify the committed Workspace. VISIT, MEAL, and ACTIVITY require an accepted place fact with the same proposalItemKey; STAY requires an accepted hotel fact; TRANSIT requires an accepted route fact. afterItemKey declares the global event order and may be null only for an empty path. Read stateDelta, planningState, and allowedNextAction before continuing.",
     input: pathAppendEventToolSchema,
     requestType: "path.append_event",
     sequential: true,
@@ -124,7 +120,7 @@ const definitions: PeriplusToolDefinition[] = [
     canonicalName: "path.replace_event",
     label: "Replace path event",
     description:
-      "Append one complete semantic replacement to the ChangeLog. No partial patch is accepted.",
+      "Replace one existing proposal item with one complete typed event in the run-scoped planning state; this does not modify the committed Workspace. Partial patches are not accepted. The replacement must have every required accepted fact for its event kind. Read stateDelta, planningState, and allowedNextAction before continuing.",
     input: pathReplaceEventToolSchema,
     requestType: "path.replace_event",
     sequential: true,
@@ -133,7 +129,7 @@ const definitions: PeriplusToolDefinition[] = [
     canonicalName: "path.remove_event",
     label: "Remove path event",
     description:
-      "Append one semantic removal to the ChangeLog. Workspace is not modified.",
+      "Remove one proposal item from the run-scoped planning state; this does not modify the committed Workspace. Use the proposal item key visible in the committed snapshot or current planningState. After removal, inspect stateDelta and planningState for invalidated adjacency or route work before validating.",
     input: pathRemoveEventToolSchema,
     requestType: "path.remove_event",
     sequential: true,
@@ -142,7 +138,7 @@ const definitions: PeriplusToolDefinition[] = [
     canonicalName: "path.validate",
     label: "Validate path",
     description:
-      "Fold the immutable baseline plus append-only ChangeLog and validate the complete candidate path.",
+      "Validate the complete candidate journey produced from the immutable committed snapshot plus the current run-scoped planning changes. Call only after the intended ordered path and all required place, hotel, and route facts are present. The result returns the complete current planningState, structured issues, the remaining semantic revision budget, and the only allowed next action. A valid result permits commit; an invalid result permits only the stated repair.",
     input: pathValidateToolSchema,
     requestType: "path.validate",
     sequential: true,
@@ -151,7 +147,7 @@ const definitions: PeriplusToolDefinition[] = [
     canonicalName: "path.commit",
     label: "Commit path",
     description:
-      "CAS commit the last validated ChangeLog fold as one Workspace revision, then discard the log.",
+      "Atomically commit the most recent still-valid candidate path as one new Workspace revision. Call only immediately after path.validate returns valid with COMMIT as allowedNextAction and do not call another planning tool afterward. This is the only tool that changes the committed journey; an ok result is the mechanical end of the Agent run.",
     input: pathCommitToolSchema,
     requestType: "path.commit",
     sequential: true,
@@ -181,14 +177,22 @@ function webSearchTool(options: NonNullable<PiCoreToolOptions["webSearch"]>) {
           status: "retryable_error",
           code: "INVALID_ARGUMENTS",
           message: z.prettifyError(parsed.error),
+          received: params && typeof params === "object" ? params : {},
+          fieldErrors: parsed.error.issues.map((issue) => ({
+            field: issue.path.join(".") || "$",
+            reason: issue.message,
+          })),
+          allowedNextAction: "RETRY_THIS_TOOL",
         })
       }
       const { query } = parsed.data
       if (remaining <= 0) {
         return result({
-          status: "terminal_error",
+          status: "non_retryable_error",
           code: "WEB_SEARCH_LIMIT_REACHED",
           message: "This Agent run has used all available Web searches",
+          received: { query },
+          allowedNextAction: "STOP",
         })
       }
       remaining -= 1
@@ -224,6 +228,7 @@ function webSearchTool(options: NonNullable<PiCoreToolOptions["webSearch"]>) {
             sources,
             usage: message.usage,
           },
+          allowedNextAction: "CONTINUE",
         })
       } catch (error) {
         if (signal?.aborted) throw error
@@ -231,6 +236,8 @@ function webSearchTool(options: NonNullable<PiCoreToolOptions["webSearch"]>) {
           status: "retryable_error",
           code: "WEB_SEARCH_FAILED",
           message: error instanceof Error ? error.message : "Web search failed",
+          received: { query },
+          allowedNextAction: "RETRY_THIS_TOOL",
         })
       }
     },
@@ -251,6 +258,12 @@ export function createPiCoreTools(options: PiCoreToolOptions): AgentTool[] {
           status: "retryable_error",
           code: "INVALID_ARGUMENTS",
           message: z.prettifyError(parsed.error),
+          received: params && typeof params === "object" ? params : {},
+          fieldErrors: parsed.error.issues.map((issue) => ({
+            field: issue.path.join(".") || "$",
+            reason: issue.message,
+          })),
+          allowedNextAction: "RETRY_THIS_TOOL",
         })
       }
       return result(
@@ -281,6 +294,7 @@ export function piCoreToolCatalogVersion() {
       JSON.stringify(
         definitions.map((definition) => ({
           name: definition.canonicalName,
+          description: definition.description,
           schema: z.toJSONSchema(definition.input),
           sequential: Boolean(definition.sequential),
         }))
