@@ -160,11 +160,81 @@ const routeEventAddSchema = z
   })
   .strict()
 
-export const eventAddToolSchema = z.discriminatedUnion("source", [
-  placeEventAddSchema,
-  hotelEventAddSchema,
-  routeEventAddSchema,
-])
+// Provider function schemas must have a root JSON Schema object. A Zod
+// discriminated union serializes to a root `oneOf`, which OpenAI-compatible
+// providers reject before the first model turn. Keep the provider-facing
+// shape as one object and retain the exact source-specific variants in
+// `agentToolRequestSchema` below for authoritative dispatch parsing.
+export const eventAddToolSchema = z
+  .object({
+    source: z.enum(["PLACE", "HOTEL", "ROUTE"]),
+    selectionId: key,
+    eventType: z.enum(["VISIT", "MEAL", "ACTIVITY"]).optional(),
+    afterItemKey: key.nullable().optional(),
+    scheduleIntent: scheduleIntentSchema.optional(),
+    stayRequirementId: key.optional(),
+    routeRequirementId: key.optional(),
+    notes: optionalText,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const requireField = (field: keyof typeof value, message: string) => {
+      if (value[field] !== undefined) return
+      context.addIssue({ code: "custom", path: [field], message })
+    }
+    const rejectField = (field: keyof typeof value, message: string) => {
+      if (value[field] === undefined) return
+      context.addIssue({ code: "custom", path: [field], message })
+    }
+
+    if (value.source === "PLACE") {
+      requireField("eventType", "PLACE event.add requires eventType")
+      requireField("afterItemKey", "PLACE event.add requires afterItemKey")
+      rejectField(
+        "stayRequirementId",
+        "PLACE event.add does not accept stayRequirementId"
+      )
+      rejectField(
+        "routeRequirementId",
+        "PLACE event.add does not accept routeRequirementId"
+      )
+      return
+    }
+
+    rejectField(
+      "eventType",
+      `${value.source} event.add does not accept eventType`
+    )
+    rejectField(
+      "afterItemKey",
+      `${value.source} event.add does not accept afterItemKey`
+    )
+    rejectField(
+      "scheduleIntent",
+      `${value.source} event.add does not accept scheduleIntent`
+    )
+
+    if (value.source === "HOTEL") {
+      requireField(
+        "stayRequirementId",
+        "HOTEL event.add requires stayRequirementId"
+      )
+      rejectField(
+        "routeRequirementId",
+        "HOTEL event.add does not accept routeRequirementId"
+      )
+      return
+    }
+
+    requireField(
+      "routeRequirementId",
+      "ROUTE event.add requires routeRequirementId"
+    )
+    rejectField(
+      "stayRequirementId",
+      "ROUTE event.add does not accept stayRequirementId"
+    )
+  })
 
 export const eventUpdateToolSchema = z
   .object({
