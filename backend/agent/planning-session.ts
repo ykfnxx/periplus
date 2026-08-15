@@ -14,7 +14,6 @@ import { AgentDraftSession } from "./draft-session"
 import { baselineItemKey, type PlannerBaseline } from "./planner-baseline"
 import type { ParsedAgentToolRequest, PathEventInput } from "./tool-contract"
 
-type CityRequest = Extract<ParsedAgentToolRequest, { type: "city.resolve" }>
 type PlaceRequest = Extract<ParsedAgentToolRequest, { type: "place.resolve" }>
 type HotelRequest = Extract<ParsedAgentToolRequest, { type: "hotel.search" }>
 type RouteRequest = Extract<ParsedAgentToolRequest, { type: "route.resolve" }>
@@ -74,7 +73,9 @@ type NewPlanningLogEntry<T = PlanningLogEntry> = T extends PlanningLogEntry
   ? Omit<T, "sequence">
   : never
 
-type CityFact = CityRequest & {
+type CityFact = {
+  query: string
+  proposalItemKey: string
   canonicalName: string
   location: PlaceRef
   timeZone: string
@@ -163,35 +164,38 @@ export class PlanningSession {
     return appended
   }
 
+  cityFact(query: string) {
+    return this.cityFacts.get(cityFactKey(query))
+  }
+
   recordCity(
-    request: CityRequest,
+    query: string,
+    proposalItemKey: string,
     canonicalName: string,
     location: PlaceRef,
     timeZone: string,
     administrativeLevel: "province" | "city"
   ) {
+    const existing = this.cityFacts.get(cityFactKey(query))
+    if (existing) return existing
     const fact: CityFact = {
-      ...request,
+      query,
+      proposalItemKey,
       canonicalName,
       location,
       timeZone,
       administrativeLevel,
     }
-    this.cityFacts.set(cityFactKey(request.query), fact)
+    this.cityFacts.set(cityFactKey(query), fact)
+    this.cityFacts.set(cityFactKey(canonicalName), fact)
     this.append({
       type: "FACT_RESOLVED",
       subject: "CITY",
-      proposalItemKey: request.cityKey,
-      summary: `${request.query} → ${canonicalName}`,
+      proposalItemKey,
+      summary: `${query} → ${canonicalName}`,
       data: { name: canonicalName, timeZone, administrativeLevel },
     })
-    return {
-      cityKey: request.cityKey,
-      name: canonicalName,
-      administrativeLevel,
-      timeZone,
-      nextAction: "CONTINUE" as const,
-    }
+    return fact
   }
 
   recordPlace(
@@ -222,25 +226,19 @@ export class PlanningSession {
   }
 
   recordFactRejected(
-    request: CityRequest | PlaceRequest | HotelRequest | RouteRequest,
+    request: PlaceRequest | HotelRequest | RouteRequest,
     code: string,
     message: string
   ) {
-    const subject = request.type.startsWith("city.")
-      ? ("CITY" as const)
-      : request.type.startsWith("place.")
-        ? ("PLACE" as const)
-        : request.type.startsWith("hotel.")
-          ? ("HOTEL" as const)
-          : ("ROUTE" as const)
-    const proposalItemKey =
-      request.type === "city.resolve"
-        ? request.cityKey
-        : request.proposalItemKey
+    const subject = request.type.startsWith("place.")
+      ? ("PLACE" as const)
+      : request.type.startsWith("hotel.")
+        ? ("HOTEL" as const)
+        : ("ROUTE" as const)
     this.append({
       type: "FACT_REJECTED",
       subject,
-      proposalItemKey,
+      proposalItemKey: request.proposalItemKey,
       code,
       message,
     })
@@ -526,7 +524,7 @@ export class PlanningSession {
       cityFactKey(replacedEvent.city) === cityKey
     if (!this.cityFacts.has(cityKey) && !keepsCommittedCity) {
       throw new WorkspaceInputError(
-        `city.resolve is required for ${event.cityQuery}`
+        `A canonical city fact is required for ${event.cityQuery}`
       )
     }
     if (event.kind === "STAY") {
@@ -973,6 +971,113 @@ export class PlanningSession {
         ? `已更新 ${keys.length} 个行程事件`
         : "行程未发生变化",
       changedEventIds,
+    }
+  }
+
+  latestStateDelta() {
+    return this.entries.at(-1) ?? null
+  }
+
+  planningState() {
+    const eventByKey = new Map<
+      string,
+      PathEventInput | PlannerBaseline["journey"]["events"][number]
+    >(
+      this.baseline.journey.events.map((event) => [
+        event.proposalItemKey,
+        event,
+      ])
+    )
+    for (const entry of this.semanticEntries()) {
+      if (entry.type === "EVENT_REMOVED") {
+        eventByKey.delete(entry.itemKey)
+        continue
+      }
+      if (entry.type === "EVENT_REPLACED") {
+        eventByKey.delete(entry.itemKey)
+      }
+      eventByKey.set(entry.event.proposalItemKey, entry.event)
+    }
+    const candidate = this.currentItemOrder().flatMap((proposalItemKey) => {
+      const event = eventByKey.get(proposalItemKey)
+      if (!event) return []
+      return [
+        {
+          proposalItemKey,
+          kind: event.kind,
+          title: event.title,
+          ...(event.kind === "TRANSIT"
+            ? {
+                fromItemKey: event.fromItemKey,
+                toItemKey: event.toItemKey,
+                transportMode: event.transportMode,
+              }
+            : {
+                city:
+                  "cityQuery" in event ? event.cityQuery : (event.city ?? ""),
+              }),
+          ...(event.plannedStartAt
+            ? { plannedStartAt: event.plannedStartAt }
+            : {}),
+          ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
+        },
+      ]
+    })
+
+    const unresolvedByKey = new Map<
+      string,
+      { proposalItemKey: string; code: string; message: string }
+    >()
+    for (const entry of this.entries) {
+      if (entry.type === "FACT_RESOLVED") {
+        unresolvedByKey.delete(`${entry.subject}:${entry.proposalItemKey}`)
+        continue
+      }
+      if (entry.type === "FACT_REJECTED") {
+        unresolvedByKey.set(`${entry.subject}:${entry.proposalItemKey}`, {
+          proposalItemKey: entry.proposalItemKey,
+          code: entry.code,
+          message: entry.message,
+        })
+        continue
+      }
+      if (entry.type === "TOOL_REJECTED") {
+        unresolvedByKey.set(`TOOL:${entry.tool}`, {
+          proposalItemKey: entry.tool,
+          code: entry.code,
+          message: entry.message,
+        })
+      }
+    }
+
+    const latestValidation = [...this.entries]
+      .reverse()
+      .find((entry) => entry.type === "VALIDATION_RESULT")
+    const latestMutation = [...this.entries]
+      .reverse()
+      .find(
+        (entry) =>
+          entry.type === "EVENT_APPENDED" ||
+          entry.type === "EVENT_REPLACED" ||
+          entry.type === "EVENT_REMOVED"
+      )
+    const validationState =
+      latestValidation &&
+      (!latestMutation || latestValidation.sequence > latestMutation.sequence)
+        ? latestValidation.valid
+          ? ("VALID" as const)
+          : ("INVALID" as const)
+        : ("NOT_RUN" as const)
+
+    return {
+      sequence: this.entries.at(-1)?.sequence ?? 0,
+      candidate,
+      unresolved: [...unresolvedByKey.values()],
+      latestValidation: validationState,
+      semanticRevisionRemaining: Math.max(
+        0,
+        MAX_PATH_VALIDATIONS - this.validationCount
+      ),
     }
   }
 

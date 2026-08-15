@@ -10,10 +10,6 @@ const optionalText = text.optional()
 const nullableText = text.nullable().optional()
 const dateTime = z.iso.datetime({ offset: true })
 
-export const cityResolveToolSchema = z
-  .object({ cityKey: key, query: text })
-  .strict()
-
 export const placeResolveToolSchema = z
   .object({
     proposalItemKey: key,
@@ -140,7 +136,6 @@ export const pathValidateToolSchema = z.object({}).strict()
 export const pathCommitToolSchema = z.object({}).strict()
 
 export const agentToolRequestSchema = z.discriminatedUnion("type", [
-  cityResolveToolSchema.extend({ type: z.literal("city.resolve") }),
   placeResolveToolSchema.extend({ type: z.literal("place.resolve") }),
   hotelSearchToolSchema.extend({ type: z.literal("hotel.search") }),
   routeResolveToolSchema.extend({ type: z.literal("route.resolve") }),
@@ -157,43 +152,102 @@ export type AgentToolRequest = z.input<typeof agentToolRequestSchema>
 export type ParsedAgentToolRequest = z.output<typeof agentToolRequestSchema>
 export type PathEventInput = z.output<typeof pathEventInputSchema>
 
+export interface AgentToolFieldError {
+  field: string
+  reason: string
+}
+
+export interface AgentToolResultContext {
+  received?: Record<string, unknown>
+  fieldErrors?: AgentToolFieldError[]
+  stateDelta?: unknown
+  planningState?: unknown
+  allowedNextAction?: string
+  remainingBudget?: number
+}
+
 export type AgentToolResult<T = unknown> =
-  | { status: "ok"; data: T }
+  | {
+      status: "ok"
+      data: T
+      stateDelta?: unknown
+      planningState?: unknown
+      allowedNextAction: string
+    }
   | {
       status: "retryable_error"
       code: string
       message: string
       details?: unknown
+      received: Record<string, unknown>
+      fieldErrors?: AgentToolFieldError[]
+      planningState?: unknown
+      allowedNextAction: string
+      remainingBudget?: number
     }
   | {
-      status: "terminal_error"
+      status: "non_retryable_error"
       code: string
       message: string
       details?: unknown
+      received?: Record<string, unknown>
+      planningState?: unknown
+      allowedNextAction: "STOP"
     }
 
-export const ok = <T>(data: T): AgentToolResult<T> => ({ status: "ok", data })
+export const ok = <T>(
+  data: T,
+  context: AgentToolResultContext = {}
+): AgentToolResult<T> => ({
+  status: "ok",
+  data,
+  ...(context.stateDelta === undefined
+    ? {}
+    : { stateDelta: context.stateDelta }),
+  ...(context.planningState === undefined
+    ? {}
+    : { planningState: context.planningState }),
+  allowedNextAction: context.allowedNextAction ?? "CONTINUE",
+})
 
 export const retryableError = (
   code: string,
   message: string,
-  details?: unknown
+  details?: unknown,
+  context: AgentToolResultContext = {}
 ): AgentToolResult => ({
   status: "retryable_error",
   code,
   message,
   ...(details === undefined ? {} : { details }),
+  received: context.received ?? {},
+  ...(context.fieldErrors === undefined
+    ? {}
+    : { fieldErrors: context.fieldErrors }),
+  ...(context.planningState === undefined
+    ? {}
+    : { planningState: context.planningState }),
+  allowedNextAction: context.allowedNextAction ?? "RETRY_THIS_TOOL",
+  ...(context.remainingBudget === undefined
+    ? {}
+    : { remainingBudget: context.remainingBudget }),
 })
 
-export const terminalError = (
+export const nonRetryableError = (
   code: string,
   message: string,
-  details?: unknown
+  details?: unknown,
+  context: AgentToolResultContext = {}
 ): AgentToolResult => ({
-  status: "terminal_error",
+  status: "non_retryable_error",
   code,
   message,
   ...(details === undefined ? {} : { details }),
+  ...(context.received === undefined ? {} : { received: context.received }),
+  ...(context.planningState === undefined
+    ? {}
+    : { planningState: context.planningState }),
+  allowedNextAction: "STOP",
 })
 
 // The graph compiler still consumes the old command shapes internally while the
