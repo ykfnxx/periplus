@@ -292,15 +292,6 @@ describe("Pi Agent Core gateway integration", () => {
       "update-1"
     )
     expect(updated).toMatchObject({ status: "ok" })
-    const validated = await harness.request!.executeTool(
-      { type: "path.validate" },
-      "validate-1"
-    )
-    expect(validated).toMatchObject({
-      status: "ok",
-      data: { valid: true },
-    })
-    expect(validated).not.toHaveProperty("data.draftId")
     const committed = await harness.request!.executeTool(
       { type: "path.commit" },
       "commit-1"

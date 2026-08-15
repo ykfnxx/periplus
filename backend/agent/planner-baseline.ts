@@ -3,15 +3,22 @@ import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
 import { projectFlatJourney } from "@/modules/data/journeys/flat-journey-projection"
 
 export interface PlannerBaselineEvent {
+  eventId: string
   proposalItemKey: string
   kind: "VISIT" | "MEAL" | "ACTIVITY" | "STAY" | "TRANSIT"
   title: string
+  description?: string
   city?: string
   plannedStartAt?: string
   plannedEndAt?: string
+  plannedDurationMinutes?: number
+  cuisine?: string
+  bookingReference?: string
+  checkInNote?: string
   fromItemKey?: string
   toItemKey?: string
   transportMode?: string
+  preference?: string
   place?: {
     name: string
     lat: number
@@ -25,6 +32,7 @@ export interface PlannerBaseline {
   workspaceId: string
   workspaceRevision: number
   projectionHash: string
+  graph: TargetJourneyGraphSnapshot
   journey: {
     title: string
     description?: string
@@ -47,9 +55,11 @@ export function buildPlannerBaseline(input: {
   )
   const events: PlannerBaselineEvent[] = flat.events.map((event, index) => {
     const base = {
+      eventId: event.eventId,
       proposalItemKey: baselineItemKey(index),
       kind: event.kind,
       title: event.title,
+      ...(event.description ? { description: event.description } : {}),
       ...(event.plannedStartAt ? { plannedStartAt: event.plannedStartAt } : {}),
       ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
     }
@@ -66,6 +76,20 @@ export function buildPlannerBaseline(input: {
             ? { providerPlaceId: event.detail.place.providerPlaceId }
             : {}),
         },
+        ...(event.detail.plannedDurationMinutes === undefined
+          ? {}
+          : {
+              plannedDurationMinutes: event.detail.plannedDurationMinutes,
+            }),
+        ...(event.kind === "MEAL" && event.detail.cuisine
+          ? { cuisine: event.detail.cuisine }
+          : {}),
+        ...(event.kind === "ACTIVITY" && event.detail.bookingReference
+          ? { bookingReference: event.detail.bookingReference }
+          : {}),
+        ...(event.kind === "STAY" && event.detail.checkInNote
+          ? { checkInNote: event.detail.checkInNote }
+          : {}),
       }
     }
     return {
@@ -76,6 +100,9 @@ export function buildPlannerBaseline(input: {
       toItemKey:
         keyByEventKey.get(event.detail.toEventKey) ?? event.detail.toEventKey,
       transportMode: event.detail.transportMode,
+      ...(event.detail.preference
+        ? { preference: event.detail.preference }
+        : {}),
     }
   })
   const journey = {
@@ -89,6 +116,7 @@ export function buildPlannerBaseline(input: {
     projectionHash: createHash("sha256")
       .update(JSON.stringify(journey))
       .digest("hex"),
+    graph: input.graph,
     journey,
   }
 }
