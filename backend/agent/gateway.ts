@@ -12,13 +12,9 @@ import {
   type HotelSearchService,
   type HotelProviderUsageContext,
 } from "@/modules/data/hotels/hotel-search-service"
-import {
-  createCityResolver,
-  type CanonicalCity,
-  type CityResolver,
-} from "@/modules/data/cities/city-resolver"
 import { TransitPlanningService } from "@/modules/data/transit/transit-planning-service"
 import { requestModeForTransport } from "@/lib/journeys/planning"
+import { TransitProviderError } from "@/modules/data/transit/providers/amap-transit-provider"
 import {
   appendWorkspaceMessage,
   appendWorkspaceMessageDelta,
@@ -76,7 +72,6 @@ interface AgentGatewayOptions {
     "searchPlaces" | "resolvePlace" | "enrichPlace" | "verifyPlaceImages"
   >
   hotelService?: Pick<HotelSearchService, "searchHotels">
-  cityService?: Pick<CityResolver, "resolveCity">
   transitService?: Pick<TransitPlanningService, "plan">
   evalTrace?: {
     scenarioId: string
@@ -204,7 +199,6 @@ export class AgentGateway {
   private readonly hotelService: NonNullable<
     AgentGatewayOptions["hotelService"]
   >
-  private readonly cityService: NonNullable<AgentGatewayOptions["cityService"]>
   private readonly transitService: NonNullable<
     AgentGatewayOptions["transitService"]
   >
@@ -224,7 +218,6 @@ export class AgentGateway {
     this.now = options.now ?? (() => new Date())
     this.placeService = options.placeService ?? createPlaceIntelligenceService()
     this.hotelService = options.hotelService ?? createHotelSearchService()
-    this.cityService = options.cityService ?? createCityResolver()
     this.transitService = options.transitService ?? new TransitPlanningService()
   }
 
@@ -788,7 +781,8 @@ export class AgentGateway {
         persistedRun.id,
         context,
         this.commands,
-        baseline
+        baseline,
+        this.defaultTripStartDate()
       ),
     }
     this.runs.set(workspaceId, running)
@@ -1008,6 +1002,32 @@ export class AgentGateway {
     if (error instanceof WorkspaceRevisionConflictError) {
       return nonRetryableError("WORKSPACE_REVISION_CONFLICT", message)
     }
+    if (error instanceof TransitProviderError) {
+      if (error.code === "NO_ROUTE") {
+        return retryableError(
+          "ROUTE_NOT_FOUND",
+          "No route candidate matched this requirement and mode preference"
+        )
+      }
+      return nonRetryableError("ROUTE_PROVIDER_CONTRACT_ERROR", message, {
+        providerCode: error.code,
+      })
+    }
+    if (/STALE_(ROUTE|STAY)_REQUIREMENT/.test(message)) {
+      return retryableError(
+        message,
+        "The requirement changed; read the latest materialized path before searching again",
+        undefined,
+        { allowedNextAction: "READ_PATH" }
+      )
+    }
+    if (
+      /SELECTION_(INVALID|TYPE_MISMATCH)|SCHEDULE_CONFLICT|UNKNOWN ORDER ANCHOR/i.test(
+        message
+      )
+    ) {
+      return retryableError(message, message)
+    }
     if (message.startsWith("SAME_DAY_CITY_HAS_NO_STAY")) {
       return retryableError(
         "SAME_DAY_CITY_HAS_NO_STAY",
@@ -1021,7 +1041,7 @@ export class AgentGateway {
       )
     }
     if (
-      /COMMITTED|SUMMARY_UNAVAILABLE|BASE_REVISION|PATH_REVISION_LIMIT/.test(
+      /COMMITTED|SUMMARY_UNAVAILABLE|BASE_REVISION|PATH_REVISION_LIMIT|PROVIDER_CONTRACT/.test(
         message
       )
     ) {
@@ -1204,9 +1224,9 @@ export class AgentGateway {
       })
       await this.heartbeat(running)
       const stage =
-        request.type === "place.resolve" || request.type === "hotel.search"
+        request.type === "place.search" || request.type === "hotel.search"
           ? "VERIFYING_PLACES"
-          : request.type === "route.resolve" || request.type === "path.validate"
+          : request.type === "route.search" || request.type === "path.validate"
             ? "CHECKING_ROUTE"
             : request.type === "path.commit"
               ? "COMMITTING"
@@ -1215,8 +1235,8 @@ export class AgentGateway {
         type: "agent.run.progress",
         payload: { runId: running.runId, stage },
       })
-      if (request.type === "place.resolve") {
-        result = await this.executeAutoPlaceResolve(
+      if (request.type === "place.search") {
+        result = await this.executeAutoPlaceSearch(
           running,
           request,
           toolCallId,
@@ -1229,9 +1249,9 @@ export class AgentGateway {
           toolCallId,
           otelToolSpan
         )
-      } else if (request.type === "route.resolve") {
-        const endpoints = running.planningSession.routeEndpoints(request)
-        const transportMode = request.transportMode ?? "WALK"
+      } else if (request.type === "route.search") {
+        const routeInput = running.planningSession.routeSearchInput(request)
+        const transportMode = request.modePreference ?? "WALK"
         const mode = requestModeForTransport(transportMode)
         if (!mode) {
           result = retryableError(
@@ -1243,15 +1263,17 @@ export class AgentGateway {
             running,
             otelToolSpan,
             "amap",
-            "route.resolve",
+            "route.search",
             () =>
               this.transitService.plan(
                 {
-                  transitEventId: request.proposalItemKey,
-                  ...endpoints,
+                  transitEventId: request.routeRequirementId,
+                  origin: routeInput.origin,
+                  destination: routeInput.destination,
                   mode,
                   transportMode,
-                  preference: request.preference ?? "RECOMMENDED",
+                  departAt: routeInput.requirement.earliestDepartAt,
+                  preference: request.routePreference ?? "RECOMMENDED",
                   alternatives: 3,
                 },
                 {
@@ -1262,13 +1284,19 @@ export class AgentGateway {
                 }
               )
           )
-          result = ok(running.planningSession.recordRoute(request, bundle))
+          result = ok(
+            running.planningSession.recordRouteSearch(request, bundle)
+          )
         }
-      } else if (request.type === "path.append_event") {
-        result = ok(running.planningSession.appendEvent(request))
-      } else if (request.type === "path.replace_event") {
-        result = ok(running.planningSession.replaceEvent(request))
-      } else if (request.type === "path.remove_event") {
+      } else if (request.type === "path.read") {
+        result = ok(running.planningSession.readPath())
+      } else if (request.type === "event.add") {
+        result = ok(running.planningSession.addEvent(request))
+      } else if (request.type === "event.update") {
+        result = ok(running.planningSession.updateEvent(request))
+      } else if (request.type === "event.move") {
+        result = ok(running.planningSession.moveEvent(request))
+      } else if (request.type === "event.remove") {
         result = ok(running.planningSession.removeEvent(request))
       } else if (request.type === "path.validate") {
         const validation = await running.planningSession.validate(toolCallId)
@@ -1310,9 +1338,9 @@ export class AgentGateway {
       "code" in result &&
       "message" in result &&
       result.status !== "ok" &&
-      (request.type === "place.resolve" ||
+      (request.type === "place.search" ||
         request.type === "hotel.search" ||
-        request.type === "route.resolve")
+        request.type === "route.search")
     ) {
       running.planningSession.recordFactRejected(
         request,
@@ -1368,7 +1396,7 @@ export class AgentGateway {
       otelToolSpan.setAttribute("output.value", redactedInput(result) ?? "")
       running.telemetry.recordTool(
         request.type,
-        request.type === "place.resolve"
+        request.type === "place.search"
           ? "amap"
           : request.type === "hotel.search"
             ? "rollinggo"
@@ -1390,95 +1418,33 @@ export class AgentGateway {
     }
   }
 
-  private async resolveCityForTool(
+  private async executeAutoPlaceSearch(
     running: RunningAgent,
-    request: Extract<
-      ParsedAgentToolRequest,
-      { type: "place.resolve" | "hotel.search" }
-    >,
-    parentSpan: TelemetrySpan
-  ): Promise<{ city: CanonicalCity } | { result: AgentToolResult }> {
-    const resolved = await this.withProviderSpan(
-      running,
-      parentSpan,
-      "amap",
-      "city.resolve.internal",
-      () =>
-        this.cityService.resolveCity(
-          request.cityQuery,
-          running.toolAbortController.signal
-        )
-    )
-    if (resolved.status !== "resolved") {
-      if (resolved.reason === "CITY_PROVIDER_UNAVAILABLE") {
-        return {
-          result: nonRetryableError(
-            "CITY_PROVIDER_UNAVAILABLE",
-            "The canonical City provider is unavailable",
-            undefined,
-            {
-              received: { cityQuery: request.cityQuery },
-            }
-          ),
-        }
-      }
-      return {
-        result: retryableError(
-          "CITY_NOT_FOUND",
-          "cityQuery must contain only one administrative City name",
-          undefined,
-          {
-            received: { cityQuery: request.cityQuery },
-            fieldErrors: [
-              {
-                field: "cityQuery",
-                reason:
-                  "No exact administrative City matched this field; remove itinerary constraints and retry this Tool",
-              },
-            ],
-            allowedNextAction: "RETRY_THIS_TOOL",
-          }
-        ),
-      }
-    }
-    running.planningSession.recordCity(
-      request.cityQuery,
-      request.proposalItemKey,
-      resolved.city.name,
-      resolved.city.location,
-      resolved.city.timeZone,
-      resolved.city.administrativeLevel
-    )
-    return { city: resolved.city }
-  }
-
-  private async executeAutoPlaceResolve(
-    running: RunningAgent,
-    request: Extract<ParsedAgentToolRequest, { type: "place.resolve" }>,
+    request: Extract<ParsedAgentToolRequest, { type: "place.search" }>,
     toolCallId: string,
     parentSpan: TelemetrySpan
   ) {
-    const cityResolution = await this.resolveCityForTool(
-      running,
-      request,
-      parentSpan
-    )
-    if ("result" in cityResolution) return cityResolution.result
-    const canonicalCityName = cityResolution.city.name
     const intent =
-      request.kind === "MEAL"
+      request.intent === "MEAL"
         ? ("food" as const)
-        : request.kind === "ACTIVITY"
+        : request.intent === "ACTIVITY"
           ? ("performance" as const)
           : ("sightseeing" as const)
-    const resolved = await this.withProviderSpan(
+    const response = await this.withProviderSpan(
       running,
       parentSpan,
       "amap",
-      "place.resolve",
+      "place.search",
       () =>
-        this.placeService.resolvePlace(
-          { text: request.query, city: canonicalCityName, intent },
+        this.placeService.searchPlaces(
+          {
+            query: request.query,
+            city: request.city,
+            intent,
+            limit: 5,
+            includeLiveProvider: true,
+            coordinatePreference: "auto",
+          },
           {
             userId: running.context.userId,
             workspaceId: running.workspaceId,
@@ -1488,8 +1454,9 @@ export class AgentGateway {
           }
         )
     )
-    if (resolved.status !== "resolved") {
-      const providerUnavailable = resolved.warnings.some(
+    const result = running.planningSession.recordPlaceSearch(request, response)
+    if (!result.candidates.length) {
+      const providerUnavailable = response.warnings.some(
         (warning) =>
           warning.exhausted === true &&
           warning.code !== "low_confidence" &&
@@ -1498,22 +1465,15 @@ export class AgentGateway {
       if (providerUnavailable) {
         return nonRetryableError(
           "PLACE_PROVIDER_UNAVAILABLE",
-          "Place provider was exhausted before a writable place could be resolved"
+          "Place provider was exhausted before writable candidates were returned"
         )
       }
-      return request.origin === "USER_EXPLICIT"
-        ? nonRetryableError("EXPLICIT_PLACE_NOT_FOUND", resolved.reason)
-        : retryableError(
-            "PLANNER_PLACE_NOT_FOUND",
-            "No writable place matched; choose another concrete place name"
-          )
-    }
-    return ok(
-      running.planningSession.recordPlace(
-        { ...request, cityQuery: canonicalCityName },
-        resolved
+      return retryableError(
+        "PLACE_NOT_FOUND",
+        "No writable place candidate matched; change the concrete query"
       )
-    )
+    }
+    return ok(result)
   }
 
   private async executeAutoHotelSearch(
@@ -1522,13 +1482,7 @@ export class AgentGateway {
     toolCallId: string,
     parentSpan: TelemetrySpan
   ) {
-    const cityResolution = await this.resolveCityForTool(
-      running,
-      request,
-      parentSpan
-    )
-    if ("result" in cityResolution) return cityResolution.result
-    const canonicalCityName = cityResolution.city.name
+    const search = running.planningSession.hotelSearchInput(request)
     const response = await this.withProviderSpan(
       running,
       parentSpan,
@@ -1537,13 +1491,13 @@ export class AgentGateway {
       () =>
         this.hotelService.searchHotels(
           {
-            originQuery: request.preference ?? canonicalCityName,
-            place: canonicalCityName,
-            placeType: "城市",
-            checkInDate: request.checkInDate,
-            stayNights: request.stayNights,
-            adultCount: request.adultCount,
-            size: 5,
+            originQuery: search.originQuery,
+            place: search.place,
+            placeType: search.placeType,
+            checkInDate: search.checkInDate,
+            stayNights: search.stayNights,
+            adultCount: search.adultCount,
+            size: search.size,
           },
           {
             userId: running.context.userId,
@@ -1556,6 +1510,15 @@ export class AgentGateway {
     )
     const selected = response.candidates[0]
     if (!selected) {
+      const providerUnavailable = response.warnings.some(
+        (warning) => warning.exhausted === true
+      )
+      if (providerUnavailable) {
+        return nonRetryableError(
+          "HOTEL_PROVIDER_UNAVAILABLE",
+          "Hotel provider was exhausted before candidates were returned"
+        )
+      }
       return retryableError(
         "HOTEL_NOT_FOUND",
         "No hotel candidate was returned for this overnight City"
@@ -1567,7 +1530,7 @@ export class AgentGateway {
       blocks: [
         {
           type: "hotel_search",
-          title: `${request.cityQuery}酒店推荐`,
+          title: `${search.requirement.cityLabel}酒店推荐`,
           fetchedAt: new Date().toISOString(),
           candidates: response.candidates.map((candidate) => ({
             candidateId: candidate.candidateId,
@@ -1583,15 +1546,13 @@ export class AgentGateway {
       ],
       agentRunId: running.runId,
     })
-    return ok({
-      ...running.planningSession.recordHotel(
-        { ...request, cityQuery: canonicalCityName },
-        selected,
+    return ok(
+      running.planningSession.recordHotelSearch(
+        request,
+        response.candidates,
         response.warnings
-      ),
-      city: canonicalCityName,
-      warnings: response.warnings,
-    })
+      )
+    )
   }
 
   private async withProviderSpan<T>(

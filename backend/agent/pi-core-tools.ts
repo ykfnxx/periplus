@@ -4,14 +4,16 @@ import type { AgentTool } from "@earendil-works/pi-agent-core"
 import { Type, type TSchema } from "typebox"
 import { z } from "zod"
 import {
+  eventAddToolSchema,
+  eventMoveToolSchema,
+  eventRemoveToolSchema,
+  eventUpdateToolSchema,
   hotelSearchToolSchema,
-  pathAppendEventToolSchema,
   pathCommitToolSchema,
-  pathRemoveEventToolSchema,
-  pathReplaceEventToolSchema,
+  pathReadToolSchema,
   pathValidateToolSchema,
-  placeResolveToolSchema,
-  routeResolveToolSchema,
+  placeSearchToolSchema,
+  routeSearchToolSchema,
   type AgentToolRequest,
 } from "./tool-contract"
 
@@ -81,64 +83,82 @@ function parameters(input: z.ZodType): TSchema {
 
 const definitions: PeriplusToolDefinition[] = [
   {
-    canonicalName: "place.resolve",
-    label: "Resolve canonical place",
+    canonicalName: "place.search",
+    label: "Search place candidates",
     description:
-      "Resolve exactly one VISIT, MEAL, or ACTIVITY proposal item without changing the candidate path. Use one stable proposalItemKey for the later path event. cityQuery must contain only an administrative city name, while query must contain only one concrete place name; do not mix duration, exclusions, pace, or other itinerary constraints into either field. The backend first resolves the canonical city and then verifies the place inside that city. An ok result creates a run-scoped place fact only. For retryable_error, change only the rejected field or take allowedNextAction; never repeat identical arguments.",
-    input: placeResolveToolSchema,
-    requestType: "place.resolve",
+      "Search ranked VISIT, MEAL, or ACTIVITY candidates without changing the run-local path. city is a loose provider search/ranking keyword and query is one concrete place intent; neither must be a canonical administrative value. Choose one returned selectionId and pass it to event.add or event.update. Never copy provider identities, coordinates, canonical titles, or exact timestamps into a mutation.",
+    input: placeSearchToolSchema,
+    requestType: "place.search",
     sequential: true,
   },
   {
     canonicalName: "hotel.search",
-    label: "Search hotel",
+    label: "Search hotel candidates",
     description:
-      "Search and bind hotel facts for exactly one concrete overnight STAY proposal item without changing the candidate path. Use one stable proposalItemKey for the later STAY event. cityQuery must contain only an administrative city name. Provide the exact check-in date, nights, adults, and optional preference derived from the user's request; do not create a STAY for a same-day city segment. The backend resolves the city before searching. An ok result creates a run-scoped hotel fact only. Follow returned warnings and allowedNextAction; do not repeat identical arguments.",
+      "Search hotel candidates for one current stayRequirementId without changing the path. The backend derives city, dates, nights, occupancy, and anchors from that requirement; supply only an optional user preference. Choose a returned selectionId and use event.add with source HOTEL and the same requirement. A stale requirement must be refreshed from the latest materialized path.",
     input: hotelSearchToolSchema,
     requestType: "hotel.search",
     sequential: true,
   },
   {
-    canonicalName: "route.resolve",
-    label: "Resolve route",
+    canonicalName: "route.search",
+    label: "Search route candidates",
     description:
-      "Resolve route facts for one planned TRANSIT between two already resolved non-transit proposal items without changing the candidate path. fromItemKey and toItemKey must identify the endpoints that will be adjacent in the ordered journey. Their cities, coordinates, and provider identities are derived from accepted facts or the committed snapshot; do not supply city names or coordinates. Use one stable proposalItemKey for the later TRANSIT event.",
-    input: routeResolveToolSchema,
-    requestType: "route.resolve",
+      "Search route candidates for one current routeRequirementId without changing the path. The backend owns both endpoints, coordinates, departure time, and adjacency. Supply only mode and route preferences. Choose a returned selectionId and use event.add with source ROUTE and the same requirement. Do not invent endpoints, duration, coordinates, or insertion position.",
+    input: routeSearchToolSchema,
+    requestType: "route.search",
     sequential: true,
   },
   {
-    canonicalName: "path.append_event",
-    label: "Append path event",
+    canonicalName: "path.read",
+    label: "Read planning path",
     description:
-      "Append one complete typed event to the run-scoped planning state; this does not modify the committed Workspace. VISIT, MEAL, and ACTIVITY require an accepted place fact with the same proposalItemKey; STAY requires an accepted hotel fact; TRANSIT requires an accepted route fact. afterItemKey declares the global event order and may be null only for an empty path. Read stateDelta, planningState, and allowedNextAction before continuing.",
-    input: pathAppendEventToolSchema,
-    requestType: "path.append_event",
+      "Read the authoritative run-local materialized event chain, current route/stay requirements, conflicts, warnings, and remaining validation budget. This does not change planning state. Mutation results already include the same projection, so call this when you need to refresh after a stale requirement or to inspect the initial state.",
+    input: pathReadToolSchema,
+    requestType: "path.read",
     sequential: true,
   },
   {
-    canonicalName: "path.replace_event",
-    label: "Replace path event",
+    canonicalName: "event.add",
+    label: "Add selected event",
     description:
-      "Replace one existing proposal item with one complete typed event in the run-scoped planning state; this does not modify the committed Workspace. Partial patches are not accepted. The replacement must have every required accepted fact for its event kind. Read stateDelta, planningState, and allowedNextAction before continuing.",
-    input: pathReplaceEventToolSchema,
-    requestType: "path.replace_event",
+      "Add one event to the run-local path from a valid selection. PLACE adds require a place selection, event type, order anchor, and optional semantic schedule intent; dayIndex is 1-based from the default trip start date. HOTEL and ROUTE adds require selections bound to the current requirement; the backend owns their position and exact times. The backend materializes canonical facts, IDs, links, timestamps, and returns the full path and new requirements.",
+    input: eventAddToolSchema,
+    requestType: "event.add",
     sequential: true,
   },
   {
-    canonicalName: "path.remove_event",
+    canonicalName: "event.update",
+    label: "Update event semantics",
+    description:
+      "Apply a semantic patch to one existing non-derived event. You may replace its place selection, event type, schedule intent, or notes; do not resend a complete card. The backend keeps canonical facts and recomputes exact times and affected requirements. Inspect the returned materialized path before the next decision.",
+    input: eventUpdateToolSchema,
+    requestType: "event.update",
+    sequential: true,
+  },
+  {
+    canonicalName: "event.move",
+    label: "Move path event",
+    description:
+      "Move one existing non-derived event after another item, or to the beginning with null, and optionally provide a new semantic schedule intent. Ordering is separate from event.update. The backend invalidates stale adjacency selections, rematerializes exact times, and returns the authoritative path.",
+    input: eventMoveToolSchema,
+    requestType: "event.move",
+    sequential: true,
+  },
+  {
+    canonicalName: "event.remove",
     label: "Remove path event",
     description:
-      "Remove one proposal item from the run-scoped planning state; this does not modify the committed Workspace. Use the proposal item key visible in the committed snapshot or current planningState. After removal, inspect stateDelta and planningState for invalidated adjacency or route work before validating.",
-    input: pathRemoveEventToolSchema,
-    requestType: "path.remove_event",
+      "Remove one event from the run-local path. The backend also removes derived events made stale by the new adjacency and returns fresh route/stay requirements. Use itemKey from the latest materialized path and provide a concise business reason.",
+    input: eventRemoveToolSchema,
+    requestType: "event.remove",
     sequential: true,
   },
   {
     canonicalName: "path.validate",
     label: "Validate path",
     description:
-      "Validate the complete candidate journey produced from the immutable committed snapshot plus the current run-scoped planning changes. Call only after the intended ordered path and all required place, hotel, and route facts are present. The result returns the complete current planningState, structured issues, the remaining semantic revision budget, and the only allowed next action. A valid result permits commit; an invalid result permits only the stated repair.",
+      "Run the deterministic invariant safety net only after the latest materialized path reports no route/stay requirements or conflicts. Normal candidate-driven planning should validate once. A valid result permits commit; pending requirements must be completed with search plus event.add rather than repaired by hand-written cards.",
     input: pathValidateToolSchema,
     requestType: "path.validate",
     sequential: true,

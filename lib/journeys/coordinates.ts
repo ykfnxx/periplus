@@ -1,4 +1,4 @@
-import type { TransitPlanEndpoint } from "./planning"
+import type { TransitPlanEndpoint, TransitPlanRequest } from "./planning"
 
 const PI = Math.PI
 const A = 6378245
@@ -7,6 +7,7 @@ const EE = 0.00669342162296594323
 export function endpointToGcj02(
   endpoint: TransitPlanEndpoint
 ): TransitPlanEndpoint {
+  assertTransitEndpoint(endpoint)
   const system = endpoint.coordinateSystem?.toUpperCase() ?? "GCJ02"
   if (system === "GCJ02") return { ...endpoint, coordinateSystem: "GCJ02" }
   if (system === "WGS84") {
@@ -18,6 +19,29 @@ export function endpointToGcj02(
     return { ...endpoint, lng, lat, coordinateSystem: "GCJ02" }
   }
   throw new Error(`Unsupported coordinate system: ${system}`)
+}
+
+export function canonicalizeTransitPlanRequest(
+  request: TransitPlanRequest
+): TransitPlanRequest {
+  return {
+    ...request,
+    origin: endpointToGcj02(request.origin),
+    destination: endpointToGcj02(request.destination),
+  }
+}
+
+function assertTransitEndpoint(endpoint: TransitPlanEndpoint) {
+  if (
+    !Number.isFinite(endpoint.lat) ||
+    !Number.isFinite(endpoint.lng) ||
+    endpoint.lat < -90 ||
+    endpoint.lat > 90 ||
+    endpoint.lng < -180 ||
+    endpoint.lng > 180
+  ) {
+    throw new Error(`Invalid Transit endpoint coordinates for ${endpoint.name}`)
+  }
 }
 
 export function bd09ToGcj02(lng: number, lat: number): [number, number] {
