@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
 import type { AuthContext } from "@/modules/auth/server/context"
-import { normalizePlaceName } from "@/lib/places/normalize"
 import { WORKSPACE_AGENT_RUN_LEASE_SECONDS } from "@/modules/data-model/contracts"
 import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
 import {
@@ -1508,41 +1507,6 @@ export class AgentGateway {
             "PLANNER_PLACE_NOT_FOUND",
             "No writable place matched; choose another concrete place name"
           )
-    }
-    const normalizedQuery = normalizePlaceName(request.query)
-    const exactName =
-      resolved.place.normalizedName === normalizedQuery ||
-      resolved.place.aliases.some((alias) => alias === normalizedQuery)
-    const acceptedCategories =
-      request.kind === "MEAL"
-        ? new Set(["RESTAURANT"])
-        : request.kind === "ACTIVITY"
-          ? new Set(["PERFORMANCE", "SPORTS", "ENTERTAINMENT", "CULTURE"])
-          : new Set(["SIGHT", "PARK", "MUSEUM", "CULTURE"])
-    if (!exactName || !acceptedCategories.has(resolved.place.category)) {
-      const message = exactName
-        ? `${resolved.placeRef.canonicalName} is not a valid ${request.kind} place`
-        : `${resolved.placeRef.canonicalName} is not an exact match for ${request.query}`
-      return request.origin === "USER_EXPLICIT"
-        ? nonRetryableError("EXPLICIT_PLACE_NOT_FOUND", message)
-        : retryableError("PLANNER_PLACE_NOT_FOUND", message)
-    }
-    const expectedCity = normalizePlaceName(canonicalCityName)
-    const resolvedCity = normalizePlaceName(
-      resolved.placeRef.city ??
-        resolved.place.city ??
-        resolved.place.province ??
-        ""
-    )
-    if (
-      resolvedCity &&
-      !resolvedCity.includes(expectedCity) &&
-      !expectedCity.includes(resolvedCity)
-    ) {
-      return retryableError(
-        "PLACE_CITY_MISMATCH",
-        `${resolved.placeRef.canonicalName} is in ${resolved.placeRef.city ?? resolved.place.city ?? "another city"}; choose a place in ${canonicalCityName}`
-      )
     }
     return ok(
       running.planningSession.recordPlace(
