@@ -4,7 +4,7 @@ import { Send } from "lucide-react"
 import { type FormEvent, type KeyboardEvent } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
-  selectWorkspaceGraph,
+  selectWorkspaceJourneyView,
   selectWorkspaceCanMutate,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
@@ -12,7 +12,7 @@ import AIComposer from "./AIComposer"
 import PresetPromptBubbles from "./PresetPromptBubbles"
 
 export default function InitialChatState() {
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const composerInput = useWorkspaceStore((state) => state.composerInput)
   const setComposerInput = useWorkspaceStore((state) => state.setComposerInput)
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)

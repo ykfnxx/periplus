@@ -12,7 +12,6 @@ import {
   ChevronLeft,
   ChevronRight,
   GripHorizontal,
-  Map,
   Sparkles,
 } from "lucide-react"
 import {
@@ -21,7 +20,7 @@ import {
 } from "@/modules/workspace/viewport"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
-  selectWorkspaceGraph,
+  selectWorkspaceJourneyView,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
 import type {
@@ -30,6 +29,7 @@ import type {
 } from "@/modules/workspace/state/types"
 import AIComposer from "./AIComposer"
 import AIContextCard from "./AIContextCard"
+import { agentRunStageLabel } from "./agent-run-presentation"
 import ChatHistory from "./ChatHistory"
 import InitialChatState from "./InitialChatState"
 import OverlayScrollArea from "./OverlayScrollArea"
@@ -38,7 +38,7 @@ import WorkspaceSwitcherPanel, {
   type WorkspaceSwitcherController,
 } from "./WorkspaceSwitcherPanel"
 
-type WorkbenchLayout = "mobile" | "compact" | "wide"
+type WorkbenchLayout = "mobile" | "wide"
 type WidePanel = "chat" | "preview"
 
 interface WorkbenchShellProps {
@@ -56,7 +56,7 @@ export default function WorkbenchShell({
     () => new Set()
   )
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const workbenchTab = useWorkspaceStore((state) => state.workbenchTab)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
@@ -133,7 +133,7 @@ export default function WorkbenchShell({
       >
         {isChatCollapsed ? null : (
           <AIWorkbenchPanel
-            className="pointer-events-auto flex w-[340px]"
+            className="pointer-events-auto flex w-[clamp(280px,32vw,340px)]"
             showInitialState={showInitialState}
             onCollapse={() => toggleWidePanel("chat")}
             workspaceSwitcher={workspaceSwitcher}
@@ -146,7 +146,7 @@ export default function WorkbenchShell({
           />
         ) : (
           <ItineraryPanel
-            className="pointer-events-auto flex w-[414px]"
+            className="pointer-events-auto flex w-[clamp(340px,39vw,414px)]"
             onCollapse={() => toggleWidePanel("preview")}
             showContextualComposer={isChatCollapsed}
             onPromptSent={() => toggleWidePanel("chat")}
@@ -214,27 +214,7 @@ export default function WorkbenchShell({
     )
   }
 
-  return (
-    <section
-      ref={sectionRef}
-      aria-label="旅行规划工作台"
-      className="pointer-events-auto absolute top-5 bottom-5 left-5 z-20 flex w-[414px] flex-col overflow-hidden rounded-xl border border-ink-15 bg-soft-white/98 shadow-periplus backdrop-blur-sm"
-    >
-      <CompactTabBar activeTab={workbenchTab} onSelect={setWorkbenchTab} />
-      <div className="min-h-0 flex-1">
-        {workbenchTab === "preview" ? (
-          <ItineraryPanel className="flex h-full" framed={false} />
-        ) : (
-          <AIWorkbenchPanel
-            className="flex h-full"
-            showInitialState={showInitialState}
-            framed={false}
-            workspaceSwitcher={workspaceSwitcher}
-          />
-        )}
-      </div>
-    </section>
-  )
+  return null
 }
 
 function AIWorkbenchPanel({
@@ -292,7 +272,7 @@ function AIWorkbenchContent({
 }: {
   showInitialState: boolean
 }) {
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
 
   return (
     <>
@@ -420,70 +400,9 @@ function CollapsedPanelRail({
   )
 }
 
-function CompactTabBar({
-  activeTab,
-  onSelect,
-}: {
-  activeTab: WorkbenchTab
-  onSelect: (tab: WorkbenchTab) => void
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label="工作台面板"
-      className="grid shrink-0 grid-cols-2 border-b border-ink-10 bg-soft-white px-3 pt-2"
-    >
-      <WorkbenchTabButton
-        value="preview"
-        label="行程"
-        selected={activeTab === "preview"}
-        onSelect={onSelect}
-      />
-      <WorkbenchTabButton
-        value="chat"
-        label="问问 AI"
-        selected={activeTab === "chat"}
-        onSelect={onSelect}
-      />
-    </div>
-  )
-}
-
-function WorkbenchTabButton({
-  value,
-  label,
-  selected,
-  onSelect,
-}: {
-  value: WorkbenchTab
-  label: string
-  selected: boolean
-  onSelect: (tab: WorkbenchTab) => void
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      onClick={() => onSelect(value)}
-      className={`relative h-10 text-xs font-black transition ${
-        selected ? "text-ink" : "text-teak hover:text-ink"
-      }`}
-    >
-      {value === "preview" ? (
-        <Map className="h-4 w-4" aria-hidden="true" />
-      ) : (
-        <Sparkles className="h-4 w-4" aria-hidden="true" />
-      )}
-      {label}
-      {selected ? (
-        <span className="absolute right-5 bottom-0 left-5 h-0.5 bg-russet" />
-      ) : null}
-    </button>
-  )
-}
-
 function MobileAssistantCta({ onOpen }: { onOpen: () => void }) {
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const agentRunStage = useWorkspaceStore((state) => state.agentRunStage)
   return (
     <div className="shrink-0 border-t border-ink-10 bg-soft-white px-5 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
       <button
@@ -491,8 +410,15 @@ function MobileAssistantCta({ onOpen }: { onOpen: () => void }) {
         onClick={onOpen}
         className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-ink text-[13px] font-black text-soft-white shadow-periplus-soft transition active:scale-[0.99]"
       >
-        <Sparkles className="h-4 w-4" aria-hidden="true" />
-        打开 AI 助手
+        {isWorkspaceLocked ? (
+          <span
+            className="h-2 w-2 animate-pulse rounded-full bg-mustard"
+            aria-hidden="true"
+          />
+        ) : (
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+        )}
+        {isWorkspaceLocked ? agentRunStageLabel(agentRunStage) : "打开 AI 助手"}
       </button>
     </div>
   )
@@ -585,12 +511,11 @@ function useWorkbenchLayout(): WorkbenchLayout {
       return () => window.removeEventListener("resize", notify)
     },
     () => layoutForWidth(window.innerWidth),
-    () => "compact"
+    () => "wide"
   )
 }
 
 function layoutForWidth(width: number): WorkbenchLayout {
   if (width < 768) return "mobile"
-  if (width >= 1_440) return "wide"
-  return "compact"
+  return "wide"
 }

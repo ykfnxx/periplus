@@ -10,6 +10,7 @@ import {
 } from "@/lib/agent/client"
 import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import { agentRunStageFromPayload } from "./agent-run-presentation"
 
 const RECONNECT_DELAY_MS = 1_000
 
@@ -21,22 +22,23 @@ function workspaceFromPayload(payload: unknown) {
   ) as TargetWorkspaceDocument | null
 }
 
-function commandNameFromPayload(payload: unknown) {
+function journeyCommitFromPayload(payload: unknown) {
   if (!payload || typeof payload !== "object") return null
-  const result = (payload as Record<string, unknown>).result
-  if (!result || typeof result !== "object") return null
-  const commandName = (result as Record<string, unknown>).commandName
-  return typeof commandName === "string" ? commandName : null
-}
-
-function outcomeFromPayload(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null
-  const result = (payload as Record<string, unknown>).result
-  if (!result || typeof result !== "object") return null
-  const outcome = (result as Record<string, unknown>).outcome
-  return outcome && typeof outcome === "object"
-    ? (outcome as Record<string, unknown>)
-    : null
+  const record = payload as Record<string, unknown>
+  if (
+    !record.document ||
+    typeof record.document !== "object" ||
+    typeof record.summary !== "string" ||
+    !Array.isArray(record.changedEventIds) ||
+    !record.changedEventIds.every((eventId) => typeof eventId === "string")
+  ) {
+    return null
+  }
+  return {
+    document: record.document as TargetWorkspaceDocument,
+    summary: record.summary,
+    changedEventIds: record.changedEventIds,
+  }
 }
 
 function retryableBootstrapError(error: unknown) {
@@ -73,46 +75,39 @@ export default function AgentSync() {
   const applyWorkspaceDocument = useWorkspaceStore(
     (state) => state.applyWorkspaceDocument
   )
+  const applyJourneyCommit = useWorkspaceStore(
+    (state) => state.applyJourneyCommit
+  )
+  const clearJourneyCommitPresentation = useWorkspaceStore(
+    (state) => state.clearJourneyCommitPresentation
+  )
   const setAgentSender = useWorkspaceStore((state) => state.setAgentSender)
   const setChatMessages = useWorkspaceStore((state) => state.setChatMessages)
   const appendAssistantMessage = useWorkspaceStore(
     (state) => state.appendAssistantMessage
   )
-  const setWorkspaceCommitState = useWorkspaceStore(
-    (state) => state.setWorkspaceCommitState
-  )
-  const setFailedTransitPlanCommandId = useWorkspaceStore(
-    (state) => state.setFailedTransitPlanCommandId
-  )
-  const failTransitPlanSelection = useWorkspaceStore(
-    (state) => state.failTransitPlanSelection
-  )
-
+  const setAgentRunStage = useWorkspaceStore((state) => state.setAgentRunStage)
   useEffect(() => {
     let socket: WebSocket | null = null
     let reconnectTimer: number | null = null
     let reconnectAttempt = 0
     let connectionGeneration = 0
+    let commitPresentationTimer: number | null = null
     let disposed = false
 
     const applyDocument = (document: TargetWorkspaceDocument | null) => {
       if (!document) return false
       if (!applyWorkspaceDocument(document)) return false
       setChatMessages(conversationMessages(document))
+      if (!document.agentRuns.some((run) => run.status === "RUNNING")) {
+        setAgentRunStage(null)
+      }
       return true
     }
 
     const scheduleReconnect = () => {
       if (disposed || reconnectTimer !== null) return
       setAgentSender(null)
-      const pendingSelection =
-        useWorkspaceStore.getState().pendingTransitPlanSelection
-      if (pendingSelection) {
-        failTransitPlanSelection(
-          pendingSelection.commandId,
-          "连接已中断，请重试路线切换"
-        )
-      }
       const delay = Math.min(RECONNECT_DELAY_MS * 2 ** reconnectAttempt, 10_000)
       reconnectAttempt += 1
       reconnectTimer = window.setTimeout(() => {
@@ -163,26 +158,41 @@ export default function AgentSync() {
               workspaceFromPayload(message.payload)
             )
             if (!documentAccepted) return
-            const commandName = commandNameFromPayload(message.payload)
-            const outcome = outcomeFromPayload(message.payload)
-            if (commandName) {
-              setWorkspaceCommitState(
-                commandName === "workspace.commit" ? "success" : "idle"
-              )
-            }
+            return
+          }
+
+          if (message.type === "journey.committed") {
+            const commit = journeyCommitFromPayload(message.payload)
+            if (!commit) return
             if (
-              commandName === "workspace.fork" &&
-              typeof outcome?.workspaceId === "string"
-            ) {
-              window.location.assign(
-                `/workspace?workspace=${encodeURIComponent(outcome.workspaceId)}`
+              !applyJourneyCommit(
+                commit.document,
+                commit.summary,
+                commit.changedEventIds
               )
+            ) {
+              return
             }
+            setChatMessages(conversationMessages(commit.document))
+            setAgentRunStage(null)
+            if (commitPresentationTimer !== null) {
+              window.clearTimeout(commitPresentationTimer)
+            }
+            const revision = commit.document.session.flatJourney.revision
+            commitPresentationTimer = window.setTimeout(() => {
+              clearJourneyCommitPresentation(revision)
+              commitPresentationTimer = null
+            }, 5_000)
             return
           }
 
           if (message.type === "agent.run.started") {
-            setWorkspaceCommitState("idle")
+            setAgentRunStage("UNDERSTANDING")
+            return
+          }
+
+          if (message.type === "agent.run.progress") {
+            setAgentRunStage(agentRunStageFromPayload(message.payload))
             return
           }
 
@@ -193,27 +203,31 @@ export default function AgentSync() {
           }
 
           if (message.type === "agent.run.cancelled") {
-            appendAssistantMessage("\n已停止。\n")
+            setAgentRunStage(null)
             return
           }
 
-          if (message.type === "agent.run.failed" || message.type === "error") {
+          if (message.type === "agent.run.completed") {
+            setAgentRunStage(null)
+            return
+          }
+
+          if (message.type === "agent.run.needs_input") {
+            setAgentRunStage(null)
+            return
+          }
+
+          if (message.type === "agent.run.failed") {
+            setAgentRunStage(null)
+            return
+          }
+
+          if (message.type === "error") {
             const error = asDelta(message.payload)
-            if (error.commandId?.startsWith("browser-select:")) {
-              failTransitPlanSelection(
-                error.commandId,
-                error.message ?? "路线切换失败，请重试"
-              )
-              return
-            }
-            if (error.commandId?.startsWith("browser-plan:")) {
-              setFailedTransitPlanCommandId(error.commandId)
-              return
-            }
-            if (error.commandId?.startsWith("browser-commit:")) {
-              setWorkspaceCommitState("error")
-            }
-            appendAssistantMessage(`\n${error.message ?? "Agent 运行失败"}\n`)
+            setAgentRunStage(null)
+            appendAssistantMessage(
+              `\n${error.message ?? "Agent 运行失败"}，行程未发生变化。\n`
+            )
           }
         })
       } catch (error) {
@@ -228,17 +242,20 @@ export default function AgentSync() {
       disposed = true
       connectionGeneration += 1
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+      if (commitPresentationTimer !== null) {
+        window.clearTimeout(commitPresentationTimer)
+      }
       setAgentSender(null)
       socket?.close()
     }
   }, [
     appendAssistantMessage,
+    applyJourneyCommit,
     applyWorkspaceDocument,
-    failTransitPlanSelection,
+    clearJourneyCommitPresentation,
     setAgentSender,
+    setAgentRunStage,
     setChatMessages,
-    setFailedTransitPlanCommandId,
-    setWorkspaceCommitState,
   ])
 
   return null

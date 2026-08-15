@@ -14,8 +14,7 @@ function emptyAnchorCluster(): AnchorClusterState {
 }
 
 export const createWorkspaceUiSlice: WorkspaceSlice<WorkspaceUiSlice> = (
-  set,
-  get
+  set
 ) => ({
   viewLevel: "overview",
   activeSectionEventId: null,
@@ -32,16 +31,9 @@ export const createWorkspaceUiSlice: WorkspaceSlice<WorkspaceUiSlice> = (
       anchorCluster: emptyAnchorCluster(),
     }),
   returnToParentScope: () => {
-    const state = get()
-    const activeSection =
-      state.workspaceDocument?.session.headGraph.events.find(
-        (event) =>
-          event.id === state.activeSectionEventId && event.type === "SECTION"
-      )
-    const parentSectionId = activeSection?.parentSectionEventId ?? null
     set({
-      viewLevel: parentSectionId ? "section" : "overview",
-      activeSectionEventId: parentSectionId,
+      viewLevel: "overview",
+      activeSectionEventId: null,
       hoveredEventId: null,
       selectedTransitEventId: null,
       selectedLocationEvent: null,

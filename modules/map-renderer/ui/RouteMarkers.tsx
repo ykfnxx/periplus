@@ -5,7 +5,7 @@ import { deriveJourneyDayGroups } from "@/lib/journeys/day-groups"
 import { plannedLocationOf } from "@/lib/journeys/locations"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import type { MapIntent } from "@/modules/workspace/contracts"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
   getRouteDayColor,
@@ -19,7 +19,7 @@ interface RouteMarkersProps {
 
 export default function RouteMarkers({ onIntent }: RouteMarkersProps) {
   const map = useWorkspaceStore((state) => state.map)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId

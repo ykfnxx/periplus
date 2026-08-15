@@ -4,20 +4,15 @@ import type { AgentTool } from "@earendil-works/pi-agent-core"
 import { Type, type TSchema } from "typebox"
 import { z } from "zod"
 import {
-  cardMoveToolSchema,
-  cardRemoveToolSchema,
-  cardUpdateToolSchema,
-  cityAddToolSchema,
-  draftCommitToolSchema,
-  draftOpenToolSchema,
-  draftPrepareTransitToolSchema,
-  draftProjectToolSchema,
-  draftValidateToolSchema,
+  eventAddToolSchema,
+  eventMoveToolSchema,
+  eventRemoveToolSchema,
+  eventUpdateToolSchema,
   hotelSearchToolSchema,
-  placeEventAddToolSchema,
-  placeResolveToolSchema,
-  stayAddToolSchema,
-  transitAddToolSchema,
+  pathCommitToolSchema,
+  pathReadToolSchema,
+  placeSearchToolSchema,
+  routeSearchToolSchema,
   type AgentToolRequest,
 } from "./tool-contract"
 
@@ -64,6 +59,11 @@ export interface PiCoreToolOptions {
 }
 
 function result(value: unknown) {
+  const terminate =
+    value !== null &&
+    typeof value === "object" &&
+    "status" in value &&
+    value.status === "non_retryable_error"
   return {
     content: [
       {
@@ -72,6 +72,7 @@ function result(value: unknown) {
       },
     ],
     details: value,
+    ...(terminate ? { terminate: true } : {}),
   }
 }
 
@@ -81,125 +82,84 @@ function parameters(input: z.ZodType): TSchema {
 
 const definitions: PeriplusToolDefinition[] = [
   {
-    canonicalName: "periplus.draft.open",
-    label: "Open Agent draft",
+    canonicalName: "place.search",
+    label: "Search place candidates",
     description:
-      "Open the run's single draft at the Harness-owned immutable baseline.",
-    input: draftOpenToolSchema,
-    requestType: "draft.open",
+      "Search ranked VISIT, MEAL, or ACTIVITY candidates without changing the run-local path. city is a loose provider search/ranking keyword and query is one concrete place intent; neither must be a canonical administrative value. Choose one returned selectionId and pass it to event.add or event.update. Never copy provider identities, coordinates, canonical titles, or exact timestamps into a mutation.",
+    input: placeSearchToolSchema,
+    requestType: "place.search",
     sequential: true,
   },
   {
-    canonicalName: "periplus.city.add",
-    label: "Add City card",
+    canonicalName: "hotel.search",
+    label: "Search hotel candidates",
     description:
-      "Add a CITY in Root order. The backend creates IDs, timezone and Links.",
-    input: cityAddToolSchema,
-    requestType: "city.add",
-    sequential: true,
-  },
-  {
-    canonicalName: "periplus.place.resolve",
-    label: "Resolve writable place",
-    description:
-      "Resolve a name inside an active City draft into a run-scoped evidence handle.",
-    input: placeResolveToolSchema,
-    requestType: "place.resolve",
-  },
-  {
-    canonicalName: "periplus.placeEvent.add",
-    label: "Add place event",
-    description:
-      "Add VISIT, MEAL, or ACTIVITY from resolved evidence at a concrete time.",
-    input: placeEventAddToolSchema,
-    requestType: "placeEvent.add",
-    sequential: true,
-  },
-  {
-    canonicalName: "periplus.hotel.search",
-    label: "Search route-near hotels",
-    description:
-      "Derive dates, nights, occupancy and route anchors from one City, then return one selection handle.",
+      "Search hotel candidates for one current stayRequirementId without changing the path. The backend derives city, dates, nights, occupancy, and anchors from that requirement; supply only an optional user preference. Choose a returned selectionId and use event.add with source HOTEL and the same requirement. A stale requirement must be refreshed from the latest materialized path.",
     input: hotelSearchToolSchema,
     requestType: "hotel.search",
-  },
-  {
-    canonicalName: "periplus.stay.add",
-    label: "Add hotel stay",
-    description:
-      "Add a STAY from a one-time hotel selection; dates are backend-derived.",
-    input: stayAddToolSchema,
-    requestType: "stay.add",
     sequential: true,
   },
   {
-    canonicalName: "periplus.transit.add",
-    label: "Add Transit card",
+    canonicalName: "route.search",
+    label: "Search route candidates",
     description:
-      "Insert one TRANSIT between adjacent cards; the backend derives request mode and route data.",
-    input: transitAddToolSchema,
-    requestType: "transit.add",
+      "Search route candidates for one current routeRequirementId without changing the path. The backend owns both endpoints, coordinates, departure time, and adjacency. Supply only mode and route preferences. Choose a returned selectionId and use event.add with source ROUTE and the same requirement. Do not invent endpoints, duration, coordinates, or insertion position.",
+    input: routeSearchToolSchema,
+    requestType: "route.search",
     sequential: true,
   },
   {
-    canonicalName: "periplus.card.update",
-    label: "Update card",
+    canonicalName: "path.read",
+    label: "Read planning path",
     description:
-      "Update only the business fields allowed by the card's strict type-specific changes schema.",
-    input: cardUpdateToolSchema,
-    requestType: "card.update",
+      "Read the authoritative run-local materialized event chain, current route/stay requirements, conflicts, warnings, and remaining validation budget. This does not change planning state. Mutation results already include the same projection, so call this when you need to refresh after a stale requirement or to inspect the initial state.",
+    input: pathReadToolSchema,
+    requestType: "path.read",
     sequential: true,
   },
   {
-    canonicalName: "periplus.card.move",
-    label: "Move card",
+    canonicalName: "event.add",
+    label: "Add selected event",
     description:
-      "Move a card after another card in the same scope, or to scope start with null.",
-    input: cardMoveToolSchema,
-    requestType: "card.move",
+      "Add one event to the run-local path from a valid selection. PLACE adds require a place selection, event type, order anchor, and optional semantic schedule intent; dayIndex is 1-based from the default trip start date. HOTEL and ROUTE adds require selections bound to the current requirement; the backend owns their position and exact times. The backend materializes canonical facts, IDs, links, timestamps, and returns the full path and new requirements.",
+    input: eventAddToolSchema,
+    requestType: "event.add",
     sequential: true,
   },
   {
-    canonicalName: "periplus.card.remove",
-    label: "Remove card",
+    canonicalName: "event.update",
+    label: "Update event semantics",
     description:
-      "Remove one card; optional recursive City removal is explicit.",
-    input: cardRemoveToolSchema,
-    requestType: "card.remove",
+      "Apply a semantic patch to one existing non-derived event. You may replace its place selection, event type, schedule intent, or notes; do not resend a complete card. The backend keeps canonical facts and recomputes exact times and affected requirements. Inspect the returned materialized path before the next decision.",
+    input: eventUpdateToolSchema,
+    requestType: "event.update",
     sequential: true,
   },
   {
-    canonicalName: "periplus.draft.project",
-    label: "Project current draft",
-    description: "Read a compact ordered projection of the active draft.",
-    input: draftProjectToolSchema,
-    requestType: "draft.project",
-  },
-  {
-    canonicalName: "periplus.draft.validate",
-    label: "Validate Agent draft",
+    canonicalName: "event.move",
+    label: "Move path event",
     description:
-      "Purely validate the draft; at most five non-Transit repair validations are allowed.",
-    input: draftValidateToolSchema,
-    requestType: "draft.validate",
+      "Move one existing non-derived event after another item, or to the beginning with null, and optionally provide a new semantic schedule intent. Ordering is separate from event.update. The backend invalidates stale adjacency selections, rematerializes exact times, and returns the authoritative path.",
+    input: eventMoveToolSchema,
+    requestType: "event.move",
     sequential: true,
   },
   {
-    canonicalName: "periplus.draft.prepare_transit",
-    label: "Prepare Transit route",
+    canonicalName: "event.remove",
+    label: "Remove path event",
     description:
-      "Fetch and select one validator-approved Transit route without using a repair attempt.",
-    input: draftPrepareTransitToolSchema,
-    requestType: "draft.prepare_transit",
+      "Remove one event from the run-local path. The backend also removes derived events made stale by the new adjacency and returns fresh route/stay requirements. Use itemKey from the latest materialized path and provide a concise business reason.",
+    input: eventRemoveToolSchema,
+    requestType: "event.remove",
     sequential: true,
   },
   {
-    canonicalName: "periplus.draft.commit",
-    label: "Commit validated Agent draft",
+    canonicalName: "path.commit",
+    label: "Commit path",
     description:
-      "Atomically commit one VALID draft as a single Workspace revision.",
-    input: draftCommitToolSchema,
-    requestType: "draft.commit",
+      "Ask the backend to validate the current authoritative candidate path and atomically commit it as one new Workspace revision. If current route/stay requirements or invariants are incomplete, the tool returns the exact current blockers without writing the Workspace. This is the only tool that changes the committed journey; an ok committed result is the mechanical end of the Agent run.",
+    input: pathCommitToolSchema,
+    requestType: "path.commit",
     sequential: true,
   },
 ]
@@ -227,14 +187,22 @@ function webSearchTool(options: NonNullable<PiCoreToolOptions["webSearch"]>) {
           status: "retryable_error",
           code: "INVALID_ARGUMENTS",
           message: z.prettifyError(parsed.error),
+          received: params && typeof params === "object" ? params : {},
+          fieldErrors: parsed.error.issues.map((issue) => ({
+            field: issue.path.join(".") || "$",
+            reason: issue.message,
+          })),
+          allowedNextAction: "RETRY_THIS_TOOL",
         })
       }
       const { query } = parsed.data
       if (remaining <= 0) {
         return result({
-          status: "terminal_error",
+          status: "non_retryable_error",
           code: "WEB_SEARCH_LIMIT_REACHED",
           message: "This Agent run has used all available Web searches",
+          received: { query },
+          allowedNextAction: "STOP",
         })
       }
       remaining -= 1
@@ -270,6 +238,7 @@ function webSearchTool(options: NonNullable<PiCoreToolOptions["webSearch"]>) {
             sources,
             usage: message.usage,
           },
+          allowedNextAction: "CONTINUE",
         })
       } catch (error) {
         if (signal?.aborted) throw error
@@ -277,6 +246,8 @@ function webSearchTool(options: NonNullable<PiCoreToolOptions["webSearch"]>) {
           status: "retryable_error",
           code: "WEB_SEARCH_FAILED",
           message: error instanceof Error ? error.message : "Web search failed",
+          received: { query },
+          allowedNextAction: "RETRY_THIS_TOOL",
         })
       }
     },
@@ -297,6 +268,12 @@ export function createPiCoreTools(options: PiCoreToolOptions): AgentTool[] {
           status: "retryable_error",
           code: "INVALID_ARGUMENTS",
           message: z.prettifyError(parsed.error),
+          received: params && typeof params === "object" ? params : {},
+          fieldErrors: parsed.error.issues.map((issue) => ({
+            field: issue.path.join(".") || "$",
+            reason: issue.message,
+          })),
+          allowedNextAction: "RETRY_THIS_TOOL",
         })
       }
       return result(
@@ -327,6 +304,7 @@ export function piCoreToolCatalogVersion() {
       JSON.stringify(
         definitions.map((definition) => ({
           name: definition.canonicalName,
+          description: definition.description,
           schema: z.toJSONSchema(definition.input),
           sequential: Boolean(definition.sequential),
         }))

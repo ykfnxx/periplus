@@ -4,9 +4,13 @@ import { useWorkspaceStore } from "./workspace-store"
 import type { WorkspaceState } from "./types"
 import { workspaceCanMutate } from "./slices/workspace-document-slice"
 import { FULL_MAP_VIEWPORT_INSETS } from "../viewport"
+import { projectFlatJourneyForWorkspace } from "@/lib/journeys/flat-workspace-projection"
 
-export function selectWorkspaceGraph(state: WorkspaceState) {
-  return state.workspaceDocument?.session.headGraph ?? null
+export function selectWorkspaceJourneyView(state: WorkspaceState) {
+  const session = state.workspaceDocument?.session
+  return session
+    ? projectFlatJourneyForWorkspace(session.flatJourney, session.ownerId)
+    : null
 }
 
 export function selectWorkspaceLocked(state: WorkspaceState) {
@@ -21,16 +25,6 @@ export function selectWorkspaceRevision(state: WorkspaceState) {
 
 export function selectWorkspaceCanMutate(state: WorkspaceState) {
   return workspaceCanMutate(state.workspaceDocument)
-}
-
-export function selectWorkspaceCanRecover(state: WorkspaceState) {
-  const document = state.workspaceDocument
-  return Boolean(
-    document &&
-    document.accessState === "OWNER" &&
-    document.session.status === "ACTIVE" &&
-    (document.draftState === "STALE" || document.draftState === "CONFLICT")
-  )
 }
 
 export function useWorkspaceViewportInsets() {

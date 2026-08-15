@@ -7,7 +7,6 @@ import type {
 } from "@/lib/journeys/day-groups"
 import {
   BedDouble,
-  AlertCircle,
   BusFront,
   CalendarDays,
   Car,
@@ -16,7 +15,6 @@ import {
   Clock3,
   Footprints,
   Landmark,
-  LoaderCircle,
   MapPin,
   Plane,
   Route,
@@ -25,7 +23,6 @@ import {
   UtensilsCrossed,
 } from "lucide-react"
 import {
-  activeTransitPlanningRun,
   selectedTransitPlan,
   type TransportMode,
 } from "@/lib/journeys/planning"
@@ -45,12 +42,11 @@ import type {
   TargetResolvedEvent,
   TargetTransitPlanningRun,
 } from "@/modules/data-model/contracts"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 import {
   getJourneyScopeTreeEvents,
   type JourneyScopeItem,
 } from "@/lib/journeys/projections"
-import { usePlanChoiceWheelScroll } from "./scroll-plan-choices"
 import { ProviderImage } from "./ProviderImage"
 import { routeDayTone } from "./route-day-theme"
 
@@ -75,14 +71,16 @@ export default function RouteTimeline({
   items,
   dayProjection,
   onActiveDayChange,
+  changedEventIds = [],
 }: {
   items: JourneyScopeItem[]
   dayProjection?: JourneyDayProjection
   onActiveDayChange?: (dayKey: string) => void
+  changedEventIds?: readonly string[]
 }) {
   const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef(new Map<string, HTMLDivElement>())
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
@@ -102,17 +100,9 @@ export default function RouteTimeline({
   const setSelectedTransitEventId = useWorkspaceStore(
     (state) => state.setSelectedTransitEventId
   )
-  const selectTransitPlan = useWorkspaceStore(
-    (state) => state.selectTransitPlan
-  )
-  const pendingTransitPlanSelection = useWorkspaceStore(
-    (state) => state.pendingTransitPlanSelection
-  )
-  const transitPlanSelectionError = useWorkspaceStore(
-    (state) => state.transitPlanSelectionError
-  )
   const requestMapFocus = useWorkspaceStore((state) => state.requestMapFocus)
   const enterSectionView = useWorkspaceStore((state) => state.enterSectionView)
+  const changedEventIdSet = new Set(changedEventIds)
 
   useEffect(() => {
     if (!selectedLocationEvent) return
@@ -216,7 +206,7 @@ export default function RouteTimeline({
         </div>
         <p className="mt-2 text-[10px] font-bold text-teak">
           {readyTransitCount(summaryEvents)}/{transits.length} 段真实路线 ·
-          方案确认后地图自动同步
+          已提交路线同步到地图
         </p>
       </div>
 
@@ -261,22 +251,10 @@ export default function RouteTimeline({
                 event={event}
                 selected={selectedTransitEventId === event.id}
                 onSelect={() => selectTransit(event)}
-                onSelectPlan={(planId) => selectTransitPlan(event.id, planId)}
                 planningRuns={graph?.transitPlanningRuns ?? []}
                 resolved={resolved}
                 fromTitle={fromTitle}
                 toTitle={toTitle}
-                pendingPlanId={
-                  pendingTransitPlanSelection?.eventId === event.id
-                    ? pendingTransitPlanSelection.planId
-                    : null
-                }
-                selectionBlocked={Boolean(pendingTransitPlanSelection)}
-                selectionError={
-                  transitPlanSelectionError?.eventId === event.id
-                    ? transitPlanSelectionError.message
-                    : null
-                }
               />
             )
           } else if (
@@ -312,6 +290,7 @@ export default function RouteTimeline({
               eventId={event.id}
               group={dayGroup}
               isFirstInGroup={dayGroup?.firstEventId === event.id}
+              changed={changedEventIdSet.has(event.id)}
               containerRef={(element) => {
                 if (element) itemRefs.current.set(event.id, element)
                 else itemRefs.current.delete(event.id)
@@ -330,19 +309,26 @@ function TimelineDayItem({
   eventId,
   group,
   isFirstInGroup,
+  changed,
   containerRef,
   children,
 }: {
   eventId: string
   group?: JourneyDayGroup
   isFirstInGroup: boolean
+  changed: boolean
   containerRef: (element: HTMLDivElement | null) => void
   children: ReactNode
 }) {
   const tone = routeDayTone(group?.colorIndex ?? null)
   if (!group) {
     return (
-      <div ref={containerRef} data-route-event-id={eventId}>
+      <div
+        ref={containerRef}
+        data-route-event-id={eventId}
+        data-journey-event-changed={changed || undefined}
+        className={changed ? "rounded-xl ring-2 ring-mustard/40" : undefined}
+      >
         {children}
       </div>
     )
@@ -354,6 +340,8 @@ function TimelineDayItem({
       data-route-event-id={eventId}
       data-route-day-key={group.key}
       data-day-tone={tone.id}
+      data-journey-event-changed={changed || undefined}
+      className={changed ? "rounded-xl ring-2 ring-mustard/40" : undefined}
     >
       {isFirstInGroup ? (
         <div
@@ -761,29 +749,19 @@ export function TransitEventCard({
   event,
   selected,
   onSelect,
-  onSelectPlan,
   planningRuns,
   resolved,
   fromTitle,
   toTitle,
-  pendingPlanId,
-  selectionBlocked,
-  selectionError,
 }: {
   event: TransitEvent
   selected: boolean
   onSelect: () => void
-  onSelectPlan: (planId: string) => void
   planningRuns: readonly TargetTransitPlanningRun[]
   resolved: TargetResolvedEvent
   fromTitle?: string
   toTitle?: string
-  pendingPlanId: string | null
-  selectionBlocked: boolean
-  selectionError: string | null
 }) {
-  const planChoicesRef = usePlanChoiceWheelScroll()
-  const activeRun = activeTransitPlanningRun(event, planningRuns)
   const plan = selectedTransitPlan(event, planningRuns)
   const modeLabel =
     event.detail.requestMode === "TRANSIT"
@@ -805,7 +783,6 @@ export function TransitEventCard({
       className="rounded-xl border border-bluegray/20 bg-route-blue-soft p-3"
       data-selected-plan-id={plan?.id}
       data-resolved-position={resolved.resolvedPosition}
-      aria-busy={Boolean(pendingPlanId)}
     >
       <button
         type="button"
@@ -841,81 +818,11 @@ export function TransitEventCard({
               <span className="truncate">{toTitle ?? "目的地"}</span>
             </span>
           </span>
-          <span className="flex shrink-0 items-center gap-1 text-[10px] font-black text-bluegray">
-            {pendingPlanId ? (
-              <LoaderCircle
-                className="h-3 w-3 animate-spin"
-                aria-hidden="true"
-              />
-            ) : null}
-            {pendingPlanId ? "切换中…" : selected ? "收起" : "方案"}
+          <span className="shrink-0 text-[10px] font-black text-bluegray">
+            {selected ? "已选中" : "查看"}
           </span>
         </span>
-        {activeRun?.warning ? (
-          <span className="mt-2 block rounded-md bg-white/70 px-2 py-1.5 text-[10px] leading-4 text-coral">
-            {activeRun.warning}
-          </span>
-        ) : null}
       </button>
-      {selectionError ? (
-        <p
-          role="alert"
-          className="mt-2 rounded-md bg-coral/10 px-2 py-1.5 text-[10px] leading-4 font-bold text-coral"
-        >
-          <AlertCircle className="mr-1 inline h-3 w-3" aria-hidden="true" />
-          路线切换失败：{selectionError}
-        </p>
-      ) : null}
-      {selected && (activeRun?.plans.length ?? 0) > 0 ? (
-        <div className="mt-3 border-t border-bluegray/15 pt-3">
-          <p className="mb-2 text-[10px] font-black tracking-[0.08em] text-teak">
-            选择路线方案
-          </p>
-          <div className="relative -mx-3">
-            <div
-              ref={planChoicesRef}
-              data-transit-plan-choices
-              className="scrollbar-hidden flex gap-2 overflow-x-auto px-4 pr-10"
-            >
-              {activeRun!.plans.map((candidate) => {
-                const isCurrent = plan?.id === candidate.id
-                const isPending = pendingPlanId === candidate.id
-                return (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    aria-pressed={isCurrent}
-                    aria-busy={isPending}
-                    disabled={selectionBlocked}
-                    onClick={() => onSelectPlan(candidate.id)}
-                    className={`h-10 w-[122px] shrink-0 rounded-lg border px-2 text-left transition disabled:cursor-wait disabled:opacity-60 ${
-                      isCurrent
-                        ? "border-russet bg-white shadow-sm"
-                        : "border-transparent bg-white/60 hover:border-bluegray/25 hover:bg-white"
-                    }`}
-                  >
-                    <span className="block min-w-0">
-                      <span className="block truncate text-[10px] font-black text-ink">
-                        <span className="truncate">
-                          {isPending ? "切换中…" : candidate.label}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 block truncate text-[9px] font-bold text-teak">
-                        {formatTransitDuration(candidate.durationSeconds)} ·{" "}
-                        {formatTransitDistance(candidate.distanceMeters)}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute top-0 right-0 h-full w-8 bg-gradient-to-l from-route-blue-soft to-transparent"
-            />
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }

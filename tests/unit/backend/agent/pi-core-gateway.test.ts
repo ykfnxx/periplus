@@ -269,51 +269,31 @@ describe("Pi Agent Core gateway integration", () => {
       baseline: {
         workspaceId: workspace.id,
         workspaceRevision: 0,
-        root: [expect.objectContaining({ type: "CITY", title: "杭州" })],
+        journey: {
+          events: [
+            expect.objectContaining({
+              proposalItemKey: "baseline-0001",
+              kind: "VISIT",
+              title: "西湖",
+            }),
+          ],
+        },
       },
     })
     expect(harness.request).not.toHaveProperty("messages")
     expect(harness.request).not.toHaveProperty("mode")
 
-    const opened = await harness.request!.executeTool(
-      { type: "draft.open" },
-      "open-1"
-    )
-    expect(opened).toMatchObject({ status: "ok" })
-    expect(opened).not.toHaveProperty("data.draftId")
     const updated = await harness.request!.executeTool(
       {
-        type: "card.update",
-        cardId: harness.request!.baseline.cities[0]!.cards[0]!.cardId,
-        changes: { type: "VISIT", description: "上午沿湖游览" },
+        type: "event.update",
+        itemKey: "baseline-0001",
+        notes: "上午游览",
       },
       "update-1"
     )
     expect(updated).toMatchObject({ status: "ok" })
-    const validated = await harness.request!.executeTool(
-      { type: "draft.validate" },
-      "validate-1"
-    )
-    expect(validated).toMatchObject({
-      status: "ok",
-      data: { validation: { valid: true } },
-    })
-    expect(validated).not.toHaveProperty("data.draftId")
-    await expect(
-      harness.request!.executeTool(
-        {
-          type: "card.update",
-          cardId: harness.request!.baseline.root[0]!.cardId,
-          changes: { type: "CITY", title: "杭州新标题" },
-        },
-        "write-after-valid"
-      )
-    ).resolves.toMatchObject({
-      status: "retryable_error",
-      code: "INVALID_TOOL_INPUT",
-    })
     const committed = await harness.request!.executeTool(
-      { type: "draft.commit" },
+      { type: "path.commit" },
       "commit-1"
     )
     expect(committed).toMatchObject({
@@ -345,6 +325,7 @@ describe("Pi Agent Core gateway integration", () => {
       type: "model_end",
       requestId: "model-1",
       output: "已安排西湖。",
+      thinking: "需要确认提交后的最终行程。",
       toolCalls: [],
       usage: {
         input: 10,
@@ -361,7 +342,7 @@ describe("Pi Agent Core gateway integration", () => {
 
     await vi.waitFor(async () => {
       const document = await commands.getDocument(context, workspace.id)
-      expect(document?.messages.at(-1)?.content).toBe("已安排西湖。")
+      expect(document?.messages.at(-1)?.content).toBe("已更新 1 个行程事件")
       expect(document?.agentRuns.at(-1)?.status).toBe("SUCCEEDED")
       expect(events.at(-1)?.type).toBe("agent.run.completed")
     })
@@ -414,10 +395,8 @@ describe("Pi Agent Core gateway integration", () => {
       {
         heartbeatIntervalMs: null,
         placeService: {
-          searchPlaces: vi.fn(),
-          resolvePlace: vi.fn().mockResolvedValue({
-            status: "not_found",
-            reason: "provider exhausted",
+          searchPlaces: vi.fn().mockResolvedValue({
+            results: [],
             warnings: [
               {
                 provider: "amap",
@@ -430,6 +409,7 @@ describe("Pi Agent Core gateway integration", () => {
             ],
             providerAttempts: 3,
           }),
+          resolvePlace: vi.fn(),
           enrichPlace: vi.fn(),
           verifyPlaceImages: vi.fn(),
         },
@@ -437,20 +417,18 @@ describe("Pi Agent Core gateway integration", () => {
     )
 
     await gateway.start(context, workspace.id, "安排一个景点", () => undefined)
-    await harness.request!.executeTool({ type: "draft.open" }, "open-provider")
     await expect(
       harness.request!.executeTool(
         {
-          type: "place.resolve",
-          cityCardId: `${journeyId}-city`,
-          cardType: "VISIT",
+          type: "place.search",
+          city: "大理",
           query: "大理古城",
-          origin: "PLANNER_CHOICE",
+          intent: "VISIT",
         },
         "resolve-provider"
       )
     ).resolves.toMatchObject({
-      status: "terminal_error",
+      status: "non_retryable_error",
       code: "PLACE_PROVIDER_UNAVAILABLE",
     })
 
@@ -493,28 +471,43 @@ describe("Pi Agent Core gateway integration", () => {
     )
 
     await gateway.start(context, workspace.id, "杭州住一晚", () => undefined)
-    await harness.request!.executeTool({ type: "draft.open" }, "open-hotel")
+    const path = (await harness.request!.executeTool(
+      { type: "path.read" },
+      "read-path"
+    )) as {
+      data: {
+        requirements: {
+          stayRequirements: Array<{ stayRequirementId: string }>
+        }
+      }
+    }
+    const stayRequirementId =
+      path.data.requirements.stayRequirements[0]!.stayRequirementId
     const searched = await harness.request!.executeTool(
-      { type: "hotel.search", cityCardId: `${journeyId}-city` },
+      {
+        type: "hotel.search",
+        stayRequirementId,
+      },
       "search-hotel"
     )
     expect(searched).toMatchObject({ status: "ok" })
-    const hotelSelectionId = (
-      searched as { data: { hotelSelectionId: string } }
-    ).data.hotelSelectionId
+    const selectionId = (
+      searched as { data: { recommendedSelectionId: string } }
+    ).data.recommendedSelectionId
 
     await expect(
       harness.request!.executeTool(
         {
-          type: "stay.add",
-          cityCardId: `${journeyId}-city-b`,
-          hotelSelectionId,
+          type: "event.add",
+          source: "HOTEL",
+          stayRequirementId: "stale-requirement",
+          selectionId,
         },
         "stay-wrong-city"
       )
     ).resolves.toMatchObject({
       status: "retryable_error",
-      code: "HOTEL_SELECTION_CITY_MISMATCH",
+      code: "STALE_STAY_REQUIREMENT",
     })
 
     harness.emit({ type: "run_end", result: { status: "succeeded" } })

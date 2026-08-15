@@ -823,6 +823,13 @@ const workspaceDocument: TargetWorkspaceDocument = {
     status: "ACTIVE",
     title: "西湖行程",
     headGraph: workspaceGraph,
+    flatJourney: {
+      schemaVersion: 1,
+      journeyId: workspaceGraph.id,
+      revision: 1,
+      title: workspaceGraph.title,
+      events: [],
+    },
     lastAccessAt: NOW,
     createdAt: NOW,
     updatedAt: NOW,
@@ -859,6 +866,7 @@ workspaceRefreshed.messages = []
 const workspaceForked = clone(workspaceDocument)
 workspaceForked.session.id = "workspace-forked"
 workspaceForked.session.headWorkspaceRevision = 0
+workspaceForked.session.flatJourney.revision = 0
 workspaceForked.messages = []
 const workspaceRevision: TargetWorkspaceRevision = {
   id: "workspace-revision-1",

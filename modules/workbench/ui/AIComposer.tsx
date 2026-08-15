@@ -1,6 +1,6 @@
 "use client"
 
-import { Save, Send, Square } from "lucide-react"
+import { Send, Square } from "lucide-react"
 import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -10,10 +10,9 @@ import {
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
   selectWorkspaceCanMutate,
-  selectWorkspaceCanRecover,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
-import type { TargetCommandEnvelope } from "@/modules/data-model/contracts"
+import { agentRunStageLabel } from "./agent-run-presentation"
 
 export default function AIComposer({
   onPromptSent,
@@ -27,14 +26,8 @@ export default function AIComposer({
   const sendAgentEvent = useWorkspaceStore((state) => state.sendAgentEvent)
   const addUserMessage = useWorkspaceStore((state) => state.addUserMessage)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const agentRunStage = useWorkspaceStore((state) => state.agentRunStage)
   const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
-  const canRecover = useWorkspaceStore(selectWorkspaceCanRecover)
-  const workspaceCommitState = useWorkspaceStore(
-    (state) => state.workspaceCommitState
-  )
-  const setWorkspaceCommitState = useWorkspaceStore(
-    (state) => state.setWorkspaceCommitState
-  )
   const lightboxPhotoShare = useWorkspaceStore(
     (state) => state.lightboxPhotoShare
   )
@@ -99,58 +92,37 @@ export default function AIComposer({
     }
   }
 
-  const saveRoute = () => {
-    if (
-      !document ||
-      document.draftState === "CLEAN" ||
-      !sendAgentEvent ||
-      !canMutate ||
-      isWorkspaceLocked
-    ) {
-      return
-    }
-    const revision = document.session.headWorkspaceRevision
-    const commandId = `browser-commit:${document.session.id}:${revision}`
-    setWorkspaceCommitState("saving")
-    sendAgentEvent("workspace.command", {
-      commandId,
-      expectedRevision: revision,
-      idempotencyKey: commandId,
-      command: {
-        name: "workspace.commit",
-        payload: {
-          expectedJourneyRevision: document.session.baseJourneyRevision,
-        },
-      },
-    })
-  }
-
-  const recoverWorkspace = (
-    name: Extract<
-      TargetCommandEnvelope["command"]["name"],
-      "workspace.refresh" | "workspace.fork"
-    >
-  ) => {
-    if (!document || !sendAgentEvent || !canRecover || isWorkspaceLocked) {
-      return
-    }
-    const revision = document.session.headWorkspaceRevision
-    const commandId = `browser-recover:${name}:${document.session.id}:${revision}`
-    sendAgentEvent("workspace.command", {
-      commandId,
-      expectedRevision: revision,
-      idempotencyKey: commandId,
-      command: {
-        name,
-        payload: {
-          fromWorkspaceRevision: name === "workspace.fork" ? revision : 0,
-        },
-      },
-    })
-  }
-
-  const cancelAgentRun = () => {
-    if (canControlAgent) sendAgentEvent?.("agent.run.cancel")
+  if (isWorkspaceLocked) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex items-center gap-3 rounded-2xl border border-mustard/45 bg-cream px-4 py-3 shadow-periplus-soft"
+      >
+        <span
+          className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-mustard"
+          aria-hidden="true"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-black text-ink">
+            {agentRunStageLabel(agentRunStage)}
+          </p>
+          <p className="mt-0.5 text-[10px] leading-4 text-teak">
+            当前版本仍可浏览，完成后会一次性更新。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => sendAgentEvent?.("agent.run.cancel")}
+          aria-label="取消规划"
+          title="取消规划"
+          disabled={!sendAgentEvent || !canControlAgent}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-soft-white transition hover:bg-russet disabled:cursor-default disabled:opacity-55"
+        >
+          <Square className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -167,106 +139,29 @@ export default function AIComposer({
             rows={1}
             aria-label="AI 输入"
             placeholder="告诉我你想怎么改路线..."
-            disabled={isWorkspaceLocked || !canMutate}
+            disabled={!canMutate}
             className="periplus-textarea-hidden-scroll max-h-24 min-h-9 w-full resize-none bg-transparent py-1 text-[13px] leading-5 text-ink outline-none placeholder:text-teak disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
         <div className="mt-1.5 flex items-center justify-end">
-          <div className="flex items-center gap-2">
-            {!isWorkspaceLocked && (
-              <button
-                type="button"
-                onClick={saveRoute}
-                aria-label="保存"
-                title="保存"
-                disabled={
-                  !document ||
-                  document.draftState === "CLEAN" ||
-                  !sendAgentEvent ||
-                  !canMutate ||
-                  workspaceCommitState === "saving"
-                }
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-ink-15 bg-cream text-walnut transition hover:border-russet hover:text-russet disabled:cursor-default disabled:opacity-45"
-              >
-                <Save className="h-4 w-4" aria-hidden="true" />
-              </button>
-            )}
-            <button
-              type={isWorkspaceLocked ? "button" : "submit"}
-              onClick={isWorkspaceLocked ? cancelAgentRun : undefined}
-              aria-label={isWorkspaceLocked ? "停止" : "发送"}
-              title={isWorkspaceLocked ? "停止" : "发送"}
-              disabled={
-                isWorkspaceLocked
-                  ? !sendAgentEvent || !canControlAgent
-                  : !composerInput.trim() || !sendAgentEvent || !canMutate
-              }
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-soft-white transition disabled:cursor-default disabled:opacity-55 ${
-                isWorkspaceLocked
-                  ? "bg-ink hover:bg-russet"
-                  : "bg-russet hover:bg-ink disabled:bg-mustard disabled:text-ink"
-              }`}
-            >
-              {isWorkspaceLocked ? (
-                <Square className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Send className="h-4 w-4" aria-hidden="true" />
-              )}
-            </button>
-          </div>
+          <button
+            type="submit"
+            aria-label="发送"
+            title="发送"
+            disabled={!composerInput.trim() || !sendAgentEvent || !canMutate}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-russet text-soft-white transition hover:bg-ink disabled:cursor-default disabled:bg-mustard disabled:text-ink disabled:opacity-55"
+          >
+            <Send className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </form>
-      {canRecover ? (
-        <div className="mt-2 rounded-xl border border-mustard/40 bg-cream p-3">
-          <p className="text-[11px] font-black text-ink">源行程已更新</p>
-          <p className="mt-1 text-[10px] leading-4 text-teak">
-            先选择如何恢复 Workspace，再继续编辑或保存。
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <RecoveryButton
-              label="刷新并重放"
-              disabled={!sendAgentEvent || isWorkspaceLocked}
-              onClick={() => recoverWorkspace("workspace.refresh")}
-            />
-            <RecoveryButton
-              label="派生副本"
-              disabled={!sendAgentEvent || isWorkspaceLocked}
-              onClick={() => recoverWorkspace("workspace.fork")}
-            />
-          </div>
-        </div>
-      ) : document && document.accessState !== "OWNER" ? (
+      {document &&
+      (document.accessState !== "OWNER" ||
+        document.session.status !== "ACTIVE") ? (
         <p className="mt-2 rounded-xl border border-ink-10 bg-cream px-3 py-2 text-[11px] font-black text-teak">
-          Workspace 已过期或无写权限，当前为只读状态。
+          Workspace 已归档或无写权限，当前为只读状态。
         </p>
       ) : null}
-      <div className="flex items-center justify-end px-2 text-[11px] font-bold text-teak">
-        {workspaceCommitState === "success" && <span>保存成功</span>}
-        {workspaceCommitState === "error" && (
-          <span className="text-coral">保存失败</span>
-        )}
-      </div>
     </div>
-  )
-}
-
-function RecoveryButton({
-  label,
-  disabled,
-  onClick,
-}: {
-  label: string
-  disabled: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="rounded-full border border-ink-15 bg-white px-3 py-1.5 text-[10px] font-black text-walnut transition hover:border-russet hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      {label}
-    </button>
   )
 }

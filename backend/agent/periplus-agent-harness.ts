@@ -1,8 +1,6 @@
 import {
   Agent,
-  DEFAULT_COMPACTION_SETTINGS,
   estimateContextTokens,
-  generateSummaryWithUsage,
   type AgentMessage,
 } from "@earendil-works/pi-agent-core"
 import {
@@ -24,15 +22,6 @@ import {
   piCoreToolCatalogVersion,
 } from "./pi-core-tools"
 
-const EMPTY_USAGE = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-}
-
 export interface PersistedAgentMessage {
   id: string
   role: "user" | "assistant"
@@ -45,6 +34,7 @@ export interface PeriplusAgentHarnessRequest {
   workspaceId: string
   systemPrompt: string
   conversationSummary: string
+  recentDialogue: PersistedAgentMessage[]
   baseline: PlannerBaseline
   currentUserRequest: string
   defaultTripStartDate: string
@@ -57,6 +47,7 @@ export interface PeriplusAgentHarnessRequest {
 
 export interface PeriplusAgentHarnessResult {
   status: "succeeded" | "cancelled" | "failed"
+  finalOutput?: string
   error?: Error
 }
 
@@ -83,6 +74,7 @@ export type PeriplusHarnessEvent =
       type: "model_end"
       requestId: string
       output: string
+      thinking: string
       toolCalls: Array<{ id: string; name: string; arguments: unknown }>
       usage: Usage
       stopReason: string
@@ -169,35 +161,19 @@ function createDeepSeekModels(
   return models
 }
 
-function toPiMessages(
-  messages: PersistedAgentMessage[],
-  model: string
-): AgentMessage[] {
-  return messages
-    .filter((message) => message.content.trim())
-    .map((message) => {
-      const timestamp = Date.parse(message.createdAt)
-      if (message.role === "user") {
-        return { role: "user" as const, content: message.content, timestamp }
-      }
-      return {
-        role: "assistant" as const,
-        content: [{ type: "text" as const, text: message.content }],
-        api: "openai-responses" as const,
-        provider: "deepseek",
-        model,
-        usage: EMPTY_USAGE,
-        stopReason: "stop" as const,
-        timestamp,
-      }
-    })
-}
-
 function assistantText(message: AssistantMessage) {
   return message.content
     .filter((content) => content.type === "text")
     .map((content) => content.text)
     .join("")
+}
+
+function assistantThinking(message: AssistantMessage) {
+  return message.content
+    .flatMap((content) =>
+      content.type === "thinking" && !content.redacted ? [content.thinking] : []
+    )
+    .join("\n\n")
 }
 
 function assistantToolCalls(message: AssistantMessage) {
@@ -243,6 +219,62 @@ function throwIfAborted(signal: AbortSignal) {
   throw error
 }
 
+function userContextMessage(content: unknown, timestamp: number): AgentMessage {
+  return {
+    role: "user",
+    content: typeof content === "string" ? content : JSON.stringify(content),
+    timestamp,
+  }
+}
+
+function parsedSummary(summary: string) {
+  if (!summary) return {}
+  try {
+    const parsed = JSON.parse(summary) as unknown
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function nonRetryableResult(value: unknown) {
+  if (!value || typeof value !== "object" || !("status" in value)) return null
+  if (value.status !== "non_retryable_error") return null
+  return {
+    code:
+      "code" in value && typeof value.code === "string"
+        ? value.code
+        : "NON_RETRYABLE_TOOL_ERROR",
+    message:
+      "message" in value && typeof value.message === "string"
+        ? value.message
+        : "The Agent run cannot continue",
+  }
+}
+
+function modelVisibleJourney(baseline: PlannerBaseline) {
+  return {
+    title: baseline.journey.title,
+    ...(baseline.journey.description
+      ? { description: baseline.journey.description }
+      : {}),
+    events: baseline.journey.events.map((event) => ({
+      proposalItemKey: event.proposalItemKey,
+      kind: event.kind,
+      title: event.title,
+      ...(event.city ? { city: event.city } : {}),
+      ...(event.plannedStartAt ? { plannedStartAt: event.plannedStartAt } : {}),
+      ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
+      ...(event.fromItemKey ? { fromItemKey: event.fromItemKey } : {}),
+      ...(event.toItemKey ? { toItemKey: event.toItemKey } : {}),
+      ...(event.transportMode ? { transportMode: event.transportMode } : {}),
+      ...(event.place ? { place: { name: event.place.name } } : {}),
+    })),
+  }
+}
+
 export class PeriplusAgentHarness {
   readonly id = "pi-agent-core"
   private readonly model: Model<"openai-responses">
@@ -270,6 +302,8 @@ export class PeriplusAgentHarness {
       activeAgent?.abort()
     }, this.options.timeoutMs)
     timeout.unref?.()
+    let commitCompleted = false
+    let nonRetryableFailure: { code: string; message: string } | null = null
 
     let settled = false
     const settle = (result: PeriplusAgentHarnessResult) => {
@@ -282,7 +316,24 @@ export class PeriplusAgentHarness {
         const prepared = this.prepareContext(request, abortController.signal)
         throwIfAborted(abortController.signal)
         const tools = createPiCoreTools({
-          execute: request.executeTool,
+          execute: async (toolRequest, toolCallId, signal) => {
+            const result = await request.executeTool(
+              toolRequest,
+              toolCallId,
+              signal
+            )
+            if (
+              toolRequest.type === "path.commit" &&
+              result &&
+              typeof result === "object" &&
+              "status" in result &&
+              result.status === "ok"
+            ) {
+              commitCompleted = true
+            }
+            nonRetryableFailure ??= nonRetryableResult(result)
+            return result
+          },
           ...(this.options.webSearchEnabled
             ? {
                 webSearch: {
@@ -343,6 +394,28 @@ export class PeriplusAgentHarness {
           },
           streamFn,
           getApiKey: () => this.options.apiKey,
+          afterToolCall: async ({ result }) => {
+            const failure = nonRetryableResult(result.details)
+            nonRetryableFailure ??= failure
+            const status =
+              result.details &&
+              typeof result.details === "object" &&
+              "status" in result.details
+                ? result.details.status
+                : undefined
+            return status === "retryable_error" || failure
+              ? {
+                  isError: true,
+                  ...(failure ? { terminate: true } : {}),
+                }
+              : undefined
+          },
+          shouldStopAfterTurn: ({ toolResults }) => {
+            for (const toolResult of toolResults) {
+              nonRetryableFailure ??= nonRetryableResult(toolResult.details)
+            }
+            return commitCompleted || nonRetryableFailure !== null
+          },
         })
         activeAgent = agent
         agent.subscribe((event) => {
@@ -365,6 +438,7 @@ export class PeriplusAgentHarness {
               type: "model_end",
               requestId: `${request.runId}:model:${requestSequence - 1}`,
               output,
+              thinking: assistantThinking(event.message),
               toolCalls: assistantToolCalls(event.message),
               usage: event.message.usage,
               stopReason: event.message.stopReason,
@@ -399,9 +473,30 @@ export class PeriplusAgentHarness {
         const error = agent.state.errorMessage
           ? new Error(agent.state.errorMessage)
           : undefined
+        const finalAssistantMessage = [...agent.state.messages]
+          .reverse()
+          .find((message) => message.role === "assistant")
+        const finalOutput = finalAssistantMessage
+          ? assistantText(finalAssistantMessage)
+          : ""
+        const terminalFailure = nonRetryableFailure as {
+          code: string
+          message: string
+        } | null
         settle({
-          status: cancelled ? "cancelled" : error ? "failed" : "succeeded",
-          ...(error ? { error } : {}),
+          status: commitCompleted
+            ? "succeeded"
+            : cancelled
+              ? "cancelled"
+              : error || terminalFailure
+                ? "failed"
+                : "succeeded",
+          ...(finalOutput.trim() ? { finalOutput } : {}),
+          ...(error
+            ? { error }
+            : terminalFailure
+              ? { error: new Error(terminalFailure.message) }
+              : {}),
         })
       } catch (error) {
         settle({
@@ -435,34 +530,38 @@ export class PeriplusAgentHarness {
     signal: AbortSignal
   ) {
     throwIfAborted(signal)
-    const effectiveSystemPrompt = [
-      request.systemPrompt,
-      "",
-      "[CONVERSATION_SUMMARY]",
-      request.conversationSummary || "{}",
-      "",
-      "[WORKSPACE_BASELINE]",
-      JSON.stringify(request.baseline),
-      "",
-      "[CURRENT_USER_REQUEST_METADATA]",
-      JSON.stringify({
-        defaultTripStartDate: request.defaultTripStartDate,
-        runId: request.runId,
-      }),
-    ].join("\n")
-    const messages = toPiMessages(
-      [
+    const now = Date.now()
+    const messages: AgentMessage[] = [
+      userContextMessage(
         {
-          id: `${request.runId}:current-user`,
-          role: "user",
-          content: request.currentUserRequest,
-          createdAt: new Date().toISOString(),
+          type: "periplus.conversation_memory",
+          version: 1,
+          summary: parsedSummary(request.conversationSummary),
+          recentDialogue: request.recentDialogue.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
         },
-      ],
-      this.options.model
-    )
+        now - 2
+      ),
+      userContextMessage(
+        {
+          type: "periplus.workspace_snapshot",
+          version: 1,
+          baseRevision: request.baseline.workspaceRevision,
+          defaultTripStartDate: request.defaultTripStartDate,
+          timeZone: "Asia/Shanghai",
+          committedJourney: modelVisibleJourney(request.baseline),
+          limits: {
+            webSearchRemaining: this.options.webSearchEnabled ? 3 : 0,
+          },
+        },
+        now - 1
+      ),
+      userContextMessage(request.currentUserRequest, now),
+    ]
     return {
-      systemPrompt: effectiveSystemPrompt,
+      systemPrompt: request.systemPrompt,
       messages,
     }
   }
@@ -473,26 +572,45 @@ export class PeriplusAgentHarness {
     signal: AbortSignal
   ) {
     throwIfAborted(signal)
-    const piMessages = toPiMessages(messages, this.options.model)
-    if (!piMessages.length) return "{}"
-    const result = await generateSummaryWithUsage(
-      piMessages,
-      this.models,
+    const conversation = messages
+      .filter((message) => message.content.trim())
+      .map((message) => ({ role: message.role, content: message.content }))
+    if (!conversation.length) return "{}"
+    const response = await this.models.completeSimple(
       this.model,
-      DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-      signal,
-      [
-        "Return one compact JSON object containing only durable business memory.",
-        "Allowed content: current user goals, preferences, constraints, confirmed decisions, unresolved business matters, and the previous run outcome.",
-        "Exclude route cards, provider candidates, tool transcripts, draft/evidence handles, validator issues, credentials, headers, file paths, and facts reconstructible from the Workspace baseline.",
-        "Fields may be absent and arrays may be empty. Output JSON only.",
-      ].join(" "),
-      previousSummary,
-      "high"
+      {
+        systemPrompt: [
+          "You create a durable business-memory checkpoint for Periplus.",
+          "Return exactly one JSON object without Markdown, code fences, or commentary.",
+          "Allowed content: current user goals, preferences, constraints, confirmed decisions, unresolved business matters, and the previous run outcome.",
+          "Exclude route cards, provider candidates, tool transcripts, draft or evidence handles, validator issues, credentials, headers, file paths, and facts reconstructible from the Workspace baseline.",
+        ].join(" "),
+        messages: [
+          {
+            role: "user",
+            content: [
+              "Create the next checkpoint from this conversation.",
+              "Fields may be absent and arrays may be empty.",
+              previousSummary
+                ? `Previous checkpoint: ${previousSummary}`
+                : "Previous checkpoint: {}",
+              `Conversation: ${JSON.stringify(conversation)}`,
+              "Output JSON only.",
+            ].join("\n"),
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      { maxTokens: 2_048, signal }
     )
     throwIfAborted(signal)
-    if (!result.ok) throw result.error
-    const text = result.value.text.trim()
+    if (response.stopReason !== "stop") {
+      throw new Error(
+        response.errorMessage ??
+          `Conversation summary stopped with ${response.stopReason}`
+      )
+    }
+    const text = assistantText(response).trim()
     const parsed = JSON.parse(text) as unknown
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("Conversation summary must be a JSON object")

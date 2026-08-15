@@ -12,10 +12,10 @@ import {
 } from "@/lib/journeys/summary"
 import { useWorkspaceViewportInsets } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 
 export default function MapRouteLevelControls() {
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId

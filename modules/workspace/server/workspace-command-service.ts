@@ -1734,12 +1734,13 @@ async function planTransit(
   envelope: TargetCommandEnvelope,
   planning: WorkspaceCommandDependencies["transitPlanning"],
   now: string,
-  validate = true
+  validate = true,
+  resolvedBundle?: TransitPlanBundle
 ) {
   if (envelope.command.name !== "journey.plan_transit") {
     throw new WorkspaceCommandUnsupportedError(envelope.command.name)
   }
-  if (!planning) {
+  if (!planning && !resolvedBundle) {
     throw new WorkspaceInputError("Transit planning is not configured")
   }
   const graph = prepareCandidateGraph(document)
@@ -1751,13 +1752,21 @@ async function planTransit(
   const requestFingerprint = transitPlanFingerprint(request)
   let run: TargetTransitPlanningRun
   try {
-    const bundle = await planning.plan(request, {
-      userId: context.userId,
-      workspaceId: envelope.aggregateId,
-      agentRunId:
-        envelope.actor.kind === "AGENT" ? envelope.actor.agentRunId : undefined,
-      requestId: envelope.idempotencyKey,
-    })
+    const bundle = resolvedBundle
+      ? {
+          ...resolvedBundle,
+          transitEventId: event.id,
+          requestFingerprint,
+        }
+      : await planning!.plan(request, {
+          userId: context.userId,
+          workspaceId: envelope.aggregateId,
+          agentRunId:
+            envelope.actor.kind === "AGENT"
+              ? envelope.actor.agentRunId
+              : undefined,
+          requestId: envelope.idempotencyKey,
+        })
     if (
       bundle.transitEventId !== event.id ||
       bundle.requestFingerprint !== requestFingerprint
@@ -2749,13 +2758,14 @@ export class WorkspaceCommandService {
     draft: AgentDraftCandidate,
     verifiedPlaces: readonly PlaceVerification[] = []
   ): PreparedAgentDraft {
+    const after = validateJourneyGraphTransition(draft.before, draft.after)
     const planValidation = validateJourneyPlan({
-      graph: draft.after,
+      graph: after,
       workspaceRevision: draft.expectedRevision + 1,
     })
     const issues = [
       ...planValidation.issues,
-      ...validateDraftPlaceBindings(draft.before, draft.after, verifiedPlaces),
+      ...validateDraftPlaceBindings(draft.before, after, verifiedPlaces),
     ]
     const validation: PlanValidationReport = {
       ...planValidation,
@@ -2764,6 +2774,7 @@ export class WorkspaceCommandService {
     }
     return {
       ...draft,
+      after,
       validation,
     }
   }
@@ -2774,6 +2785,7 @@ export class WorkspaceCommandService {
       draft: AgentDraftCandidate
       idempotencyKey: string
       eventId: string
+      resolvedBundle?: TransitPlanBundle
     },
     options: ExecuteOptions = {}
   ): Promise<AgentDraftCandidate> {
@@ -2827,7 +2839,8 @@ export class WorkspaceCommandService {
         envelope,
         this.transitPlanning,
         now,
-        false
+        false,
+        input.resolvedBundle
       )
     )
     const changedEventIds = projectionDiffEventIds(input.draft.before, after)

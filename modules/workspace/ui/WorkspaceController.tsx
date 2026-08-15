@@ -4,12 +4,11 @@ import { useCallback } from "react"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import { photoDtoToShare, uploadPhoto } from "@/modules/data/photos/client"
 import type { MapIntent } from "@/modules/workspace/contracts"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
+import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 import { workspaceCanMutate } from "@/modules/workspace/state/slices/workspace-document-slice"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import AgentSync from "@/modules/workbench/ui/AgentSync"
 import PhotoSync from "./PhotoSync"
-import TransitPlanSync from "./TransitPlanSync"
 
 export function dispatchMapIntent(intent: MapIntent) {
   const state = useWorkspaceStore.getState()
@@ -66,7 +65,7 @@ export function dispatchMapIntent(intent: MapIntent) {
     intent.type === "map.event-hover-cleared"
   ) {
     const view = getJourneyScopeProjection(
-      selectWorkspaceGraph(state),
+      selectWorkspaceJourneyView(state),
       state.viewLevel,
       state.activeSectionEventId
     )
@@ -139,7 +138,6 @@ export default function WorkspaceController() {
     <>
       <AgentSync />
       <PhotoSync />
-      <TransitPlanSync />
     </>
   )
 }

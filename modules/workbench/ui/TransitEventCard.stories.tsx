@@ -84,24 +84,16 @@ const transitEvent = {
 
 function InteractiveTransitEventCard() {
   const [selected, setSelected] = useState(true)
-  const [selectedPlanId, setSelectedPlanId] = useState(defaultPlanId)
 
   return (
     <TransitEventCard
-      event={{
-        ...transitEvent,
-        detail: { ...transitEvent.detail, selectedPlanId },
-      }}
+      event={transitEvent}
       selected={selected}
       onSelect={() => setSelected((current) => !current)}
-      onSelectPlan={setSelectedPlanId}
       planningRuns={[planningRun]}
       resolved={transitResolved}
       fromTitle="西安城墙"
       toTitle="大雁塔"
-      pendingPlanId={null}
-      selectionBlocked={false}
-      selectionError={null}
     />
   )
 }
@@ -120,14 +112,10 @@ const meta = {
     event: transitEvent,
     selected: true,
     onSelect: fn(),
-    onSelectPlan: fn(),
     planningRuns: [planningRun],
     resolved: transitResolved,
     fromTitle: "西安城墙",
     toTitle: "大雁塔",
-    pendingPlanId: null,
-    selectionBlocked: false,
-    selectionError: null,
   },
 } satisfies Meta<typeof TransitEventCard>
 

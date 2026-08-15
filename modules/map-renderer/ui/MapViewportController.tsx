@@ -6,7 +6,7 @@ import { plannedLocationOf } from "@/lib/journeys/locations"
 import { selectedTransitPlan } from "@/lib/journeys/planning"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import {
-  selectWorkspaceGraph,
+  selectWorkspaceJourneyView,
   useWorkspaceViewportInsets,
 } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
@@ -23,7 +23,7 @@ function offsetForInsets(
 
 export default function MapViewportController() {
   const map = useWorkspaceStore((state) => state.map)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId

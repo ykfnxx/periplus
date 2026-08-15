@@ -13,7 +13,7 @@ import {
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
   selectWorkspaceCanMutate,
-  selectWorkspaceGraph,
+  selectWorkspaceJourneyView,
 } from "@/modules/workspace/state/selectors"
 import type { ActiveMapPanel } from "@/modules/workspace/state/types"
 import PhotoUploadPanel from "./PhotoUploadPanel"
@@ -33,7 +33,7 @@ const controls: Array<{
 export default function WorkspaceCornerControls() {
   const [menuOpen, setMenuOpen] = useState(false)
   const map = useWorkspaceStore((state) => state.map)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
   const activeMapPanel = useWorkspaceStore((state) => state.activeMapPanel)
   const setActiveMapPanel = useWorkspaceStore(

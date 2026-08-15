@@ -31,4 +31,6 @@ export const createAgentSlice: WorkspaceSlice<AgentSlice> = (set) => ({
   clearChatMessages: () => set({ chatMessages: [] }),
   sendAgentEvent: null,
   setAgentSender: (sendAgentEvent) => set({ sendAgentEvent }),
+  agentRunStage: null,
+  setAgentRunStage: (agentRunStage) => set({ agentRunStage }),
 })

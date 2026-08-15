@@ -5,6 +5,7 @@ import {
   type TransitPlanFailure,
   type TransitPlanRequest,
 } from "@/lib/journeys/planning"
+import { canonicalizeTransitPlanRequest } from "@/lib/journeys/coordinates"
 import type { AuthContext } from "@/modules/auth/server/context"
 import {
   targetTransitPlanningRunSchema,
@@ -85,8 +86,19 @@ export class TransitPlanningService {
   }
 
   plan(request: TransitPlanRequest, usageContext?: TransitPlanUsageContext) {
+    let canonicalRequest: TransitPlanRequest
+    try {
+      canonicalRequest = canonicalizeTransitPlanRequest(request)
+    } catch (error) {
+      throw new TransitProviderError(
+        "INVALID_ENDPOINT",
+        error instanceof Error
+          ? error.message
+          : "Transit endpoint canonicalization failed"
+      )
+    }
     const dedupeKey = JSON.stringify({
-      ...request,
+      ...canonicalRequest,
       transitEventId: undefined,
       usageContext: {
         userId: usageContext?.userId,
@@ -103,7 +115,7 @@ export class TransitPlanningService {
     }
 
     const pending = this.enqueue(() =>
-      this.planWithRetry(request, usageContext)
+      this.planWithRetry(canonicalRequest, usageContext)
     )
       .then((bundle) => rekeyBundle(bundle, request.transitEventId))
       .finally(() => {
@@ -153,7 +165,18 @@ export class TransitPlanningService {
     request: TransitPlanRequest,
     options: { expectedRevision: number; idempotencyKey: string }
   ): Promise<PersistedTransitPlanningResult> {
-    const requestFingerprint = transitPlanFingerprint(request)
+    let canonicalRequest: TransitPlanRequest
+    try {
+      canonicalRequest = canonicalizeTransitPlanRequest(request)
+    } catch (error) {
+      throw new TransitProviderError(
+        "INVALID_ENDPOINT",
+        error instanceof Error
+          ? error.message
+          : "Transit endpoint canonicalization failed"
+      )
+    }
+    const requestFingerprint = transitPlanFingerprint(canonicalRequest)
     const runId = transitRunId(
       journeyId,
       request.transitEventId,
@@ -201,7 +224,7 @@ export class TransitPlanningService {
 
     let bundle: TransitPlanBundle
     try {
-      bundle = await this.plan(request, {
+      bundle = await this.plan(canonicalRequest, {
         userId: context.userId,
         requestId: options.idempotencyKey,
       })

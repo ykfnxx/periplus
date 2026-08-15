@@ -12,8 +12,10 @@ import {
 } from "@/lib/journeys/projections"
 import { totalDurationDays } from "@/lib/journeys/summary"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { selectWorkspaceGraph } from "@/modules/workspace/state/selectors"
-import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
+import {
+  selectWorkspaceJourneyView,
+  selectWorkspaceLocked,
+} from "@/modules/workspace/state/selectors"
 import RouteOverview from "./RouteOverview"
 import RouteScopeTabs from "./RouteScopeTabs"
 import RouteTimeline from "./RouteTimeline"
@@ -33,16 +35,14 @@ export default function RoutePreview({
   const dayNavigationLockedRef = useRef(false)
   const dayNavigationTimeoutRef = useRef<number | null>(null)
   const [activeDayKey, setActiveDayKey] = useState<string | null>(null)
-  const graph = useWorkspaceStore(selectWorkspaceGraph)
+  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const viewLevel = useWorkspaceStore((state) => state.viewLevel)
   const activeSectionEventId = useWorkspaceStore(
     (state) => state.activeSectionEventId
   )
-  const workspaceCommitState = useWorkspaceStore(
-    (state) => state.workspaceCommitState
-  )
-  const workspaceDraftState = useWorkspaceStore(
-    (state) => state.workspaceDocument?.draftState ?? "CLEAN"
+  const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const commitPresentation = useWorkspaceStore(
+    (state) => state.journeyCommitPresentation
   )
   const view = getJourneyScopeProjection(graph, viewLevel, activeSectionEventId)
   const dayProjection = useMemo(() => {
@@ -166,10 +166,7 @@ export default function RoutePreview({
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <SaveState
-              state={workspaceCommitState}
-              draftState={workspaceDraftState}
-            />
+            <RevisionState planning={isWorkspaceLocked} />
             {onCollapse ? (
               <button
                 type="button"
@@ -190,12 +187,28 @@ export default function RoutePreview({
         />
       </header>
 
+      {commitPresentation ? (
+        <div
+          role="status"
+          className="mx-5 mt-2 rounded-xl border border-mustard/45 bg-mustard/10 px-4 py-3 text-walnut"
+        >
+          <p className="text-[10px] font-black tracking-[0.08em] text-ink">
+            行程已更新
+          </p>
+          <p className="mt-1 text-xs leading-5 font-bold">
+            {commitPresentation.summary}
+          </p>
+        </div>
+      ) : null}
+
       {view.events.length === 0 && view.level === "overview" ? (
         <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
           路线尚无地点，可以在 AI 面板中添加第一站。
         </div>
       ) : view.level === "overview" ? (
-        <RouteOverview />
+        <RouteOverview
+          changedEventIds={commitPresentation?.changedEventIds ?? []}
+        />
       ) : view.isEmptySection ? (
         <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
           这个城市还没有安排地点，可以在 AI 面板中继续规划。
@@ -205,58 +218,26 @@ export default function RoutePreview({
           items={view.items}
           dayProjection={dayProjection}
           onActiveDayChange={handleActiveDayChange}
+          changedEventIds={commitPresentation?.changedEventIds ?? []}
         />
       )}
     </div>
   )
 }
 
-function SaveState({
-  state,
-  draftState,
-}: {
-  state: ReturnType<typeof useWorkspaceStore.getState>["workspaceCommitState"]
-  draftState: TargetWorkspaceDocument["draftState"]
-}) {
-  const displayState =
-    state === "saving"
-      ? "saving"
-      : state === "error"
-        ? "failed"
-        : draftState === "CONFLICT"
-          ? "conflict"
-          : draftState === "STALE"
-            ? "stale"
-            : draftState === "DIRTY"
-              ? "dirty"
-              : "saved"
-  const label =
-    displayState === "saving"
-      ? "保存中"
-      : displayState === "failed"
-        ? "保存失败"
-        : displayState === "conflict"
-          ? "保存冲突"
-          : displayState === "stale"
-            ? "需要刷新"
-            : displayState === "dirty"
-              ? "未保存"
-              : "已保存"
-  const colors =
-    displayState === "failed" || displayState === "conflict"
-      ? { dot: "bg-coral", text: "text-coral" }
-      : displayState === "saving" ||
-          displayState === "dirty" ||
-          displayState === "stale"
-        ? { dot: "bg-mustard", text: "text-teak" }
-        : { dot: "bg-olive", text: "text-olive" }
-
+function RevisionState({ planning }: { planning: boolean }) {
   return (
     <span
-      className={`mt-1.5 flex items-center gap-2 text-[10px] font-black ${colors.text}`}
+      className={`mt-1.5 flex items-center gap-2 text-[10px] font-black ${
+        planning ? "text-teak" : "text-olive"
+      }`}
     >
-      <span className={`h-2.5 w-2.5 rounded-full ${colors.dot}`} />
-      {label}
+      <span
+        className={`h-2.5 w-2.5 rounded-full ${
+          planning ? "bg-mustard" : "bg-olive"
+        }`}
+      />
+      {planning ? "当前版本" : "已保存"}
     </span>
   )
 }

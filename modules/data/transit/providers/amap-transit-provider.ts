@@ -4,7 +4,7 @@ import {
   parseDirectionPolylines,
   type LngLatTuple,
 } from "@/lib/journeys/transit-geometry"
-import { endpointToGcj02 } from "@/lib/journeys/coordinates"
+import { canonicalizeTransitPlanRequest } from "@/lib/journeys/coordinates"
 import {
   transitPlanFingerprint,
   type TransitPlan,
@@ -105,11 +105,7 @@ export class AMapTransitProvider {
         "缺少 PERIPLUS_AMAP_WEB_SERVICE_KEY"
       )
     }
-    const request = {
-      ...input,
-      origin: endpointToGcj02(input.origin),
-      destination: endpointToGcj02(input.destination),
-    }
+    const request = canonicalizeTransitPlanRequest(input)
     const fingerprint = transitPlanFingerprint(request)
 
     if (request.mode === "TRANSIT") {
