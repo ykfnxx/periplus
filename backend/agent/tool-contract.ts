@@ -268,7 +268,6 @@ export const eventRemoveToolSchema = z
 
 export const pathReadToolSchema = z.object({}).strict()
 
-export const pathValidateToolSchema = z.object({}).strict()
 export const pathCommitToolSchema = z.object({}).strict()
 
 export const agentToolRequestSchema = z.union([
@@ -282,7 +281,6 @@ export const agentToolRequestSchema = z.union([
   eventUpdateToolSchema.extend({ type: z.literal("event.update") }),
   eventMoveToolSchema.extend({ type: z.literal("event.move") }),
   eventRemoveToolSchema.extend({ type: z.literal("event.remove") }),
-  pathValidateToolSchema.extend({ type: z.literal("path.validate") }),
   pathCommitToolSchema.extend({ type: z.literal("path.commit") }),
 ])
 

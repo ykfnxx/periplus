@@ -553,7 +553,6 @@ export class PeriplusAgentHarness {
           timeZone: "Asia/Shanghai",
           committedJourney: modelVisibleJourney(request.baseline),
           limits: {
-            semanticRevisionRemaining: 5,
             webSearchRemaining: this.options.webSearchEnabled ? 3 : 0,
           },
         },

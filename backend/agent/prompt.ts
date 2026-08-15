@@ -39,7 +39,7 @@ export function buildPrompt() {
     "",
     "# Completion",
     "",
-    "- The task is successful only after a tool confirms that the journey was committed. A planned, resolved, or validated journey is not yet committed.",
+    "- The task is successful only after path.commit confirms that the current journey was validated and committed. A planned, resolved, or materialized journey is not yet committed.",
     "- After commit, give one concise user-facing summary of the resulting journey and the important choices. Do not expose tool calls or internal state.",
     "- If the run ends without commit, state clearly that the committed journey did not change. Ask only for information that is genuinely required and cannot be derived from the current request or committed context.",
     "- Before finishing, re-read the user's latest request and verify that the result satisfies it.",

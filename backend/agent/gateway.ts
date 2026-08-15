@@ -1040,6 +1040,9 @@ export class AgentGateway {
         "Run hotel.search for the same CITY used by stay.add"
       )
     }
+    if (message.startsWith("PATH_COMPILER_CONTRACT_ERROR")) {
+      return nonRetryableError("PATH_COMPILER_CONTRACT_ERROR", message)
+    }
     if (
       /COMMITTED|SUMMARY_UNAVAILABLE|BASE_REVISION|PATH_REVISION_LIMIT|PROVIDER_CONTRACT/.test(
         message
@@ -1086,8 +1089,9 @@ export class AgentGateway {
             ? canonical.received
             : received,
         planningState,
-        remainingBudget:
-          canonical.remainingBudget ?? planningState.semanticRevisionRemaining,
+        ...(canonical.remainingBudget === undefined
+          ? {}
+          : { remainingBudget: canonical.remainingBudget }),
       }
     }
     const data =
@@ -1099,9 +1103,7 @@ export class AgentGateway {
         ? "STOP"
         : typeof data?.nextAction === "string"
           ? data.nextAction
-          : request.type === "path.validate"
-            ? "REVISE"
-            : "CONTINUE"
+          : "CONTINUE"
     return {
       ...canonical,
       ...(running.planningSession.latestStateDelta()
@@ -1154,8 +1156,7 @@ export class AgentGateway {
     }
     const request = parsedRequest.data
     const fingerprint = JSON.stringify(request)
-    const requestIsReplayable =
-      request.type !== "path.validate" && request.type !== "path.commit"
+    const requestIsReplayable = request.type !== "path.commit"
     const replay = running.toolCallResults.get(toolCallId)
     if (replay) {
       if (replay.fingerprint === fingerprint) return replay.result
@@ -1226,7 +1227,7 @@ export class AgentGateway {
       const stage =
         request.type === "place.search" || request.type === "hotel.search"
           ? "VERIFYING_PLACES"
-          : request.type === "route.search" || request.type === "path.validate"
+          : request.type === "route.search"
             ? "CHECKING_ROUTE"
             : request.type === "path.commit"
               ? "COMMITTING"
@@ -1298,35 +1299,34 @@ export class AgentGateway {
         result = ok(running.planningSession.moveEvent(request))
       } else if (request.type === "event.remove") {
         result = ok(running.planningSession.removeEvent(request))
-      } else if (request.type === "path.validate") {
-        const validation = await running.planningSession.validate(toolCallId)
+      } else if (request.type === "path.commit") {
+        const commit = await running.planningSession.commit(toolCallId)
         await this.trace(running, {
           type: "validator.completed",
           spanId: randomUUID(),
           parentSpanId: toolSpanId,
-          status: "OK",
+          status: commit.committed ? "OK" : "ERROR",
           payload: {
-            valid: validation.valid,
-            issueCodes: validation.issues.map((issue) => issue.code),
-            changeLog: true,
+            valid: commit.committed,
+            issueCodes: commit.issues.map((issue) => issue.code),
+            source: "current_materialized_path",
           },
         })
-        result =
-          !validation.valid && validation.nextAction === "TERMINAL"
-            ? nonRetryableError(
-                "PATH_REVISION_LIMIT_EXHAUSTED",
-                "The candidate path is still invalid after the allowed semantic revisions",
-                validation
-              )
-            : ok(validation)
-      } else if (request.type === "path.commit") {
-        const committed = await running.planningSession.commit(toolCallId)
-        running.requiresPlanValidation = true
-        running.committedRevision = committed.newWorkspaceRevision
-        running.committedProjectionHash = committed.projectionHash
-        running.committedSummary = committed.summary
-        running.committedChangedEventIds = committed.changedEventIds
-        result = ok(committed)
+        if (!commit.committed) {
+          result = retryableError(
+            "PATH_COMMIT_BLOCKED",
+            "The current candidate path is incomplete or invalid; no Workspace revision was written",
+            commit,
+            { allowedNextAction: commit.nextAction }
+          )
+        } else {
+          running.requiresPlanValidation = true
+          running.committedRevision = commit.newWorkspaceRevision
+          running.committedProjectionHash = commit.projectionHash
+          running.committedSummary = commit.summary
+          running.committedChangedEventIds = commit.changedEventIds
+          result = ok(commit)
+        }
       }
     } catch (error) {
       result = this.toolFailure(request, error)

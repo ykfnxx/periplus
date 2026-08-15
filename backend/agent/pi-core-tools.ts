@@ -11,7 +11,6 @@ import {
   hotelSearchToolSchema,
   pathCommitToolSchema,
   pathReadToolSchema,
-  pathValidateToolSchema,
   placeSearchToolSchema,
   routeSearchToolSchema,
   type AgentToolRequest,
@@ -155,19 +154,10 @@ const definitions: PeriplusToolDefinition[] = [
     sequential: true,
   },
   {
-    canonicalName: "path.validate",
-    label: "Validate path",
-    description:
-      "Run the deterministic invariant safety net only after the latest materialized path reports no route/stay requirements or conflicts. Normal candidate-driven planning should validate once. A valid result permits commit; pending requirements must be completed with search plus event.add rather than repaired by hand-written cards.",
-    input: pathValidateToolSchema,
-    requestType: "path.validate",
-    sequential: true,
-  },
-  {
     canonicalName: "path.commit",
     label: "Commit path",
     description:
-      "Atomically commit the most recent still-valid candidate path as one new Workspace revision. Call only immediately after path.validate returns valid with COMMIT as allowedNextAction and do not call another planning tool afterward. This is the only tool that changes the committed journey; an ok result is the mechanical end of the Agent run.",
+      "Ask the backend to validate the current authoritative candidate path and atomically commit it as one new Workspace revision. If current route/stay requirements or invariants are incomplete, the tool returns the exact current blockers without writing the Workspace. This is the only tool that changes the committed journey; an ok committed result is the mechanical end of the Agent run.",
     input: pathCommitToolSchema,
     requestType: "path.commit",
     sequential: true,
