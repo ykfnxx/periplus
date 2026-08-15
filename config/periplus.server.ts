@@ -112,7 +112,7 @@ export const periplusServerConfig = {
       return envString("PERIPLUS_AGENT_WEB_SEARCH_ENABLED") === "true"
     },
     get timeoutMs() {
-      return envNumber("PERIPLUS_AGENT_TIMEOUT_MS", 120000)
+      return envNumber("PERIPLUS_AGENT_TIMEOUT_MS", 360000)
     },
   },
 } as const
