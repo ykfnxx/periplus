@@ -1,28 +1,46 @@
 import { createHash } from "node:crypto"
 import type { AuthContext } from "@/modules/auth/server/context"
 import type { HotelCandidate, HotelProviderWarning } from "@/lib/hotels/types"
-import type { PlaceResolveResult, PlaceRef } from "@/lib/places/types"
+import type {
+  PlaceResolveResult,
+  PlaceRef,
+  PlaceSearchResponse,
+} from "@/lib/places/types"
+import { placeRefFromResult } from "@/modules/data/places/place-service"
 import type {
   TransitPlanBundle,
   TransitPlanEndpoint,
 } from "@/lib/journeys/planning"
-import { normalizePlaceName } from "@/lib/places/normalize"
 import { projectFlatJourney } from "@/modules/data/journeys/flat-journey-projection"
 import type { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
 import { AgentDraftSession } from "./draft-session"
 import { baselineItemKey, type PlannerBaseline } from "./planner-baseline"
-import type { ParsedAgentToolRequest, PathEventInput } from "./tool-contract"
+import type {
+  MaterializedPathEvent,
+  ParsedAgentToolRequest,
+  ScheduleIntent,
+} from "./tool-contract"
 
-type PlaceRequest = Extract<ParsedAgentToolRequest, { type: "place.resolve" }>
+type PlaceRequest = Extract<ParsedAgentToolRequest, { type: "place.search" }>
 type HotelRequest = Extract<ParsedAgentToolRequest, { type: "hotel.search" }>
-type RouteRequest = Extract<ParsedAgentToolRequest, { type: "route.resolve" }>
+type RouteRequest = Extract<ParsedAgentToolRequest, { type: "route.search" }>
+type EventAddRequest = Extract<ParsedAgentToolRequest, { type: "event.add" }>
+type EventUpdateRequest = Extract<
+  ParsedAgentToolRequest,
+  { type: "event.update" }
+>
+type EventMoveRequest = Extract<ParsedAgentToolRequest, { type: "event.move" }>
+type EventRemoveRequest = Extract<
+  ParsedAgentToolRequest,
+  { type: "event.remove" }
+>
 
 type PlanningLogEntry =
   | {
       sequence: number
       type: "FACT_RESOLVED"
-      subject: "CITY" | "PLACE" | "HOTEL" | "ROUTE"
+      subject: "PLACE" | "HOTEL" | "ROUTE"
       proposalItemKey: string
       summary: string
       data: Record<string, unknown>
@@ -30,7 +48,7 @@ type PlanningLogEntry =
   | {
       sequence: number
       type: "FACT_REJECTED"
-      subject: "CITY" | "PLACE" | "HOTEL" | "ROUTE"
+      subject: "PLACE" | "HOTEL" | "ROUTE"
       proposalItemKey: string
       code: string
       message: string
@@ -45,7 +63,7 @@ type PlanningLogEntry =
   | {
       sequence: number
       type: "EVENT_APPENDED"
-      event: PathEventInput
+      event: MaterializedPathEvent
       afterItemKey: string | null
       reason: string
     }
@@ -53,7 +71,7 @@ type PlanningLogEntry =
       sequence: number
       type: "EVENT_REPLACED"
       itemKey: string
-      event: PathEventInput
+      event: MaterializedPathEvent
       reason: string
     }
   | {
@@ -73,22 +91,31 @@ type NewPlanningLogEntry<T = PlanningLogEntry> = T extends PlanningLogEntry
   ? Omit<T, "sequence">
   : never
 
-type CityFact = {
-  query: string
-  proposalItemKey: string
-  canonicalName: string
-  location: PlaceRef
-  timeZone: string
-  administrativeLevel: "province" | "city"
-}
 type PlaceFact = {
-  request: PlaceRequest
+  cityLabel: string
   resolved: Extract<PlaceResolveResult, { status: "resolved" }>
 }
 type HotelFact = {
-  request: HotelRequest
+  cityLabel: string
   candidate: HotelCandidate
   warnings: HotelProviderWarning[]
+}
+type RouteFact = { requirementId: string; bundle: TransitPlanBundle }
+
+interface RouteRequirement {
+  routeRequirementId: string
+  fromItemKey: string
+  toItemKey: string
+  earliestDepartAt: string
+}
+
+interface StayRequirement {
+  stayRequirementId: string
+  cityLabel: string
+  checkInDate: string
+  checkOutDate: string
+  nights: number
+  anchorItemKeys: [string, string]
 }
 
 interface FoldResult {
@@ -104,11 +131,12 @@ interface ValidatedFold extends FoldResult {
 
 const MAX_PATH_VALIDATIONS = 6
 const MAX_CHANGE_LOG_ENTRIES = 256
-const CITY_SUFFIX = /(?:特别行政区|自治州|地区|盟|省|市)$/u
-
-function cityFactKey(value: string) {
-  return normalizePlaceName(value).replace(CITY_SUFFIX, "")
-}
+const DAY_MS = 86_400_000
+const DEFAULT_DURATION_MINUTES = {
+  VISIT: 120,
+  MEAL: 90,
+  ACTIVITY: 120,
+} as const
 
 function nextSequence(entries: PlanningLogEntry[]) {
   return (entries.at(-1)?.sequence ?? 0) + 1
@@ -133,13 +161,35 @@ function changedEventKeys(entries: PlanningLogEntry[]) {
 
 export class PlanningSession {
   private readonly entries: PlanningLogEntry[] = []
-  private readonly cityFacts = new Map<string, CityFact>()
+  private readonly placeSelections = new Map<
+    string,
+    {
+      search: PlaceRequest
+      cityLabel: string
+      resolved: Extract<PlaceResolveResult, { status: "resolved" }>
+    }
+  >()
+  private readonly hotelSelections = new Map<
+    string,
+    {
+      requirementId: string
+      cityLabel: string
+      candidate: HotelCandidate
+      warnings: HotelProviderWarning[]
+    }
+  >()
+  private readonly routeSelections = new Map<
+    string,
+    {
+      requirementId: string
+      bundle: TransitPlanBundle
+      transportMode: NonNullable<RouteRequest["modePreference"]>
+      preference: NonNullable<RouteRequest["routePreference"]>
+    }
+  >()
   private readonly placeFacts = new Map<string, PlaceFact>()
   private readonly hotelFacts = new Map<string, HotelFact>()
-  private readonly routeFacts = new Map<
-    string,
-    { request: RouteRequest; bundle: TransitPlanBundle }
-  >()
+  private readonly routeFacts = new Map<string, RouteFact>()
   private validated: ValidatedFold | null = null
   private validationCount = 0
 
@@ -148,7 +198,8 @@ export class PlanningSession {
     private readonly runId: string,
     private readonly authContext: AuthContext,
     private readonly commands: WorkspaceCommandService,
-    private readonly baseline: PlannerBaseline
+    private readonly baseline: PlannerBaseline,
+    private readonly defaultTripStartDate: string
   ) {}
 
   private append(entry: NewPlanningLogEntry) {
@@ -160,68 +211,69 @@ export class PlanningSession {
       ...entry,
     } as PlanningLogEntry
     this.entries.push(appended)
-    this.validated = null
+    if (
+      appended.type === "EVENT_APPENDED" ||
+      appended.type === "EVENT_REPLACED" ||
+      appended.type === "EVENT_REMOVED"
+    ) {
+      this.validated = null
+    }
     return appended
   }
 
-  cityFact(query: string) {
-    return this.cityFacts.get(cityFactKey(query))
-  }
-
-  recordCity(
-    query: string,
-    proposalItemKey: string,
-    canonicalName: string,
-    location: PlaceRef,
-    timeZone: string,
-    administrativeLevel: "province" | "city"
-  ) {
-    const existing = this.cityFacts.get(cityFactKey(query))
-    if (existing) return existing
-    const fact: CityFact = {
-      query,
-      proposalItemKey,
-      canonicalName,
-      location,
-      timeZone,
-      administrativeLevel,
+  recordPlaceSearch(request: PlaceRequest, response: PlaceSearchResponse) {
+    const actionable = response.results.filter(
+      (candidate) =>
+        candidate.name.trim() &&
+        Number.isFinite(candidate.bestCoordinate.lat) &&
+        Number.isFinite(candidate.bestCoordinate.lng) &&
+        candidate.sources.length > 0
+    )
+    const candidates = actionable.map((candidate, index) => {
+      const selectionId = this.selectionId("place", {
+        request,
+        provider: candidate.bestCoordinate.provider,
+        candidateId: candidate.id,
+      })
+      const cityLabel = (candidate.city ?? candidate.province ?? request.city)
+        .trim()
+        .replace(/\s+/gu, " ")
+      const resolved: Extract<PlaceResolveResult, { status: "resolved" }> = {
+        status: "resolved",
+        place: candidate,
+        placeRef: placeRefFromResult(candidate, actionable),
+        warnings: response.warnings,
+        providerAttempts: response.providerAttempts,
+      }
+      this.placeSelections.set(selectionId, {
+        search: request,
+        cityLabel,
+        resolved,
+      })
+      return {
+        selectionId,
+        name: candidate.name,
+        cityLabel,
+        category: candidate.category,
+        address: candidate.address,
+        image: candidate.images?.[0]?.url,
+        rank: index + 1,
+      }
+    })
+    if (candidates[0]) {
+      this.append({
+        type: "FACT_RESOLVED",
+        subject: "PLACE",
+        proposalItemKey: candidates[0].selectionId,
+        summary: `${request.query} → ${candidates.length} candidates`,
+        data: { city: request.city, count: candidates.length },
+      })
     }
-    this.cityFacts.set(cityFactKey(query), fact)
-    this.cityFacts.set(cityFactKey(canonicalName), fact)
-    this.append({
-      type: "FACT_RESOLVED",
-      subject: "CITY",
-      proposalItemKey,
-      summary: `${query} → ${canonicalName}`,
-      data: { name: canonicalName, timeZone, administrativeLevel },
-    })
-    return fact
-  }
-
-  recordPlace(
-    request: PlaceRequest,
-    resolved: Extract<PlaceResolveResult, { status: "resolved" }>
-  ) {
-    this.placeFacts.set(request.proposalItemKey, { request, resolved })
-    this.append({
-      type: "FACT_RESOLVED",
-      subject: "PLACE",
-      proposalItemKey: request.proposalItemKey,
-      summary: `${request.query} → ${resolved.placeRef.canonicalName}（${resolved.placeRef.city ?? request.cityQuery}）`,
-      data: {
-        name: resolved.placeRef.canonicalName,
-        city: resolved.placeRef.city ?? request.cityQuery,
-        address: resolved.placeRef.address,
-        category: resolved.place.category,
-      },
-    })
     return {
-      proposalItemKey: request.proposalItemKey,
-      name: resolved.placeRef.canonicalName,
-      city: resolved.placeRef.city ?? request.cityQuery,
-      address: resolved.placeRef.address,
-      category: resolved.place.category,
-      nextAction: "APPEND_EVENT" as const,
+      candidates,
+      recommendedSelectionId: candidates[0]?.selectionId,
+      warnings: response.warnings,
+      nextAction: candidates.length ? ("ADD_OR_SEARCH" as const) : undefined,
     }
   }
 
@@ -230,15 +282,22 @@ export class PlanningSession {
     code: string,
     message: string
   ) {
-    const subject = request.type.startsWith("place.")
-      ? ("PLACE" as const)
-      : request.type.startsWith("hotel.")
-        ? ("HOTEL" as const)
-        : ("ROUTE" as const)
+    const subject =
+      request.type === "place.search"
+        ? ("PLACE" as const)
+        : request.type === "hotel.search"
+          ? ("HOTEL" as const)
+          : ("ROUTE" as const)
+    const proposalItemKey =
+      request.type === "place.search"
+        ? `${request.city}:${request.query}`
+        : request.type === "hotel.search"
+          ? request.stayRequirementId
+          : request.routeRequirementId
     this.append({
       type: "FACT_REJECTED",
       subject,
-      proposalItemKey: request.proposalItemKey,
+      proposalItemKey,
       code,
       message,
     })
@@ -248,40 +307,80 @@ export class PlanningSession {
     this.append({ type: "TOOL_REJECTED", tool, code, message })
   }
 
-  recordHotel(
-    request: HotelRequest,
-    candidate: HotelCandidate,
-    warnings: HotelProviderWarning[]
-  ) {
-    this.hotelFacts.set(request.proposalItemKey, {
-      request,
-      candidate,
-      warnings,
-    })
-    this.append({
-      type: "FACT_RESOLVED",
-      subject: "HOTEL",
-      proposalItemKey: request.proposalItemKey,
-      summary: `${request.cityQuery}住宿 → ${candidate.name}`,
-      data: {
-        name: candidate.name,
-        address: candidate.address,
-        startingPrice: candidate.startingPrice,
-      },
-    })
+  hotelSearchInput(request: HotelRequest) {
+    const requirement = this.requirements().stayRequirements.find(
+      (candidate) => candidate.stayRequirementId === request.stayRequirementId
+    )
+    if (!requirement) {
+      throw new WorkspaceInputError("STALE_STAY_REQUIREMENT")
+    }
     return {
-      proposalItemKey: request.proposalItemKey,
-      name: candidate.name,
-      address: candidate.address,
-      startingPrice: candidate.startingPrice,
-      nextAction: "APPEND_EVENT" as const,
+      originQuery: request.preference ?? requirement.cityLabel,
+      place: requirement.cityLabel,
+      placeType: "城市" as const,
+      checkInDate: requirement.checkInDate,
+      stayNights: requirement.nights,
+      adultCount: 1,
+      size: 5,
+      requirement,
     }
   }
 
-  routeEndpoints(request: RouteRequest) {
+  recordHotelSearch(
+    request: HotelRequest,
+    candidates: HotelCandidate[],
+    warnings: HotelProviderWarning[]
+  ) {
+    const requirement = this.requirements().stayRequirements.find(
+      (candidate) => candidate.stayRequirementId === request.stayRequirementId
+    )
+    if (!requirement) throw new WorkspaceInputError("STALE_STAY_REQUIREMENT")
+    const selections = candidates.map((candidate, index) => {
+      const selectionId = this.selectionId("hotel", {
+        requirementId: requirement.stayRequirementId,
+        providerHotelId: candidate.providerHotelId,
+      })
+      this.hotelSelections.set(selectionId, {
+        requirementId: requirement.stayRequirementId,
+        cityLabel: requirement.cityLabel,
+        candidate,
+        warnings,
+      })
+      return {
+        selectionId,
+        name: candidate.name,
+        address: candidate.address,
+        startingPrice: candidate.startingPrice,
+        image: candidate.imageUrl,
+        rank: index + 1,
+      }
+    })
+    if (selections[0]) {
+      this.append({
+        type: "FACT_RESOLVED",
+        subject: "HOTEL",
+        proposalItemKey: requirement.stayRequirementId,
+        summary: `${requirement.cityLabel}住宿 → ${selections.length} candidates`,
+        data: { count: selections.length },
+      })
+    }
     return {
-      origin: this.endpointForItem(request.fromItemKey),
-      destination: this.endpointForItem(request.toItemKey),
+      candidates: selections,
+      recommendedSelectionId: selections[0]?.selectionId,
+      warnings,
+      nextAction: selections.length ? ("ADD_HOTEL" as const) : undefined,
+    }
+  }
+
+  routeSearchInput(request: RouteRequest) {
+    const requirement = this.requirements().routeRequirements.find(
+      (candidate) => candidate.routeRequirementId === request.routeRequirementId
+    )
+    if (!requirement) throw new WorkspaceInputError("STALE_ROUTE_REQUIREMENT")
+    return {
+      requirement,
+      origin: this.endpointForItem(requirement.fromItemKey),
+      destination: this.endpointForItem(requirement.toItemKey),
     }
   }
 
@@ -314,151 +413,286 @@ export class PlanningSession {
     throw new WorkspaceInputError(`Missing route endpoint fact ${itemKey}`)
   }
 
-  recordRoute(request: RouteRequest, bundle: TransitPlanBundle) {
-    const selected = bundle.plans[0]
-    if (!selected) throw new WorkspaceInputError("ROUTE_NOT_FOUND")
-    const normalizedRequest: RouteRequest = {
-      ...request,
-      transportMode: request.transportMode ?? "WALK",
-      preference: request.preference ?? "RECOMMENDED",
+  recordRouteSearch(request: RouteRequest, bundle: TransitPlanBundle) {
+    const requirement = this.requirements().routeRequirements.find(
+      (candidate) => candidate.routeRequirementId === request.routeRequirementId
+    )
+    if (!requirement) throw new WorkspaceInputError("STALE_ROUTE_REQUIREMENT")
+    const selections = bundle.plans.map((plan, index) => {
+      const selectionId = this.selectionId("route", {
+        requirementId: requirement.routeRequirementId,
+        fingerprint: bundle.requestFingerprint,
+        planId: plan.id,
+      })
+      this.routeSelections.set(selectionId, {
+        requirementId: requirement.routeRequirementId,
+        bundle: { ...bundle, plans: [plan] },
+        transportMode: request.modePreference ?? "WALK",
+        preference: request.routePreference ?? "RECOMMENDED",
+      })
+      return {
+        selectionId,
+        mode: plan.segments[0]?.mode,
+        durationMinutes: Math.ceil(plan.durationSeconds / 60),
+        distanceKm: plan.distanceMeters / 1000,
+        routeLabel: plan.label,
+        rank: index + 1,
+      }
+    })
+    if (selections[0]) {
+      this.append({
+        type: "FACT_RESOLVED",
+        subject: "ROUTE",
+        proposalItemKey: requirement.routeRequirementId,
+        summary: `${requirement.fromItemKey} → ${requirement.toItemKey}`,
+        data: { count: selections.length },
+      })
     }
-    this.routeFacts.set(request.proposalItemKey, {
-      request: normalizedRequest,
-      bundle,
-    })
-    this.append({
-      type: "FACT_RESOLVED",
-      subject: "ROUTE",
-      proposalItemKey: request.proposalItemKey,
-      summary: `${request.fromItemKey} → ${request.toItemKey}`,
-      data: {
-        fromItemKey: request.fromItemKey,
-        toItemKey: request.toItemKey,
-        transportMode: normalizedRequest.transportMode,
-        durationMinutes: Math.ceil(selected.durationSeconds / 60),
-        distanceKm: selected.distanceMeters / 1000,
-        routeLabel: selected.label,
-      },
-    })
     return {
-      proposalItemKey: request.proposalItemKey,
-      fromItemKey: request.fromItemKey,
-      toItemKey: request.toItemKey,
-      transportMode: normalizedRequest.transportMode,
-      durationMinutes: Math.ceil(selected.durationSeconds / 60),
-      distanceKm: selected.distanceMeters / 1000,
-      routeLabel: selected.label,
-      nextAction: "APPEND_EVENT" as const,
+      candidates: selections,
+      recommendedSelectionId: selections[0]?.selectionId,
+      nextAction: selections.length ? ("ADD_ROUTE" as const) : undefined,
     }
   }
 
-  appendEvent(
-    request: Extract<ParsedAgentToolRequest, { type: "path.append_event" }>
-  ) {
-    this.assertEventFacts(request.event)
-    const order = this.currentItemOrder()
-    if (order.includes(request.event.proposalItemKey)) {
-      throw new WorkspaceInputError(
-        `Proposal item ${request.event.proposalItemKey} already exists`
-      )
-    }
-    if (request.afterItemKey === null && order.length) {
-      throw new WorkspaceInputError(
-        "afterItemKey may be null only when the path is empty"
-      )
-    }
-    if (
-      request.afterItemKey !== null &&
-      !order.includes(request.afterItemKey)
-    ) {
-      throw new WorkspaceInputError(
-        `Unknown order anchor ${request.afterItemKey}`
-      )
-    }
-    if (request.event.kind === "TRANSIT") {
-      const fromIndex = order.indexOf(request.event.fromItemKey)
-      const toIndex = order.indexOf(request.event.toItemKey)
-      if (
-        fromIndex < 0 ||
-        toIndex !== fromIndex + 1 ||
-        request.afterItemKey !== request.event.fromItemKey
-      ) {
-        throw new WorkspaceInputError(
-          "TRANSIT must be inserted between adjacent non-Transit endpoints"
-        )
+  readPath() {
+    return this.planningState()
+  }
+
+  addEvent(request: EventAddRequest) {
+    if (request.source === "PLACE") {
+      const selection = this.placeSelections.get(request.selectionId)
+      if (!selection) throw new WorkspaceInputError("PLACE_SELECTION_INVALID")
+      if (selection.search.intent !== request.eventType) {
+        throw new WorkspaceInputError("PLACE_SELECTION_TYPE_MISMATCH")
+      }
+      this.assertAnchor(request.afterItemKey)
+      const itemKey = this.itemKey("place", request.selectionId)
+      const event = this.materializePlaceEvent({
+        itemKey,
+        selection,
+        eventType: request.eventType,
+        afterItemKey: request.afterItemKey,
+        scheduleIntent: request.scheduleIntent,
+        notes: request.notes,
+      })
+      this.placeFacts.set(itemKey, {
+        cityLabel: selection.cityLabel,
+        resolved: selection.resolved,
+      })
+      const entry = this.append({
+        type: "EVENT_APPENDED",
+        event,
+        afterItemKey: request.afterItemKey,
+        reason: "selected place candidate",
+      })
+      this.removeStaleDerivedEvents()
+      return {
+        acceptedSequence: entry.sequence,
+        itemKey,
+        materializedEvent: event,
+        nextAction: "COMPLETE_REQUIREMENTS_OR_CONTINUE" as const,
       }
     }
+
+    if (request.source === "HOTEL") {
+      const requirement = this.requirements().stayRequirements.find(
+        (candidate) => candidate.stayRequirementId === request.stayRequirementId
+      )
+      const selection = this.hotelSelections.get(request.selectionId)
+      if (
+        !requirement ||
+        !selection ||
+        selection.requirementId !== requirement.stayRequirementId
+      ) {
+        throw new WorkspaceInputError("STALE_STAY_REQUIREMENT")
+      }
+      const itemKey = this.itemKey("stay", request.selectionId)
+      const startAt = `${requirement.checkInDate}T22:00:00+08:00`
+      const endAt = `${requirement.checkOutDate}T08:00:00+08:00`
+      const event: MaterializedPathEvent = {
+        proposalItemKey: itemKey,
+        kind: "STAY",
+        title: selection.candidate.name,
+        cityQuery: selection.cityLabel,
+        plannedStartAt: startAt,
+        plannedEndAt: endAt,
+        description: request.notes,
+      }
+      this.hotelFacts.set(itemKey, {
+        cityLabel: selection.cityLabel,
+        candidate: selection.candidate,
+        warnings: selection.warnings,
+      })
+      const entry = this.append({
+        type: "EVENT_APPENDED",
+        event,
+        afterItemKey: requirement.anchorItemKeys[0],
+        reason: "selected hotel candidate",
+      })
+      return {
+        acceptedSequence: entry.sequence,
+        itemKey,
+        materializedEvent: event,
+        nextAction: "COMPLETE_REQUIREMENTS" as const,
+      }
+    }
+
+    const requirement = this.requirements().routeRequirements.find(
+      (candidate) => candidate.routeRequirementId === request.routeRequirementId
+    )
+    const selection = this.routeSelections.get(request.selectionId)
+    if (
+      !requirement ||
+      !selection ||
+      selection.requirementId !== requirement.routeRequirementId
+    ) {
+      throw new WorkspaceInputError("STALE_ROUTE_REQUIREMENT")
+    }
+    const plan = selection.bundle.plans[0]
+    if (!plan) throw new WorkspaceInputError("ROUTE_SELECTION_INVALID")
+    const itemKey = this.itemKey("route", request.selectionId)
+    const startAt = requirement.earliestDepartAt
+    const endAt = new Date(
+      Date.parse(startAt) + plan.durationSeconds * 1000
+    ).toISOString()
+    const event: MaterializedPathEvent = {
+      proposalItemKey: itemKey,
+      kind: "TRANSIT",
+      title: plan.label,
+      fromItemKey: requirement.fromItemKey,
+      toItemKey: requirement.toItemKey,
+      transportMode: selection.transportMode,
+      preference: selection.preference,
+      plannedStartAt: startAt,
+      plannedEndAt: endAt,
+      notes: request.notes,
+    }
+    this.routeFacts.set(itemKey, {
+      requirementId: requirement.routeRequirementId,
+      bundle: selection.bundle,
+    })
     const entry = this.append({
       type: "EVENT_APPENDED",
-      event: request.event,
-      afterItemKey: request.afterItemKey,
-      reason: request.reason,
+      event,
+      afterItemKey: requirement.fromItemKey,
+      reason: "selected route candidate",
     })
+    this.shiftFlexibleSuffix(requirement.toItemKey, endAt)
     return {
       acceptedSequence: entry.sequence,
-      proposalItemKey: request.event.proposalItemKey,
-      nextAction: "CONTINUE_OR_VALIDATE" as const,
+      itemKey,
+      materializedEvent: event,
+      nextAction: "COMPLETE_REQUIREMENTS" as const,
     }
   }
 
-  replaceEvent(
-    request: Extract<ParsedAgentToolRequest, { type: "path.replace_event" }>
-  ) {
-    this.assertKnownItem(request.itemKey)
-    this.assertEventFacts(request.event, request.itemKey)
+  updateEvent(request: EventUpdateRequest) {
+    const current = this.materializedEvent(request.itemKey)
+    if (current.kind === "TRANSIT" || current.kind === "STAY") {
+      throw new WorkspaceInputError("DERIVED_EVENT_UPDATE_NOT_ALLOWED")
+    }
+    const selection = request.selectionId
+      ? this.placeSelections.get(request.selectionId)
+      : undefined
+    if (request.selectionId && !selection) {
+      throw new WorkspaceInputError("PLACE_SELECTION_INVALID")
+    }
+    const eventType = request.eventType ?? current.kind
+    if (selection && selection.search.intent !== eventType) {
+      throw new WorkspaceInputError("PLACE_SELECTION_TYPE_MISMATCH")
+    }
     const order = this.currentItemOrder()
-    if (
-      request.event.proposalItemKey !== request.itemKey &&
-      order.includes(request.event.proposalItemKey)
-    ) {
-      throw new WorkspaceInputError(
-        `Proposal item ${request.event.proposalItemKey} already exists`
-      )
-    }
-    if (request.event.kind === "TRANSIT") {
-      const remainingOrder = order.filter(
-        (itemKey) => itemKey !== request.itemKey
-      )
-      const fromIndex = remainingOrder.indexOf(request.event.fromItemKey)
-      const toIndex = remainingOrder.indexOf(request.event.toItemKey)
-      const replacementIndex = order.indexOf(request.itemKey)
-      if (
-        fromIndex < 0 ||
-        toIndex !== fromIndex + 1 ||
-        replacementIndex !== fromIndex + 1
-      ) {
-        throw new WorkspaceInputError(
-          "TRANSIT must replace the slot between adjacent non-Transit endpoints"
-        )
-      }
-    }
+    const index = order.indexOf(request.itemKey)
+    const afterItemKey = index > 0 ? order[index - 1] : null
+    const activeSelection =
+      selection ?? this.selectionFromCurrentEvent(current, eventType)
+    const replacement = this.materializePlaceEvent({
+      itemKey: request.itemKey,
+      selection: activeSelection,
+      eventType,
+      afterItemKey,
+      scheduleIntent: request.scheduleIntent,
+      notes:
+        request.notes === undefined
+          ? current.description
+          : (request.notes ?? undefined),
+      keepSchedule: request.scheduleIntent ? undefined : current,
+    })
+    this.placeFacts.set(request.itemKey, {
+      cityLabel: activeSelection.cityLabel,
+      resolved: activeSelection.resolved,
+    })
     const entry = this.append({
       type: "EVENT_REPLACED",
       itemKey: request.itemKey,
-      event: request.event,
-      reason: request.reason,
+      event: replacement,
+      reason: "semantic event update",
     })
+    this.removeStaleDerivedEvents()
     return {
       acceptedSequence: entry.sequence,
-      replacedItemKey: request.itemKey,
-      proposalItemKey: request.event.proposalItemKey,
-      nextAction: "VALIDATE" as const,
+      itemKey: request.itemKey,
+      materializedEvent: replacement,
+      nextAction: "COMPLETE_REQUIREMENTS_OR_VALIDATE" as const,
     }
   }
 
-  removeEvent(
-    request: Extract<ParsedAgentToolRequest, { type: "path.remove_event" }>
-  ) {
+  moveEvent(request: EventMoveRequest) {
+    const current = this.materializedEvent(request.itemKey)
+    if (current.kind === "TRANSIT" || current.kind === "STAY") {
+      throw new WorkspaceInputError("DERIVED_EVENT_MOVE_NOT_ALLOWED")
+    }
+    if (!this.placeFacts.has(request.itemKey)) {
+      const selection = this.selectionFromCurrentEvent(current, current.kind)
+      this.placeFacts.set(request.itemKey, {
+        cityLabel: selection.cityLabel,
+        resolved: selection.resolved,
+      })
+    }
+    if (request.afterItemKey === request.itemKey) {
+      throw new WorkspaceInputError("EVENT_MOVE_SELF_ANCHOR")
+    }
+    this.assertAnchor(request.afterItemKey, request.itemKey)
+    const moved = request.scheduleIntent
+      ? this.rescheduleExistingEvent(
+          current,
+          request.afterItemKey,
+          request.scheduleIntent
+        )
+      : current
+    this.append({
+      type: "EVENT_REMOVED",
+      itemKey: request.itemKey,
+      reason: "event move",
+    })
+    const entry = this.append({
+      type: "EVENT_APPENDED",
+      event: moved,
+      afterItemKey: request.afterItemKey,
+      reason: "event move",
+    })
+    this.removeStaleDerivedEvents()
+    return {
+      acceptedSequence: entry.sequence,
+      itemKey: request.itemKey,
+      materializedEvent: moved,
+      nextAction: "COMPLETE_REQUIREMENTS_OR_VALIDATE" as const,
+    }
+  }
+
+  removeEvent(request: EventRemoveRequest) {
     this.assertKnownItem(request.itemKey)
     const entry = this.append({
       type: "EVENT_REMOVED",
       itemKey: request.itemKey,
       reason: request.reason,
     })
+    this.removeStaleDerivedEvents()
     return {
       acceptedSequence: entry.sequence,
       removedItemKey: request.itemKey,
-      nextAction: "VALIDATE" as const,
+      nextAction: "COMPLETE_REQUIREMENTS_OR_VALIDATE" as const,
     }
   }
 
@@ -496,55 +730,486 @@ export class PlanningSession {
     return order
   }
 
-  private assertEventFacts(event: PathEventInput, replacedItemKey?: string) {
+  private selectionId(type: "place" | "hotel" | "route", value: unknown) {
+    return `${type}-${createHash("sha256")
+      .update(`${this.runId}:${JSON.stringify(value)}`)
+      .digest("hex")
+      .slice(0, 24)}`
+  }
+
+  private itemKey(type: "place" | "stay" | "route", selectionId: string) {
+    return `${type}-${createHash("sha256")
+      .update(`${this.runId}:${selectionId}:${this.entries.length}`)
+      .digest("hex")
+      .slice(0, 16)}`
+  }
+
+  private assertAnchor(afterItemKey: string | null, excluding?: string) {
+    if (afterItemKey === null) return
+    if (
+      afterItemKey === excluding ||
+      !this.currentItemOrder().includes(afterItemKey)
+    ) {
+      throw new WorkspaceInputError(`Unknown order anchor ${afterItemKey}`)
+    }
+  }
+
+  private baselineEvent(
+    event: PlannerBaseline["journey"]["events"][number]
+  ): MaterializedPathEvent {
     if (event.kind === "TRANSIT") {
-      const route = this.routeFacts.get(event.proposalItemKey)
-      if (
-        !route ||
-        route.request.fromItemKey !== event.fromItemKey ||
-        route.request.toItemKey !== event.toItemKey ||
-        route.request.transportMode !== event.transportMode ||
-        route.request.preference !== (event.preference ?? "RECOMMENDED")
-      ) {
-        throw new WorkspaceInputError(
-          `route.resolve is required for ${event.proposalItemKey}`
-        )
+      return {
+        proposalItemKey: event.proposalItemKey,
+        kind: "TRANSIT" as const,
+        title: event.title,
+        fromItemKey: event.fromItemKey ?? "missing-from",
+        toItemKey: event.toItemKey ?? "missing-to",
+        transportMode: this.transportModeForPlan(event.transportMode),
+        ...(event.plannedStartAt
+          ? { plannedStartAt: event.plannedStartAt }
+          : {}),
+        ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
       }
-      return
     }
-    const cityKey = cityFactKey(event.cityQuery)
-    const replacedEvent = replacedItemKey
-      ? this.baseline.journey.events.find(
-          (candidate) => candidate.proposalItemKey === replacedItemKey
-        )
-      : undefined
-    const keepsCommittedCity =
-      replacedEvent?.kind !== "TRANSIT" &&
-      replacedEvent?.city !== undefined &&
-      cityFactKey(replacedEvent.city) === cityKey
-    if (!this.cityFacts.has(cityKey) && !keepsCommittedCity) {
-      throw new WorkspaceInputError(
-        `A canonical city fact is required for ${event.cityQuery}`
-      )
-    }
-    if (event.kind === "STAY") {
-      const hotel = this.hotelFacts.get(event.proposalItemKey)
-      if (
-        !hotel ||
-        cityFactKey(hotel.request.cityQuery) !== cityFactKey(event.cityQuery)
-      ) {
-        throw new WorkspaceInputError(
-          `hotel.search for ${event.cityQuery} is required for ${event.proposalItemKey}`
-        )
+    return {
+      proposalItemKey: event.proposalItemKey,
+      kind: event.kind,
+      title: event.title,
+      cityQuery: event.city ?? "未标注城市",
+      plannedStartAt:
+        event.plannedStartAt ?? `${this.defaultTripStartDate}T09:00:00+08:00`,
+      ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
+    } as MaterializedPathEvent
+  }
+
+  private materializedEventMap() {
+    const events = new Map<string, MaterializedPathEvent>(
+      this.baseline.journey.events.map((event) => [
+        event.proposalItemKey,
+        this.baselineEvent(event),
+      ])
+    )
+    for (const entry of this.semanticEntries()) {
+      if (entry.type === "EVENT_REMOVED") {
+        events.delete(entry.itemKey)
+        continue
       }
-      return
+      if (entry.type === "EVENT_REPLACED") events.delete(entry.itemKey)
+      events.set(entry.event.proposalItemKey, entry.event)
     }
+    return events
+  }
+
+  private materializedEvents() {
+    const byKey = this.materializedEventMap()
+    return this.currentItemOrder().flatMap((itemKey) => {
+      const event = byKey.get(itemKey)
+      return event ? [event] : []
+    })
+  }
+
+  private materializedEvent(itemKey: string) {
+    const event = this.materializedEventMap().get(itemKey)
+    if (!event)
+      throw new WorkspaceInputError(`Unknown proposal item ${itemKey}`)
+    return event
+  }
+
+  private selectionFromCurrentEvent(
+    event: Exclude<MaterializedPathEvent, { kind: "TRANSIT" | "STAY" }>,
+    eventType: "VISIT" | "MEAL" | "ACTIVITY"
+  ) {
     const fact = this.placeFacts.get(event.proposalItemKey)
-    if (!fact || fact.request.kind !== event.kind) {
-      throw new WorkspaceInputError(
-        `place.resolve is required for ${event.proposalItemKey}`
-      )
+    if (fact) {
+      return {
+        search: {
+          type: "place.search" as const,
+          city: fact.cityLabel,
+          query: fact.resolved.placeRef.canonicalName,
+          intent: eventType,
+        },
+        cityLabel: fact.cityLabel,
+        resolved: fact.resolved,
+      }
     }
+    const baseline = this.baseline.journey.events.find(
+      (candidate) => candidate.proposalItemKey === event.proposalItemKey
+    )
+    if (!baseline || baseline.kind === "TRANSIT" || !baseline.place) {
+      throw new WorkspaceInputError("EVENT_PLACE_FACT_UNAVAILABLE")
+    }
+    const provider = baseline.place.providerPlaceId
+      ? ("amap" as const)
+      : ("periplus" as const)
+    const place = {
+      id: `baseline:${event.proposalItemKey}`,
+      name: baseline.place.name,
+      normalizedName: baseline.place.name,
+      aliases: [],
+      category:
+        eventType === "MEAL"
+          ? ("RESTAURANT" as const)
+          : eventType === "ACTIVITY"
+            ? ("ENTERTAINMENT" as const)
+            : ("SIGHT" as const),
+      city: baseline.city,
+      coordinates: [
+        {
+          provider,
+          coordinateSystem: baseline.place.coordinateSystem as
+            | "WGS84"
+            | "GCJ02"
+            | "BD09LL",
+          lat: baseline.place.lat,
+          lng: baseline.place.lng,
+          source: "catalog" as const,
+        },
+      ],
+      bestCoordinate: {
+        provider,
+        coordinateSystem: baseline.place.coordinateSystem as
+          | "WGS84"
+          | "GCJ02"
+          | "BD09LL",
+        lat: baseline.place.lat,
+        lng: baseline.place.lng,
+        source: "catalog" as const,
+      },
+      sources: [
+        {
+          provider,
+          ...(baseline.place.providerPlaceId
+            ? { providerId: baseline.place.providerPlaceId }
+            : {}),
+        },
+      ],
+      confidence: 1,
+      quality: "verified" as const,
+      canAddToJourney: true,
+      needsUserConfirmation: false,
+      reason: "committed baseline",
+    }
+    const resolved: Extract<PlaceResolveResult, { status: "resolved" }> = {
+      status: "resolved",
+      place,
+      placeRef: placeRefFromResult(place, [place]),
+      warnings: [],
+    }
+    return {
+      search: {
+        type: "place.search" as const,
+        city: baseline.city ?? "未标注城市",
+        query: baseline.place.name,
+        intent: eventType,
+      },
+      cityLabel: baseline.city ?? "未标注城市",
+      resolved,
+    }
+  }
+
+  private materializePlaceEvent(input: {
+    itemKey: string
+    selection: {
+      cityLabel: string
+      resolved: Extract<PlaceResolveResult, { status: "resolved" }>
+    }
+    eventType: "VISIT" | "MEAL" | "ACTIVITY"
+    afterItemKey: string | null
+    scheduleIntent?: ScheduleIntent
+    notes?: string
+    keepSchedule?: MaterializedPathEvent
+  }): MaterializedPathEvent {
+    const schedule = input.keepSchedule
+      ? {
+          plannedStartAt: input.keepSchedule.plannedStartAt,
+          plannedEndAt: input.keepSchedule.plannedEndAt,
+        }
+      : this.materializeSchedule(
+          input.eventType,
+          input.afterItemKey,
+          input.scheduleIntent
+        )
+    return {
+      proposalItemKey: input.itemKey,
+      kind: input.eventType,
+      title: input.selection.resolved.placeRef.canonicalName,
+      cityQuery: input.selection.cityLabel,
+      plannedStartAt:
+        schedule.plannedStartAt ??
+        `${this.defaultTripStartDate}T09:00:00+08:00`,
+      ...(schedule.plannedEndAt ? { plannedEndAt: schedule.plannedEndAt } : {}),
+      plannedDurationMinutes:
+        input.scheduleIntent?.durationMinutes ??
+        DEFAULT_DURATION_MINUTES[input.eventType],
+      description: input.notes,
+    } as MaterializedPathEvent
+  }
+
+  private rescheduleExistingEvent(
+    event: Exclude<MaterializedPathEvent, { kind: "TRANSIT" | "STAY" }>,
+    afterItemKey: string | null,
+    intent: ScheduleIntent
+  ) {
+    const schedule = this.materializeSchedule(event.kind, afterItemKey, intent)
+    return {
+      ...event,
+      plannedStartAt: schedule.plannedStartAt,
+      plannedEndAt: schedule.plannedEndAt,
+      plannedDurationMinutes:
+        intent.durationMinutes ?? event.plannedDurationMinutes,
+    }
+  }
+
+  private materializeSchedule(
+    eventType: "VISIT" | "MEAL" | "ACTIVITY",
+    afterItemKey: string | null,
+    intent: ScheduleIntent = {}
+  ) {
+    const anchor = afterItemKey ? this.materializedEvent(afterItemKey) : null
+    const date =
+      intent.localDate ??
+      (intent.dayIndex
+        ? this.addDays(this.defaultTripStartDate, intent.dayIndex - 1)
+        : (anchor?.plannedEndAt?.slice(0, 10) ?? this.defaultTripStartDate))
+    const windowStart =
+      intent.notBeforeLocalTime ??
+      (intent.timeWindow === "AFTERNOON"
+        ? "14:00"
+        : intent.timeWindow === "EVENING"
+          ? "18:00"
+          : "09:00")
+    let startMs = Date.parse(`${date}T${windowStart}:00+08:00`)
+    const anchorEnd = anchor?.plannedEndAt ?? anchor?.plannedStartAt
+    if (anchorEnd && anchorEnd.slice(0, 10) === date) {
+      startMs = Math.max(startMs, Date.parse(anchorEnd))
+    }
+    const duration =
+      intent.durationMinutes ?? DEFAULT_DURATION_MINUTES[eventType]
+    const endMs = startMs + duration * 60_000
+    if (intent.notAfterLocalTime) {
+      const deadline = Date.parse(
+        `${date}T${intent.notAfterLocalTime}:00+08:00`
+      )
+      if (endMs > deadline) throw new WorkspaceInputError("SCHEDULE_CONFLICT")
+    }
+    return {
+      plannedStartAt: new Date(startMs).toISOString(),
+      plannedEndAt: new Date(endMs).toISOString(),
+    }
+  }
+
+  private addDays(date: string, days: number) {
+    const value = new Date(`${date}T00:00:00Z`)
+    value.setUTCDate(value.getUTCDate() + days)
+    return value.toISOString().slice(0, 10)
+  }
+
+  private transportModeForPlan(
+    value: string | undefined
+  ):
+    | "FLIGHT"
+    | "TRAIN"
+    | "CAR"
+    | "BUS"
+    | "WALK"
+    | "TAXI"
+    | "SUBWAY"
+    | "RENTAL" {
+    if (
+      value === "WALK" ||
+      value === "BUS" ||
+      value === "SUBWAY" ||
+      value === "TRAIN" ||
+      value === "CAR" ||
+      value === "TAXI" ||
+      value === "RENTAL"
+    ) {
+      return value
+    }
+    return value === "DRIVE" ? ("CAR" as const) : ("WALK" as const)
+  }
+
+  private shiftFlexibleSuffix(itemKey: string, earliestStartAt: string) {
+    const events = this.materializedEvents()
+    const startIndex = events.findIndex(
+      (event) => event.proposalItemKey === itemKey
+    )
+    if (startIndex < 0) return
+    const first = events[startIndex]
+    if (!first?.plannedStartAt) return
+    const delta = Date.parse(earliestStartAt) - Date.parse(first.plannedStartAt)
+    if (delta <= 0) return
+    const date = first.plannedStartAt.slice(0, 10)
+    for (const event of events.slice(startIndex)) {
+      if (!event.plannedStartAt || event.plannedStartAt.slice(0, 10) !== date) {
+        break
+      }
+      const shifted: MaterializedPathEvent = {
+        ...event,
+        plannedStartAt: new Date(
+          Date.parse(event.plannedStartAt) + delta
+        ).toISOString(),
+        ...(event.plannedEndAt
+          ? {
+              plannedEndAt: new Date(
+                Date.parse(event.plannedEndAt) + delta
+              ).toISOString(),
+            }
+          : {}),
+      }
+      this.append({
+        type: "EVENT_REPLACED",
+        itemKey: event.proposalItemKey,
+        event: shifted,
+        reason: "backend route schedule materialization",
+      })
+    }
+  }
+
+  private removeStaleDerivedEvents() {
+    const events = this.materializedEvents()
+    const nonTransit = events.filter((event) => event.kind !== "TRANSIT")
+    const adjacent = new Set(
+      nonTransit.slice(0, -1).map((event, index) => {
+        const next = nonTransit[index + 1]
+        return `${event.proposalItemKey}:${next?.proposalItemKey}`
+      })
+    )
+    for (const event of events) {
+      if (
+        event.kind === "TRANSIT" &&
+        !adjacent.has(`${event.fromItemKey}:${event.toItemKey}`)
+      ) {
+        this.append({
+          type: "EVENT_REMOVED",
+          itemKey: event.proposalItemKey,
+          reason: "backend invalidated stale route adjacency",
+        })
+      }
+    }
+  }
+
+  private requirements() {
+    const events = this.materializedEvents()
+    const nonTransit = events.filter((event) => event.kind !== "TRANSIT")
+    const routeRequirements: RouteRequirement[] = []
+    const stayRequirements: StayRequirement[] = []
+    for (let index = 0; index < nonTransit.length - 1; index += 1) {
+      const from = nonTransit[index]
+      const to = nonTransit[index + 1]
+      if (!from || !to) continue
+      const fromIndex = events.findIndex(
+        (event) => event.proposalItemKey === from.proposalItemKey
+      )
+      const toIndex = events.findIndex(
+        (event) => event.proposalItemKey === to.proposalItemKey
+      )
+      const between = events.slice(fromIndex + 1, toIndex)
+      const hasRoute = between.some(
+        (event) =>
+          event.kind === "TRANSIT" &&
+          event.fromItemKey === from.proposalItemKey &&
+          event.toItemKey === to.proposalItemKey
+      )
+      const departAt = from.plannedEndAt ?? from.plannedStartAt
+      const arriveAt = to.plannedStartAt
+      const departDate = departAt?.slice(0, 10)
+      const arriveDate = arriveAt?.slice(0, 10)
+      if (departAt && departDate === arriveDate && !hasRoute) {
+        routeRequirements.push({
+          routeRequirementId: this.selectionId("route", {
+            from: from.proposalItemKey,
+            to: to.proposalItemKey,
+            departAt,
+          }),
+          fromItemKey: from.proposalItemKey,
+          toItemKey: to.proposalItemKey,
+          earliestDepartAt: departAt,
+        })
+      }
+      if (
+        from.kind !== "STAY" &&
+        to.kind !== "STAY" &&
+        "cityQuery" in from &&
+        "cityQuery" in to &&
+        from.cityQuery === to.cityQuery &&
+        departDate &&
+        arriveDate &&
+        arriveDate > departDate
+      ) {
+        const nights = Math.max(
+          1,
+          Math.round(
+            (Date.parse(`${arriveDate}T00:00:00Z`) -
+              Date.parse(`${departDate}T00:00:00Z`)) /
+              DAY_MS
+          )
+        )
+        stayRequirements.push({
+          stayRequirementId: this.selectionId("hotel", {
+            city: from.cityQuery,
+            checkInDate: departDate,
+            checkOutDate: arriveDate,
+            from: from.proposalItemKey,
+            to: to.proposalItemKey,
+          }),
+          cityLabel: from.cityQuery,
+          checkInDate: departDate,
+          checkOutDate: arriveDate,
+          nights,
+          anchorItemKeys: [from.proposalItemKey, to.proposalItemKey],
+        })
+      }
+    }
+    return { routeRequirements, stayRequirements }
+  }
+
+  private cityLabelKey(value: string) {
+    return value.trim().replace(/\s+/gu, " ").toLocaleLowerCase()
+  }
+
+  private locationForEvent(
+    event: Exclude<MaterializedPathEvent, { kind: "TRANSIT" }>
+  ): PlaceRef {
+    const place = this.placeFacts.get(event.proposalItemKey)?.resolved.placeRef
+    if (place) return place
+    const hotel = this.hotelFacts.get(event.proposalItemKey)?.candidate
+    if (hotel) {
+      return {
+        provider: "rollinggo",
+        providerId: hotel.providerHotelId,
+        canonicalName: hotel.name,
+        city: event.cityQuery,
+        address: hotel.address,
+        lat: hotel.coordinates.lat,
+        lng: hotel.coordinates.lng,
+        coordinateSystem: "WGS84",
+        confidence: 1,
+        candidates: [],
+      }
+    }
+    const baseline = this.baseline.journey.events.find(
+      (candidate) => candidate.proposalItemKey === event.proposalItemKey
+    )
+    if (baseline?.kind !== "TRANSIT" && baseline?.place) {
+      return {
+        provider: baseline.place.providerPlaceId ? "amap" : "periplus",
+        providerId: baseline.place.providerPlaceId,
+        canonicalName: baseline.place.name,
+        city: baseline.city,
+        lat: baseline.place.lat,
+        lng: baseline.place.lng,
+        coordinateSystem: baseline.place.coordinateSystem as
+          | "WGS84"
+          | "GCJ02"
+          | "BD09LL",
+        confidence: 1,
+        candidates: [],
+      }
+    }
+    throw new WorkspaceInputError(
+      `Missing provider location for ${event.proposalItemKey}`
+    )
   }
 
   private semanticEntries() {
@@ -595,12 +1260,12 @@ export class PlanningSession {
     }
 
     const ensureCity = async (
-      cityQuery: string,
+      event: Exclude<MaterializedPathEvent, { kind: "TRANSIT" }>,
       afterItemKey: string | null,
       suffix: string,
       preferredCityCardId?: string
     ) => {
-      const normalized = cityFactKey(cityQuery)
+      const normalized = this.cityLabelKey(event.cityQuery)
       const preferredCity = preferredCityCardId
         ? draft
             .currentGraph()
@@ -613,7 +1278,7 @@ export class PlanningSession {
         : undefined
       if (
         preferredCity?.type === "SECTION" &&
-        cityFactKey(preferredCity.title) === normalized
+        this.cityLabelKey(preferredCity.title) === normalized
       ) {
         return preferredCity.id
       }
@@ -632,19 +1297,17 @@ export class PlanningSession {
       const existing = [
         ...leftCities.slice(0, 1),
         ...rightCities.slice(0, 1),
-      ].find((city) => cityFactKey(city.title) === normalized)
+      ].find((city) => this.cityLabelKey(city.title) === normalized)
       if (existing) return existing.id
-      const fact = this.cityFacts.get(normalized)
-      if (!fact) throw new WorkspaceInputError(`Missing city fact ${cityQuery}`)
       const previousCity = leftCities[0]
       const result = await draft.addCity(
         {
           type: "city.add",
-          name: fact.canonicalName,
+          name: event.cityQuery,
           afterCardId: previousCity?.id ?? null,
         },
         `${toolCallId}:city:${suffix}`,
-        fact.location
+        this.locationForEvent(event)
       )
       const current = draft.currentGraph()
       const added = result.changedCardIds
@@ -669,7 +1332,7 @@ export class PlanningSession {
     }
 
     const addEvent = async (
-      event: PathEventInput,
+      event: MaterializedPathEvent,
       afterItemKey: string | null,
       suffix: string,
       preferredCityCardId?: string
@@ -737,7 +1400,7 @@ export class PlanningSession {
         return
       }
       const cityCardId = await ensureCity(
-        event.cityQuery,
+        event,
         afterItemKey,
         suffix,
         preferredCityCardId
@@ -762,15 +1425,10 @@ export class PlanningSession {
           fact.warnings,
           cityCardId,
           {
-            plannedStartAt:
-              event.plannedStartAt ??
-              `${fact.request.checkInDate}T15:00:00+08:00`,
+            plannedStartAt: event.plannedStartAt,
             plannedEndAt:
               event.plannedEndAt ??
-              new Date(
-                Date.parse(`${fact.request.checkInDate}T15:00:00+08:00`) +
-                  fact.request.stayNights * 86_400_000
-              ).toISOString(),
+              new Date(Date.parse(event.plannedStartAt) + DAY_MS).toISOString(),
           }
         )
         const result = await draft.addStay(
@@ -869,6 +1527,32 @@ export class PlanningSession {
   }
 
   async validate(toolCallId: string) {
+    const requirements = this.requirements()
+    if (
+      requirements.routeRequirements.length ||
+      requirements.stayRequirements.length
+    ) {
+      return {
+        valid: false,
+        issues: [
+          ...requirements.routeRequirements.map((requirement) => ({
+            code: "ROUTE_REQUIREMENT_PENDING",
+            severity: "ERROR" as const,
+            message: `Route selection is required from ${requirement.fromItemKey} to ${requirement.toItemKey}`,
+          })),
+          ...requirements.stayRequirements.map((requirement) => ({
+            code: "STAY_REQUIREMENT_PENDING",
+            severity: "ERROR" as const,
+            message: `Hotel selection is required for ${requirement.checkInDate}`,
+          })),
+        ],
+        nextAction: "REVISE" as const,
+        remainingRevisions: Math.max(
+          0,
+          MAX_PATH_VALIDATIONS - this.validationCount
+        ),
+      }
+    }
     if (this.validationCount >= MAX_PATH_VALIDATIONS) {
       throw new WorkspaceInputError("PATH_REVISION_LIMIT_EXHAUSTED")
     }
@@ -912,14 +1596,14 @@ export class PlanningSession {
         `${toolCallId}:validate-routes`
       )
     }
-    const entry = this.append({
+    this.append({
       type: "VALIDATION_RESULT",
       valid: validation.validation.valid,
       issueCodes: validation.validation.issues.map((issue) => issue.code),
     })
     this.validated = {
       ...folded,
-      logSequence: entry.sequence,
+      logSequence: this.semanticEntries().at(-1)?.sequence ?? 0,
       validation,
     }
     return {
@@ -945,7 +1629,8 @@ export class PlanningSession {
     if (
       !this.validated ||
       !this.validated.validation.validation.valid ||
-      this.validated.logSequence !== this.entries.at(-1)?.sequence
+      this.validated.logSequence !==
+        (this.semanticEntries().at(-1)?.sequence ?? 0)
     ) {
       throw new WorkspaceInputError(
         "path.commit requires the latest ChangeLog fold to be VALID"
@@ -979,50 +1664,21 @@ export class PlanningSession {
   }
 
   planningState() {
-    const eventByKey = new Map<
-      string,
-      PathEventInput | PlannerBaseline["journey"]["events"][number]
-    >(
-      this.baseline.journey.events.map((event) => [
-        event.proposalItemKey,
-        event,
-      ])
-    )
-    for (const entry of this.semanticEntries()) {
-      if (entry.type === "EVENT_REMOVED") {
-        eventByKey.delete(entry.itemKey)
-        continue
-      }
-      if (entry.type === "EVENT_REPLACED") {
-        eventByKey.delete(entry.itemKey)
-      }
-      eventByKey.set(entry.event.proposalItemKey, entry.event)
-    }
-    const candidate = this.currentItemOrder().flatMap((proposalItemKey) => {
-      const event = eventByKey.get(proposalItemKey)
-      if (!event) return []
-      return [
-        {
-          proposalItemKey,
-          kind: event.kind,
-          title: event.title,
-          ...(event.kind === "TRANSIT"
-            ? {
-                fromItemKey: event.fromItemKey,
-                toItemKey: event.toItemKey,
-                transportMode: event.transportMode,
-              }
-            : {
-                city:
-                  "cityQuery" in event ? event.cityQuery : (event.city ?? ""),
-              }),
-          ...(event.plannedStartAt
-            ? { plannedStartAt: event.plannedStartAt }
-            : {}),
-          ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
-        },
-      ]
-    })
+    const materializedPath = this.materializedEvents().map((event) => ({
+      itemKey: event.proposalItemKey,
+      kind: event.kind,
+      title: event.title,
+      ...(event.kind === "TRANSIT"
+        ? {
+            fromItemKey: event.fromItemKey,
+            toItemKey: event.toItemKey,
+            transportMode: event.transportMode,
+          }
+        : { cityLabel: event.cityQuery }),
+      ...(event.plannedStartAt ? { plannedStartAt: event.plannedStartAt } : {}),
+      ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
+    }))
+    const requirements = this.requirements()
 
     const unresolvedByKey = new Map<
       string,
@@ -1071,7 +1727,11 @@ export class PlanningSession {
 
     return {
       sequence: this.entries.at(-1)?.sequence ?? 0,
-      candidate,
+      baseRevision: this.baseline.workspaceRevision,
+      materializedPath,
+      requirements,
+      conflicts: [],
+      warnings: [],
       unresolved: [...unresolvedByKey.values()],
       latestValidation: validationState,
       semanticRevisionRemaining: Math.max(
@@ -1087,7 +1747,9 @@ export class PlanningSession {
 
   clear() {
     this.entries.length = 0
-    this.cityFacts.clear()
+    this.placeSelections.clear()
+    this.hotelSelections.clear()
+    this.routeSelections.clear()
     this.placeFacts.clear()
     this.hotelFacts.clear()
     this.routeFacts.clear()

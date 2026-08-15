@@ -285,7 +285,7 @@ describe("Pi Agent Core gateway integration", () => {
 
     const updated = await harness.request!.executeTool(
       {
-        type: "path.remove_event",
+        type: "event.remove",
         itemKey: "baseline-0001",
         reason: "replace the existing itinerary",
       },
@@ -404,10 +404,8 @@ describe("Pi Agent Core gateway integration", () => {
       {
         heartbeatIntervalMs: null,
         placeService: {
-          searchPlaces: vi.fn(),
-          resolvePlace: vi.fn().mockResolvedValue({
-            status: "not_found",
-            reason: "provider exhausted",
+          searchPlaces: vi.fn().mockResolvedValue({
+            results: [],
             warnings: [
               {
                 provider: "amap",
@@ -420,6 +418,7 @@ describe("Pi Agent Core gateway integration", () => {
             ],
             providerAttempts: 3,
           }),
+          resolvePlace: vi.fn(),
           enrichPlace: vi.fn(),
           verifyPlaceImages: vi.fn(),
         },
@@ -430,12 +429,10 @@ describe("Pi Agent Core gateway integration", () => {
     await expect(
       harness.request!.executeTool(
         {
-          type: "place.resolve",
-          proposalItemKey: "new-place",
-          cityQuery: "大理",
+          type: "place.search",
+          city: "大理",
           query: "大理古城",
-          kind: "VISIT",
-          origin: "PLANNER_CHOICE",
+          intent: "VISIT",
         },
         "resolve-provider"
       )
@@ -479,64 +476,47 @@ describe("Pi Agent Core gateway integration", () => {
             providerAttempts: 1,
           }),
         },
-        cityService: {
-          resolveCity: vi.fn().mockImplementation(async (query: string) => ({
-            status: "resolved",
-            city: {
-              name: query,
-              administrativeLevel: "city",
-              timeZone: "Asia/Shanghai",
-              location: {
-                provider: "amap",
-                providerId: query,
-                canonicalName: query,
-                city: query,
-                lat: 30.25,
-                lng: 120.15,
-                coordinateSystem: "GCJ02",
-                confidence: 1,
-                candidates: [],
-              },
-            },
-          })),
-        },
       }
     )
 
     await gateway.start(context, workspace.id, "杭州住一晚", () => undefined)
+    const path = (await harness.request!.executeTool(
+      { type: "path.read" },
+      "read-path"
+    )) as {
+      data: {
+        requirements: {
+          stayRequirements: Array<{ stayRequirementId: string }>
+        }
+      }
+    }
+    const stayRequirementId =
+      path.data.requirements.stayRequirements[0]!.stayRequirementId
     const searched = await harness.request!.executeTool(
       {
         type: "hotel.search",
-        proposalItemKey: "hotel-1",
-        cityQuery: "杭州",
-        checkInDate: "2026-08-13",
-        stayNights: 1,
-        adultCount: 1,
+        stayRequirementId,
       },
       "search-hotel"
     )
     expect(searched).toMatchObject({ status: "ok" })
+    const selectionId = (
+      searched as { data: { recommendedSelectionId: string } }
+    ).data.recommendedSelectionId
 
     await expect(
       harness.request!.executeTool(
         {
-          type: "path.append_event",
-          event: {
-            kind: "STAY",
-            proposalItemKey: "hotel-1",
-            title: "上海住宿",
-            cityQuery: "上海",
-            plannedStartAt: "2026-08-13T15:00:00+08:00",
-            plannedEndAt: "2026-08-14T11:00:00+08:00",
-          },
-          afterItemKey: "baseline-0002",
-          reason: "add an overnight stay",
+          type: "event.add",
+          source: "HOTEL",
+          stayRequirementId: "stale-requirement",
+          selectionId,
         },
         "stay-wrong-city"
       )
     ).resolves.toMatchObject({
       status: "retryable_error",
-      code: "INVALID_TOOL_INPUT",
+      code: "STALE_STAY_REQUIREMENT",
     })
 
     harness.emit({ type: "run_end", result: { status: "succeeded" } })

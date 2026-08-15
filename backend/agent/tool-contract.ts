@@ -10,34 +10,49 @@ const optionalText = text.optional()
 const nullableText = text.nullable().optional()
 const dateTime = z.iso.datetime({ offset: true })
 
-export const placeResolveToolSchema = z
+export const scheduleIntentSchema = z
   .object({
-    proposalItemKey: key,
-    cityQuery: text,
+    dayIndex: z.number().int().positive().optional(),
+    localDate: z.iso.date().optional(),
+    timeWindow: z.enum(["MORNING", "AFTERNOON", "EVENING", "ANY"]).optional(),
+    notBeforeLocalTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/u)
+      .optional(),
+    notAfterLocalTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/u)
+      .optional(),
+    durationMinutes: z
+      .number()
+      .int()
+      .positive()
+      .max(24 * 60)
+      .optional(),
+    flexibility: z.enum(["FIXED", "FLEXIBLE"]).optional(),
+  })
+  .strict()
+
+export const placeSearchToolSchema = z
+  .object({
+    city: text,
     query: text,
-    kind: z.enum(["VISIT", "MEAL", "ACTIVITY"]),
-    origin: z.enum(["USER_EXPLICIT", "PLANNER_CHOICE"]),
+    intent: z.enum(["VISIT", "MEAL", "ACTIVITY"]),
   })
   .strict()
 
 export const hotelSearchToolSchema = z
   .object({
-    proposalItemKey: key,
-    cityQuery: text,
-    checkInDate: z.iso.date(),
-    stayNights: z.number().int().positive().max(30),
-    adultCount: z.number().int().positive().max(10),
+    stayRequirementId: key,
     preference: optionalText,
   })
   .strict()
 
-export const routeResolveToolSchema = z
+export const routeSearchToolSchema = z
   .object({
-    proposalItemKey: key,
-    fromItemKey: key,
-    toItemKey: key,
-    transportMode: z.enum(TARGET_TRANSPORT_MODES).optional(),
-    preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
+    routeRequirementId: key,
+    modePreference: z.enum(TARGET_TRANSPORT_MODES).optional(),
+    routePreference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
   })
   .strict()
 
@@ -108,7 +123,7 @@ const transitInputSchema = z
   })
   .strict()
 
-export const pathEventInputSchema = z.discriminatedUnion("kind", [
+export const materializedPathEventSchema = z.discriminatedUnion("kind", [
   visitInputSchema,
   mealInputSchema,
   activityInputSchema,
@@ -116,41 +131,95 @@ export const pathEventInputSchema = z.discriminatedUnion("kind", [
   transitInputSchema,
 ])
 
-export const pathAppendEventToolSchema = z
+const placeEventAddSchema = z
   .object({
-    event: pathEventInputSchema,
+    source: z.literal("PLACE"),
+    selectionId: key,
+    eventType: z.enum(["VISIT", "MEAL", "ACTIVITY"]),
     afterItemKey: key.nullable(),
-    reason: text,
+    scheduleIntent: scheduleIntentSchema.optional(),
+    notes: optionalText,
   })
   .strict()
 
-export const pathReplaceEventToolSchema = z
-  .object({ itemKey: key, event: pathEventInputSchema, reason: text })
+const hotelEventAddSchema = z
+  .object({
+    source: z.literal("HOTEL"),
+    stayRequirementId: key,
+    selectionId: key,
+    notes: optionalText,
+  })
   .strict()
 
-export const pathRemoveEventToolSchema = z
+const routeEventAddSchema = z
+  .object({
+    source: z.literal("ROUTE"),
+    routeRequirementId: key,
+    selectionId: key,
+    notes: optionalText,
+  })
+  .strict()
+
+export const eventAddToolSchema = z.discriminatedUnion("source", [
+  placeEventAddSchema,
+  hotelEventAddSchema,
+  routeEventAddSchema,
+])
+
+export const eventUpdateToolSchema = z
+  .object({
+    itemKey: key,
+    selectionId: key.optional(),
+    eventType: z.enum(["VISIT", "MEAL", "ACTIVITY"]).optional(),
+    scheduleIntent: scheduleIntentSchema.optional(),
+    notes: nullableText,
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.selectionId !== undefined ||
+      value.eventType !== undefined ||
+      value.scheduleIntent !== undefined ||
+      value.notes !== undefined,
+    { message: "event.update requires at least one semantic change" }
+  )
+
+export const eventMoveToolSchema = z
+  .object({
+    itemKey: key,
+    afterItemKey: key.nullable(),
+    scheduleIntent: scheduleIntentSchema.optional(),
+  })
+  .strict()
+
+export const eventRemoveToolSchema = z
   .object({ itemKey: key, reason: text })
   .strict()
+
+export const pathReadToolSchema = z.object({}).strict()
 
 export const pathValidateToolSchema = z.object({}).strict()
 export const pathCommitToolSchema = z.object({}).strict()
 
-export const agentToolRequestSchema = z.discriminatedUnion("type", [
-  placeResolveToolSchema.extend({ type: z.literal("place.resolve") }),
+export const agentToolRequestSchema = z.union([
+  placeSearchToolSchema.extend({ type: z.literal("place.search") }),
   hotelSearchToolSchema.extend({ type: z.literal("hotel.search") }),
-  routeResolveToolSchema.extend({ type: z.literal("route.resolve") }),
-  pathAppendEventToolSchema.extend({ type: z.literal("path.append_event") }),
-  pathReplaceEventToolSchema.extend({
-    type: z.literal("path.replace_event"),
-  }),
-  pathRemoveEventToolSchema.extend({ type: z.literal("path.remove_event") }),
+  routeSearchToolSchema.extend({ type: z.literal("route.search") }),
+  pathReadToolSchema.extend({ type: z.literal("path.read") }),
+  placeEventAddSchema.extend({ type: z.literal("event.add") }),
+  hotelEventAddSchema.extend({ type: z.literal("event.add") }),
+  routeEventAddSchema.extend({ type: z.literal("event.add") }),
+  eventUpdateToolSchema.extend({ type: z.literal("event.update") }),
+  eventMoveToolSchema.extend({ type: z.literal("event.move") }),
+  eventRemoveToolSchema.extend({ type: z.literal("event.remove") }),
   pathValidateToolSchema.extend({ type: z.literal("path.validate") }),
   pathCommitToolSchema.extend({ type: z.literal("path.commit") }),
 ])
 
 export type AgentToolRequest = z.input<typeof agentToolRequestSchema>
 export type ParsedAgentToolRequest = z.output<typeof agentToolRequestSchema>
-export type PathEventInput = z.output<typeof pathEventInputSchema>
+export type MaterializedPathEvent = z.output<typeof materializedPathEventSchema>
+export type ScheduleIntent = z.output<typeof scheduleIntentSchema>
 
 export interface AgentToolFieldError {
   field: string
