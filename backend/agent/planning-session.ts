@@ -530,6 +530,7 @@ export class PlanningSession {
         afterItemKey: requirement.anchorItemKeys[0],
         reason: "selected hotel candidate",
       })
+      this.removeStaleDerivedEvents()
       return {
         acceptedSequence: entry.sequence,
         itemKey,
@@ -1103,6 +1104,16 @@ export class PlanningSession {
   }
 
   private removeStaleDerivedEvents() {
+    for (const event of this.staleTransitEvents()) {
+      this.append({
+        type: "EVENT_REMOVED",
+        itemKey: event.proposalItemKey,
+        reason: "backend invalidated stale route adjacency",
+      })
+    }
+  }
+
+  private staleTransitEvents() {
     const events = this.materializedEvents()
     const nonTransit = events.filter((event) => event.kind !== "TRANSIT")
     const adjacent = new Set(
@@ -1111,18 +1122,22 @@ export class PlanningSession {
         return `${event.proposalItemKey}:${next?.proposalItemKey}`
       })
     )
-    for (const event of events) {
-      if (
+    return events.filter(
+      (event): event is Extract<MaterializedPathEvent, { kind: "TRANSIT" }> =>
         event.kind === "TRANSIT" &&
         !adjacent.has(`${event.fromItemKey}:${event.toItemKey}`)
-      ) {
-        this.append({
-          type: "EVENT_REMOVED",
-          itemKey: event.proposalItemKey,
-          reason: "backend invalidated stale route adjacency",
-        })
-      }
-    }
+    )
+  }
+
+  private staleTransitIssues() {
+    return this.staleTransitEvents().map((event) => ({
+      code: "STALE_TRANSIT_ADJACENCY",
+      severity: "ERROR" as const,
+      message: `Transit ${event.proposalItemKey} endpoints ${event.fromItemKey} and ${event.toItemKey} are not adjacent in the current Path`,
+      proposalItemKey: event.proposalItemKey,
+      fromItemKey: event.fromItemKey,
+      toItemKey: event.toItemKey,
+    }))
   }
 
   private requirements() {
@@ -1612,9 +1627,12 @@ export class PlanningSession {
 
   private pendingRequirementIssues() {
     const requirements = this.requirements()
+    const staleTransitIssues = this.staleTransitIssues()
     return {
       requirements,
+      staleTransitIssues,
       issues: [
+        ...staleTransitIssues,
         ...requirements.routeRequirements.map((requirement) => ({
           code: "ROUTE_REQUIREMENT_PENDING",
           severity: "ERROR" as const,
@@ -1636,7 +1654,9 @@ export class PlanningSession {
         committed: false as const,
         issues: pending.issues,
         requirements: pending.requirements,
-        nextAction: "COMPLETE_REQUIREMENTS" as const,
+        nextAction: pending.staleTransitIssues.length
+          ? ("REVISE_PATH" as const)
+          : ("COMPLETE_REQUIREMENTS" as const),
       }
     }
 
@@ -1762,6 +1782,7 @@ export class PlanningSession {
       ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
     }))
     const requirements = this.requirements()
+    const staleTransitIssues = this.staleTransitIssues()
 
     const unresolvedByKey = new Map<
       string,
@@ -1789,7 +1810,7 @@ export class PlanningSession {
       baseRevision: this.baseline.workspaceRevision,
       materializedPath,
       requirements,
-      conflicts: [],
+      conflicts: staleTransitIssues,
       warnings: [],
       unresolved: [...unresolvedByKey.values()],
       changeLogEntriesRemaining: Math.max(
