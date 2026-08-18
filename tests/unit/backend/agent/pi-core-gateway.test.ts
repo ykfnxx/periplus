@@ -478,9 +478,20 @@ describe("Pi Agent Core gateway integration", () => {
       data: {
         requirements: {
           stayRequirements: Array<{ stayRequirementId: string }>
+          routeRequirements: Array<{
+            fromItemKey: string
+            toItemKey: string
+            earliestDepartAt: string
+          }>
         }
       }
     }
+    expect(path.data.requirements.routeRequirements).toContainEqual(
+      expect.objectContaining({
+        fromItemKey: "baseline-0001",
+        toItemKey: "baseline-0002",
+      })
+    )
     const stayRequirementId =
       path.data.requirements.stayRequirements[0]!.stayRequirementId
     const searched = await harness.request!.executeTool(
@@ -508,6 +519,55 @@ describe("Pi Agent Core gateway integration", () => {
     ).resolves.toMatchObject({
       status: "retryable_error",
       code: "STALE_STAY_REQUIREMENT",
+    })
+
+    const added = (await harness.request!.executeTool(
+      {
+        type: "event.add",
+        source: "HOTEL",
+        stayRequirementId,
+        selectionId,
+      },
+      "stay-correct-city"
+    )) as {
+      status: "ok"
+      data: {
+        itemKey: string
+        materializedEvent: {
+          plannedStartAt: string
+          plannedEndAt: string
+        }
+      }
+    }
+    expect(added).toMatchObject({
+      status: "ok",
+      data: {
+        materializedEvent: {
+          plannedStartAt: "2026-08-13T14:00:00.000Z",
+          plannedEndAt: "2026-08-14T00:00:00.000Z",
+        },
+      },
+    })
+
+    const withStay = (await harness.request!.executeTool(
+      { type: "path.read" },
+      "read-path-with-stay"
+    )) as {
+      data: {
+        requirements: {
+          routeRequirements: Array<{
+            fromItemKey: string
+            toItemKey: string
+            earliestDepartAt: string
+          }>
+        }
+      }
+    }
+    expect(withStay.data.requirements.routeRequirements).toContainEqual({
+      routeRequirementId: expect.any(String),
+      fromItemKey: added.data.itemKey,
+      toItemKey: "baseline-0002",
+      earliestDepartAt: "2026-08-14T00:00:00.000Z",
     })
 
     harness.emit({ type: "run_end", result: { status: "succeeded" } })

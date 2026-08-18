@@ -2,13 +2,14 @@ import { z } from "zod"
 import {
   TARGET_TRANSIT_PREFERENCES,
   TARGET_TRANSPORT_MODES,
+  targetDateTimeSchema,
 } from "@/modules/data-model/contracts"
 
 const key = z.string().trim().min(1).max(80)
 const text = z.string().trim().min(1)
 const optionalText = text.optional()
 const nullableText = text.nullable().optional()
-const dateTime = z.iso.datetime({ offset: true })
+const dateTime = targetDateTimeSchema
 
 export const scheduleIntentSchema = z
   .object({

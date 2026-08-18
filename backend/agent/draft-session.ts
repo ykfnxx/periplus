@@ -8,11 +8,12 @@ import type {
   PlaceVerification,
   ProviderWarning,
 } from "@/lib/places/types"
-import type {
-  PlanValidationIssue,
-  PlanValidationReport,
-  TargetJourneyEvent,
-  TargetJourneyGraphSnapshot,
+import {
+  dateTimeToTimestamp,
+  type PlanValidationIssue,
+  type PlanValidationReport,
+  type TargetJourneyEvent,
+  type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
 import { resolveJourneyProjection } from "@/modules/data/journeys/journey-projection"
 import {
@@ -1060,8 +1061,8 @@ export class AgentDraftSession {
     const stayNights = Math.max(
       1,
       Math.round(
-        (Date.parse(`${lastDate}T00:00:00Z`) -
-          Date.parse(`${firstDate}T00:00:00Z`)) /
+        (dateTimeToTimestamp(`${lastDate}T00:00:00Z`) -
+          dateTimeToTimestamp(`${firstDate}T00:00:00Z`)) /
           86_400_000
       )
     )

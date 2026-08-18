@@ -6,6 +6,8 @@ import {
   targetCommandEnvelopeSchema,
   targetCommandResultSchema,
   targetContentBundleSchema,
+  targetDateTimeSchema,
+  targetFlatJourneySnapshotSchema,
   targetJourneyBranchSelectionSchema,
   targetJourneyGraphSnapshotSchema,
   targetJourneyRevisionSchema,
@@ -74,6 +76,68 @@ function cloneGraph(value: TargetJourneyGraphSnapshot) {
 }
 
 describe("breaking data-model target contracts", () => {
+  it("normalizes offset and epoch inputs while comparing absolute timestamps", () => {
+    expect(targetDateTimeSchema.parse("2026-08-20T08:00:00+08:00")).toBe(
+      "2026-08-20T00:00:00.000Z"
+    )
+    expect(targetDateTimeSchema.parse(1_777_500_000_000)).toBe(
+      new Date(1_777_500_000_000).toISOString()
+    )
+
+    const ready = cloneGraph(
+      scenario("03-transit-plan-choice", "select-low-cost").input.graph!
+    )
+    const event = ready.events.find((candidate) => candidate.type === "VISIT")!
+    if (event.type !== "VISIT") throw new Error("fixture invariant")
+    event.plannedStartAt = "2026-08-20T08:00:00+08:00"
+    event.plannedEndAt = "2026-08-20T01:45:15.000Z"
+    const graphResult = targetJourneyGraphSnapshotSchema.safeParse(ready)
+    expect(graphResult.success).toBe(true)
+    if (graphResult.success) {
+      const normalized = graphResult.data.events.find(
+        (candidate) => candidate.id === event.id
+      )
+      expect(normalized).toMatchObject({
+        plannedStartAt: "2026-08-20T00:00:00.000Z",
+        plannedEndAt: "2026-08-20T01:45:15.000Z",
+      })
+    }
+
+    const flat = targetFlatJourneySnapshotSchema.parse({
+      schemaVersion: 1,
+      journeyId: "timestamp-flat-journey",
+      revision: 0,
+      title: "Timestamp journey",
+      events: [
+        {
+          eventId: "visit",
+          kind: "VISIT",
+          title: "Visit",
+          city: {
+            key: "city",
+            name: "哈尔滨",
+            timeZone: "Asia/Shanghai",
+          },
+          plannedStartAt: Date.parse("2026-08-20T08:00:00+08:00"),
+          plannedEndAt: "2026-08-20T01:45:15.000Z",
+          detail: {
+            place: {
+              name: "Place",
+              lat: 45.75,
+              lng: 126.63,
+              coordinateSystem: "GCJ02",
+              provider: "amap",
+            },
+          },
+        },
+      ],
+    })
+    expect(flat.events[0]).toMatchObject({
+      plannedStartAt: "2026-08-20T00:00:00.000Z",
+      plannedEndAt: "2026-08-20T01:45:15.000Z",
+    })
+  })
+
   it("parses every table input, command, positive after state, and exact projection", () => {
     for (const item of TARGET_CONTRACT_FIXTURES) {
       for (const entry of item.cases) {
@@ -762,5 +826,4 @@ describe("breaking data-model target contracts", () => {
       }).success
     ).toBe(false)
   })
-
 })

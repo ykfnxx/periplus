@@ -8,6 +8,8 @@ import {
   type TransitPlanRequest,
 } from "@/lib/journeys/planning"
 import {
+  dateTimeFromTimestamp,
+  dateTimeToTimestamp,
   targetCommandBodySchema,
   targetCommandEnvelopeSchema,
   targetCommandResultSchema,
@@ -136,9 +138,13 @@ function deterministicId(envelope: TargetCommandEnvelope, label: string) {
 }
 
 function timestampAfter(timestamp: string, previous?: string) {
-  if (!previous || Date.parse(timestamp) > Date.parse(previous))
-    return timestamp
-  return new Date(Date.parse(previous) + 1).toISOString()
+  if (
+    !previous ||
+    dateTimeToTimestamp(timestamp) > dateTimeToTimestamp(previous)
+  ) {
+    return dateTimeFromTimestamp(timestamp)
+  }
+  return dateTimeFromTimestamp(dateTimeToTimestamp(previous) + 1)
 }
 
 function activeAtRevision(
@@ -1068,7 +1074,8 @@ function rebaseWorkspaceGraph(
       sourceEvent &&
       currentEvent &&
       json(previousEvent) !== json(sourceEvent) &&
-      Date.parse(event.updatedAt) < Date.parse(currentEvent.updatedAt)
+      dateTimeToTimestamp(event.updatedAt) <
+        dateTimeToTimestamp(currentEvent.updatedAt)
     ) {
       event.updatedAt = currentEvent.updatedAt
     }

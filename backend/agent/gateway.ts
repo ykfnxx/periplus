@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto"
 import type { AuthContext } from "@/modules/auth/server/context"
-import { WORKSPACE_AGENT_RUN_LEASE_SECONDS } from "@/modules/data-model/contracts"
+import {
+  dateTimeToTimestamp,
+  WORKSPACE_AGENT_RUN_LEASE_SECONDS,
+} from "@/modules/data-model/contracts"
 import { validateJourneyPlan } from "@/modules/data/journeys/journey-plan-validator"
 import {
   createPlaceIntelligenceService,
@@ -155,7 +158,11 @@ function recentDialogueMessages(
     [...necessaryTail, ...afterCutoff].map((message) => [message.id, message])
   )
   return [...byId.values()]
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .sort(
+      (left, right) =>
+        dateTimeToTimestamp(left.createdAt) -
+        dateTimeToTimestamp(right.createdAt)
+    )
     .slice(-8)
 }
 
@@ -177,7 +184,8 @@ function summarySourceMessages(
       .slice(0, throughIndex + 1)
       .filter(
         (message) =>
-          message.createdAt >= sourceRun.startedAt &&
+          dateTimeToTimestamp(message.createdAt) >=
+            dateTimeToTimestamp(sourceRun.startedAt) &&
           (message.role === "USER" || message.agentRunId === sourceRunId)
       ),
   })
@@ -328,7 +336,10 @@ export class AgentGateway {
   ) {
     const terminalRuns = document.agentRuns
       .filter((run) => run.status !== "RUNNING")
-      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+      .sort(
+        (a, b) =>
+          dateTimeToTimestamp(b.startedAt) - dateTimeToTimestamp(a.startedAt)
+      )
     const source = terminalRuns
       .map((run) => ({
         run,
@@ -1156,7 +1167,8 @@ export class AgentGateway {
     }
     const request = parsedRequest.data
     const fingerprint = JSON.stringify(request)
-    const requestIsReplayable = request.type !== "path.commit"
+    const requestIsReplayable =
+      request.type !== "path.read" && request.type !== "path.commit"
     const replay = running.toolCallResults.get(toolCallId)
     if (replay) {
       if (replay.fingerprint === fingerprint) return replay.result

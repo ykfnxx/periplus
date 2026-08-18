@@ -18,6 +18,7 @@ import {
   TARGET_VALUE_SOURCES,
 } from "./enums"
 import {
+  dateTimeToTimestamp,
   targetActorReferenceSchema,
   targetDateTimeSchema as dateTimeSchema,
   targetIdSchema as idSchema,
@@ -887,7 +888,8 @@ export const targetJourneyGraphSnapshotSchema = z
         if (
           event.plannedStartAt &&
           event.plannedEndAt &&
-          event.plannedEndAt < event.plannedStartAt
+          dateTimeToTimestamp(event.plannedEndAt) <
+            dateTimeToTimestamp(event.plannedStartAt)
         ) {
           addIssue(
             ["events"],
@@ -897,7 +899,8 @@ export const targetJourneyGraphSnapshotSchema = z
         if (
           event.actualStartAt &&
           event.actualEndAt &&
-          event.actualEndAt < event.actualStartAt
+          dateTimeToTimestamp(event.actualEndAt) <
+            dateTimeToTimestamp(event.actualStartAt)
         ) {
           addIssue(
             ["events"],
@@ -1101,7 +1104,8 @@ export const targetJourneyGraphSnapshotSchema = z
         previous.journeyId !== selection.journeyId ||
         previous.forkEventId !== selection.forkEventId ||
         previous.journeyRevision >= selection.journeyRevision ||
-        previous.createdAt >= selection.createdAt
+        dateTimeToTimestamp(previous.createdAt) >=
+          dateTimeToTimestamp(selection.createdAt)
       ) {
         addIssue(
           ["branchSelections"],
@@ -1267,7 +1271,8 @@ export const targetJourneyGraphSnapshotSchema = z
         previous.eventId !== observation.eventId ||
         previous.kind !== observation.kind ||
         previous.phase !== observation.phase ||
-        previous.createdAt >= observation.createdAt
+        dateTimeToTimestamp(previous.createdAt) >=
+          dateTimeToTimestamp(observation.createdAt)
       ) {
         addIssue(
           ["observations"],
