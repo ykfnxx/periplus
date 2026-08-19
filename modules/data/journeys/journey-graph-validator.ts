@@ -1,4 +1,5 @@
 import {
+  dateTimeToTimestamp,
   targetJourneyGraphSnapshotSchema,
   type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
@@ -342,9 +343,10 @@ export function validateJourneyGraph(
 }
 
 export function validateJourneyGraphTransition(
-  previous: TargetJourneyGraphSnapshot,
+  previousInput: TargetJourneyGraphSnapshot,
   input: unknown
 ): TargetJourneyGraphSnapshot {
+  const previous = validateJourneyGraph(previousInput)
   const next = validateJourneyGraph(input)
   if (next.id !== previous.id) fail("Journey id is immutable")
   if (next.ownerId !== previous.ownerId) fail("Journey owner is immutable")
@@ -373,7 +375,10 @@ export function validateJourneyGraphTransition(
     if (current.createdAt !== event.createdAt) {
       fail(`Event ${event.id} createdAt is immutable`)
     }
-    if (Date.parse(current.updatedAt) < Date.parse(event.updatedAt)) {
+    if (
+      dateTimeToTimestamp(current.updatedAt) <
+      dateTimeToTimestamp(event.updatedAt)
+    ) {
       fail(`Event ${event.id} updatedAt cannot move backwards`)
     }
     if (

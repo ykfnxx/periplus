@@ -164,7 +164,7 @@ describe("validateJourneyPlan", () => {
     )
   })
 
-  it("allows the backend-derived day boundary without Transit", () => {
+  it("requires Transit across a backend-derived day boundary", () => {
     const report = validateJourneyPlan({
       graph: graph(
         [
@@ -177,7 +177,35 @@ describe("validateJourneyPlan", () => {
       workspaceRevision: 2,
     })
 
-    expect(report.valid).toBe(true)
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        code: "MISSING_TRANSIT_BETWEEN",
+        localDate: "2026-08-01",
+        eventIds: ["day-one", "day-two"],
+      })
+    )
+  })
+
+  it("accepts a Transit connecting places across a day boundary", () => {
+    const report = validateJourneyPlan({
+      graph: graph(
+        [
+          city(),
+          visit("day-one", "2026-08-01T01:00:00.000Z"),
+          transit("day-one", "day-two"),
+          visit("day-two", "2026-08-02T01:00:00.000Z"),
+        ],
+        [
+          link("before-transit", "day-one", "transit", 0),
+          link("after-transit", "transit", "day-two", 1),
+        ]
+      ),
+      workspaceRevision: 2,
+    })
+
+    expect(report.issues.map((issue) => issue.code)).not.toContain(
+      "MISSING_TRANSIT_BETWEEN"
+    )
   })
 
   it("accepts provider-backed stays while rejecting unplanned Transit routes", () => {

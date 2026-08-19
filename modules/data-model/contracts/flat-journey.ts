@@ -7,6 +7,7 @@ import {
   TARGET_TRANSPORT_MODES,
 } from "./enums"
 import {
+  dateTimeToTimestamp,
   targetDateTimeSchema as dateTimeSchema,
   targetIdSchema as idSchema,
 } from "./common"
@@ -216,7 +217,8 @@ export const targetFlatJourneySnapshotSchema = z
       if (
         event.plannedStartAt &&
         event.plannedEndAt &&
-        event.plannedEndAt < event.plannedStartAt
+        dateTimeToTimestamp(event.plannedEndAt) <
+          dateTimeToTimestamp(event.plannedStartAt)
       ) {
         context.addIssue({
           code: "custom",

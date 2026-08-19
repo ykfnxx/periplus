@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import {
+  dateTimeToTimestamp,
   planValidationReportSchema,
   type PlanValidationIssue,
   type PlanValidationReport,
@@ -381,8 +382,8 @@ export function validateJourneyPlan({
       const previous = datedLocations[index - 1]!
       const current = datedLocations[index]!
       if (
-        Date.parse(current.event.plannedStartAt!) <
-        Date.parse(previous.event.plannedStartAt!)
+        dateTimeToTimestamp(current.event.plannedStartAt!) <
+        dateTimeToTimestamp(previous.event.plannedStartAt!)
       ) {
         issues.push(
           issue({
@@ -398,34 +399,25 @@ export function validateJourneyPlan({
           })
         )
       }
-    }
-
-    const dayBuckets = Map.groupBy(datedLocations, (entry) => entry.date)
-    for (const [date, locations] of dayBuckets) {
-      for (let index = 1; index < locations.length; index += 1) {
-        const from = locations[index - 1]!
-        const to = locations[index]!
-        const transits = route
-          .slice(from.index + 1, to.index)
-          .filter((event): event is TransitEvent => event.type === "TRANSIT")
-        if (transits.length === 0) {
-          issues.push(
-            issue({
-              code: "MISSING_TRANSIT_BETWEEN",
-              cityEventId: city.id,
-              localDate: date,
-              eventIds: [from.event.id, to.event.id],
-              message: "Adjacent same-day places must be connected by Transit",
-              repairability: "AGENT",
-              allowedOperations: [
-                "journey.add_event",
-                "journey.add_link",
-                "journey.plan_transit",
-              ],
-            })
-          )
-          continue
-        }
+      const transits = route
+        .slice(previous.index + 1, current.index)
+        .filter((event): event is TransitEvent => event.type === "TRANSIT")
+      if (transits.length === 0) {
+        issues.push(
+          issue({
+            code: "MISSING_TRANSIT_BETWEEN",
+            cityEventId: city.id,
+            localDate: previous.date,
+            eventIds: [previous.event.id, current.event.id],
+            message: "Adjacent places must be connected by Transit",
+            repairability: "AGENT",
+            allowedOperations: [
+              "journey.add_event",
+              "journey.add_link",
+              "journey.plan_transit",
+            ],
+          })
+        )
       }
     }
   }

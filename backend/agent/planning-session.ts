@@ -11,6 +11,10 @@ import type {
   TransitPlanBundle,
   TransitPlanEndpoint,
 } from "@/lib/journeys/planning"
+import {
+  dateTimeFromTimestamp,
+  dateTimeToTimestamp,
+} from "@/modules/data-model/contracts"
 import { projectFlatJourney } from "@/modules/data/journeys/flat-journey-projection"
 import type { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 import { WorkspaceInputError } from "@/modules/data/workspaces/workspace-repository"
@@ -120,11 +124,25 @@ interface CompiledDraft {
 
 const MAX_CHANGE_LOG_ENTRIES = 256
 const DAY_MS = 86_400_000
+const PLANNING_TIME_ZONE = "Asia/Shanghai"
 const DEFAULT_DURATION_MINUTES = {
   VISIT: 120,
   MEAL: 90,
   ACTIVITY: 120,
 } as const
+
+function planningLocalDate(value: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: PLANNING_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(dateTimeToTimestamp(value)))
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  )
+  return `${values.year}-${values.month}-${values.day}`
+}
 
 function nextSequence(entries: PlanningLogEntry[]) {
   return (entries.at(-1)?.sequence ?? 0) + 1
@@ -486,8 +504,12 @@ export class PlanningSession {
         throw new WorkspaceInputError("STALE_STAY_REQUIREMENT")
       }
       const itemKey = this.itemKey("stay", request.selectionId)
-      const startAt = `${requirement.checkInDate}T22:00:00+08:00`
-      const endAt = `${requirement.checkOutDate}T08:00:00+08:00`
+      const startAt = dateTimeFromTimestamp(
+        `${requirement.checkInDate}T22:00:00+08:00`
+      )
+      const endAt = dateTimeFromTimestamp(
+        `${requirement.checkOutDate}T08:00:00+08:00`
+      )
       const event: MaterializedPathEvent = {
         proposalItemKey: itemKey,
         kind: "STAY",
@@ -508,6 +530,7 @@ export class PlanningSession {
         afterItemKey: requirement.anchorItemKeys[0],
         reason: "selected hotel candidate",
       })
+      this.removeStaleDerivedEvents()
       return {
         acceptedSequence: entry.sequence,
         itemKey,
@@ -530,10 +553,10 @@ export class PlanningSession {
     const plan = selection.bundle.plans[0]
     if (!plan) throw new WorkspaceInputError("ROUTE_SELECTION_INVALID")
     const itemKey = this.itemKey("route", request.selectionId)
-    const startAt = requirement.earliestDepartAt
-    const endAt = new Date(
-      Date.parse(startAt) + plan.durationSeconds * 1000
-    ).toISOString()
+    const startAt = dateTimeFromTimestamp(requirement.earliestDepartAt)
+    const endAt = dateTimeFromTimestamp(
+      dateTimeToTimestamp(startAt) + plan.durationSeconds * 1000
+    )
     const event: MaterializedPathEvent = {
       proposalItemKey: itemKey,
       kind: "TRANSIT",
@@ -755,9 +778,11 @@ export class PlanningSession {
             }
           : {}),
         ...(event.plannedStartAt
-          ? { plannedStartAt: event.plannedStartAt }
+          ? { plannedStartAt: dateTimeFromTimestamp(event.plannedStartAt) }
           : {}),
-        ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
+        ...(event.plannedEndAt
+          ? { plannedEndAt: dateTimeFromTimestamp(event.plannedEndAt) }
+          : {}),
       }
     }
     return {
@@ -766,9 +791,12 @@ export class PlanningSession {
       title: event.title,
       ...(event.description ? { description: event.description } : {}),
       cityQuery: event.city ?? "未标注城市",
-      plannedStartAt:
-        event.plannedStartAt ?? `${this.defaultTripStartDate}T09:00:00+08:00`,
-      ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
+      plannedStartAt: dateTimeFromTimestamp(
+        event.plannedStartAt ?? `${this.defaultTripStartDate}T09:00:00+08:00`
+      ),
+      ...(event.plannedEndAt
+        ? { plannedEndAt: dateTimeFromTimestamp(event.plannedEndAt) }
+        : {}),
       ...(event.plannedDurationMinutes === undefined
         ? {}
         : { plannedDurationMinutes: event.plannedDurationMinutes }),
@@ -938,7 +966,7 @@ export class PlanningSession {
       cityQuery: input.selection.cityLabel,
       plannedStartAt:
         schedule.plannedStartAt ??
-        `${this.defaultTripStartDate}T09:00:00+08:00`,
+        dateTimeFromTimestamp(`${this.defaultTripStartDate}T09:00:00+08:00`),
       ...(schedule.plannedEndAt ? { plannedEndAt: schedule.plannedEndAt } : {}),
       plannedDurationMinutes:
         input.scheduleIntent?.durationMinutes ??
@@ -972,7 +1000,9 @@ export class PlanningSession {
       intent.localDate ??
       (intent.dayIndex
         ? this.addDays(this.defaultTripStartDate, intent.dayIndex - 1)
-        : (anchor?.plannedEndAt?.slice(0, 10) ?? this.defaultTripStartDate))
+        : anchor?.plannedEndAt
+          ? planningLocalDate(anchor.plannedEndAt)
+          : this.defaultTripStartDate)
     const windowStart =
       intent.notBeforeLocalTime ??
       (intent.timeWindow === "AFTERNOON"
@@ -980,23 +1010,23 @@ export class PlanningSession {
         : intent.timeWindow === "EVENING"
           ? "18:00"
           : "09:00")
-    let startMs = Date.parse(`${date}T${windowStart}:00+08:00`)
+    let startMs = dateTimeToTimestamp(`${date}T${windowStart}:00+08:00`)
     const anchorEnd = anchor?.plannedEndAt ?? anchor?.plannedStartAt
-    if (anchorEnd && anchorEnd.slice(0, 10) === date) {
-      startMs = Math.max(startMs, Date.parse(anchorEnd))
+    if (anchorEnd && planningLocalDate(anchorEnd) === date) {
+      startMs = Math.max(startMs, dateTimeToTimestamp(anchorEnd))
     }
     const duration =
       intent.durationMinutes ?? DEFAULT_DURATION_MINUTES[eventType]
     const endMs = startMs + duration * 60_000
     if (intent.notAfterLocalTime) {
-      const deadline = Date.parse(
+      const deadline = dateTimeToTimestamp(
         `${date}T${intent.notAfterLocalTime}:00+08:00`
       )
       if (endMs > deadline) throw new WorkspaceInputError("SCHEDULE_CONFLICT")
     }
     return {
-      plannedStartAt: new Date(startMs).toISOString(),
-      plannedEndAt: new Date(endMs).toISOString(),
+      plannedStartAt: dateTimeFromTimestamp(startMs),
+      plannedEndAt: dateTimeFromTimestamp(endMs),
     }
   }
 
@@ -1039,23 +1069,28 @@ export class PlanningSession {
     if (startIndex < 0) return
     const first = events[startIndex]
     if (!first?.plannedStartAt) return
-    const delta = Date.parse(earliestStartAt) - Date.parse(first.plannedStartAt)
+    const delta =
+      dateTimeToTimestamp(earliestStartAt) -
+      dateTimeToTimestamp(first.plannedStartAt)
     if (delta <= 0) return
-    const date = first.plannedStartAt.slice(0, 10)
+    const date = planningLocalDate(first.plannedStartAt)
     for (const event of events.slice(startIndex)) {
-      if (!event.plannedStartAt || event.plannedStartAt.slice(0, 10) !== date) {
+      if (
+        !event.plannedStartAt ||
+        planningLocalDate(event.plannedStartAt) !== date
+      ) {
         break
       }
       const shifted: MaterializedPathEvent = {
         ...event,
-        plannedStartAt: new Date(
-          Date.parse(event.plannedStartAt) + delta
-        ).toISOString(),
+        plannedStartAt: dateTimeFromTimestamp(
+          dateTimeToTimestamp(event.plannedStartAt) + delta
+        ),
         ...(event.plannedEndAt
           ? {
-              plannedEndAt: new Date(
-                Date.parse(event.plannedEndAt) + delta
-              ).toISOString(),
+              plannedEndAt: dateTimeFromTimestamp(
+                dateTimeToTimestamp(event.plannedEndAt) + delta
+              ),
             }
           : {}),
       }
@@ -1069,6 +1104,16 @@ export class PlanningSession {
   }
 
   private removeStaleDerivedEvents() {
+    for (const event of this.staleTransitEvents()) {
+      this.append({
+        type: "EVENT_REMOVED",
+        itemKey: event.proposalItemKey,
+        reason: "backend invalidated stale route adjacency",
+      })
+    }
+  }
+
+  private staleTransitEvents() {
     const events = this.materializedEvents()
     const nonTransit = events.filter((event) => event.kind !== "TRANSIT")
     const adjacent = new Set(
@@ -1077,18 +1122,22 @@ export class PlanningSession {
         return `${event.proposalItemKey}:${next?.proposalItemKey}`
       })
     )
-    for (const event of events) {
-      if (
+    return events.filter(
+      (event): event is Extract<MaterializedPathEvent, { kind: "TRANSIT" }> =>
         event.kind === "TRANSIT" &&
         !adjacent.has(`${event.fromItemKey}:${event.toItemKey}`)
-      ) {
-        this.append({
-          type: "EVENT_REMOVED",
-          itemKey: event.proposalItemKey,
-          reason: "backend invalidated stale route adjacency",
-        })
-      }
-    }
+    )
+  }
+
+  private staleTransitIssues() {
+    return this.staleTransitEvents().map((event) => ({
+      code: "STALE_TRANSIT_ADJACENCY",
+      severity: "ERROR" as const,
+      message: `Transit ${event.proposalItemKey} endpoints ${event.fromItemKey} and ${event.toItemKey} are not adjacent in the current Path`,
+      proposalItemKey: event.proposalItemKey,
+      fromItemKey: event.fromItemKey,
+      toItemKey: event.toItemKey,
+    }))
   }
 
   private requirements() {
@@ -1115,9 +1164,9 @@ export class PlanningSession {
       )
       const departAt = from.plannedEndAt ?? from.plannedStartAt
       const arriveAt = to.plannedStartAt
-      const departDate = departAt?.slice(0, 10)
-      const arriveDate = arriveAt?.slice(0, 10)
-      if (departAt && departDate === arriveDate && !hasRoute) {
+      const departDate = departAt ? planningLocalDate(departAt) : undefined
+      const arriveDate = arriveAt ? planningLocalDate(arriveAt) : undefined
+      if (departAt && !hasRoute) {
         routeRequirements.push({
           routeRequirementId: this.selectionId("route", {
             from: from.proposalItemKey,
@@ -1142,8 +1191,8 @@ export class PlanningSession {
         const nights = Math.max(
           1,
           Math.round(
-            (Date.parse(`${arriveDate}T00:00:00Z`) -
-              Date.parse(`${departDate}T00:00:00Z`)) /
+            (dateTimeToTimestamp(`${arriveDate}T00:00:00Z`) -
+              dateTimeToTimestamp(`${departDate}T00:00:00Z`)) /
               DAY_MS
           )
         )
@@ -1444,7 +1493,9 @@ export class PlanningSession {
             plannedStartAt: event.plannedStartAt,
             plannedEndAt:
               event.plannedEndAt ??
-              new Date(Date.parse(event.plannedStartAt) + DAY_MS).toISOString(),
+              dateTimeFromTimestamp(
+                dateTimeToTimestamp(event.plannedStartAt) + DAY_MS
+              ),
           }
         )
         const result = await draft.addStay(
@@ -1576,9 +1627,12 @@ export class PlanningSession {
 
   private pendingRequirementIssues() {
     const requirements = this.requirements()
+    const staleTransitIssues = this.staleTransitIssues()
     return {
       requirements,
+      staleTransitIssues,
       issues: [
+        ...staleTransitIssues,
         ...requirements.routeRequirements.map((requirement) => ({
           code: "ROUTE_REQUIREMENT_PENDING",
           severity: "ERROR" as const,
@@ -1600,7 +1654,9 @@ export class PlanningSession {
         committed: false as const,
         issues: pending.issues,
         requirements: pending.requirements,
-        nextAction: "COMPLETE_REQUIREMENTS" as const,
+        nextAction: pending.staleTransitIssues.length
+          ? ("REVISE_PATH" as const)
+          : ("COMPLETE_REQUIREMENTS" as const),
       }
     }
 
@@ -1726,6 +1782,7 @@ export class PlanningSession {
       ...(event.plannedEndAt ? { plannedEndAt: event.plannedEndAt } : {}),
     }))
     const requirements = this.requirements()
+    const staleTransitIssues = this.staleTransitIssues()
 
     const unresolvedByKey = new Map<
       string,
@@ -1753,7 +1810,7 @@ export class PlanningSession {
       baseRevision: this.baseline.workspaceRevision,
       materializedPath,
       requirements,
-      conflicts: [],
+      conflicts: staleTransitIssues,
       warnings: [],
       unresolved: [...unresolvedByKey.values()],
       changeLogEntriesRemaining: Math.max(

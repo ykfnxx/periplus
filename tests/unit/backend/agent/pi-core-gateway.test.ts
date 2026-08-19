@@ -8,8 +8,14 @@ import type {
   PeriplusHarnessEvent,
 } from "@/backend/agent/periplus-agent-harness"
 import type { AgentEvent } from "@/backend/types"
+import {
+  transitPlanFingerprint,
+  type TransitPlanBundle,
+  type TransitPlanRequest,
+} from "@/lib/journeys/planning"
 import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
+import { TransitPlanningService } from "@/modules/data/transit/transit-planning-service"
 import { createWorkspace } from "@/modules/data/workspaces/workspace-repository"
 import { WorkspaceCommandService } from "@/modules/workspace/server/workspace-command-service"
 
@@ -101,6 +107,78 @@ function graph(id: string): TargetJourneyGraphSnapshot {
     eventAssetLinks: [],
     observations: [],
     eventSourceLinks: [],
+  }
+}
+
+function overnightHotelGraph(id: string): TargetJourneyGraphSnapshot {
+  const result = graph(id)
+  const timestamp = "2026-08-12T00:00:00.000Z"
+  const firstVisitId = `${id}-visit`
+  const secondVisitId = `${id}-visit-next-day`
+  result.events.push({
+    id: secondVisitId,
+    journeyId: id,
+    parentSectionEventId: `${id}-city`,
+    placementStatus: "SCHEDULED",
+    origin: "ORIGINAL",
+    title: "灵隐寺",
+    executionStatus: "PLANNED",
+    plannedStartAt: "2026-08-14T09:00:00+08:00",
+    introducedRevision: 1,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    type: "VISIT",
+    detail: {
+      plannedLat: 30.2403,
+      plannedLng: 120.1015,
+      coordinateSystem: "GCJ02",
+      coordinateProvider: "amap",
+    },
+  })
+  result.links.push({
+    id: `${id}-visit-link`,
+    journeyId: id,
+    fromEventId: firstVisitId,
+    toEventId: secondVisitId,
+    kind: "MAIN",
+    rank: 1024,
+    introducedRevision: 1,
+  })
+  return result
+}
+
+function transitProviderBundle(input: TransitPlanRequest): TransitPlanBundle {
+  const fingerprint = transitPlanFingerprint(input)
+  return {
+    transitEventId: input.transitEventId,
+    requestFingerprint: fingerprint,
+    plans: [
+      {
+        id: `provider-${fingerprint}`,
+        provider: "mock",
+        rank: 0,
+        label: "推荐路线",
+        strategy: "recommended",
+        distanceMeters: 1_000,
+        durationSeconds: 600,
+        trafficBasis: "TYPICAL",
+        calculatedAt: "2026-08-12T00:00:00.000Z",
+        requestFingerprint: fingerprint,
+        segments: [
+          {
+            id: `segment-${fingerprint}`,
+            order: 0,
+            mode: input.mode === "TRANSIT" ? "RAIL" : input.mode,
+            coordinateSystem: "GCJ02",
+            geometryKind: "ROAD_NETWORK",
+            positions: [
+              [input.origin.lng, input.origin.lat],
+              [input.destination.lng, input.destination.lat],
+            ],
+          },
+        ],
+      },
+    ],
   }
 }
 
@@ -478,9 +556,20 @@ describe("Pi Agent Core gateway integration", () => {
       data: {
         requirements: {
           stayRequirements: Array<{ stayRequirementId: string }>
+          routeRequirements: Array<{
+            fromItemKey: string
+            toItemKey: string
+            earliestDepartAt: string
+          }>
         }
       }
     }
+    expect(path.data.requirements.routeRequirements).toContainEqual(
+      expect.objectContaining({
+        fromItemKey: "baseline-0001",
+        toItemKey: "baseline-0002",
+      })
+    )
     const stayRequirementId =
       path.data.requirements.stayRequirements[0]!.stayRequirementId
     const searched = await harness.request!.executeTool(
@@ -508,6 +597,231 @@ describe("Pi Agent Core gateway integration", () => {
     ).resolves.toMatchObject({
       status: "retryable_error",
       code: "STALE_STAY_REQUIREMENT",
+    })
+
+    const added = (await harness.request!.executeTool(
+      {
+        type: "event.add",
+        source: "HOTEL",
+        stayRequirementId,
+        selectionId,
+      },
+      "stay-correct-city"
+    )) as {
+      status: "ok"
+      data: {
+        itemKey: string
+        materializedEvent: {
+          plannedStartAt: string
+          plannedEndAt: string
+        }
+      }
+    }
+    expect(added).toMatchObject({
+      status: "ok",
+      data: {
+        materializedEvent: {
+          plannedStartAt: "2026-08-13T14:00:00.000Z",
+          plannedEndAt: "2026-08-14T00:00:00.000Z",
+        },
+      },
+    })
+
+    const withStay = (await harness.request!.executeTool(
+      { type: "path.read" },
+      "read-path-with-stay"
+    )) as {
+      data: {
+        requirements: {
+          routeRequirements: Array<{
+            fromItemKey: string
+            toItemKey: string
+            earliestDepartAt: string
+          }>
+        }
+      }
+    }
+    expect(withStay.data.requirements.routeRequirements).toContainEqual({
+      routeRequirementId: expect.any(String),
+      fromItemKey: added.data.itemKey,
+      toItemKey: "baseline-0002",
+      earliestDepartAt: "2026-08-14T00:00:00.000Z",
+    })
+
+    harness.emit({ type: "run_end", result: { status: "succeeded" } })
+  })
+
+  it("invalidates a direct route when a hotel is inserted between its endpoints", async () => {
+    const journeyId = `pi-core-hotel-route-${randomUUID()}`
+    const workspace = await createWorkspace(context, {
+      graph: overnightHotelGraph(journeyId),
+      now: new Date("2026-08-12T00:00:00.000Z"),
+    })
+    const harness = new FakePiHarness()
+    const commands = new WorkspaceCommandService()
+    const transitService = new TransitPlanningService({
+      provider: {
+        plan: vi.fn(async (input) => transitProviderBundle(input)),
+      },
+      sleep: vi.fn(async () => undefined),
+      logUsage: vi.fn(async () => undefined),
+    })
+    const gateway = new AgentGateway(
+      commands,
+      harness as unknown as PeriplusAgentHarness,
+      {
+        heartbeatIntervalMs: null,
+        transitService,
+        hotelService: {
+          searchHotels: vi.fn().mockResolvedValue({
+            candidates: [
+              {
+                candidateId: "hotel-candidate-route",
+                provider: "rollinggo",
+                providerHotelId: "hotel-provider-route",
+                name: "杭州湖畔酒店",
+                coordinates: { lat: 30.25, lng: 120.15 },
+                fetchedAt: "2026-08-12T00:00:00.000Z",
+              },
+            ],
+            warnings: [],
+            providerAttempts: 1,
+          }),
+        },
+      }
+    )
+
+    await gateway.start(context, workspace.id, "杭州住一晚", () => undefined)
+
+    const readPath = async (toolCallId: string) =>
+      (await harness.request!.executeTool(
+        { type: "path.read" },
+        toolCallId
+      )) as {
+        status: "ok"
+        data: {
+          materializedPath: Array<{
+            itemKey: string
+            kind: string
+            fromItemKey?: string
+            toItemKey?: string
+          }>
+          requirements: {
+            routeRequirements: Array<{
+              routeRequirementId: string
+              fromItemKey: string
+              toItemKey: string
+            }>
+            stayRequirements: Array<{ stayRequirementId: string }>
+          }
+          conflicts: Array<{ code: string }>
+        }
+      }
+
+    const resolveRoute = async (
+      routeRequirementId: string,
+      toolCallId: string
+    ) => {
+      const searched = (await harness.request!.executeTool(
+        {
+          type: "route.search",
+          routeRequirementId,
+          modePreference: "WALK",
+        },
+        `${toolCallId}-search`
+      )) as { status: "ok"; data: { recommendedSelectionId: string } }
+      await expect(
+        harness.request!.executeTool(
+          {
+            type: "event.add",
+            source: "ROUTE",
+            routeRequirementId,
+            selectionId: searched.data.recommendedSelectionId,
+          },
+          `${toolCallId}-add`
+        )
+      ).resolves.toMatchObject({ status: "ok" })
+    }
+
+    const initial = await readPath("read-initial")
+    const directRequirement = initial.data.requirements.routeRequirements.find(
+      (requirement) =>
+        requirement.fromItemKey === "baseline-0001" &&
+        requirement.toItemKey === "baseline-0002"
+    )!
+    await resolveRoute(directRequirement.routeRequirementId, "direct-route")
+    const withDirectRoute = await readPath("read-direct-route")
+    const directTransit = withDirectRoute.data.materializedPath.find(
+      (event) =>
+        event.kind === "TRANSIT" &&
+        event.fromItemKey === "baseline-0001" &&
+        event.toItemKey === "baseline-0002"
+    )!
+
+    const stayRequirementId =
+      withDirectRoute.data.requirements.stayRequirements[0]!.stayRequirementId
+    const hotelSearch = (await harness.request!.executeTool(
+      { type: "hotel.search", stayRequirementId },
+      "search-hotel-after-route"
+    )) as { status: "ok"; data: { recommendedSelectionId: string } }
+    const hotelAdd = (await harness.request!.executeTool(
+      {
+        type: "event.add",
+        source: "HOTEL",
+        stayRequirementId,
+        selectionId: hotelSearch.data.recommendedSelectionId,
+      },
+      "add-hotel-after-route"
+    )) as { status: "ok"; data: { itemKey: string } }
+
+    let current = await readPath("read-after-hotel")
+    expect(current.data.materializedPath).not.toContainEqual(
+      expect.objectContaining({ itemKey: directTransit.itemKey })
+    )
+    expect(current.data.conflicts).toEqual([])
+    expect(current.data.requirements.routeRequirements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromItemKey: "baseline-0001",
+          toItemKey: hotelAdd.data.itemKey,
+        }),
+        expect.objectContaining({
+          fromItemKey: hotelAdd.data.itemKey,
+          toItemKey: "baseline-0002",
+        }),
+      ])
+    )
+
+    for (let index = 0; index < 2; index += 1) {
+      const requirement = current.data.requirements.routeRequirements[0]!
+      await resolveRoute(requirement.routeRequirementId, `stay-route-${index}`)
+      current = await readPath(`read-stay-route-${index}`)
+    }
+
+    expect(current.data.requirements.routeRequirements).toEqual([])
+    expect(current.data.requirements.stayRequirements).toEqual([])
+    expect(current.data.conflicts).toEqual([])
+    const nonTransitItemKeys = current.data.materializedPath
+      .filter((event) => event.kind !== "TRANSIT")
+      .map((event) => event.itemKey)
+    const adjacentPairs = new Set(
+      nonTransitItemKeys
+        .slice(0, -1)
+        .map((itemKey, index) => `${itemKey}:${nonTransitItemKeys[index + 1]}`)
+    )
+    for (const event of current.data.materializedPath.filter(
+      (candidate) => candidate.kind === "TRANSIT"
+    )) {
+      expect(adjacentPairs.has(`${event.fromItemKey}:${event.toItemKey}`)).toBe(
+        true
+      )
+    }
+
+    await expect(
+      harness.request!.executeTool({ type: "path.commit" }, "commit-path")
+    ).resolves.toMatchObject({
+      status: "ok",
+      data: { committed: true, newWorkspaceRevision: 1 },
     })
 
     harness.emit({ type: "run_end", result: { status: "succeeded" } })
