@@ -6,8 +6,18 @@ import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 export default function PhotoSync() {
   const setPhotoShares = useWorkspaceStore((state) => state.setPhotoShares)
+  const revisionKey = useWorkspaceStore((state) => {
+    const flatJourney = state.workspaceDocument?.session.flatJourney
+    return flatJourney
+      ? `${flatJourney.journeyId}:${flatJourney.revision}`
+      : null
+  })
+  const routeRenderedRevisionKey = useWorkspaceStore(
+    (state) => state.routeRenderedRevisionKey
+  )
 
   useEffect(() => {
+    if (!revisionKey || routeRenderedRevisionKey !== revisionKey) return
     let mounted = true
 
     listPhotos()
@@ -22,7 +32,7 @@ export default function PhotoSync() {
     return () => {
       mounted = false
     }
-  }, [setPhotoShares])
+  }, [revisionKey, routeRenderedRevisionKey, setPhotoShares])
 
   return null
 }

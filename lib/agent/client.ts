@@ -1,5 +1,5 @@
 import { periplusPublicConfig } from "@/config/periplus"
-import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
+import type { TargetWorkspaceClientDocument } from "@/modules/data-model/contracts"
 
 export interface AgentEvent {
   type: string
@@ -7,7 +7,7 @@ export interface AgentEvent {
 }
 
 interface WorkspaceBootstrapResponse {
-  workspace: TargetWorkspaceDocument
+  workspace: TargetWorkspaceClientDocument
   ticket: string
 }
 

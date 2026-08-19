@@ -9,7 +9,7 @@ import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
 import { getJourney } from "@/modules/data/journeys/journey-repository"
 import {
   createWorkspace,
-  getWorkspaceDocument,
+  getWorkspaceClientDocument,
 } from "@/modules/data/workspaces/workspace-repository"
 import { issueWorkspaceTicket } from "@/modules/data/workspaces/workspace-ticket"
 import { createSilkRoadJourney } from "@/lib/mock-journeys"
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     }
 
     let workspace = workspaceId
-      ? await getWorkspaceDocument(context, workspaceId)
+      ? await getWorkspaceClientDocument(context, workspaceId)
       : null
     if (workspaceId && !workspace) {
       return NextResponse.json(
@@ -91,7 +91,7 @@ export async function GET(request: Request) {
             }
           : {}),
       })
-      workspace = await getWorkspaceDocument(context, session.id)
+      workspace = await getWorkspaceClientDocument(context, session.id)
     }
 
     if (!workspace) {

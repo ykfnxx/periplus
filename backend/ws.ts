@@ -120,7 +120,7 @@ export function createAgentWebSocketServer(
       const claims = verifyWorkspaceTicket(url.searchParams.get("ticket") ?? "")
       const context = { userId: claims.subjectUserId, role: "user" as const }
       const workspaceId = claims.workspaceId
-      const document = await commands.getDocument(context, workspaceId)
+      const document = await commands.getClientDocument(context, workspaceId)
       if (!document) {
         send(socket, {
           type: "error",
@@ -150,7 +150,10 @@ export function createAgentWebSocketServer(
             )
 
             if (message.type === "workspace.get") {
-              const document = await commands.getDocument(context, workspaceId)
+              const document = await commands.getClientDocument(
+                context,
+                workspaceId
+              )
               send(socket, { type: "workspace.updated", payload: document })
               messageSpan.end("OK")
               return
@@ -167,7 +170,10 @@ export function createAgentWebSocketServer(
                 actor: { kind: "USER", userId: context.userId },
               })
               const result = await commands.execute(context, envelope)
-              const current = await commands.getDocument(context, workspaceId)
+              const current = await commands.getClientDocument(
+                context,
+                workspaceId
+              )
               broadcast(workspaceId, {
                 type: "workspace.updated",
                 payload: { result, workspace: current },

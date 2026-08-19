@@ -56,6 +56,9 @@ export default function WorkbenchShell({
     () => new Set()
   )
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
+  const documentReady = useWorkspaceStore(
+    (state) => state.workspaceDocument !== null
+  )
   const graph = useWorkspaceStore(selectWorkspaceJourneyView)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const workbenchTab = useWorkspaceStore((state) => state.workbenchTab)
@@ -128,6 +131,7 @@ export default function WorkbenchShell({
     return (
       <section
         ref={sectionRef}
+        inert={!documentReady}
         aria-label="旅行规划工作台"
         className="pointer-events-none absolute top-5 bottom-5 left-5 z-20 flex gap-5"
       >
@@ -181,6 +185,7 @@ export default function WorkbenchShell({
     return (
       <section
         ref={sectionRef}
+        inert={!documentReady}
         aria-label="旅行规划工作台"
         className="pointer-events-auto absolute right-2 bottom-0 left-2 z-20 flex min-h-[76px] flex-col overflow-hidden rounded-t-[22px] border border-b-0 border-ink-15 bg-soft-white/98 shadow-periplus-sheet backdrop-blur-sm transition-[height] duration-200"
         style={{ height: sheetHeight }}
@@ -273,6 +278,11 @@ function AIWorkbenchContent({
   showInitialState: boolean
 }) {
   const graph = useWorkspaceStore(selectWorkspaceJourneyView)
+  const documentReady = useWorkspaceStore(
+    (state) => state.workspaceDocument !== null
+  )
+
+  if (!documentReady) return null
 
   return (
     <>

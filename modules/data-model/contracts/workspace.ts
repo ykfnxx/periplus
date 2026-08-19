@@ -217,6 +217,34 @@ export const targetWorkspaceDocumentSchema = z.object({
   agentRuns: z.array(targetWorkspaceAgentRunSchema),
 })
 
+// 浏览器只接收一份 Journey；headGraph 与 draftState 继续留在服务端 aggregate。
+export const targetWorkspaceClientSessionSchema = z
+  .object({
+    id: idSchema,
+    ownerId: idSchema,
+    sourceJourneyId: idSchema.nullable(),
+    headWorkspaceRevision: z.number().int().nonnegative(),
+    status: z.enum(TARGET_WORKSPACE_STATUSES),
+    title: targetWorkspaceTitleSchema,
+    flatJourney: targetFlatJourneySnapshotSchema,
+  })
+  .superRefine((session, context) => {
+    if (session.flatJourney.revision !== session.headWorkspaceRevision) {
+      context.addIssue({
+        code: "custom",
+        path: ["flatJourney", "revision"],
+        message: "flat Journey revision must match Workspace head revision",
+      })
+    }
+  })
+
+export const targetWorkspaceClientDocumentSchema = z.object({
+  session: targetWorkspaceClientSessionSchema,
+  accessState: z.enum(TARGET_WORKSPACE_ACCESS_STATES),
+  messages: z.array(targetWorkspaceMessageSchema),
+  agentRuns: z.array(targetWorkspaceAgentRunSchema),
+})
+
 export const targetWorkspaceSummarySchema = z.object({
   id: idSchema,
   sourceJourneyId: idSchema.nullable(),
@@ -258,6 +286,12 @@ export type TargetWorkspaceMessage = z.infer<
 >
 export type TargetWorkspaceDocument = z.infer<
   typeof targetWorkspaceDocumentSchema
+>
+export type TargetWorkspaceClientSession = z.infer<
+  typeof targetWorkspaceClientSessionSchema
+>
+export type TargetWorkspaceClientDocument = z.infer<
+  typeof targetWorkspaceClientDocumentSchema
 >
 export type TargetWorkspaceSummary = z.infer<
   typeof targetWorkspaceSummarySchema

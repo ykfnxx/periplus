@@ -4,18 +4,22 @@ import {
   projectFlatJourneyForWorkspace,
   replacementSegmentId,
 } from "@/lib/journeys/flat-workspace-projection"
-import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
+import type { TargetWorkspaceClientDocument } from "@/modules/data-model/contracts"
 import type {
   WorkspaceDocumentSlice,
   WorkspaceSlice,
   WorkspaceState,
 } from "@/modules/workspace/state/types"
 
-export function workspaceIsLocked(document: TargetWorkspaceDocument | null) {
+export function workspaceIsLocked(
+  document: TargetWorkspaceClientDocument | null
+) {
   return Boolean(document?.agentRuns.some((run) => run.status === "RUNNING"))
 }
 
-export function workspaceCanMutate(document: TargetWorkspaceDocument | null) {
+export function workspaceCanMutate(
+  document: TargetWorkspaceClientDocument | null
+) {
   return Boolean(
     document &&
     document.accessState === "OWNER" &&
@@ -24,8 +28,8 @@ export function workspaceCanMutate(document: TargetWorkspaceDocument | null) {
 }
 
 export function shouldAcceptWorkspaceDocument(
-  current: TargetWorkspaceDocument | null,
-  incoming: TargetWorkspaceDocument | null
+  current: TargetWorkspaceClientDocument | null,
+  incoming: TargetWorkspaceClientDocument | null
 ) {
   if (!current || !incoming) return true
   if (current.session.id !== incoming.session.id) return true
@@ -77,7 +81,7 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
 
 function workspaceDocumentPatch(
   state: WorkspaceState,
-  workspaceDocument: TargetWorkspaceDocument | null
+  workspaceDocument: TargetWorkspaceClientDocument | null
 ) {
   const previousDocument = state.workspaceDocument
   const previousFlat = previousDocument?.session.flatJourney
@@ -178,7 +182,7 @@ function workspaceDocumentPatch(
   }
 }
 
-function topologyKey(document: TargetWorkspaceDocument | null) {
+function topologyKey(document: TargetWorkspaceClientDocument | null) {
   const flatJourney = document?.session.flatJourney
   if (!flatJourney) return ""
   return `${flatJourney.journeyId}:${flatJourney.events

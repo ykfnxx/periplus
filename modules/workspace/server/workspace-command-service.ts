@@ -44,6 +44,7 @@ import {
   commitWorkspaceRevisionChain,
   forkWorkspaceRevisionChain,
   getWorkspaceDocument,
+  getWorkspaceClientDocument,
   getWorkspaceRevision,
   getWorkspaceRevisionByIdempotencyKey,
   listWorkspaceRevisions,
@@ -3114,5 +3115,9 @@ export class WorkspaceCommandService {
 
   getDocument(context: AuthContext, workspaceId: string, now?: Date) {
     return getWorkspaceDocument(context, workspaceId, now)
+  }
+
+  getClientDocument(context: AuthContext, workspaceId: string, now?: Date) {
+    return getWorkspaceClientDocument(context, workspaceId, now)
   }
 }

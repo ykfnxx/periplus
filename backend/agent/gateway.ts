@@ -29,6 +29,7 @@ import {
   saveWorkspaceAgentContextCheckpoint,
   startWorkspaceAgentContextCheckpointAttempt,
   startWorkspaceAgentRun,
+  toWorkspaceClientDocument,
   WorkspaceInputError,
   WorkspaceRevisionConflictError,
 } from "@/modules/data/workspaces/workspace-repository"
@@ -812,7 +813,10 @@ export class AgentGateway {
         () => this.commands.getDocument(context, workspaceId)
       )
       if (!document) throw new WorkspaceInputError("Workspace was not found")
-      emit(workspaceId, { type: "workspace.locked", payload: document })
+      emit(workspaceId, {
+        type: "workspace.locked",
+        payload: toWorkspaceClientDocument(document),
+      })
       emit(workspaceId, {
         type: "agent.run.started",
         payload: {
@@ -1998,7 +2002,7 @@ export class AgentGateway {
           payload: {
             runId: running.runId,
             revision: running.committedRevision,
-            document,
+            document: toWorkspaceClientDocument(document),
             summary: running.committedSummary ?? "行程已更新。",
             changedEventIds: running.committedChangedEventIds,
           },
@@ -2006,7 +2010,7 @@ export class AgentGateway {
       }
       emit(running.workspaceId, {
         type: "workspace.unlocked",
-        payload: document,
+        payload: document ? toWorkspaceClientDocument(document) : null,
       })
     } catch (error) {
       failed = true
@@ -2165,7 +2169,7 @@ export class AgentGateway {
       }
       emit(running.workspaceId, {
         type: "workspace.unlocked",
-        payload: document,
+        payload: document ? toWorkspaceClientDocument(document) : null,
       })
       running.telemetry.finish("ERROR", "", {
         "periplus.agent.error_type":

@@ -2,8 +2,8 @@ import type { StateCreator } from "zustand"
 import type { JourneyViewLevel } from "@/lib/journeys/projections"
 import type {
   TargetJourneyEvent,
+  TargetWorkspaceClientDocument,
   TargetWorkspaceMessage,
-  TargetWorkspaceDocument,
 } from "@/modules/data-model/contracts"
 import type { PhotoShare } from "@/types/photo"
 import type {
@@ -78,6 +78,8 @@ export interface MapRuntimeSlice {
   map: AMap.Map | null
   setMap: (map: AMap.Map | null) => void
   mapReady: boolean
+  routeRenderedRevisionKey: string | null
+  setRouteRenderedRevisionKey: (key: string | null) => void
   mapError: string | null
   setMapError: (error: string | null) => void
   mapFocusRequest: MapFocusRequest | null
@@ -88,11 +90,13 @@ export interface MapRuntimeSlice {
 }
 
 export interface WorkspaceDocumentSlice {
-  workspaceDocument: TargetWorkspaceDocument | null
-  applyWorkspaceDocument: (document: TargetWorkspaceDocument | null) => boolean
+  workspaceDocument: TargetWorkspaceClientDocument | null
+  applyWorkspaceDocument: (
+    document: TargetWorkspaceClientDocument | null
+  ) => boolean
   journeyCommitPresentation: JourneyCommitPresentation | null
   applyJourneyCommit: (
-    document: TargetWorkspaceDocument,
+    document: TargetWorkspaceClientDocument,
     summary: string,
     changedEventIds: string[]
   ) => boolean

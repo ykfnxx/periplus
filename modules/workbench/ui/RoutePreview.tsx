@@ -131,11 +131,7 @@ export default function RoutePreview({
   )
 
   if (!graph) {
-    return (
-      <div className="flex h-full min-h-72 items-center justify-center px-6 text-center text-sm leading-6 text-teak">
-        暂无路线预览
-      </div>
-    )
+    return <div ref={rootRef} data-route-preview className="min-h-full" />
   }
 
   const durationDays = totalDurationDays(

@@ -1,12 +1,18 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import LocationSelectionPrompt from "@/modules/workbench/ui/LocationSelectionPrompt"
-import PhotoLightbox from "@/modules/workbench/ui/PhotoLightbox"
-import PhotoUploadModal from "@/modules/workbench/ui/PhotoUploadModal"
 import WorkbenchShell from "@/modules/workbench/ui/WorkbenchShell"
 import type { WorkspaceSwitcherController } from "@/modules/workbench/ui/WorkspaceSwitcherPanel"
 import WorkspaceCornerControls from "@/modules/workbench/ui/WorkspaceCornerControls"
 import useWorkspaceSwitcherController from "@/modules/workbench/ui/useWorkspaceSwitcherController"
+
+const PhotoLightbox = dynamic(
+  () => import("@/modules/workbench/ui/PhotoLightbox")
+)
+const PhotoUploadModal = dynamic(
+  () => import("@/modules/workbench/ui/PhotoUploadModal")
+)
 
 export default function WorkspaceInteractionLayer({
   workspaceSwitcher,

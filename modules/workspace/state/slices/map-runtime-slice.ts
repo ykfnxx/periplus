@@ -9,6 +9,9 @@ export const createMapRuntimeSlice: WorkspaceSlice<MapRuntimeSlice> = (
   map: null,
   setMap: (map) => set({ map, mapReady: map !== null }),
   mapReady: false,
+  routeRenderedRevisionKey: null,
+  setRouteRenderedRevisionKey: (routeRenderedRevisionKey) =>
+    set({ routeRenderedRevisionKey }),
   mapError: null,
   setMapError: (mapError) => set({ mapError }),
   mapFocusRequest: null,

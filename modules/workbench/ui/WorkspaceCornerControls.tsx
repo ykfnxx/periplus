@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
+import dynamic from "next/dynamic"
 import {
   Image as ImageIcon,
   LocateFixed,
@@ -16,9 +17,10 @@ import {
   selectWorkspaceJourneyView,
 } from "@/modules/workspace/state/selectors"
 import type { ActiveMapPanel } from "@/modules/workspace/state/types"
-import PhotoUploadPanel from "./PhotoUploadPanel"
-import SavedRoutesPanel from "./SavedRoutesPanel"
-import WorkspaceSettingsPanel from "./WorkspaceSettingsPanel"
+
+const PhotoUploadPanel = dynamic(() => import("./PhotoUploadPanel"))
+const SavedRoutesPanel = dynamic(() => import("./SavedRoutesPanel"))
+const WorkspaceSettingsPanel = dynamic(() => import("./WorkspaceSettingsPanel"))
 
 const controls: Array<{
   panel: Exclude<ActiveMapPanel, "none">

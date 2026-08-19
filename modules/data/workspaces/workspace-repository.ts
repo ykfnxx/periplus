@@ -7,6 +7,7 @@ import {
   targetActorReferenceSchema,
   targetJourneyGraphSnapshotSchema,
   targetWorkspaceAgentRunSchema,
+  targetWorkspaceClientDocumentSchema,
   targetWorkspaceDocumentSchema,
   targetWorkspaceSummarySchema,
   targetWorkspaceMessageSchema,
@@ -18,6 +19,8 @@ import {
   type TargetActorReference,
   type TargetJourneyGraphSnapshot,
   type TargetWorkspaceDocument,
+  type TargetWorkspaceClientDocument,
+  type TargetWorkspaceClientSession,
   type TargetWorkspaceSummary,
   type TargetWorkspaceRevision,
   type TargetWorkspaceSession,
@@ -82,6 +85,28 @@ const workspaceInclude = {
 
 type WorkspaceRecord = Prisma.WorkspaceSessionGetPayload<{
   include: typeof workspaceInclude
+}>
+
+const workspaceClientSelect = {
+  id: true,
+  ownerId: true,
+  sourceJourneyId: true,
+  headWorkspaceRevision: true,
+  status: true,
+  title: true,
+  headGraphJson: true,
+  lastAccessAt: true,
+  messages: {
+    orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+  },
+  agentRuns: {
+    where: { status: "RUNNING" as const },
+    orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+  },
+} satisfies Prisma.WorkspaceSessionSelect
+
+type WorkspaceClientRecord = Prisma.WorkspaceSessionGetPayload<{
+  select: typeof workspaceClientSelect
 }>
 
 const workspaceHistorySelect = {
@@ -312,6 +337,24 @@ function mapSession(record: WorkspaceRecord): TargetWorkspaceSession {
     updatedAt: record.updatedAt.toISOString(),
     archivedAt: record.archivedAt?.toISOString(),
   })
+}
+
+function mapClientSession(
+  record: WorkspaceClientRecord
+): TargetWorkspaceClientSession {
+  const headGraph = parseGraph(
+    record.headGraphJson,
+    `Workspace ${record.id} head`
+  )
+  return {
+    id: record.id,
+    ownerId: record.ownerId,
+    sourceJourneyId: record.sourceJourneyId,
+    headWorkspaceRevision: record.headWorkspaceRevision,
+    status: record.status,
+    title: record.title,
+    flatJourney: projectFlatJourney(headGraph, record.headWorkspaceRevision),
+  }
 }
 
 function mapWorkspaceHistoryEntry(
@@ -604,6 +647,50 @@ export async function getWorkspaceDocument(
     draftState,
     messages: record.messages.map(mapMessage),
     agentRuns: record.agentRuns.map(mapAgentRun),
+  })
+}
+
+export async function getWorkspaceClientDocument(
+  context: AuthContext,
+  workspaceId: string,
+  now = new Date()
+): Promise<TargetWorkspaceClientDocument | null> {
+  const record = await prisma.workspaceSession.findUnique({
+    where: { id: workspaceId },
+    select: workspaceClientSelect,
+  })
+  if (!record) return null
+  assertOwner(context, record.ownerId)
+  if (record.status === "ACTIVE" && record.lastAccessAt < now) {
+    await prisma.workspaceSession.updateMany({
+      where: { id: record.id, status: "ACTIVE" },
+      data: { lastAccessAt: now },
+    })
+  }
+  return targetWorkspaceClientDocumentSchema.parse({
+    session: mapClientSession(record),
+    accessState: "OWNER",
+    messages: record.messages.map(mapMessage),
+    agentRuns: record.agentRuns.map(mapAgentRun),
+  })
+}
+
+export function toWorkspaceClientDocument(
+  document: TargetWorkspaceDocument
+): TargetWorkspaceClientDocument {
+  return targetWorkspaceClientDocumentSchema.parse({
+    session: {
+      id: document.session.id,
+      ownerId: document.session.ownerId,
+      sourceJourneyId: document.session.sourceJourneyId,
+      headWorkspaceRevision: document.session.headWorkspaceRevision,
+      status: document.session.status,
+      title: document.session.title,
+      flatJourney: document.session.flatJourney,
+    },
+    accessState: document.accessState,
+    messages: document.messages,
+    agentRuns: document.agentRuns.filter((run) => run.status === "RUNNING"),
   })
 }
 

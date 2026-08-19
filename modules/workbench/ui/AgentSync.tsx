@@ -8,7 +8,7 @@ import {
   WorkspaceBootstrapError,
   type AgentEvent,
 } from "@/lib/agent/client"
-import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
+import type { TargetWorkspaceClientDocument } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { agentRunStageFromPayload } from "./agent-run-presentation"
 
@@ -19,7 +19,7 @@ function workspaceFromPayload(payload: unknown) {
   const record = payload as Record<string, unknown>
   return (
     "workspace" in record ? record.workspace : payload
-  ) as TargetWorkspaceDocument | null
+  ) as TargetWorkspaceClientDocument | null
 }
 
 function journeyCommitFromPayload(payload: unknown) {
@@ -35,7 +35,7 @@ function journeyCommitFromPayload(payload: unknown) {
     return null
   }
   return {
-    document: record.document as TargetWorkspaceDocument,
+    document: record.document as TargetWorkspaceClientDocument,
     summary: record.summary,
     changedEventIds: record.changedEventIds,
   }
@@ -56,7 +56,7 @@ function asDelta(payload: unknown) {
   }
 }
 
-function conversationMessages(document: TargetWorkspaceDocument) {
+function conversationMessages(document: TargetWorkspaceClientDocument) {
   return document.messages
     .filter((message) => message.role !== "SYSTEM")
     .map((message) => ({
@@ -95,7 +95,7 @@ export default function AgentSync() {
     let commitPresentationTimer: number | null = null
     let disposed = false
 
-    const applyDocument = (document: TargetWorkspaceDocument | null) => {
+    const applyDocument = (document: TargetWorkspaceClientDocument | null) => {
       if (!document) return false
       if (!applyWorkspaceDocument(document)) return false
       setChatMessages(conversationMessages(document))
