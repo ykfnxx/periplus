@@ -13,8 +13,8 @@ import type {
 } from "@/modules/workspace/contracts"
 
 export type MapType = "standard" | "satellite" | "terrain"
-export type LocationSelectionMode = "none" | "photo" | "point" | "upload-photo"
-export type ActiveMapPanel = "none" | "photo" | "saved" | "settings"
+export type LocationSelectionMode = "none" | "point"
+export type ActiveMapPanel = "none" | "settings"
 export type ChatMessageRole = "user" | "assistant"
 export type WorkbenchTab = "preview" | "chat"
 export type MobileSheetSnap = "collapsed" | "half" | "expanded"
@@ -54,24 +54,9 @@ export interface ChatMessage {
   updatedAt?: string
 }
 
-export interface PendingPhotoUpload {
-  file: File
-  imageDataUrl: string
-}
-
 export interface MapAnchor {
   lat: number
   lng: number
-}
-
-export interface UploadPhoto {
-  id: string
-  file: File
-  previewUrl: string
-  lat?: number
-  lng?: number
-  caption?: string
-  hasGPS: boolean
 }
 
 export interface MapRuntimeSlice {
@@ -155,7 +140,6 @@ export interface PhotoSlice {
   pointSelectionDraft: PointSelectionDraft | null
   setPointSelectionDraft: (draft: PointSelectionDraft | null) => void
   locationSelectionMode: LocationSelectionMode
-  startPhotoLocationSelection: (file: File, imageDataUrl: string) => void
   startPointLocationSelection: () => void
   clearLocationSelection: () => void
   photoShares: PhotoShare[]
@@ -163,15 +147,11 @@ export interface PhotoSlice {
   addPhotoShare: (photo: PhotoShare) => void
   upsertPhotoShare: (photo: PhotoShare) => void
   removePhotoShare: (id: string) => void
-  updatePhotoShareCaption: (id: string, caption: string) => void
   selectedPhotoShare: PhotoShare | null
   selectedPhotoAnchor: MapAnchor | null
   setSelectedPhotoShare: (photo: PhotoShare | null, anchor?: MapAnchor) => void
   lightboxPhotoShare: PhotoShare | null
   setLightboxPhotoShare: (photo: PhotoShare | null) => void
-  pendingPhotoUpload: PendingPhotoUpload | null
-  pendingPhotoDataUrl: string | null
-  uploadLocationSelectionPhotoId: string | null
   isSelectingLocation: boolean
   anchorCluster: AnchorClusterState
   setAnchorCluster: (cluster: AnchorClusterState) => void
@@ -180,18 +160,6 @@ export interface PhotoSlice {
     anchors: ScatteredAnchor[]
   ) => void
   collapseCluster: () => void
-  uploadModalOpen: boolean
-  setUploadModalOpen: (open: boolean) => void
-  uploadStep: 1 | 2 | 3
-  setUploadStep: (step: 1 | 2 | 3) => void
-  uploadPhotos: UploadPhoto[]
-  setUploadPhotos: (
-    photos: UploadPhoto[] | ((prev: UploadPhoto[]) => UploadPhoto[])
-  ) => void
-  addUploadPhoto: (photo: UploadPhoto) => void
-  updateUploadPhoto: (id: string, updates: Partial<UploadPhoto>) => void
-  startUploadPhotoLocationSelection: (photoId: string) => void
-  clearUploadState: () => void
 }
 
 export interface WorkspaceState

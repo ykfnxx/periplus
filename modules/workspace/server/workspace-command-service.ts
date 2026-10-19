@@ -1634,7 +1634,11 @@ function locationEndpoint(graph: TargetJourneyGraphSnapshot, eventId: string) {
       coordinateSystem: event.detail.coordinateSystem,
     }
   }
-  if (event.type === "TRANSIT" || event.type === "NOTE") {
+  if (
+    event.type === "TRANSIT" ||
+    event.type === "NOTE" ||
+    event.type === "RECORD"
+  ) {
     throw new WorkspaceInputError(`Transit endpoint ${eventId} has no location`)
   }
   return {
@@ -2208,7 +2212,8 @@ function applyJourneyCommand(
         transitDependents.length &&
         (successor.type === "SECTION" ||
           successor.type === "TRANSIT" ||
-          successor.type === "NOTE")
+          successor.type === "NOTE" ||
+          successor.type === "RECORD")
       ) {
         throw new WorkspaceInputError(
           `Replacement successor ${successor.id} cannot satisfy Transit endpoint dependencies`
@@ -2358,6 +2363,7 @@ function applyJourneyCommand(
       if (
         event.type === "SECTION" ||
         event.type === "NOTE" ||
+        event.type === "RECORD" ||
         event.type !== command.payload.actual.type
       ) {
         throw new WorkspaceInputError(
@@ -2396,7 +2402,11 @@ function applyJourneyCommand(
     case "journey.skip_event":
     case "journey.cancel_event": {
       const event = requireEvent(graph, command.payload.eventId)
-      if (event.type === "SECTION" || event.type === "NOTE") {
+      if (
+        event.type === "SECTION" ||
+        event.type === "NOTE" ||
+        event.type === "RECORD"
+      ) {
         throw new WorkspaceInputError(
           "Only executable Events have execution status"
         )

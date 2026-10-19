@@ -513,6 +513,8 @@ function eventEnvelopeData(
     origin: event.origin,
     title: event.title,
     description: event.description ?? null,
+    recordingJson:
+      event.type === "RECORD" ? JSON.stringify(event.detail) : null,
     plannedStartAt:
       "plannedStartAt" in event && event.plannedStartAt
         ? new Date(event.plannedStartAt)
@@ -556,6 +558,7 @@ function eventEnvelopeUpdateData(
       : {}),
     ...(changed("title") ? { title: after.title } : {}),
     ...(changed("description") ? { description: after.description } : {}),
+    ...(changed("recordingJson") ? { recordingJson: after.recordingJson } : {}),
     ...(changed("plannedStartAt")
       ? { plannedStartAt: after.plannedStartAt }
       : {}),
@@ -641,6 +644,7 @@ async function createEventDetail(
   tx: Prisma.TransactionClient,
   event: TargetJourneyEvent
 ) {
+  if (event.type === "RECORD") return
   if (event.type === "SECTION") {
     await tx.sectionEventDetail.create({
       data: { eventId: event.id, ...sectionDetailData(event.detail) },
@@ -697,6 +701,7 @@ async function updateEventDetail(
   tx: Prisma.TransactionClient,
   event: TargetJourneyEvent
 ) {
+  if (event.type === "RECORD") return
   if (event.type === "SECTION") {
     await tx.sectionEventDetail.update({
       where: { eventId: event.id },

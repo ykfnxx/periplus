@@ -129,6 +129,7 @@ CREATE TABLE "JourneyEvent" (
     "title" TEXT NOT NULL,
     "description" TEXT,
     "plannedStartAt" DATETIME,
+    "recordingJson" TEXT,
     "plannedEndAt" DATETIME,
     "actualStartAt" DATETIME,
     "actualEndAt" DATETIME,
@@ -136,13 +137,17 @@ CREATE TABLE "JourneyEvent" (
     "retiredRevision" INTEGER,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "JourneyEvent_type_check" CHECK ("type" IN ('SECTION', 'VISIT', 'TRANSIT', 'STAY', 'MEAL', 'ACTIVITY', 'NOTE')),
+    CONSTRAINT "JourneyEvent_type_check" CHECK ("type" IN ('RECORD', 'SECTION', 'VISIT', 'TRANSIT', 'STAY', 'MEAL', 'ACTIVITY', 'NOTE')),
     CONSTRAINT "JourneyEvent_execution_status_check" CHECK (
-      ("type" IN ('SECTION', 'NOTE') AND "executionStatus" IS NULL) OR
+      ("type" IN ('RECORD', 'SECTION', 'NOTE') AND "executionStatus" IS NULL) OR
       ("type" IN ('VISIT', 'TRANSIT', 'STAY', 'MEAL', 'ACTIVITY') AND "executionStatus" IN ('PLANNED', 'STARTED', 'CONFIRMED', 'SKIPPED', 'CANCELLED'))
     ),
     CONSTRAINT "JourneyEvent_section_time_check" CHECK (
-      "type" <> 'SECTION' OR ("plannedStartAt" IS NULL AND "plannedEndAt" IS NULL AND "actualStartAt" IS NULL AND "actualEndAt" IS NULL)
+      "type" NOT IN ('SECTION', 'RECORD') OR ("plannedStartAt" IS NULL AND "plannedEndAt" IS NULL AND "actualStartAt" IS NULL AND "actualEndAt" IS NULL)
+    ),
+    CONSTRAINT "JourneyEvent_recording_check" CHECK (
+      ("type" = 'RECORD' AND "recordingJson" IS NOT NULL AND json_valid("recordingJson")) OR
+      ("type" <> 'RECORD' AND "recordingJson" IS NULL)
     ),
     CONSTRAINT "JourneyEvent_started_fact_check" CHECK ("executionStatus" <> 'STARTED' OR "actualStartAt" IS NOT NULL),
     CONSTRAINT "JourneyEvent_placement_check" CHECK ("placementStatus" IN ('SCHEDULED', 'UNSCHEDULED')),
@@ -611,6 +616,8 @@ CREATE TABLE "Asset" (
     "sizeBytes" INTEGER NOT NULL,
     "checksum" TEXT NOT NULL,
     "capturedAt" DATETIME,
+    "uploadId" TEXT,
+    "uploadFingerprint" TEXT,
     "lat" REAL,
     "lng" REAL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1098,6 +1105,7 @@ CREATE UNIQUE INDEX "Asset_storageKey_key" ON "Asset"("storageKey");
 
 -- CreateIndex
 CREATE INDEX "Asset_ownerId_createdAt_idx" ON "Asset"("ownerId", "createdAt");
+CREATE UNIQUE INDEX "Asset_ownerId_uploadId_key" ON "Asset"("ownerId", "uploadId");
 
 -- CreateIndex
 CREATE INDEX "Asset_checksum_idx" ON "Asset"("checksum");

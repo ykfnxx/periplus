@@ -3,7 +3,6 @@
 import { useWorkspaceStore } from "./workspace-store"
 import type { WorkspaceState } from "./types"
 import { workspaceCanMutate } from "./slices/workspace-document-slice"
-import { FULL_MAP_VIEWPORT_INSETS } from "../viewport"
 import { projectFlatJourneyForWorkspace } from "@/lib/journeys/flat-workspace-projection"
 
 export function selectWorkspaceJourneyView(state: WorkspaceState) {
@@ -28,9 +27,5 @@ export function selectWorkspaceCanMutate(state: WorkspaceState) {
 }
 
 export function useWorkspaceViewportInsets() {
-  return useWorkspaceStore((state) =>
-    state.isSelectingLocation && state.locationSelectionMode === "upload-photo"
-      ? FULL_MAP_VIEWPORT_INSETS
-      : state.mapViewportInsets
-  )
+  return useWorkspaceStore((state) => state.mapViewportInsets)
 }

@@ -21,9 +21,6 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
   const setMap = useWorkspaceStore((s) => s.setMap)
   const mapError = useWorkspaceStore((s) => s.mapError)
   const setMapError = useWorkspaceStore((s) => s.setMapError)
-  const isPickingUploadPhotoLocation = useWorkspaceStore(
-    (s) => s.isSelectingLocation && s.locationSelectionMode === "upload-photo"
-  )
 
   useEffect(() => {
     let mapInstance: AMap.Map | null = null
@@ -99,9 +96,7 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
       <PhotoMarkers key="photo-markers" onIntent={onIntent} />
       <LocationSelector key="location-selector" />
       <MapViewportController key="map-viewport-controller" />
-      {!mapError && !isPickingUploadPhotoLocation && (
-        <MapRouteLevelControls key="map-route-level-controls" />
-      )}
+      {!mapError && <MapRouteLevelControls key="map-route-level-controls" />}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { recordingEventContentSchema } from "./recording"
 import {
   TARGET_COORDINATE_SYSTEMS,
   TARGET_EVENT_EXECUTION_STATUSES,
@@ -182,6 +183,10 @@ const targetNoteEventSchema = targetEventIdentitySchema.extend({
 })
 
 export const targetJourneyEventSchema = z.discriminatedUnion("type", [
+  targetEventIdentitySchema.extend({
+    type: z.literal("RECORD"),
+    detail: recordingEventContentSchema,
+  }),
   targetSectionEventSchema,
   targetVisitEventSchema,
   targetTransitEventSchema,
@@ -878,7 +883,11 @@ export const targetJourneyGraphSnapshotSchema = z
       if (event.journeyId !== graph.id) {
         addIssue(["events"], `event ${event.id} must belong to graph journey`)
       }
-      if (event.type !== "SECTION" && event.type !== "NOTE") {
+      if (
+        event.type !== "SECTION" &&
+        event.type !== "NOTE" &&
+        event.type !== "RECORD"
+      ) {
         if (event.executionStatus === "STARTED" && !event.actualStartAt) {
           addIssue(
             ["events"],

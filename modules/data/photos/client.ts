@@ -32,43 +32,13 @@ export async function listPhotos(): Promise<PhotoDto[]> {
   return parsePhotoResponse<PhotoDto[]>(response)
 }
 
-export async function uploadPhoto(input: {
-  file: File
-  lat: number
-  lng: number
-  caption?: string
-}): Promise<PhotoDto> {
-  const formData = new FormData()
-  formData.set("file", input.file)
-  formData.set("lat", String(input.lat))
-  formData.set("lng", String(input.lng))
-  if (input.caption) formData.set("caption", input.caption)
-
-  const response = await fetch("/api/photos", {
-    method: "POST",
-    body: formData,
-  })
-  return parsePhotoResponse<PhotoDto>(response)
-}
-
-export async function updatePhotoCaption(
-  id: string,
-  caption: string
-): Promise<PhotoDto> {
-  const response = await fetch(`/api/photos/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ caption }),
-  })
-  return parsePhotoResponse<PhotoDto>(response)
-}
-
 export async function deletePhoto(id: string): Promise<void> {
   const response = await fetch(`/api/photos/${id}`, { method: "DELETE" })
   await parsePhotoResponse<{ success: true }>(response)
 }
 
-export function photoDtoToShare(photo: PhotoDto): PhotoShare {
+export function photoDtoToShare(photo: PhotoDto): PhotoShare | null {
+  if (photo.lat === null || photo.lng === null) return null
   return {
     id: photo.id,
     ownerId: photo.ownerId,

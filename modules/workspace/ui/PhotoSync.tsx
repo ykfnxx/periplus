@@ -13,7 +13,12 @@ export default function PhotoSync() {
     listPhotos()
       .then((photos) => {
         if (!mounted) return
-        setPhotoShares(photos.map(photoDtoToShare))
+        setPhotoShares(
+          photos.flatMap((photo) => {
+            const located = photoDtoToShare(photo)
+            return located ? [located] : []
+          })
+        )
       })
       .catch(() => {
         if (mounted) setPhotoShares([])

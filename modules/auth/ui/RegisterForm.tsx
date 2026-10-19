@@ -34,7 +34,7 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       return
     }
 
-    router.replace("/workspace")
+    router.replace("/journeys")
     router.refresh()
   }
 

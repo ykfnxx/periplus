@@ -7,6 +7,7 @@ export const TARGET_JOURNEY_VISIBILITIES = [
 ] as const
 
 export const TARGET_EVENT_TYPES = [
+  "RECORD",
   "SECTION",
   "VISIT",
   "TRANSIT",

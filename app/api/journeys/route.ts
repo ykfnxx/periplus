@@ -1,21 +1,17 @@
-import { NextResponse } from "next/server"
+import { NextRequest } from "next/server"
+import { recordingResponse } from "@/modules/data/journeys/recording-http"
 import {
-  AuthRequiredError,
-  requireCurrentUser,
-} from "@/modules/auth/server/context"
-import { listJourneys } from "@/modules/data/journeys/journey-repository"
+  createRecordingJourney,
+  listRecordingJourneys,
+} from "@/modules/data/journeys/recording-service"
 
-export async function GET() {
-  try {
-    const context = await requireCurrentUser()
-    return NextResponse.json(await listJourneys(context))
-  } catch (error) {
-    if (error instanceof AuthRequiredError) {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 }
-      )
-    }
-    throw error
-  }
+export function GET() {
+  return recordingResponse(listRecordingJourneys)
+}
+
+export function POST(request: NextRequest) {
+  return recordingResponse(
+    async (context) => createRecordingJourney(context, await request.json()),
+    201
+  )
 }
