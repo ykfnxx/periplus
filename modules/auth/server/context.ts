@@ -1,5 +1,6 @@
 import { headers } from "next/headers"
 import { auth } from "@/modules/auth/server/auth"
+import { getDeveloperContext } from "./developer-mode"
 
 export type UserRole = "user" | "admin"
 
@@ -43,6 +44,9 @@ export async function getCurrentUser(): Promise<AuthContext | null> {
   if (process.env.NODE_ENV === "test" && testAuthContext !== undefined) {
     return testAuthContext
   }
+
+  const developer = await getDeveloperContext()
+  if (developer) return developer
 
   const session = await auth.api.getSession({
     headers: await headers(),

@@ -54,7 +54,10 @@ function cityOf(
 
 function locationEvent(
   graph: TargetJourneyGraphSnapshot,
-  event: Exclude<TargetJourneyEvent, { type: "SECTION" | "NOTE" | "TRANSIT" }>
+  event: Exclude<
+    TargetJourneyEvent,
+    { type: "SECTION" | "NOTE" | "RECORD" | "TRANSIT" }
+  >
 ): TargetFlatJourneyEvent | null {
   const city = cityOf(graph, event)
   if (!city) return null
@@ -186,7 +189,8 @@ function orderedActiveEvents(graph: TargetJourneyGraphSnapshot) {
       event.placementStatus === "SCHEDULED" &&
       activeAtRevision(event, graph.revision) &&
       event.type !== "SECTION" &&
-      event.type !== "NOTE"
+      event.type !== "NOTE" &&
+      event.type !== "RECORD"
   )
 }
 
@@ -200,6 +204,7 @@ export function projectFlatJourney(
       if (
         event.type === "SECTION" ||
         event.type === "NOTE" ||
+        event.type === "RECORD" ||
         event.type === "TRANSIT"
       ) {
         return []

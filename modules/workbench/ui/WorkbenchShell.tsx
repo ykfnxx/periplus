@@ -14,10 +14,7 @@ import {
   GripHorizontal,
   Sparkles,
 } from "lucide-react"
-import {
-  FULL_MAP_VIEWPORT_INSETS,
-  measuredWorkspaceViewportInsets,
-} from "@/modules/workspace/viewport"
+import { measuredWorkspaceViewportInsets } from "@/modules/workspace/viewport"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
   selectWorkspaceJourneyView,
@@ -67,19 +64,9 @@ export default function WorkbenchShell({
   const setMapViewportInsets = useWorkspaceStore(
     (state) => state.setMapViewportInsets
   )
-  const isPickingUploadPhotoLocation = useWorkspaceStore(
-    (state) =>
-      state.isSelectingLocation &&
-      state.locationSelectionMode === "upload-photo"
-  )
   const showInitialState = chatMessages.length === 0 && !isWorkspaceLocked
 
   useEffect(() => {
-    if (isPickingUploadPhotoLocation) {
-      setMapViewportInsets?.(FULL_MAP_VIEWPORT_INSETS)
-      return
-    }
-
     const section = sectionRef.current
     if (!section) return
 
@@ -104,15 +91,7 @@ export default function WorkbenchShell({
       observer?.disconnect()
       window.removeEventListener("resize", measure)
     }
-  }, [
-    collapsedPanels,
-    isPickingUploadPhotoLocation,
-    layout,
-    mobileSheetSnap,
-    setMapViewportInsets,
-  ])
-
-  if (isPickingUploadPhotoLocation) return null
+  }, [collapsedPanels, layout, mobileSheetSnap, setMapViewportInsets])
 
   const toggleWidePanel = (panel: WidePanel) => {
     setCollapsedPanels((current) => {

@@ -2,7 +2,6 @@
 
 import { useCallback } from "react"
 import { getJourneyScopeProjection } from "@/lib/journeys/projections"
-import { photoDtoToShare, uploadPhoto } from "@/modules/data/photos/client"
 import type { MapIntent } from "@/modules/workspace/contracts"
 import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
 import { workspaceCanMutate } from "@/modules/workspace/state/slices/workspace-document-slice"
@@ -29,32 +28,10 @@ export function dispatchMapIntent(intent: MapIntent) {
       return
     }
     const { lat, lng } = intent.coordinate
-    if (state.locationSelectionMode === "photo" && state.pendingPhotoUpload) {
-      void uploadPhoto({ file: state.pendingPhotoUpload.file, lat, lng })
-        .then((photo) => {
-          useWorkspaceStore.getState().addPhotoShare(photoDtoToShare(photo))
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          useWorkspaceStore.getState().clearLocationSelection()
-        })
-      return
-    }
     if (state.locationSelectionMode === "point") {
       state.setPointSelectionDraft({ lat, lng })
       state.clearLocationSelection()
       return
-    }
-    if (
-      state.locationSelectionMode === "upload-photo" &&
-      state.uploadLocationSelectionPhotoId
-    ) {
-      state.updateUploadPhoto(state.uploadLocationSelectionPhotoId, {
-        lat,
-        lng,
-      })
-      state.clearLocationSelection()
-      state.setUploadModalOpen(true)
     }
     return
   }

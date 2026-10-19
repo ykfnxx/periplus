@@ -955,7 +955,9 @@ describe.sequential("P3 persistent Workspace command bus", () => {
           id: event.id,
           origin: event.origin,
           executionStatus:
-            event.type === "SECTION" || event.type === "NOTE"
+            event.type === "SECTION" ||
+            event.type === "NOTE" ||
+            event.type === "RECORD"
               ? undefined
               : event.executionStatus,
         }))
@@ -1386,7 +1388,9 @@ describe.sequential("P3 persistent Workspace command bus", () => {
         )
         .map((event) => [
           event.id,
-          event.type === "SECTION" || event.type === "NOTE"
+          event.type === "SECTION" ||
+          event.type === "NOTE" ||
+          event.type === "RECORD"
             ? undefined
             : event.executionStatus,
         ])

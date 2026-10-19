@@ -1064,7 +1064,8 @@ describe.sequential("P2B-P2D repositories", () => {
 
   it("adapts the existing Photo API boundary to owned IMAGE Assets", async () => {
     const filename = `${randomUUID()}.jpg`
-    const photo = await createPhoto(context, {
+    const { photo } = await createPhoto(context, {
+      uploadId: randomUUID(),
       storageKey: `private/photos/${filename}`,
       lat: 30.26,
       lng: 120.16,
@@ -1106,6 +1107,7 @@ describe.sequential("P2B-P2D repositories", () => {
     expect(privatePhotoExtension("image/unknown")).toBeNull()
     await expect(
       createPhoto(context, {
+        uploadId: randomUUID(),
         storageKey: `/uploads/photos/${randomUUID()}.png`,
         lat: 30.25,
         lng: 120.17,
@@ -1117,6 +1119,7 @@ describe.sequential("P2B-P2D repositories", () => {
     ).rejects.toThrow("must use private storage")
     setTestAuthContext(context)
     const svgFormData = new FormData()
+    svgFormData.set("uploadId", randomUUID())
     svgFormData.set(
       "file",
       new File(["<svg></svg>"], "unsafe.svg", { type: "image/svg+xml" })
@@ -1130,6 +1133,7 @@ describe.sequential("P2B-P2D repositories", () => {
 
     const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
     const pngFormData = new FormData()
+    pngFormData.set("uploadId", randomUUID())
     pngFormData.set(
       "file",
       new File([bytes], "private.png", { type: "image/png" })

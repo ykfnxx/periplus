@@ -109,7 +109,10 @@ export function getJourneyScopeProjection(
 
 export function executableEvents(events: readonly TargetJourneyEvent[]) {
   return events.filter(
-    (event) => event.type !== "SECTION" && event.type !== "NOTE"
+    (event) =>
+      event.type !== "SECTION" &&
+      event.type !== "NOTE" &&
+      event.type !== "RECORD"
   )
 }
 

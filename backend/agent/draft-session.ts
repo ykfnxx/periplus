@@ -608,7 +608,9 @@ function compactCard(event: TargetJourneyEvent) {
         : event.type,
     title: event.title,
     scopeCityCardId: event.parentSectionEventId,
-    ...(event.type !== "SECTION" && event.type !== "NOTE"
+    ...(event.type !== "SECTION" &&
+    event.type !== "NOTE" &&
+    event.type !== "RECORD"
       ? {
           ...(event.plannedStartAt
             ? { plannedStartAt: event.plannedStartAt }
@@ -1045,6 +1047,7 @@ export class AgentDraftSession {
         events.flatMap((event) =>
           event.type !== "SECTION" &&
           event.type !== "NOTE" &&
+          event.type !== "RECORD" &&
           event.plannedStartAt
             ? [localDate(event.plannedStartAt, city.detail.timeZone)]
             : []
@@ -1292,6 +1295,7 @@ export class AgentDraftSession {
             title: event.title,
             ...(event.type !== "SECTION" &&
             event.type !== "NOTE" &&
+            event.type !== "RECORD" &&
             event.plannedStartAt
               ? { plannedStartAt: event.plannedStartAt }
               : {}),
@@ -1427,7 +1431,7 @@ export class AgentDraftSession {
     const from = requireEvent(graph, input.fromCardId)
     const plannedStartAt =
       input.plannedStartAt ??
-      (from.type === "SECTION" || from.type === "NOTE"
+      (from.type === "SECTION" || from.type === "NOTE" || from.type === "RECORD"
         ? undefined
         : (from.plannedEndAt ?? from.plannedStartAt))
     if (!plannedStartAt) {

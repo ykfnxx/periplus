@@ -197,6 +197,13 @@ function mapTransitRun(
 }
 
 function mapEvent(event: JourneyRecord["events"][number]): TargetJourneyEvent {
+  if (event.type === "RECORD") {
+    return {
+      ...eventBase(event),
+      type: "RECORD",
+      detail: parseJson(event.recordingJson, `Recording Event ${event.id}`),
+    }
+  }
   if (event.type === "SECTION" && event.sectionDetail) {
     const detail = event.sectionDetail
     if (detail.kind === "CITY" && detail.timezone) {

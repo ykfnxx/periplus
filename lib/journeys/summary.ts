@@ -28,7 +28,9 @@ export function totalDurationMinutes(events: readonly TargetJourneyEvent[]) {
 export function totalDurationDays(events: readonly TargetJourneyEvent[]) {
   const timestamps = events
     .flatMap((event) =>
-      event.type === "SECTION" || event.type === "NOTE"
+      event.type === "SECTION" ||
+      event.type === "NOTE" ||
+      event.type === "RECORD"
         ? []
         : [
             event.actualStartAt ?? event.plannedStartAt,

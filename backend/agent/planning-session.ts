@@ -1596,7 +1596,9 @@ export class PlanningSession {
           toCardId: compiledToCardId,
           plannedStartAt:
             event.plannedStartAt ??
-            (from.type === "SECTION" || from.type === "NOTE"
+            (from.type === "SECTION" ||
+            from.type === "NOTE" ||
+            from.type === "RECORD"
               ? undefined
               : (from.plannedEndAt ?? from.plannedStartAt)),
           plannedEndAt: event.plannedEndAt,

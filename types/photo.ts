@@ -3,8 +3,8 @@ export interface PhotoDto {
   ownerId: string
   ownerName: string
   url: string
-  lat: number
-  lng: number
+  lat: number | null
+  lng: number | null
   caption: string
   createdAt: string
   updatedAt: string

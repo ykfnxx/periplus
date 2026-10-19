@@ -1,9 +1,8 @@
+import { createHash } from "node:crypto"
 import type { AuthContext } from "@/modules/auth/server/context"
 import { isAdmin, PermissionDeniedError } from "@/modules/auth/server/context"
-import {
-  createAsset,
-  deleteAsset,
-} from "@/modules/data/content/content-repository"
+import { deleteAsset } from "@/modules/data/content/content-repository"
+import { targetAssetSchema } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import {
   privatePhotoExtension,
@@ -29,9 +28,9 @@ interface PhotoAssetRecord {
 
 interface CreatePhotoInput {
   storageKey: string
-  lat: number
-  lng: number
-  caption?: string
+  uploadId: string
+  lat?: number
+  lng?: number
   mimeType: string
   size: number
   checksum: string
@@ -46,9 +45,6 @@ function mapPhotoToDto(
   context: AuthContext,
   photo: PhotoAssetRecord
 ): PhotoDto {
-  if (photo.lat === null || photo.lng === null) {
-    throw new PhotoInputError(`Image Asset ${photo.id} has no location`)
-  }
   return {
     id: photo.id,
     ownerId: photo.ownerId,
@@ -80,13 +76,56 @@ export class PhotoInputError extends Error {
   }
 }
 
+export class PhotoIdempotencyError extends Error {
+  constructor() {
+    super("Upload ID was already used for a different or deleted photo")
+    this.name = "PhotoIdempotencyError"
+  }
+}
+
+export type PhotoUploadMetadata = Omit<CreatePhotoInput, "storageKey">
+
+function uploadFingerprint(input: PhotoUploadMetadata) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        checksum: input.checksum,
+        mimeType: input.mimeType,
+        size: input.size,
+        originalName: input.originalName ?? null,
+        lat: input.lat ?? null,
+        lng: input.lng ?? null,
+      })
+    )
+    .digest("hex")
+}
+
+export async function findPhotoUpload(
+  context: AuthContext,
+  input: PhotoUploadMetadata
+): Promise<PhotoDto | null> {
+  const existing = await prisma.asset.findUnique({
+    where: {
+      ownerId_uploadId: { ownerId: context.userId, uploadId: input.uploadId },
+    },
+    include: photoInclude,
+  })
+  if (!existing) return null
+  if (
+    existing.deletedAt ||
+    existing.kind !== "IMAGE" ||
+    existing.uploadFingerprint !== uploadFingerprint(input)
+  ) {
+    throw new PhotoIdempotencyError()
+  }
+  return mapPhotoToDto(context, existing)
+}
+
 export async function listPhotos(context: AuthContext): Promise<PhotoDto[]> {
   const photos = await prisma.asset.findMany({
     where: {
       kind: "IMAGE",
       deletedAt: null,
-      lat: { not: null },
-      lng: { not: null },
       ...(isAdmin(context) ? {} : { ownerId: context.userId }),
     },
     include: photoInclude,
@@ -108,8 +147,6 @@ export async function listPhotosForOwner(
       ownerId,
       kind: "IMAGE",
       deletedAt: null,
-      lat: { not: null },
-      lng: { not: null },
     },
     include: photoInclude,
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
@@ -120,15 +157,11 @@ export async function listPhotosForOwner(
 export async function createPhoto(
   context: AuthContext,
   input: CreatePhotoInput
-): Promise<PhotoDto> {
-  if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) {
-    throw new PhotoInputError("Invalid photo location")
-  }
-  if (input.caption?.trim()) {
-    throw new PhotoInputError(
-      "Photo captions are stored on EventAssetLink after attaching the Asset"
-    )
-  }
+): Promise<{ photo: PhotoDto; created: boolean }> {
+  if (!input.uploadId?.trim() || input.uploadId.length > 200)
+    throw new PhotoInputError("A stable uploadId is required")
+  if ((input.lat === undefined) !== (input.lng === undefined))
+    throw new PhotoInputError("Photo coordinates must be supplied together")
   const extension = privatePhotoExtension(input.mimeType)
   if (!extension) {
     throw new PhotoInputError("Unsupported photo MIME type")
@@ -142,7 +175,10 @@ export async function createPhoto(
     throw new PhotoInputError("Photo storage key must match its MIME type")
   }
 
-  const asset = await createAsset(context, {
+  const previous = await findPhotoUpload(context, input)
+  if (previous) return { photo: previous, created: false }
+  const parsed = targetAssetSchema.omit({ id: true, createdAt: true }).parse({
+    ownerId: context.userId,
     kind: "IMAGE",
     visibility: "PRIVATE",
     storageKey: input.storageKey,
@@ -153,11 +189,37 @@ export async function createPhoto(
     lat: input.lat,
     lng: input.lng,
   })
-  const photo = await prisma.asset.findUniqueOrThrow({
-    where: { id: asset.id },
-    include: photoInclude,
-  })
-  return mapPhotoToDto(context, photo)
+  try {
+    const photo = await prisma.asset.create({
+      data: {
+        ownerId: context.userId,
+        kind: "IMAGE",
+        visibility: "PRIVATE",
+        storageKey: parsed.storageKey,
+        originalName: parsed.originalName,
+        mimeType: parsed.mimeType,
+        sizeBytes: parsed.sizeBytes,
+        checksum: parsed.checksum,
+        lat: parsed.lat,
+        lng: parsed.lng,
+        uploadId: input.uploadId,
+        uploadFingerprint: uploadFingerprint(input),
+      },
+      include: photoInclude,
+    })
+    return { photo: mapPhotoToDto(context, photo), created: true }
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "P2002"
+    ) {
+      const raced = await findPhotoUpload(context, input)
+      if (raced) return { photo: raced, created: false }
+    }
+    throw error
+  }
 }
 
 export async function getPhotoFile(
@@ -183,27 +245,6 @@ export async function getPhotoFile(
     storageKey: photo.storageKey,
     mimeType: photo.mimeType,
   }
-}
-
-export async function updatePhotoCaption(
-  context: AuthContext,
-  id: string,
-  caption: string
-): Promise<PhotoDto | null> {
-  const existing = await prisma.asset.findUnique({
-    where: { id, kind: "IMAGE", deletedAt: null },
-    include: photoInclude,
-  })
-  if (!existing) return null
-  if (!isAdmin(context) && existing.ownerId !== context.userId) {
-    throw new PermissionDeniedError("Cannot update another user's photo")
-  }
-  if (caption.trim()) {
-    throw new PhotoInputError(
-      "Asset has no global caption; update the EventAssetLink caption"
-    )
-  }
-  return mapPhotoToDto(context, existing)
 }
 
 export async function deletePhoto(

@@ -13,6 +13,16 @@ function envNumber(name: string, fallback: number) {
 }
 
 export const periplusServerConfig = {
+  development: {
+    get bypassLogin() {
+      // A public client flag must never grant an identity. Production ignores
+      // this switch even if a development env file was accidentally reused.
+      return (
+        process.env.NODE_ENV === "development" &&
+        envString("PERIPLUS_DEVELOPER_MODE") === "true"
+      )
+    },
+  },
   app: {
     get baseUrl() {
       return periplusPublicConfig.app.baseUrl

@@ -186,7 +186,9 @@ function selectCurrentBranchLinks(
 }
 
 function executableEvent(event: TargetJourneyEvent) {
-  return event.type !== "SECTION" && event.type !== "NOTE"
+  return (
+    event.type !== "SECTION" && event.type !== "NOTE" && event.type !== "RECORD"
+  )
 }
 
 function selectedEventsForScope(

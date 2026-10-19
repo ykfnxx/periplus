@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/modules/auth/server/context"
 
 export default async function HomePage() {
   const currentUser = await getCurrentUser()
-  if (currentUser) redirect("/workspace")
+  if (currentUser) redirect("/journeys")
 
   return <LandingGate />
 }

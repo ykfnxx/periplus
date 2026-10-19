@@ -20,6 +20,7 @@ enum JourneyVisibility {
 }
 
 enum JourneyEventType {
+  RECORD
   SECTION
   VISIT
   TRANSIT
@@ -430,6 +431,7 @@ model JourneyEvent {
   origin               JourneyEventOrigin           @default(ORIGINAL)
   title                String
   description          String?
+  recordingJson        String?
   plannedStartAt       DateTime?
   plannedEndAt         DateTime?
   actualStartAt        DateTime?
@@ -870,25 +872,28 @@ model WorkspaceAgentRun {
 }
 
 model Asset {
-  id           String          @id @default(uuid())
-  ownerId      String
-  kind         AssetKind
-  visibility   AssetVisibility @default(PRIVATE)
-  storageKey   String          @unique
-  originalName String?
-  mimeType     String
-  sizeBytes    Int
-  checksum     String
-  capturedAt   DateTime?
-  lat          Float?
-  lng          Float?
-  createdAt    DateTime        @default(now())
-  deletedAt    DateTime?
+  id                String          @id @default(uuid())
+  ownerId           String
+  kind              AssetKind
+  visibility        AssetVisibility @default(PRIVATE)
+  storageKey        String          @unique
+  originalName      String?
+  mimeType          String
+  sizeBytes         Int
+  checksum          String
+  uploadId          String?
+  uploadFingerprint String?
+  capturedAt        DateTime?
+  lat               Float?
+  lng               Float?
+  createdAt         DateTime        @default(now())
+  deletedAt         DateTime?
 
   owner          User             @relation("OwnedAssets", fields: [ownerId], references: [id], onDelete: Restrict)
   eventLinks     EventAssetLink[] @relation("AssetEventLinks")
   sourceDocument SourceDocument?  @relation("SourceDocumentAsset")
 
+  @@unique([ownerId, uploadId])
   @@index([ownerId, createdAt])
   @@index([checksum])
   @@index([deletedAt])
