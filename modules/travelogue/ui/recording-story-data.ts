@@ -24,7 +24,12 @@ const eventBase: RecordingEvent = {
     coordinates: { lat: 30.243, lng: 120.149, coordinateSystem: "GCJ02" },
   },
   photos: [
-    { assetId: "lake-photo", url: lake.src, caption: "", isCover: true },
+    {
+      assetId: "lake-photo",
+      url: lake.src,
+      caption: "风慢慢停下来，湖面变成了温柔的金色。",
+      isCover: true,
+    },
     { assetId: "walk-photo", url: walk.src, caption: "", isCover: false },
     { assetId: "tea-photo", url: tea.src, caption: "", isCover: false },
   ],
@@ -42,6 +47,16 @@ export const storyJourney: RecordingJourney = {
   updatedAt: now,
   events: [
     eventBase,
+    {
+      ...eventBase,
+      id: "walk",
+      title: "沿湖步行",
+      body: "沿着湖边走进小巷。",
+      category: "TRANSIT",
+      time: "18:10",
+      location: null,
+      photos: [],
+    },
     {
       ...eventBase,
       id: "tea",
@@ -76,10 +91,14 @@ export const storyJourney: RecordingJourney = {
 }
 
 // 仅用于 Storybook 交互演示，产品页面始终使用真实 HTTP client。
-export function createStoryRecordingApi(empty = false): RecordingApi {
+export function createStoryRecordingApi(
+  empty = false,
+  uploadDelay = 0,
+  initialJourney = storyJourney
+): RecordingApi {
   let journey = structuredClone({
-    ...storyJourney,
-    events: empty ? [] : storyJourney.events,
+    ...initialJourney,
+    events: empty ? [] : initialJourney.events,
   })
   const responses = new Map<
     string,
@@ -94,6 +113,8 @@ export function createStoryRecordingApi(empty = false): RecordingApi {
       replayed: false,
     }),
     upload: async (file, uploadId) => {
+      if (uploadDelay)
+        await new Promise((resolve) => setTimeout(resolve, uploadDelay))
       if (!assets.has(uploadId)) assets.set(uploadId, URL.createObjectURL(file))
       return {
         id: uploadId,

@@ -3,8 +3,8 @@ import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Periplus - 旅行轨迹规划",
-  description: "在地图上规划你的旅行路线",
+  title: "我的旅程",
+  description: "用文字和照片，记下走过的旅程",
 }
 
 export default function RootLayout({

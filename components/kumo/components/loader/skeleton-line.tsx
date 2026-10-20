@@ -1,0 +1,63 @@
+"use client"
+
+// Kumo source: cloudflare/kumo@fedc8a771d499ccceb309ec45b2b11d74eea3963 (MIT). Lucide icons are used project-wide.
+"use client"
+
+import React, { useMemo } from "react"
+import { cn } from "../../utils/cn"
+
+const getRandomWidth = (min: number, max: number) =>
+  Math.floor(Math.random() * (max - min + 1) + min)
+
+const getRandomFloat = (min: number, max: number) =>
+  (Math.random() * (max - min) + min).toFixed(2)
+
+export const SkeletonLine = ({
+  minWidth = 30,
+  maxWidth = 100,
+  minDuration = 1.3,
+  maxDuration = 1.7,
+  minDelay = 0,
+  maxDelay = 0.5,
+  blockHeight,
+  className,
+}: {
+  minWidth?: number
+  maxWidth?: number
+  minDuration?: number
+  maxDuration?: number
+  minDelay?: number
+  maxDelay?: number
+  blockHeight?: string | number
+  className?: string
+}) => {
+  const { width, duration, delay } = useMemo(() => {
+    return {
+      width: getRandomWidth(minWidth, maxWidth),
+      duration: getRandomFloat(minDuration, maxDuration),
+      delay: getRandomFloat(minDelay, maxDelay),
+    }
+  }, [minWidth, maxWidth, minDuration, maxDuration, minDelay, maxDelay])
+
+  const lineStyle: React.CSSProperties & { [key: string]: string } = {
+    "--skeleton-width": `${width}%`,
+    "--shimmer-duration": `${duration}s`,
+    "--shimmer-delay": `${delay}s`,
+  }
+
+  const line = (
+    <div className={cn("skeleton-line", className)} style={lineStyle}></div>
+  )
+
+  if (blockHeight !== undefined) {
+    const height =
+      typeof blockHeight === "number" ? `${blockHeight}px` : blockHeight
+    return (
+      <div className="flex items-center" style={{ height }}>
+        {line}
+      </div>
+    )
+  }
+
+  return line
+}

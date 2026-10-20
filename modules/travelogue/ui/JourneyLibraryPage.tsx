@@ -11,7 +11,11 @@ import type {
 import { recordingApi } from "../data/client"
 import JourneyLibrary from "./JourneyLibrary"
 
-export default function JourneyLibraryPage() {
+export default function JourneyLibraryPage({
+  developerMode = false,
+}: {
+  developerMode?: boolean
+}) {
   const router = useRouter()
   const [journeys, setJourneys] = useState<RecordingJourneySummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -20,8 +24,6 @@ export default function JourneyLibraryPage() {
   const pendingCreate = useRef<RecordingJourneyCreate | null>(null)
   useEffect(() => {
     let disposed = false
-    setLoading(true)
-    setError(null)
     recordingApi
       .list()
       .then((items) => {
@@ -44,10 +46,15 @@ export default function JourneyLibraryPage() {
   }, [reload])
   return (
     <JourneyLibrary
+      developerMode={developerMode}
       journeys={journeys}
       loading={loading}
       error={error}
-      onRetry={() => setReload((value) => value + 1)}
+      onRetry={() => {
+        setLoading(true)
+        setError(null)
+        setReload((value) => value + 1)
+      }}
       onOpen={(id) => router.push(`/journeys/${encodeURIComponent(id)}`)}
       onCreate={async (title) => {
         pendingCreate.current ||= { idempotencyKey: operationId(), title }

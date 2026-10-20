@@ -2,8 +2,9 @@ import { operationId } from "../data/operation-id"
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { useEffect, useState } from "react"
 import type { RecordingJourneySummary } from "@/modules/data-model/contracts/recording"
+import LandingGate from "@/modules/auth/ui/LandingGate"
 import JourneyLibrary from "./JourneyLibrary"
-import RecordComposer from "./RecordComposer"
+import EventForm from "./workbench/EventForm"
 import RecordingEditor from "./RecordingEditor"
 import { createRecordingStore } from "../state/recording-store"
 import { createStoryRecordingApi, storyJourney } from "./recording-story-data"
@@ -13,7 +14,7 @@ import tea from "./story-assets/tea.jpg"
 
 const meta = {
   title: "Travelogue/Recording",
-  parameters: { layout: "fullscreen" },
+  parameters: { layout: "fullscreen", nextjs: { appDirectory: true } },
 } satisfies Meta
 export default meta
 type Story = StoryObj<typeof meta>
@@ -87,19 +88,52 @@ function LibraryStory({ empty = false }: { empty?: boolean }) {
 }
 function EditorStory({
   empty = false,
+  slowUpload = false,
+  canEdit = true,
+  longContent = false,
   onBack = () => {},
 }: {
   empty?: boolean
+  slowUpload?: boolean
+  canEdit?: boolean
+  longContent?: boolean
   onBack?: () => void
 }) {
   const [store] = useState(() =>
-    createRecordingStore("hangzhou", createStoryRecordingApi(empty))
+    createRecordingStore(
+      "hangzhou",
+      createStoryRecordingApi(
+        empty,
+        slowUpload ? 2500 : 0,
+        longContent
+          ? {
+              ...storyJourney,
+              events: storyJourney.events.slice(0, 3).map((event, index) =>
+                index
+                  ? event
+                  : {
+                      ...event,
+                      body: Array.from(
+                        { length: 20 },
+                        (_, i) =>
+                          `${i + 1}. 沿湖走进小巷，记下路上的光与风。照片和文字都留在这段经历里。`
+                      ).join("\n\n"),
+                      photos: Array.from({ length: 8 }, (_, i) => ({
+                        ...event.photos[i % event.photos.length],
+                        assetId: `many-${i}`,
+                      })),
+                    }
+              ),
+            }
+          : storyJourney
+      )
+    )
   )
   useEffect(() => {
     void store.getState().load()
     return () => store.getState().dispose()
   }, [store])
-  return <RecordingEditor store={store} onBack={onBack} />
+  return <RecordingEditor canEdit={canEdit} store={store} onBack={onBack} />
 }
 export const Library: Story = { render: () => <LibraryStory /> }
 export const EmptyLibrary: Story = { render: () => <LibraryStory empty /> }
@@ -108,7 +142,7 @@ export const EmptyEditor: Story = { render: () => <EditorStory empty /> }
 export const AddRecord: Story = {
   render: () => (
     <div className="mx-auto max-w-3xl p-5 md:py-16">
-      <RecordComposer
+      <EventForm
         onCancel={() => {}}
         onSave={async () => {
           throw new Error("模拟保存失败：输入和照片保留，可以重试。")
@@ -117,3 +151,11 @@ export const AddRecord: Story = {
     </div>
   ),
 }
+
+export const SlowUpload: Story = { render: () => <EditorStory slowUpload /> }
+
+export const Entry: Story = { render: () => <LandingGate /> }
+
+export const ReadOnly: Story = { render: () => <EditorStory canEdit={false} /> }
+
+export const LongContent: Story = { render: () => <EditorStory longContent /> }
