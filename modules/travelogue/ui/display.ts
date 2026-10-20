@@ -3,7 +3,6 @@ import type {
   RecordingEvent,
   RecordingJourneySummary,
 } from "@/modules/data-model/contracts/recording"
-import type { RecordDay } from "./RecordDateNav"
 
 export function dateLabel(date: string) {
   const [, month, day] = date.split("-")
@@ -17,20 +16,6 @@ export function journeyDateLabel(
   return journey.endDate && journey.endDate !== journey.startDate
     ? `${dateLabel(journey.startDate)} — ${dateLabel(journey.endDate)}`
     : dateLabel(journey.startDate)
-}
-
-export function recordingDays(events: RecordingEvent[]): RecordDay[] {
-  const days = new Map<string, RecordDay>()
-  for (const event of events) {
-    const key = event.date || "undated"
-    if (!days.has(key))
-      days.set(key, {
-        key,
-        label: event.date ? dateLabel(event.date) : "未标日期",
-        firstEventId: event.id,
-      })
-  }
-  return [...days.values()]
 }
 
 export function eventTitle(event: Pick<RecordingEvent, "title" | "body">) {

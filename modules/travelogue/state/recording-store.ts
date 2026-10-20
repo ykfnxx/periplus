@@ -11,7 +11,14 @@ import {
   RecordingApiError,
   type RecordingApi,
 } from "../data/client"
-import type { RecordUpload } from "../ui/RecordPhotos"
+export interface RecordUpload {
+  id: string
+  eventId: string
+  preview: string
+  name: string
+  status: "uploading" | "failed"
+  error?: string
+}
 
 type PendingUpload = RecordUpload & { file: File; assetId?: string }
 type CommandInput =

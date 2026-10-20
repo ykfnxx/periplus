@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/cloudflare/kumo",
+  "commit": "fedc8a771d499ccceb309ec45b2b11d74eea3963",
+  "license": "MIT",
+  "adaptations": [
+    "Only imported components and their dependencies are included.",
+    "Lucide replaces Phosphor; existing clsx and tailwind-merge supply cn.",
+    "Motion animates Dialog; Base UI retains focus, modality and dismissal.",
+    "Upstream hook ordering and ref updates follow the project's React rules.",
+    "Unused LinkButton and FedRAMP theme are excluded.",
+    "Primary actions use the app's flat neutral palette rather than a beveled gradient."
+  ]
+}

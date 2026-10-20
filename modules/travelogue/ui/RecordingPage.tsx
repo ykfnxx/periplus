@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation"
 import { createRecordingStore } from "../state/recording-store"
 import RecordingEditor from "./RecordingEditor"
 
-export default function RecordingPage({ journeyId }: { journeyId: string }) {
+export default function RecordingPage({
+  journeyId,
+  canEdit,
+  developerMode = false,
+}: {
+  journeyId: string
+  canEdit: boolean
+  developerMode?: boolean
+}) {
   const router = useRouter()
   const [store] = useState(() => createRecordingStore(journeyId))
   useEffect(() => {
@@ -13,6 +21,11 @@ export default function RecordingPage({ journeyId }: { journeyId: string }) {
     return () => store.getState().dispose()
   }, [store])
   return (
-    <RecordingEditor store={store} onBack={() => router.push("/journeys")} />
+    <RecordingEditor
+      canEdit={canEdit}
+      developerMode={developerMode}
+      store={store}
+      onBack={() => router.push("/journeys")}
+    />
   )
 }

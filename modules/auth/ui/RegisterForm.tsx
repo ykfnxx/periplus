@@ -1,5 +1,7 @@
 "use client"
 
+import { Button } from "@/components/kumo/components/button/button"
+import { Input } from "@/components/kumo/components/input/input"
 import { useRouter } from "next/navigation"
 import { FormEvent, useState } from "react"
 import { authClient } from "@/modules/auth/client"
@@ -40,71 +42,48 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <label
-          htmlFor="register-name"
-          className="text-xs font-semibold text-walnut"
-        >
-          名称
-        </label>
-        <input
-          id="register-name"
-          type="text"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          autoComplete="name"
-          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
-        />
-      </div>
-      <div className="space-y-2">
-        <label
-          htmlFor="register-email"
-          className="text-xs font-semibold text-walnut"
-        >
-          邮箱
-        </label>
-        <input
-          id="register-email"
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-          autoComplete="email"
-          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
-        />
-      </div>
-      <div className="space-y-2">
-        <label
-          htmlFor="register-password"
-          className="text-xs font-semibold text-walnut"
-        >
-          密码
-        </label>
-        <input
-          id="register-password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-          minLength={8}
-          autoComplete="new-password"
-          className="h-11 w-full rounded-lg border border-ink-15 bg-soft-white px-3 text-sm transition outline-none focus:border-russet"
-        />
-      </div>
-      {error && <p className="text-sm font-bold text-coral">{error}</p>}
-      <button
+      <Input
+        label="名称"
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        required
+        autoComplete="name"
+      />
+      <Input
+        label="邮箱"
+        type="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        required
+        autoComplete="email"
+      />
+      <Input
+        label="密码"
+        type="password"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        required
+        minLength={8}
+        autoComplete="new-password"
+      />
+      {error && (
+        <p role="alert" className="text-sm text-coral">
+          {error}
+        </p>
+      )}
+      <Button
+        variant="primary"
+        className="w-full"
         type="submit"
-        disabled={isSubmitting}
-        className="h-11 w-full rounded-lg bg-ink px-4 text-sm font-bold text-soft-white transition hover:bg-russet disabled:cursor-not-allowed disabled:opacity-60"
+        loading={isSubmitting}
       >
-        {isSubmitting ? "注册中..." : "注册"}
-      </button>
-      <p className="text-center text-sm font-bold text-walnut">
-        已有账号？{" "}
-        <button type="button" onClick={onSwitchToLogin} className="text-russet">
+        注册
+      </Button>
+      <p className="flex items-center justify-center text-sm text-walnut">
+        已有账号？
+        <Button variant="ghost" onClick={onSwitchToLogin}>
           登录
-        </button>
+        </Button>
       </p>
     </form>
   )
