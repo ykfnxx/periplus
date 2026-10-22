@@ -44,7 +44,38 @@ export const periplusServerConfig = {
   },
   database: {
     get url() {
-      return envString("DATABASE_URL", "file:./dev.db")
+      const url = envString("DATABASE_URL")
+      if (!/^postgres(?:ql)?:\/\//.test(url)) {
+        throw new Error("DATABASE_URL must be a PostgreSQL connection URL")
+      }
+      return url
+    },
+  },
+  storage: {
+    get scheme() {
+      const scheme = envString("PERIPLUS_STORAGE_SCHEME", "s3")
+      if (scheme !== "s3" && scheme !== "fs" && scheme !== "memory") {
+        throw new Error("Unsupported PERIPLUS_STORAGE_SCHEME")
+      }
+      return scheme
+    },
+    get root() {
+      return envString("PERIPLUS_STORAGE_ROOT", "./uploads")
+    },
+    get bucket() {
+      return envString("PERIPLUS_STORAGE_BUCKET")
+    },
+    get region() {
+      return envString("PERIPLUS_STORAGE_REGION", "us-east-1")
+    },
+    get endpoint() {
+      return envString("PERIPLUS_STORAGE_ENDPOINT")
+    },
+    get accessKeyId() {
+      return envString("PERIPLUS_STORAGE_ACCESS_KEY_ID")
+    },
+    get secretAccessKey() {
+      return envString("PERIPLUS_STORAGE_SECRET_ACCESS_KEY")
     },
   },
   amap: {

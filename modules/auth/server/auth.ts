@@ -8,7 +8,7 @@ export const auth = betterAuth({
   baseURL: periplusServerConfig.app.baseUrl,
   secret: periplusServerConfig.auth.secret,
   database: prismaAdapter(prisma, {
-    provider: "sqlite",
+    provider: "postgresql",
   }),
   emailAndPassword: {
     enabled: true,

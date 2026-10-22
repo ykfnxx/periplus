@@ -85,7 +85,7 @@ export function projectRecording(
         )
         .map((link) => ({
           assetId: link.assetId,
-          url: `/api/photos/${encodeURIComponent(link.assetId)}/file`,
+          url: `/api/assets/${encodeURIComponent(link.assetId)}/file`,
           caption: link.caption ?? "",
           location: link.location ?? null,
           isCover: link.role === "COVER",

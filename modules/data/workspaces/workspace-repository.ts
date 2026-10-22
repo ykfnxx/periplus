@@ -154,11 +154,13 @@ function hasPrismaCode(error: unknown, code: string) {
   )
 }
 
-function isSQLiteBusy(error: unknown) {
+function isRetryableTransactionConflict(error: unknown) {
   return (
     hasPrismaCode(error, "P2034") ||
     (error instanceof Error &&
-      /SQLITE_BUSY|database is locked|write conflict/i.test(error.message))
+      /serialization failure|deadlock detected|write conflict/i.test(
+        error.message
+      ))
   )
 }
 
@@ -648,6 +650,10 @@ export async function appendWorkspaceRevision(
   const now = input.now ?? new Date()
 
   const result = await prisma.$transaction(async (tx) => {
+    // PostgreSQL permits concurrent readers. Serialize this aggregate before
+    // checking its receipt and expected revision, preserving both replay and
+    // the caller's original conflict boundary across independent services.
+    await tx.$queryRaw`SELECT "id" FROM "WorkspaceSession" WHERE "id" = ${workspaceId} FOR UPDATE`
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,
@@ -1168,7 +1174,7 @@ export async function appendWorkspaceMessageDelta(
       })
       break
     } catch (error) {
-      if (!isSQLiteBusy(error) || attempt === 3) throw error
+      if (!isRetryableTransactionConflict(error) || attempt === 3) throw error
       await wait(25 * 2 ** (attempt - 1))
     }
   }
@@ -1473,6 +1479,7 @@ export async function forkWorkspaceRevisionChain(
 ) {
   const now = input.now ?? new Date()
   const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "WorkspaceSession" WHERE "id" = ${workspaceId} FOR UPDATE`
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,
@@ -1757,6 +1764,7 @@ export async function refreshWorkspaceRevisionChain(
   const now = input.now ?? new Date()
   const canonicalBase = validateJourneyGraph(input.canonicalBase)
   const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "WorkspaceSession" WHERE "id" = ${workspaceId} FOR UPDATE`
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,
@@ -1942,6 +1950,7 @@ export async function commitWorkspaceRevisionChain(
 ) {
   const now = input.now ?? new Date()
   const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "WorkspaceSession" WHERE "id" = ${workspaceId} FOR UPDATE`
     const record = await tx.workspaceSession.findUnique({
       where: { id: workspaceId },
       include: workspaceInclude,

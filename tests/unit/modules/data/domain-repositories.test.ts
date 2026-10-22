@@ -1,5 +1,5 @@
+// @vitest-environment node
 import { randomUUID } from "node:crypto"
-import { unlink } from "node:fs/promises"
 import { NextRequest } from "next/server"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { GET as readPhotoFile } from "@/app/api/photos/[id]/file/route"
@@ -29,14 +29,15 @@ import {
   getJourney,
 } from "@/modules/data/journeys/journey-repository"
 import {
-  createPhoto,
+  uploadPhotoResource,
   deletePhoto,
   listPhotosForOwner,
 } from "@/modules/data/photos/photo-repository"
 import {
-  privatePhotoExtension,
-  privatePhotoFilePath,
-} from "@/modules/data/photos/photo-storage"
+  assetOperator,
+  assertObjectKey,
+} from "@/modules/data/assets/object-storage"
+import { resourceKind } from "@/modules/data/assets/asset-service"
 import { PlaceCatalogRepository } from "@/modules/data/places/place-catalog-repository"
 import {
   commitTransitPlanningRun,
@@ -1063,20 +1064,15 @@ describe.sequential("P2B-P2D repositories", () => {
   })
 
   it("adapts the existing Photo API boundary to owned IMAGE Assets", async () => {
-    const filename = `${randomUUID()}.jpg`
-    const { photo } = await createPhoto(context, {
-      uploadId: randomUUID(),
-      storageKey: `private/photos/${filename}`,
-      lat: 30.26,
-      lng: 120.16,
-      mimeType: "image/jpeg",
-      size: 32,
-      checksum: `photo-${randomUUID()}`,
-      originalName: "photo.jpg",
-    })
+    const { photo } = await uploadPhotoResource(
+      context,
+      new File([new Uint8Array(32)], "photo.jpg", { type: "image/jpeg" }),
+      randomUUID(),
+      { lat: 30.26, lng: 120.16 }
+    )
     expect(photo).toMatchObject({
       ownerId,
-      url: `/api/photos/${photo.id}/file`,
+      url: `/api/assets/${photo.id}/file`,
       lat: 30.26,
       lng: 120.16,
       caption: "",
@@ -1092,7 +1088,7 @@ describe.sequential("P2B-P2D repositories", () => {
     expect(
       await prisma.asset.findUnique({ where: { id: photo.id } })
     ).toMatchObject({
-      storageKey: `private/photos/${filename}`,
+      storageKey: expect.stringMatching(/^private\/assets\//),
       deletedAt: expect.any(Date),
     })
     expect(
@@ -1103,20 +1099,12 @@ describe.sequential("P2B-P2D repositories", () => {
   })
 
   it("stores PRIVATE photo uploads outside public and serves them only to the owner", async () => {
-    expect(privatePhotoExtension("image/svg+xml")).toBeNull()
-    expect(privatePhotoExtension("image/unknown")).toBeNull()
-    await expect(
-      createPhoto(context, {
-        uploadId: randomUUID(),
-        storageKey: `/uploads/photos/${randomUUID()}.png`,
-        lat: 30.25,
-        lng: 120.17,
-        mimeType: "image/png",
-        size: 32,
-        checksum: `public-photo-${randomUUID()}`,
-        originalName: "public.png",
-      })
-    ).rejects.toThrow("must use private storage")
+    expect(() => resourceKind("image/svg+xml")).toThrow("Unsupported")
+    expect(() => resourceKind("image/unknown")).toThrow("Unsupported")
+    expect(() => assertObjectKey("/uploads/photos/outside.png")).toThrow(
+      "Invalid"
+    )
+    expect(() => assertObjectKey("private/../outside.png")).toThrow("Invalid")
     setTestAuthContext(context)
     const svgFormData = new FormData()
     svgFormData.set("uploadId", randomUUID())
@@ -1148,16 +1136,14 @@ describe.sequential("P2B-P2D repositories", () => {
       id: string
       url: string
     }
-    expect(uploaded.url).toBe(`/api/photos/${uploaded.id}/file`)
+    expect(uploaded.url).toBe(`/api/assets/${uploaded.id}/file`)
 
     const asset = await prisma.asset.findUniqueOrThrow({
       where: { id: uploaded.id },
     })
     expect(asset.visibility).toBe("PRIVATE")
-    expect(asset.storageKey).toMatch(/^private\/photos\//)
+    expect(asset.storageKey).toMatch(/^private\/assets\//)
     expect(asset.storageKey).not.toContain("public")
-    const filePath = privatePhotoFilePath(asset.storageKey)
-    expect(filePath).not.toContain("/public/")
 
     const request = new NextRequest(
       `http://localhost/api/photos/${uploaded.id}/file`
@@ -1176,7 +1162,7 @@ describe.sequential("P2B-P2D repositories", () => {
     expect(ownerResponse.headers.get("cache-control")).toBe("private, no-store")
     expect(new Uint8Array(await ownerResponse.arrayBuffer())).toEqual(bytes)
 
-    await unlink(filePath)
+    await assetOperator().delete(asset.storageKey)
   })
 
   it("does not call the Transit provider again on an idempotent persisted replay", async () => {
