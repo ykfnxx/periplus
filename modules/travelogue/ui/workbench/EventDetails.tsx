@@ -7,6 +7,8 @@ import type { RecordingStore } from "../../state/recording-store"
 import { eventTitle } from "../display"
 import useRecordingViewport from "../useRecordingViewport"
 import MediaGallery from "./MediaGallery"
+import PhotoViewer from "./PhotoViewer"
+import { photoItems } from "../photo-items"
 import { Modal } from "./Modal"
 
 /** Reading is a map-side surface; only the photo viewer and authoring are modal. */
@@ -46,11 +48,7 @@ export default function EventDetails({
     }
   }, [wide])
   if (!entry) return null
-  const photos = entry.photos.map((photo) => ({
-    id: photo.assetId,
-    url: photo.url,
-    caption: photo.caption,
-  }))
+  const photos = photoItems([entry])
   const current = Math.min(index, Math.max(0, photos.length - 1))
   const content = (
     <>
@@ -139,23 +137,11 @@ export default function EventDetails({
         </Modal>
       )}
       {lightbox && (
-        <Modal
-          title={`${eventTitle(entry)}的照片`}
-          hideTitle
+        <PhotoViewer
+          photos={photos}
+          initialIndex={current}
           onClose={() => setLightbox(false)}
-          closeClassName="left-3! right-auto! rounded-full! bg-photo-overlay! text-white!"
-          backdropClassName="bg-photo-overlay"
-          className="h-[min(900px,100dvh)]! w-[min(1000px,100vw)]! max-w-none! overflow-hidden! rounded-none! border-none! bg-photo-stage! p-0! ring-0!"
-        >
-          {() => (
-            <MediaGallery
-              photos={photos}
-              index={current}
-              onIndex={setIndex}
-              globalKeys
-            />
-          )}
-        </Modal>
+        />
       )}
     </>
   )

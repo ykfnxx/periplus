@@ -614,6 +614,18 @@ describe("P1 SQLite schema baseline", () => {
       VALUES ('asset-link', 'j1', 'a', 'asset-1', 'asset-checksum', 'GALLERY', 0, 'JOURNEY', 1, '${NOW}');
     `)
     expectSqlFailure(
+      `UPDATE "EventAssetLink" SET "locationJson" = 'not-json' WHERE "id" = 'asset-link';`,
+      /EventAssetLink_location_check/
+    )
+    sqlite(
+      `UPDATE "EventAssetLink" SET "locationJson" = '{"name":"湖边","address":null,"coordinates":null}' WHERE "id" = 'asset-link';`
+    )
+    expect(
+      sqliteJson<{ name: string }>(
+        `SELECT json_extract("locationJson", '$.name') AS name FROM "EventAssetLink" WHERE "id" = 'asset-link'`
+      )
+    ).toEqual([{ name: "湖边" }])
+    expectSqlFailure(
       `INSERT INTO "EventAssetLink" ("id", "journeyId", "eventId", "assetId", "assetChecksum", "role", "rank", "visibility", "introducedRevision", "createdAt")
        VALUES ('duplicate-asset-rank', 'j1', 'a', 'asset-2', 'asset-2-checksum', 'GALLERY', 0, 'JOURNEY', 1, '${NOW}');`,
       /UNIQUE/

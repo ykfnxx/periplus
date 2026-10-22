@@ -908,6 +908,7 @@ model EventAssetLink {
   role               EventAssetRole
   rank               Int
   caption            String?
+  locationJson       String?
   visibility         AssetVisibility
   introducedRevision Int
   retiredRevision    Int?

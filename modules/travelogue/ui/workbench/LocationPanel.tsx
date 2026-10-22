@@ -13,7 +13,13 @@ export default function LocationPanel({
   onSave,
   onClose,
   onDirtyChange,
+  title = "记录地点",
+  description = "可以先记下名称。补充坐标后，这段经历会显示在旅程地图上。",
+  removeLabel = "移除地点",
 }: {
+  title?: string
+  description?: string
+  removeLabel?: string
   initialLocation?: Location | null
   onSave: (location: Location | null) => Promise<void>
   onClose: () => void
@@ -99,16 +105,14 @@ export default function LocationPanel({
       }}
       className="space-y-4"
     >
-      <h3 className="text-xl font-black">记录地点</h3>
+      <h3 className="text-xl font-black">{title}</h3>
       <Input
         label="地点名称"
         value={name}
         onChange={(event) => setName(event.target.value)}
         placeholder="例如：西湖边的一家茶馆"
       />
-      <p className="text-sm leading-6 text-walnut">
-        可以先记下名称。补充坐标后，这段经历会显示在旅程地图上。
-      </p>
+      <p className="text-sm leading-6 text-walnut">{description}</p>
       <Button
         variant="secondary"
         className="w-full"
@@ -160,7 +164,7 @@ export default function LocationPanel({
             disabled={saving}
             onClick={() => void save(true)}
           >
-            移除地点
+            {removeLabel}
           </Button>
         )}
         <Button variant="secondary" onClick={onClose} disabled={saving}>

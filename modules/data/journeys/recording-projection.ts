@@ -87,6 +87,7 @@ export function projectRecording(
           assetId: link.assetId,
           url: `/api/photos/${encodeURIComponent(link.assetId)}/file`,
           caption: link.caption ?? "",
+          location: link.location ?? null,
           isCover: link.role === "COVER",
         })),
     })),

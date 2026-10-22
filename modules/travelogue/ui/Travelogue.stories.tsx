@@ -1,7 +1,10 @@
 import { operationId } from "../data/operation-id"
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { useEffect, useState } from "react"
-import type { RecordingJourneySummary } from "@/modules/data-model/contracts/recording"
+import type {
+  RecordingJourney,
+  RecordingJourneySummary,
+} from "@/modules/data-model/contracts/recording"
 import LandingGate from "@/modules/auth/ui/LandingGate"
 import JourneyLibrary from "./JourneyLibrary"
 import EventForm from "./workbench/EventForm"
@@ -92,12 +95,14 @@ function EditorStory({
   canEdit = true,
   longContent = false,
   onBack = () => {},
+  initialJourney = storyJourney,
 }: {
   empty?: boolean
   slowUpload?: boolean
   canEdit?: boolean
   longContent?: boolean
   onBack?: () => void
+  initialJourney?: RecordingJourney
 }) {
   const [store] = useState(() =>
     createRecordingStore(
@@ -125,7 +130,7 @@ function EditorStory({
                     }
               ),
             }
-          : storyJourney
+          : initialJourney
       )
     )
   )
@@ -159,3 +164,85 @@ export const Entry: Story = { render: () => <LandingGate /> }
 export const ReadOnly: Story = { render: () => <EditorStory canEdit={false} /> }
 
 export const LongContent: Story = { render: () => <EditorStory longContent /> }
+
+const photoMapJourney: RecordingJourney = {
+  ...storyJourney,
+  events: [
+    {
+      ...storyJourney.events[0],
+      location: {
+        name: "断桥",
+        address: null,
+        coordinates: { lat: 30.264, lng: 120.151, coordinateSystem: "GCJ02" },
+      },
+      photos: [
+        {
+          ...storyJourney.events[0].photos[0],
+          caption:
+            "太阳落下时，湖面像铺了一层金色。沿着湖岸慢慢走，等风吹过柳梢，拍下了这个傍晚。远处的船缓缓经过，岸边有人停下来听歌，我们也没有急着回去。",
+        },
+        ...Array.from({ length: 3 }, (_, index) => ({
+          ...storyJourney.events[0].photos[0],
+          assetId: `sunset-${index}`,
+          isCover: false,
+        })),
+        ...Array.from({ length: 8 }, (_, index) => ({
+          ...storyJourney.events[0].photos[2],
+          assetId: `tea-map-${index}`,
+          location: {
+            name: "湖滨茶舍",
+            address: null,
+            coordinates: {
+              lat: 30.243,
+              lng: 120.149,
+              coordinateSystem: "GCJ02" as const,
+            },
+          },
+        })),
+        {
+          ...storyJourney.events[0].photos[1],
+          location: {
+            name: "柳浪闻莺",
+            address: null,
+            coordinates: {
+              lat: 30.236,
+              lng: 120.154,
+              coordinateSystem: "GCJ02",
+            },
+          },
+        },
+        {
+          ...storyJourney.events[0].photos[2],
+          assetId: "nearby-tea",
+          location: {
+            name: "湖边小路",
+            address: null,
+            coordinates: {
+              lat: 30.243,
+              lng: 120.1502,
+              coordinateSystem: "GCJ02",
+            },
+          },
+        },
+        {
+          ...storyJourney.events[0].photos[0],
+          assetId: "north-lake",
+          isCover: false,
+          location: {
+            name: "北山街",
+            address: null,
+            coordinates: {
+              lat: 30.267,
+              lng: 120.137,
+              coordinateSystem: "GCJ02",
+            },
+          },
+        },
+      ],
+    },
+    ...storyJourney.events.slice(1),
+  ],
+}
+export const MapPhotos: Story = {
+  render: () => <EditorStory initialJourney={photoMapJourney} />,
+}

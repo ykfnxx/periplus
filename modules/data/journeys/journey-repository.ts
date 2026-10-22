@@ -1202,6 +1202,7 @@ async function persistContentDomain(
         role: link.role,
         rank: link.rank,
         caption: link.caption ?? null,
+        locationJson: link.location ? json(link.location) : null,
         visibility: link.visibility,
         introducedRevision: link.introducedRevision,
         retiredRevision: link.retiredRevision ?? null,

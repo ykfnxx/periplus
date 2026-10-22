@@ -52,11 +52,14 @@
   --color-journal-selected: #f8f2ee;
   --color-journal-accent: #bd6247;
   --color-journal-glass: rgb(255 255 255 / 95%);
+  --shadow-photo-paper:
+    0 3px 5px rgb(0 0 0 / 12%), 0 10px 20px rgb(0 0 0 / 18%);
   --shadow-journal:
     0 12px 44px rgb(30 40 50 / 10%), 0 1px 4px rgb(30 40 50 / 4%);
 
   /* Photo viewer uses a neutral dark stage, independent of the map palette. */
   --color-photo-stage: #000;
+  --color-photo-line: rgb(255 255 255 / 20%);
   --color-photo-overlay: rgb(0 0 0 / 60%);
 
   --shadow-periplus: 0 18px 42px var(--color-ink-15);
@@ -769,4 +772,179 @@ body {
 }
 .journal-workbench > p {
   background: var(--color-journal-glass);
+}
+
+/* Photo-paper markers are grounded at the bottom-center map coordinate. */
+.journal-map-photo {
+  position: relative;
+  display: block;
+  width: 132px;
+  height: 130px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.journal-photo-print {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  display: block;
+  width: 112px;
+  padding: 5px 5px 15px;
+  border-radius: 2px;
+  background: var(--color-white);
+  box-shadow: var(--shadow-photo-paper);
+  transition: transform 180ms ease;
+}
+.journal-photo-print img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.journal-photo-print--back-1 {
+  transform: translate(5px, 3px) rotate(6deg);
+}
+.journal-photo-print--back-2 {
+  transform: translate(-5px, 2px) rotate(-6deg);
+}
+.journal-photo-print--front {
+  transform: rotate(-2deg);
+}
+.journal-map-photo[aria-pressed="true"] .journal-photo-print--front {
+  outline: 2px solid var(--color-journal-accent);
+}
+.journal-map-photo:hover .journal-photo-print--front,
+.journal-map-photo:focus-visible .journal-photo-print--front {
+  transform: translateY(-3px);
+}
+.journal-map-photo:focus-visible {
+  outline: 2px solid var(--color-journal-accent);
+  outline-offset: 3px;
+}
+.journal-map-photo::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 60px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-white);
+  border-radius: 50%;
+  background: var(--color-journal-accent);
+  box-shadow: var(--shadow-periplus-soft);
+}
+.journal-photo-count {
+  position: absolute;
+  top: 0;
+  right: 3px;
+  display: grid;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-journal-ink);
+  color: var(--color-white);
+  font: 500 13px/1 var(--font-sans);
+}
+.journal-photo-viewer [data-gallery-media] {
+  padding-top: 56px;
+}
+.journal-photo-viewer [aria-label="照片序号"] {
+  background: transparent;
+  padding: 0;
+  top: 20px;
+  right: 20px;
+  font-size: 14px;
+}
+.journal-photo-viewer [aria-label="上一张照片"] {
+  left: 20px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--color-photo-line);
+}
+.journal-photo-viewer [aria-label="下一张照片"] {
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--color-photo-line);
+}
+.journal-photo-meta {
+  padding: 64px 32px 28px;
+  background: linear-gradient(to top, var(--color-photo-stage), transparent);
+  color: var(--color-white);
+}
+.journal-photo-caption {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: min(620px, 65%);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 28px;
+}
+.journal-photo-caption > span {
+  overflow-wrap: anywhere;
+}
+.journal-photo-caption[aria-expanded="true"] {
+  display: block;
+}
+.journal-photo-caption[aria-expanded="true"] svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin-bottom: 0;
+}
+.journal-photo-caption svg {
+  margin-bottom: 6px;
+}
+.journal-photo-location {
+  padding-bottom: 3px;
+  font-size: 14px;
+  line-height: 22px;
+}
+@media (max-width: 639px) {
+  .journal-photo-meta {
+    gap: 10px;
+    padding: 48px 20px 24px;
+  }
+  .journal-photo-caption {
+    flex: 1;
+    width: auto;
+    font-size: 14px;
+    line-height: 22px;
+  }
+  .journal-photo-caption svg {
+    width: 12px;
+    margin-bottom: 5px;
+  }
+  .journal-photo-location {
+    max-width: 35%;
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .journal-photo-location svg {
+    width: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-photo-print {
+    transition: none;
+  }
+}
+
+.journal-map-photo--compact {
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--color-white);
+  border-radius: 50%;
+  background: var(--color-journal-accent);
+  color: var(--color-white);
+  box-shadow: var(--shadow-periplus-soft);
+  font: 600 13px/30px var(--font-sans);
+  text-align: center;
+}
+.journal-map-photo--compact::after {
+  display: none;
 }

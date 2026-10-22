@@ -411,6 +411,9 @@ export function mapJourneyToGraph(
       role: link.role,
       rank: link.rank,
       caption: link.caption ?? undefined,
+      location: link.locationJson
+        ? parseJson(link.locationJson, `EventAssetLink ${link.id} location`)
+        : undefined,
       visibility: link.visibility,
       introducedRevision: link.introducedRevision,
       createdAt: link.createdAt.toISOString(),

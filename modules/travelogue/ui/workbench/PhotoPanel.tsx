@@ -1,4 +1,5 @@
 "use client"
+import { MAX_RECORDING_PHOTO_CAPTION_LENGTH } from "@/modules/data-model/contracts/recording"
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useReducedMotion } from "motion/react"
 import { DragDropProvider } from "@dnd-kit/react"
@@ -12,6 +13,7 @@ import type { RecordingStore } from "../../state/recording-store"
 import { useStore } from "zustand"
 import { eventTitle } from "../display"
 import { useConfirmation } from "./Modal"
+import PhotoLocationEditor from "./PhotoLocationEditor"
 
 function SortablePhoto({
   id,
@@ -89,7 +91,8 @@ function Caption({
       <Input
         className="w-full min-w-0"
         aria-label="照片说明"
-        placeholder="为照片写一句说明"
+        placeholder="为照片写一句描述"
+        maxLength={MAX_RECORDING_PHOTO_CAPTION_LENGTH}
         value={value}
         onChange={(event) => {
           setValue(event.target.value)
@@ -266,18 +269,23 @@ export default function PhotoPanel({
                 photo={photo}
                 onDirty={report}
                 onSave={async (caption) => {
-                  await setPhotos((entry) => ({
-                    photos: entry.photos.map((item) => ({
-                      assetId: item.assetId,
-                      caption:
-                        item.assetId === photo.assetId ? caption : item.caption,
-                    })),
-                    coverAssetId:
-                      entry.photos.find((photo) => photo.isCover)?.assetId ||
-                      null,
-                  }))
+                  await store.getState().mutate({
+                    name: "photo.update",
+                    eventId,
+                    assetId: photo.assetId,
+                    patch: { caption },
+                  })
                 }}
               />
+              <div className="col-span-2">
+                <PhotoLocationEditor
+                  key={`${photo.assetId}:${JSON.stringify(photo.location)}`}
+                  photo={photo}
+                  entry={entry}
+                  store={store}
+                  onDirty={report}
+                />
+              </div>
               {journey!.events.length > 1 && (
                 <Select
                   aria-label={`移动照片 ${index + 1} 到其他记录`}
@@ -290,7 +298,14 @@ export default function PhotoPanel({
                       value: event.id,
                       label: eventTitle(event),
                     }))}
-                  onValueChange={(target) => {
+                  onValueChange={async (target) => {
+                    if (
+                      target &&
+                      (drafts.current.has(photo.assetId) ||
+                        drafts.current.has(`${photo.assetId}:location`)) &&
+                      !(await ask("这张照片有未保存的输入，仍然移动？"))
+                    )
+                      return
                     if (target)
                       void run(() =>
                         store.getState().mutate((journey) => ({
