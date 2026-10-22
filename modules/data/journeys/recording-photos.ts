@@ -1,12 +1,34 @@
 import {
+  MAX_RECORDING_PHOTO_CAPTION_LENGTH,
   type RecordingCommand,
+  type RecordingLocation,
   type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import { JourneyInputError } from "./journey-repository"
 import { recordingId, requireRecordingEvent } from "./recording-reducer"
 
-type PhotoSelection = { assetId: string; caption: string }
+type PhotoSelection = {
+  assetId: string
+  caption: string
+  location: RecordingLocation | null
+}
+
+function selectedPhotos(graph: TargetJourneyGraphSnapshot, eventId: string) {
+  return graph.eventAssetLinks
+    .filter((link) => !link.retiredRevision && link.eventId === eventId)
+    .sort((left, right) => left.rank - right.rank)
+}
+
+function selection(
+  links: TargetJourneyGraphSnapshot["eventAssetLinks"]
+): PhotoSelection[] {
+  return links.map((link) => ({
+    assetId: link.assetId,
+    caption: link.caption ?? "",
+    location: link.location ?? null,
+  }))
+}
 
 async function setPhotos(
   graph: TargetJourneyGraphSnapshot,
@@ -35,7 +57,7 @@ async function setPhotos(
     }
   }
   // Links are revisioned facts. An edit retires its old membership and records
-  // the new caption/order; the underlying Asset and event identities stay put.
+  // the new caption/location/order; Asset and event identities stay put.
   for (const link of graph.eventAssetLinks) {
     if (!link.retiredRevision && link.eventId === eventId)
       link.retiredRevision = graph.revision
@@ -50,6 +72,7 @@ async function setPhotos(
       role: photo.assetId === coverAssetId ? "COVER" : "GALLERY",
       rank,
       caption: photo.caption,
+      ...(photo.location ? { location: photo.location } : {}),
       visibility: "PRIVATE",
       introducedRevision: graph.revision,
       createdAt: now,
@@ -65,11 +88,47 @@ export async function reduceRecordingPhotos(
   now: string
 ): Promise<string | undefined> {
   if (command.name === "photos.set") {
+    const existing = new Map(
+      selectedPhotos(graph, command.eventId).map((link) => [link.assetId, link])
+    )
+    // Existing long descriptions may pass through membership/order writes, but
+    // newly entered or changed descriptions must satisfy the current limit.
+    for (const photo of command.photos) {
+      if (
+        photo.caption !== (existing.get(photo.assetId)?.caption ?? "") &&
+        photo.caption.length > MAX_RECORDING_PHOTO_CAPTION_LENGTH
+      )
+        throw new JourneyInputError(
+          "Photo descriptions allow at most 100 characters"
+        )
+    }
     await setPhotos(
       graph,
       command.eventId,
-      command.photos,
+      command.photos.map((photo) => ({
+        ...photo,
+        location: existing.get(photo.assetId)?.location ?? null,
+      })),
       command.coverAssetId,
+      key,
+      now
+    )
+    return command.eventId
+  }
+  if (command.name === "photo.update") {
+    requireRecordingEvent(graph, command.eventId)
+    const links = selectedPhotos(graph, command.eventId)
+    if (!links.some((link) => link.assetId === command.assetId))
+      throw new JourneyInputError("Photo is not attached to this event")
+    await setPhotos(
+      graph,
+      command.eventId,
+      selection(links).map((photo) =>
+        photo.assetId === command.assetId
+          ? { ...photo, ...command.patch }
+          : photo
+      ),
+      links.find((link) => link.role === "COVER")?.assetId ?? null,
       key,
       now
     )
@@ -81,12 +140,8 @@ export async function reduceRecordingPhotos(
   }
   requireRecordingEvent(graph, command.fromEventId)
   requireRecordingEvent(graph, command.toEventId)
-  const selected = (eventId: string) =>
-    graph.eventAssetLinks
-      .filter((link) => !link.retiredRevision && link.eventId === eventId)
-      .sort((left, right) => left.rank - right.rank)
-  const source = selected(command.fromEventId)
-  const destination = selected(command.toEventId)
+  const source = selectedPhotos(graph, command.fromEventId)
+  const destination = selectedPhotos(graph, command.toEventId)
   const moved = source.find((link) => link.assetId === command.assetId)
   if (!moved)
     throw new JourneyInputError("Photo is not attached to the source event")
@@ -104,11 +159,6 @@ export async function reduceRecordingPhotos(
     throw new JourneyInputError("Photo insertion anchor not found")
   const sourcePhotos = source.filter((link) => link.assetId !== command.assetId)
   destination.splice(at + 1, 0, moved)
-  const selection = (links: typeof source): PhotoSelection[] =>
-    links.map((link) => ({
-      assetId: link.assetId,
-      caption: link.caption ?? "",
-    }))
   await setPhotos(
     graph,
     command.fromEventId,

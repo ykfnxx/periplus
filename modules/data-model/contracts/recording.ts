@@ -11,6 +11,7 @@ export const RECORDING_CATEGORIES = [
 
 const id = targetIdSchema
 const instant = targetDateTimeSchema
+export const MAX_RECORDING_PHOTO_CAPTION_LENGTH = 100
 
 export const recordingDateSchema = z
   .string()
@@ -61,6 +62,8 @@ export const recordingPhotoSchema = z
     assetId: id,
     url: z.string(),
     caption: z.string(),
+    // null follows this event's current location without copying its coordinates.
+    location: recordingLocationSchema.nullable(),
     isCover: z.boolean(),
   })
   .strict()
@@ -174,6 +177,27 @@ export const recordingCommandSchema = z.discriminatedUnion("name", [
     .strict(),
   z
     .object({
+      name: z.literal("photo.update"),
+      eventId: id,
+      assetId: id,
+      patch: z
+        .object({
+          caption: z
+            .string()
+            .max(MAX_RECORDING_PHOTO_CAPTION_LENGTH)
+            .optional(),
+          location: recordingLocationSchema.nullable().optional(),
+        })
+        .strict()
+        .refine(
+          (value) =>
+            value.caption !== undefined || value.location !== undefined,
+          "At least one photo field must be supplied"
+        ),
+    })
+    .strict(),
+  z
+    .object({
       name: z.literal("photo.move"),
       assetId: id,
       fromEventId: id,
@@ -211,6 +235,8 @@ export const recordingApiErrorSchema = z.object({
 })
 
 export type RecordingEventContent = z.infer<typeof recordingEventContentSchema>
+export type RecordingLocation = z.infer<typeof recordingLocationSchema>
+export type RecordingPhoto = z.infer<typeof recordingPhotoSchema>
 export type RecordingEvent = z.infer<typeof recordingEventSchema>
 export type RecordingJourney = z.infer<typeof recordingJourneySchema>
 export type RecordingJourneySummary = z.infer<

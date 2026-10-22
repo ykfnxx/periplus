@@ -28,10 +28,23 @@ const eventBase: RecordingEvent = {
       assetId: "lake-photo",
       url: lake.src,
       caption: "风慢慢停下来，湖面变成了温柔的金色。",
+      location: null,
       isCover: true,
     },
-    { assetId: "walk-photo", url: walk.src, caption: "", isCover: false },
-    { assetId: "tea-photo", url: tea.src, caption: "", isCover: false },
+    {
+      assetId: "walk-photo",
+      url: walk.src,
+      caption: "",
+      location: null,
+      isCover: false,
+    },
+    {
+      assetId: "tea-photo",
+      url: tea.src,
+      caption: "",
+      location: null,
+      isCover: false,
+    },
   ],
   createdAt: now,
   updatedAt: now,
@@ -65,7 +78,15 @@ export const storyJourney: RecordingJourney = {
       category: null,
       time: null,
       location: null,
-      photos: [{ assetId: "tea-2", url: tea.src, caption: "", isCover: false }],
+      photos: [
+        {
+          assetId: "tea-2",
+          url: tea.src,
+          caption: "",
+          location: null,
+          isCover: false,
+        },
+      ],
     },
     {
       ...eventBase,
@@ -193,6 +214,9 @@ export function createStoryRecordingApi(
         const existing = journey.events.flatMap((event) => event.photos)
         event.photos = command.photos.map((photo) => ({
           ...photo,
+          location:
+            event.photos.find((item) => item.assetId === photo.assetId)
+              ?.location ?? null,
           url:
             existing.find((item) => item.assetId === photo.assetId)?.url ||
             assets.get(photo.assetId)!,
