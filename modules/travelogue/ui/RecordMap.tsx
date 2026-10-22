@@ -1,7 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { MapPin } from "lucide-react"
+import type { RecordingLocation } from "@/modules/data-model/contracts/recording"
+import { recordingCoordinateToMap } from "./display"
+import { Button } from "@/components/kumo/components/button/button"
+import { MapPin, Plus } from "lucide-react"
 import { loadAMap, PERIPLUS_AMAP_STYLE } from "@/lib/amap"
 import usePhotoMapLayer, { type MapPhoto } from "./usePhotoMapLayer"
 import { periplusColors } from "@/lib/ui/map-theme"
@@ -36,6 +39,9 @@ export default function RecordMap({
   selectedEventId,
   onSelect,
   onPick,
+  picking = false,
+  pickedLocation,
+  onAddAtLocation,
   insets = defaultInsets,
   request,
   focusId = 0,
@@ -48,6 +54,9 @@ export default function RecordMap({
   selectedEventId?: string | null
   onSelect?: (eventId: string) => void
   onPick?: (coordinate: { lat: number; lng: number }) => void
+  picking?: boolean
+  pickedLocation?: RecordingLocation | null
+  onAddAtLocation?: (location: RecordingLocation) => void
   insets?: RecordMapInsets
   request?: RecordMapRequest | null
   focusId?: number
@@ -55,10 +64,31 @@ export default function RecordMap({
   const container = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<AMap.Map | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const latest = useRef({ points, photos, selectedEventId, onSelect, onPick })
+  const [context, setContext] = useState<{
+    lat: number
+    lng: number
+    x: number
+    y: number
+  } | null>(null)
+  const contextButton = useRef<HTMLButtonElement>(null)
+  const latest = useRef({
+    points,
+    photos,
+    selectedEventId,
+    onSelect,
+    onPick,
+    onAddAtLocation,
+  })
   useEffect(() => {
-    latest.current = { points, photos, selectedEventId, onSelect, onPick }
-  }, [points, photos, selectedEventId, onSelect, onPick])
+    latest.current = {
+      points,
+      photos,
+      selectedEventId,
+      onSelect,
+      onPick,
+      onAddAtLocation,
+    }
+  }, [points, photos, selectedEventId, onSelect, onPick, onAddAtLocation])
   useEffect(() => {
     let disposed = false
     let instance: AMap.Map | null = null
@@ -76,12 +106,30 @@ export default function RecordMap({
           animateEnable: false,
         })
         instance.addControl(new sdk.Scale())
-        instance.on("click", (event) =>
+        instance.on("rightclick", (event) => {
+          if (!latest.current.onAddAtLocation) return
+          const pixel = instance!.lngLatToContainer(event.lnglat)
+          setContext({
+            lat: event.lnglat.getLat(),
+            lng: event.lnglat.getLng(),
+            x: Math.max(
+              12,
+              Math.min(pixel.getX(), container.current!.clientWidth - 192)
+            ),
+            y: Math.max(
+              12,
+              Math.min(pixel.getY(), container.current!.clientHeight - 64)
+            ),
+          })
+        })
+        instance.on("movestart", () => setContext(null))
+        instance.on("click", (event) => {
+          setContext(null)
           latest.current.onPick?.({
             lat: event.lnglat.getLat(),
             lng: event.lnglat.getLng(),
           })
-        )
+        })
         setMap(instance)
       })
       .catch(() => {
@@ -98,7 +146,8 @@ export default function RecordMap({
     photos,
     insets,
     selectedEventId,
-    onOpenPhotos
+    onOpenPhotos,
+    !picking
   )
   useEffect(() => {
     if (!map) return
@@ -118,7 +167,11 @@ export default function RecordMap({
           content: button,
           anchor: "center",
         })
-        marker.on("click", () => latest.current.onSelect?.(point.eventId))
+        marker.on("click", () => {
+          if (latest.current.onPick)
+            latest.current.onPick({ lat: point.lat, lng: point.lng })
+          else latest.current.onSelect?.(point.eventId)
+        })
         return marker
       })
     map.add(markers)
@@ -126,6 +179,67 @@ export default function RecordMap({
       map.remove(markers)
     }
   }, [map, points, selectedEventId, photoMode, photos])
+  useEffect(() => {
+    const coordinate =
+      context ||
+      (picking && pickedLocation?.coordinates
+        ? recordingCoordinateToMap(pickedLocation.coordinates)
+        : null)
+    if (!map || !coordinate) return
+    const point = coordinate
+    const content = document.createElement("div")
+    content.className = "journal-picked-pin"
+    const dot = document.createElement("span")
+    dot.className = "journal-picked-pin-dot"
+    const label = document.createElement("span")
+    label.className = "journal-picked-pin-label"
+    label.textContent = picking
+      ? pickedLocation?.name || "所选位置"
+      : "所选位置"
+    content.append(label, dot)
+    const marker = new AMap.Marker({
+      position: [point.lng, point.lat],
+      content,
+      anchor: "bottom-center",
+      zIndex: 200,
+    })
+    map.add(marker)
+    return () => {
+      map.remove(marker)
+    }
+  }, [map, picking, pickedLocation, context])
+  useEffect(() => {
+    if (!map) return
+    map.setDefaultCursor(picking ? "crosshair" : "")
+
+    // 只在进入选点时定位；之后平移、缩放和点击都保留当前镜头。
+    const coordinate = pickedLocation?.coordinates
+    if (picking && coordinate) {
+      const point = recordingCoordinateToMap(coordinate)
+      map.setZoomAndCenter(Math.max(14, map.getZoom()), [point.lng, point.lat])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, picking])
+  useEffect(() => {
+    if (!context) return
+    contextButton.current?.focus({ preventScroll: true })
+    const dismiss = (event: PointerEvent) => {
+      if (!contextButton.current?.contains(event.target as Node))
+        setContext(null)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContext(null)
+        container.current?.focus({ preventScroll: true })
+      }
+    }
+    document.addEventListener("pointerdown", dismiss)
+    document.addEventListener("keydown", escape)
+    return () => {
+      document.removeEventListener("pointerdown", dismiss)
+      document.removeEventListener("keydown", escape)
+    }
+  }, [context])
   const fitPoints = [
     ...points,
     ...photos.map((photo) => ({ eventId: photo.eventId, ...photo.coordinate })),
@@ -135,7 +249,7 @@ export default function RecordMap({
     .join("|")
   const { left, right, top, bottom } = insets
   useEffect(() => {
-    if (!map) return
+    if (!map || picking) return
     const { points, photos, selectedEventId } = latest.current
     const all = [...points, ...photos.map((photo) => photo.coordinate)]
     const selected = points.find((point) => point.eventId === selectedEventId)
@@ -153,6 +267,7 @@ export default function RecordMap({
         [top + (photos.length ? 130 : 0), bottom + 24, left + 72, right + 72],
         14
       )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, positionKey, focusId, left, right, top, bottom])
   useEffect(() => {
     if (!map || !request) return
@@ -181,11 +296,17 @@ export default function RecordMap({
   }, [map, request, top, right, bottom, left])
   return (
     <div
+      data-map-picking={picking}
       data-photo-mode={photoMode}
       className="relative h-full min-h-72 w-full overflow-hidden bg-cream"
     >
       <div
         ref={container}
+        tabIndex={0}
+        aria-label="旅程地图"
+        onContextMenu={(event) => {
+          if (onAddAtLocation || picking) event.preventDefault()
+        }}
         className={`h-full min-h-72 w-full ${onPick ? "cursor-crosshair" : ""}`}
       />
       {error ? (
@@ -197,11 +318,36 @@ export default function RecordMap({
           {error}
         </div>
       ) : null}
-      {onPick ? (
-        <p className="pointer-events-none absolute inset-x-4 top-4 rounded-xl bg-soft-white p-3 text-sm font-bold shadow-periplus-soft">
-          点击地图选择位置
-        </p>
-      ) : null}
+      {context && onAddAtLocation && !picking && (
+        <div
+          className="absolute z-30"
+          style={{
+            left: context.x,
+            top: context.y,
+          }}
+        >
+          <Button
+            ref={contextButton}
+            variant="secondary"
+            className="min-h-12 rounded-xl! bg-white! px-5! shadow-periplus"
+            onClick={() => {
+              onAddAtLocation({
+                name: "所选位置",
+                address: null,
+                coordinates: {
+                  lat: context.lat,
+                  lng: context.lng,
+                  coordinateSystem: "GCJ02",
+                },
+              })
+              setContext(null)
+            }}
+          >
+            <Plus size={16} />
+            在此添加记录
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

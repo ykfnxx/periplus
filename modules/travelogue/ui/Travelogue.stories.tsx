@@ -7,7 +7,6 @@ import type {
 } from "@/modules/data-model/contracts/recording"
 import LandingGate from "@/modules/auth/ui/LandingGate"
 import JourneyLibrary from "./JourneyLibrary"
-import EventForm from "./workbench/EventForm"
 import RecordingEditor from "./RecordingEditor"
 import { createRecordingStore } from "../state/recording-store"
 import { createStoryRecordingApi, storyJourney } from "./recording-story-data"
@@ -144,19 +143,6 @@ export const Library: Story = { render: () => <LibraryStory /> }
 export const EmptyLibrary: Story = { render: () => <LibraryStory empty /> }
 export const Editor: Story = { render: () => <EditorStory /> }
 export const EmptyEditor: Story = { render: () => <EditorStory empty /> }
-export const AddRecord: Story = {
-  render: () => (
-    <div className="mx-auto max-w-3xl p-5 md:py-16">
-      <EventForm
-        onCancel={() => {}}
-        onSave={async () => {
-          throw new Error("模拟保存失败：输入和照片保留，可以重试。")
-        }}
-      />
-    </div>
-  ),
-}
-
 export const SlowUpload: Story = { render: () => <EditorStory slowUpload /> }
 
 export const Entry: Story = { render: () => <LandingGate /> }

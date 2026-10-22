@@ -12,6 +12,7 @@ import {
   type TargetJourneyRevision,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
+import { lockAssetRows } from "@/modules/data/assets/asset-repository"
 import {
   JourneyGraphValidationError,
   validateJourneyGraph,
@@ -1551,6 +1552,16 @@ async function commitJourneyGraphInDomain(
         "Journey head has no persisted parent revision"
       )
     }
+    const writesContent =
+      domain === "CONTENT" ||
+      (domain === "ALL" &&
+        !sameJson(contentState(previous), contentState(next)))
+    if (writesContent) {
+      await lockAssetRows(
+        tx,
+        next.eventAssetLinks.map((link) => link.assetId)
+      )
+    }
     await createRevision(tx, write, actor, parentRevision.id)
 
     if (
@@ -1559,11 +1570,7 @@ async function commitJourneyGraphInDomain(
     ) {
       await persistTransitDomain(tx, previous, next)
     }
-    if (
-      domain === "CONTENT" ||
-      (domain === "ALL" &&
-        !sameJson(contentState(previous), contentState(next)))
-    ) {
+    if (writesContent) {
       await persistContentDomain(tx, previous, next)
     }
 
@@ -1825,6 +1832,20 @@ export async function commitJourneyRevisionChain(
     return current
   }
   const commit = async (tx: Prisma.TransactionClient) => {
+    const current = await tx.journey.findFirst({
+      where: journeyScopeWhere(context, id, true),
+      select: { ownerId: true },
+    })
+    if (!current) return null
+    assertWriteOwner(context, current.ownerId)
+    // A Workspace may commit several revisions in one transaction. Lock their
+    // union before the first revision; ordering each revision alone is unsafe.
+    await lockAssetRows(
+      tx,
+      writes.flatMap((write) =>
+        write.graph.eventAssetLinks.map((link) => link.assetId)
+      )
+    )
     let revision = expectedRevision
     let result: TargetJourneyGraphSnapshot | null = null
     for (const write of writes) {
@@ -1854,6 +1875,12 @@ export async function createJourneyRevisionChain(
 ) {
   const create = async (tx: Prisma.TransactionClient) => {
     let result = await createJourney(context, baseWrite, tx)
+    await lockAssetRows(
+      tx,
+      writes.flatMap((write) =>
+        write.graph.eventAssetLinks.map((link) => link.assetId)
+      )
+    )
     let revision = result.revision
     for (const write of writes) {
       const committed = await commitJourneyGraphInDomain(

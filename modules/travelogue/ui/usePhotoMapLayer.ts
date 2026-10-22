@@ -58,7 +58,8 @@ export default function usePhotoMapLayer(
   photos: MapPhoto[],
   insets: RecordMapInsets,
   selectedEventId?: string | null,
-  onOpen?: (ids: string[]) => void
+  onOpen?: (ids: string[]) => void,
+  interactive = true
 ) {
   const [photoMode, setPhotoMode] = useState(false)
   // Keep source membership in one index. AMap's cluster render callback omits
@@ -81,10 +82,16 @@ export default function usePhotoMapLayer(
       ),
     [photos]
   )
-  const latest = useRef({ photos, selectedEventId, onOpen, insets })
+  const latest = useRef({
+    photos,
+    selectedEventId,
+    onOpen,
+    insets,
+    interactive,
+  })
   useEffect(() => {
-    latest.current = { photos, selectedEventId, onOpen, insets }
-  }, [photos, selectedEventId, onOpen, insets])
+    latest.current = { photos, selectedEventId, onOpen, insets, interactive }
+  }, [photos, selectedEventId, onOpen, insets, interactive])
   useEffect(() => {
     if (!map) return
     function update() {
@@ -152,8 +159,10 @@ export default function usePhotoMapLayer(
               latest.current.selectedEventId,
               photoMode
             )
+            button.tabIndex = interactive ? 0 : -1
             button.onclick = (event) => {
               event.stopPropagation()
+              if (!latest.current.interactive) return
               const first = members[0].coordinate
               const samePlace = members.every(
                 (photo) =>
@@ -199,6 +208,6 @@ export default function usePhotoMapLayer(
       if (render) map.off("zoomend", render)
       map.remove(markers)
     }
-  }, [map, photoMode, index, photos, selectedEventId])
+  }, [map, photoMode, index, photos, selectedEventId, interactive])
   return photoMode
 }

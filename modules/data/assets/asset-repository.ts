@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client"
+import { Prisma } from "@prisma/client"
 import {
   isAdmin,
   PermissionDeniedError,
@@ -13,6 +13,17 @@ export const assetOwnerInclude = {
 export type AssetRecord = Prisma.AssetGetPayload<{
   include: typeof assetOwnerInclude
 }>
+
+export async function lockAssetRows(
+  tx: Prisma.TransactionClient,
+  assetIds: readonly string[]
+) {
+  const ids = [...new Set(assetIds)]
+  if (!ids.length) return
+  // Reference guards lock one Asset at a time. Acquire the complete write set
+  // in database ID order first, so opposite photo orders cannot deadlock.
+  await tx.$queryRaw`SELECT "id" FROM "Asset" WHERE "id" IN (${Prisma.join(ids)}) ORDER BY "id" FOR UPDATE`
+}
 
 export async function findAssetUpload(
   context: AuthContext,
