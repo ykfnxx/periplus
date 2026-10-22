@@ -28,8 +28,8 @@ const eventBase: RecordingEvent = {
       assetId: "lake-photo",
       url: lake.src,
       caption: "风慢慢停下来，湖面变成了温柔的金色。",
-      location: null,
       isCover: true,
+      location: null,
     },
     {
       assetId: "walk-photo",
@@ -222,6 +222,13 @@ export function createStoryRecordingApi(
             assets.get(photo.assetId)!,
           isCover: photo.assetId === command.coverAssetId,
         }))
+      } else if (command.name === "photo.update") {
+        Object.assign(
+          journey.events
+            .find((entry) => entry.id === command.eventId)!
+            .photos.find((photo) => photo.assetId === command.assetId)!,
+          command.patch
+        )
       } else if (command.name === "photo.move") {
         const from = journey.events.find(
           (event) => event.id === command.fromEventId

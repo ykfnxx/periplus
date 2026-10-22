@@ -77,6 +77,7 @@ export default function MediaGallery({
       aria-label="照片轮播"
     >
       <motion.div
+        data-gallery-media=""
         className="h-full w-full touch-pan-y"
         drag="x"
         dragConstraints={{ left: 0, right: 0 }}

@@ -17,6 +17,9 @@ import MapControls from "./workbench/MapControls"
 import { useConfirmation } from "./workbench/Modal"
 import { dateLabel, eventTitle, recordingCoordinateToMap } from "./display"
 import type { RecordMapPoint, RecordMapRequest } from "./RecordMap"
+import PhotoViewer from "./workbench/PhotoViewer"
+import { photoItems } from "./photo-items"
+import type { MapPhoto } from "./usePhotoMapLayer"
 import useRecordingViewport from "./useRecordingViewport"
 const RecordMap = dynamic(() => import("./RecordMap"), { ssr: false })
 
@@ -62,6 +65,7 @@ export default function RecordingEditor({
     metadata,
     sheet,
     panelWidth,
+    photoViewer,
   } = useStore(ui)
   const { desktop, height, width } = useRecordingViewport()
   const { ask, confirmation } = useConfirmation()
@@ -104,6 +108,20 @@ export default function RecordingEditor({
       ) || [],
     [journey?.events, ordinals]
   )
+  const photos = useMemo(
+    () => photoItems(journey?.events || []),
+    [journey?.events]
+  )
+  const mapPhotos = useMemo(
+    () =>
+      photos.filter((photo): photo is MapPhoto => photo.coordinate !== null),
+    [photos]
+  )
+  const viewerPhotos =
+    photoViewer?.ids.flatMap((id) => {
+      const photo = photos.find((item) => item.id === id)
+      return photo ? [photo] : []
+    }) || []
   const sheetHeight =
     sheet === "small"
       ? 164
@@ -176,6 +194,10 @@ export default function RecordingEditor({
         {mapPreview || (
           <RecordMap
             points={points}
+            photos={mapPhotos}
+            onOpenPhotos={(ids) =>
+              ui.setState({ photoViewer: { ids, index: 0 } })
+            }
             selectedEventId={selected}
             onSelect={(id) => select(id, true)}
             insets={insets}
@@ -185,7 +207,7 @@ export default function RecordingEditor({
         )}
       </div>
       <MapControls
-        canFit={points.length > 0}
+        canFit={points.length > 0 || mapPhotos.length > 0}
         onRequest={(type) =>
           setMapRequest((current) => ({ id: (current?.id || 0) + 1, type }))
         }
@@ -381,6 +403,13 @@ export default function RecordingEditor({
             onEdit={() => openEditor(expanded.eventId)}
           />
         )}
+      {photoViewer && viewerPhotos.length > 0 && (
+        <PhotoViewer
+          photos={viewerPhotos}
+          initialIndex={photoViewer.index}
+          onClose={() => ui.setState({ photoViewer: null })}
+        />
+      )}
       {dialog && canEdit && (
         <EventEditor
           store={store}
