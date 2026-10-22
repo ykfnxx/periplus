@@ -15,6 +15,7 @@ export function Modal({
   hideTitle = false,
   closeClassName = "",
   backdropClassName,
+  hideClose = false,
 }: {
   title: string
   children: (close: () => void) => ReactNode
@@ -24,6 +25,7 @@ export function Modal({
   hideTitle?: boolean
   closeClassName?: string
   backdropClassName?: string
+  hideClose?: boolean
 }) {
   const [closing, setClosing] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -58,18 +60,20 @@ export function Modal({
         >
           {title}
         </Dialog.Title>
-        <Dialog.Close
-          render={
-            <Button
-              variant="ghost"
-              shape="square"
-              aria-label="关闭"
-              className={`absolute top-3 right-3 z-20 ${closeClassName}`}
-            />
-          }
-        >
-          <X size={20} />
-        </Dialog.Close>
+        {!hideClose && (
+          <Dialog.Close
+            render={
+              <Button
+                variant="ghost"
+                shape="square"
+                aria-label="关闭"
+                className={`absolute top-3 right-3 z-20 ${closeClassName}`}
+              />
+            }
+          >
+            <X size={20} />
+          </Dialog.Close>
+        )}
         {children(() => {
           void close()
         })}
