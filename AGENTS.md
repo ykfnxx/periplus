@@ -79,7 +79,7 @@ npm run build       # 生产构建
 | 语言   | TypeScript 5 (严格模式) |
 | 样式   | Tailwind CSS 4 + Kumo   |
 | 地图   | 高德地图 JS API 2.0     |
-| 数据库 | SQLite (开发)           |
+| 数据库 | PostgreSQL / OpenDAL    |
 | ORM    | Prisma                  |
 | 状态   | Zustand                 |
 | 布局   | react-resizable-panels  |

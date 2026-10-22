@@ -214,6 +214,9 @@ export async function getAsset(
 export async function deleteAsset(context: AuthContext, assetId: string) {
   try {
     return await prisma.$transaction(async (tx) => {
+      // Reference inserts lock this same row in their database guards. Acquire
+      // it before inspecting references so attach and soft delete serialize.
+      await tx.$queryRaw`SELECT "id" FROM "Asset" WHERE "id" = ${assetId} FOR UPDATE`
       const record = await tx.asset.findUnique({ where: { id: assetId } })
       if (!record) return false
       if (!isAdmin(context) && record.ownerId !== context.userId) {

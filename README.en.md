@@ -24,8 +24,9 @@ flowchart LR
   U[Browser] --> W[Next.js Web :3001]
   W --> A["Next.js API<br/>Auth / Workspace / Media"]
   W -->|WebSocket| B[Agent Backend :3002]
-  A --> D[(SQLite / Prisma)]
+  A --> D[(PostgreSQL / Prisma)]
   B --> D
+  A --> S[OpenDAL → Private S3 object storage]
   B --> G[Agent Gateway]
   G --> R[Kimi Code / Pi]
   R --> M[Periplus MCP Tools]
@@ -35,14 +36,14 @@ flowchart LR
   O --> V[Tempo / Prometheus / Grafana / Phoenix]
 ```
 
-| Component      | Responsibility                                                        |
-| -------------- | --------------------------------------------------------------------- |
-| Next.js Web    | UI, map workbench, authentication, and product APIs                   |
-| Agent Backend  | WebSocket, Agent lifecycle, streamed messages, and tool entry point   |
-| Agent Runtime  | Runs Kimi Code or Pi with explicitly allowed Periplus tools           |
-| Data Layer     | Stores Journeys, Workspaces, messages, and content with Prisma/SQLite |
-| Provider Layer | Integrates AMap map/place/transit services and RollingGo hotels       |
-| Observability  | Collects traces, metrics, and redacted Agent telemetry                |
+| Component      | Responsibility                                                            |
+| -------------- | ------------------------------------------------------------------------- |
+| Next.js Web    | UI, map workbench, authentication, and product APIs                       |
+| Agent Backend  | WebSocket, Agent lifecycle, streamed messages, and tool entry point       |
+| Agent Runtime  | Runs Kimi Code or Pi with explicitly allowed Periplus tools               |
+| Data Layer     | Stores Journeys, Workspaces, messages, and content with Prisma/PostgreSQL |
+| Provider Layer | Integrates AMap map/place/transit services and RollingGo hotels           |
+| Observability  | Collects traces, metrics, and redacted Agent telemetry                    |
 
 ## Technology
 
@@ -52,7 +53,7 @@ flowchart LR
 | Maps          | AMap JS API and Web Service API                           |
 | Backend       | Node.js, HTTP/WebSocket, Zod, MCP SDK                     |
 | Agent         | Kimi Code, Pi Coding Agent, DeepSeek                      |
-| Data          | SQLite, Prisma, Better Auth                               |
+| Data          | PostgreSQL, Prisma, Better Auth, OpenDAL                  |
 | Testing       | Vitest, Storybook, Playwright                             |
 | Observability | OpenTelemetry, Tempo, Prometheus, Grafana, Phoenix        |
 
@@ -61,6 +62,7 @@ flowchart LR
 ### Requirements
 
 - Node.js 22 and npm are recommended.
+- PostgreSQL 15+ and a private S3-compatible bucket; OpenDAL handles object storage.
 - Maps and place search require an AMap JS API key and Web Service key.
 - AI planning requires a configured Kimi Code installation or Pi with DeepSeek API access.
 - Hotel search requires a RollingGo API key.
@@ -81,7 +83,9 @@ Edit `.env.local` and replace its placeholders. To start only the product UI and
 PERIPLUS_OBSERVABILITY_ENABLED="false"
 ```
 
-Initialize a fresh local database:
+Provision a separate PostgreSQL database and private bucket, then configure `DATABASE_URL` and `PERIPLUS_STORAGE_*` in `.env.local`. The example limits each process to five database connections; Web and Backend have separate pools. Isolated development or tests may use `PERIPLUS_STORAGE_SCHEME="fs"` (configured root) or `"memory"` (process-local, ephemeral) instead of S3.
+
+Initialize a fresh PostgreSQL database:
 
 ```bash
 npx prisma generate
@@ -89,9 +93,9 @@ npx prisma migrate deploy
 npm run db:seed
 ```
 
-`npm run db:seed` only accepts an empty database. Do not run it against an existing database.
+`npm run db:seed` only accepts an empty database. Do not run it against an existing database. This PostgreSQL baseline does not migrate SQLite data; back up and convert existing databases and files separately rather than overwriting them.
 
-Start the Web app and Backend:
+Start Web and Backend on the development server and connect Monitor before debugging. On Mac, run only standalone Storybook or tests:
 
 ```bash
 npm run dev
@@ -112,10 +116,13 @@ See [`.env.example`](./.env.example) for the complete configuration template:
 - `NEXT_PUBLIC_*`: browser-visible product, backend, and AMap JS API settings.
 - `PERIPLUS_AMAP_*` / `PERIPLUS_ROLLINGGO_*`: server-side place, transit, and hotel providers.
 - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, and `PERIPLUS_AGENT_*`: Pi Agent Core model, search, and timeout configuration.
-- `BETTER_AUTH_SECRET` / `DATABASE_URL`: authentication and database.
+- `BETTER_AUTH_SECRET` / `DATABASE_URL`: authentication and PostgreSQL.
+- `PERIPLUS_STORAGE_*`: OpenDAL backend, S3 bucket/region/endpoint, and private credentials. Create the bucket beforehand and keep it private.
 - `PERIPLUS_OBSERVABILITY_*` / `OTEL_*`: observability.
 
 `.env` and `.env.local` are ignored by Git. Never place real API keys, model credentials, authentication secrets, or private network addresses in source code, READMEs, commits, or PRs.
+
+Upload resources with `POST /api/assets`: send binary bytes with `Content-Type` and a stable per-user `X-Upload-Id` for retries. Optional `X-File-Name` is URL-encoded. The response contains the resource ID, kind, size, and same-origin file URL. `/api/assets/:id/file` checks ownership and soft deletion on every request and supports a single byte Range. Photo forms use the same service; captions and location overrides remain on journey attachments. Deletion is soft, active event/source references block it, and physical garbage collection is separate.
 
 ## Commands
 

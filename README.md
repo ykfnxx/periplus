@@ -24,8 +24,9 @@ flowchart LR
   U[浏览器] --> W[Next.js Web :3001]
   W --> A["Next.js API<br/>Auth / Workspace / Media"]
   W -->|WebSocket| B[Agent Backend :3002]
-  A --> D[(SQLite / Prisma)]
+  A --> D[(PostgreSQL / Prisma)]
   B --> D
+  A --> S[OpenDAL → 私有 S3 对象存储]
   B --> G[Agent Gateway]
   G --> R[Kimi Code / Pi]
   R --> M[Periplus MCP Tools]
@@ -35,14 +36,14 @@ flowchart LR
   O --> V[Tempo / Prometheus / Grafana / Phoenix]
 ```
 
-| 组件           | 职责                                                   |
-| -------------- | ------------------------------------------------------ |
-| Next.js Web    | 页面、地图工作台、登录与产品 API                       |
-| Agent Backend  | WebSocket、Agent 生命周期、流式消息与工具入口          |
-| Agent Runtime  | 运行 Kimi Code 或 Pi，调用显式允许的 Periplus 工具     |
-| Data Layer     | 使用 Prisma/SQLite 保存 Journey、Workspace、消息与资料 |
-| Provider Layer | 对接高德地图、地点/交通能力与 RollingGo 酒店服务       |
-| Observability  | 采集 trace、metrics 与经过脱敏的 Agent 观测数据        |
+| 组件           | 职责                                                       |
+| -------------- | ---------------------------------------------------------- |
+| Next.js Web    | 页面、地图工作台、登录与产品 API                           |
+| Agent Backend  | WebSocket、Agent 生命周期、流式消息与工具入口              |
+| Agent Runtime  | 运行 Kimi Code 或 Pi，调用显式允许的 Periplus 工具         |
+| Data Layer     | 使用 Prisma/PostgreSQL 保存 Journey、Workspace、消息与资料 |
+| Provider Layer | 对接高德地图、地点/交通能力与 RollingGo 酒店服务           |
+| Observability  | 采集 trace、metrics 与经过脱敏的 Agent 观测数据            |
 
 ## 技术栈
 
@@ -52,7 +53,7 @@ flowchart LR
 | 地图     | 高德 JS API、Web Service API                              |
 | 后端     | Node.js、HTTP/WebSocket、Zod、MCP SDK                     |
 | Agent    | Kimi Code、Pi Coding Agent、DeepSeek                      |
-| 数据     | SQLite、Prisma、Better Auth                               |
+| 数据     | PostgreSQL、Prisma、Better Auth、OpenDAL                  |
 | 测试     | Vitest、Storybook、Playwright                             |
 | 可观测性 | OpenTelemetry、Tempo、Prometheus、Grafana、Phoenix        |
 
@@ -61,6 +62,7 @@ flowchart LR
 ### 环境要求
 
 - 建议使用 Node.js 22 与 npm。
+- PostgreSQL 15+ 数据库与私有 S3 兼容存储桶；对象存储通过 OpenDAL 接入。
 - 地图与地点查询需要高德 JS API Key 和 Web Service Key。
 - AI 规划需要已配置的 Kimi Code，或 Pi + DeepSeek API。
 - 酒店查询需要 RollingGo API Key。
@@ -81,7 +83,9 @@ cp .env.example .env.local
 PERIPLUS_OBSERVABILITY_ENABLED="false"
 ```
 
-初始化一个全新的本地数据库：
+先准备独立的 PostgreSQL 数据库与私有存储桶，在 `.env.local` 配置 `DATABASE_URL` 和 `PERIPLUS_STORAGE_*`。数据库连接池默认示例限制为每进程 5 个连接；Web 与 Backend 各自持有连接池。仅在隔离开发或测试中，可用 `PERIPLUS_STORAGE_SCHEME="fs"`（配置根目录）或 `"memory"`（进程内、不持久化）替换 S3。
+
+初始化全新的 PostgreSQL 数据库：
 
 ```bash
 npx prisma generate
@@ -89,9 +93,9 @@ npx prisma migrate deploy
 npm run db:seed
 ```
 
-`npm run db:seed` 只接受空数据库，不要对已有数据的数据库执行。
+`npm run db:seed` 只接受空数据库，不要对已有数据的数据库执行。本轮提供 PostgreSQL 新基线，不包含 SQLite 数据迁移；现有数据库与本地文件需另行备份、转换，不要直接覆盖。
 
-启动前后端：
+在开发服务器上启动前后端，并在调试前接入 Monitor。Mac 仅运行独立 Storybook 或测试：
 
 ```bash
 npm run dev
@@ -112,10 +116,13 @@ npm run dev
 - `NEXT_PUBLIC_*`：浏览器可见的产品、后端与高德 JS API 配置。
 - `PERIPLUS_AMAP_*` / `PERIPLUS_ROLLINGGO_*`：服务端地点、交通与酒店 provider。
 - `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` 与 `PERIPLUS_AGENT_*`：Pi Agent Core 的模型、搜索与超时配置。
-- `BETTER_AUTH_SECRET` / `DATABASE_URL`：认证与数据库。
+- `BETTER_AUTH_SECRET` / `DATABASE_URL`：认证与 PostgreSQL 数据库。
+- `PERIPLUS_STORAGE_*`：OpenDAL 后端、S3 桶／区域／端点及私有凭据。桶需预先创建并保持私有。
 - `PERIPLUS_OBSERVABILITY_*` / `OTEL_*`：可观测性。
 
 `.env` 与 `.env.local` 已被 Git 忽略。不要在源码、README、commit 或 PR 中写入真实 Key、模型凭据、认证 secret 或内网地址。
+
+资源上传使用 `POST /api/assets`：请求体为二进制流，`Content-Type` 指定 MIME，`X-Upload-Id` 为同一用户重试时稳定的幂等键；可选 `X-File-Name` 使用 URL 编码。返回资源 id、类型、大小与同源文件 URL。文件入口 `/api/assets/:id/file` 每次校验归属和软删除状态，并支持单段字节 Range。照片表单入口复用此服务；说明和位置覆盖值仍属于旅程中的照片关联。删除为软删除，活动事件或资料引用会阻止删除；历史对象物理回收另行处理。
 
 ## 常用命令
 

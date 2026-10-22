@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { randomUUID } from "node:crypto"
-import { unlink } from "node:fs/promises"
 import { NextRequest } from "next/server"
 import {
   afterAll,
@@ -29,7 +28,7 @@ import {
   type RecordingMutation,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
-import { privatePhotoFilePath } from "@/modules/data/photos/photo-storage"
+import { assetOperator } from "@/modules/data/assets/object-storage"
 
 const ownerId = `recording-owner-${randomUUID()}`
 const otherId = `recording-other-${randomUUID()}`
@@ -137,7 +136,9 @@ afterAll(async () => {
   })
   await Promise.all(
     assets.map((asset) =>
-      unlink(privatePhotoFilePath(asset.storageKey)).catch(() => undefined)
+      assetOperator()
+        .delete(asset.storageKey)
+        .catch(() => undefined)
     )
   )
   vi.unstubAllEnvs()
@@ -225,7 +226,7 @@ describe.sequential("manual recording API and durable event identity", () => {
     }>
     expect(summaries.find((item) => item.id === journey.id)).toMatchObject({
       photoCount: 3,
-      coverUrl: `/api/photos/${photos[1]!.id}/file`,
+      coverUrl: `/api/assets/${photos[1]!.id}/file`,
     })
     const listedPhotos = (await (await listPhotos()).json()) as Array<{
       id: string
