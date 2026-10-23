@@ -14,6 +14,8 @@ import {
   GET as listJourneys,
   POST as createJourney,
 } from "@/app/api/journeys/route"
+import { GET as readAtlas } from "@/app/api/journeys/map/route"
+import type { RecordingAtlas } from "@/modules/data-model/contracts/recording"
 import { GET as readJourney } from "@/app/api/journeys/[id]/route"
 import { POST as command } from "@/app/api/journeys/[id]/commands/route"
 import { GET as listPhotos, POST as uploadPhoto } from "@/app/api/photos/route"
@@ -145,6 +147,86 @@ afterAll(async () => {
 })
 
 describe.sequential("manual recording API and durable event identity", () => {
+  it("projects only the current author's albums and preserves source and effective photo location", async () => {
+    setTestAuthContext(other)
+    const foreign = await newJourney("另一位作者的游记")
+    setTestAuthContext(owner)
+    let journey = await newJourney("相册投影")
+    const location = {
+      name: "事件地点",
+      address: null,
+      coordinates: {
+        lat: 30.2,
+        lng: 120.1,
+        coordinateSystem: "GCJ02" as const,
+      },
+    }
+    const override = {
+      ...location,
+      name: "照片独立地点",
+      coordinates: { ...location.coordinates, lat: 30.3 },
+    }
+    const added = await write(journey, {
+      name: "event.add",
+      afterEventId: null,
+      content: { body: "真实经历", location },
+    })
+    journey = added.journey
+    const first = await photo(),
+      second = await photo()
+    journey = (
+      await write(journey, {
+        name: "photos.set",
+        eventId: added.eventId!,
+        photos: [
+          { assetId: first.id, caption: "继承事件" },
+          { assetId: second.id, caption: "独立位置" },
+        ],
+        coverAssetId: first.id,
+      })
+    ).journey
+    journey = (
+      await write(journey, {
+        name: "photo.update",
+        eventId: added.eventId!,
+        assetId: second.id,
+        patch: { location: override },
+      })
+    ).journey
+    const response = await readAtlas()
+    expect(response.status).toBe(200)
+    const atlas = (await response.json()) as RecordingAtlas
+    expect(atlas.journeys.some((item) => item.id === foreign.id)).toBe(false)
+    expect(
+      atlas.journeys.find((item) => item.id === journey.id)?.photoCount
+    ).toBe(2)
+    expect(
+      atlas.photos.filter((item) => item.journeyId === journey.id)
+    ).toMatchObject([
+      {
+        assetId: first.id,
+        eventId: added.eventId,
+        journeyTitle: "相册投影",
+        location,
+      },
+      { assetId: second.id, eventId: added.eventId, location: override },
+    ])
+    const removed = await write(journey, {
+      name: "event.remove",
+      eventId: added.eventId!,
+    })
+    const refreshed = (await (await readAtlas()).json()) as RecordingAtlas
+    expect(
+      refreshed.photos.some((item) => item.eventId === added.eventId)
+    ).toBe(false)
+    expect(removed.journey.events).toHaveLength(0)
+  })
+
+  it("requires authentication for the personal map feed", async () => {
+    setTestAuthContext(null)
+    expect((await readAtlas()).status).toBe(401)
+  })
+
   it("saves text and three no-GPS photos, enriches and reorders, then restores the exact document", async () => {
     let journey = await newJourney()
     const added = await write(journey, {

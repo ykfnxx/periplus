@@ -128,6 +128,7 @@ export function createStoryRecordingApi(
   const assets = new Map<string, string>()
   return {
     get: async () => structuredClone(journey),
+    atlas: async () => ({ journeys: [], photos: [] }),
     list: async () => [],
     create: async () => ({
       journey: structuredClone(journey),

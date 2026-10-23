@@ -58,6 +58,20 @@ function LibraryStory({ empty = false }: { empty?: boolean }) {
   ) : (
     <JourneyLibrary
       journeys={items}
+      photos={
+        empty
+          ? []
+          : storyJourney.events.flatMap((event) =>
+              event.photos.map((photo) => ({
+                ...photo,
+                location: photo.location ?? event.location,
+                journeyId: storyJourney.id,
+                journeyTitle: storyJourney.title,
+                eventId: event.id,
+                eventTitle: event.title || "一段经历",
+              }))
+            )
+      }
       loading={false}
       error={null}
       onRetry={() => {}}
@@ -137,7 +151,15 @@ function EditorStory({
     void store.getState().load()
     return () => store.getState().dispose()
   }, [store])
-  return <RecordingEditor canEdit={canEdit} store={store} onBack={onBack} />
+  return (
+    <RecordingEditor
+      canEdit={canEdit}
+      store={store}
+      onBack={onBack}
+      journeys={library}
+      onOpenJourney={() => {}}
+    />
+  )
 }
 export const Library: Story = { render: () => <LibraryStory /> }
 export const EmptyLibrary: Story = { render: () => <LibraryStory empty /> }

@@ -1,4 +1,5 @@
 import type {
+  RecordingAtlas,
   RecordingJourney,
   RecordingJourneySummary,
   RecordingJourneyCreate,
@@ -32,6 +33,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const recordingApi = {
+  atlas: () => request<RecordingAtlas>("/api/journeys/map"),
   list: () => request<RecordingJourneySummary[]>("/api/journeys"),
   get: (id: string) =>
     request<RecordingJourney>(`/api/journeys/${encodeURIComponent(id)}`),

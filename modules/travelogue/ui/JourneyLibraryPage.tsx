@@ -6,10 +6,12 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type {
   RecordingJourneyCreate,
+  RecordingMapPhoto,
   RecordingJourneySummary,
 } from "@/modules/data-model/contracts/recording"
 import { recordingApi } from "../data/client"
 import JourneyLibrary from "./JourneyLibrary"
+import { journeyHref } from "../data/navigation"
 
 export default function JourneyLibraryPage({
   developerMode = false,
@@ -18,6 +20,7 @@ export default function JourneyLibraryPage({
 }) {
   const router = useRouter()
   const [journeys, setJourneys] = useState<RecordingJourneySummary[]>([])
+  const [photos, setPhotos] = useState<RecordingMapPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
@@ -25,10 +28,11 @@ export default function JourneyLibraryPage({
   useEffect(() => {
     let disposed = false
     recordingApi
-      .list()
-      .then((items) => {
+      .atlas()
+      .then((atlas) => {
         if (!disposed) {
-          setJourneys(items)
+          setJourneys(atlas.journeys)
+          setPhotos(atlas.photos)
           setLoading(false)
         }
       })
@@ -48,6 +52,7 @@ export default function JourneyLibraryPage({
     <JourneyLibrary
       developerMode={developerMode}
       journeys={journeys}
+      photos={photos}
       loading={loading}
       error={error}
       onRetry={() => {
@@ -55,8 +60,8 @@ export default function JourneyLibraryPage({
         setError(null)
         setReload((value) => value + 1)
       }}
-      onOpen={(id) => router.push(`/journeys/${encodeURIComponent(id)}`)}
-      onCreate={async (title) => {
+      onOpen={(id, request) => router.push(journeyHref(id, request))}
+      onCreate={async (title, request) => {
         pendingCreate.current ||= { idempotencyKey: operationId(), title }
         const result = await recordingApi.create(pendingCreate.current)
         if (result.journey.title !== title)
@@ -66,7 +71,7 @@ export default function JourneyLibraryPage({
             command: { name: "journey.update", patch: { title } },
           })
         pendingCreate.current = null
-        router.push(`/journeys/${encodeURIComponent(result.journey.id)}`)
+        router.push(journeyHref(result.journey.id, request))
       }}
       onRename={async (id, title) => {
         const journey = await recordingApi.get(id)

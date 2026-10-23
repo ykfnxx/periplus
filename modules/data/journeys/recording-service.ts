@@ -86,7 +86,7 @@ async function replay(
   }
 }
 
-export async function listRecordingJourneys(context: AuthContext) {
+async function listRecordingDocuments(context: AuthContext) {
   const journeys = await prisma.journey.findMany({
     where: {
       ownerId: context.userId,
@@ -98,10 +98,32 @@ export async function listRecordingJourneys(context: AuthContext) {
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
   })
   return Promise.all(
-    journeys.map(async (journey) =>
-      summarizeRecording(await document(mapJourneyToGraph(journey)))
-    )
+    journeys.map(async (journey) => document(mapJourneyToGraph(journey)))
   )
+}
+
+export async function listRecordingJourneys(context: AuthContext) {
+  return (await listRecordingDocuments(context)).map(summarizeRecording)
+}
+
+// 地点相册是当前作者照片的只读投影，聚合不会改变原事件或游记归属。
+export async function getRecordingAtlas(context: AuthContext) {
+  const documents = await listRecordingDocuments(context)
+  return {
+    journeys: documents.map(summarizeRecording),
+    photos: documents.flatMap((journey) =>
+      journey.events.flatMap((event) =>
+        event.photos.map((photo) => ({
+          ...photo,
+          location: photo.location ?? event.location,
+          journeyId: journey.id,
+          journeyTitle: journey.title,
+          eventId: event.id,
+          eventTitle: event.title || event.location?.name || "一段经历",
+        }))
+      )
+    ),
+  }
 }
 
 export async function getRecordingJourney(context: AuthContext, id: string) {
