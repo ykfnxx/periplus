@@ -12,7 +12,6 @@ export const createWorkbenchStore = () =>
     focusId: 0,
     activeDay: null as string | null,
     dialog: null as EventWindowRequest | null,
-    expanded: null as { eventId: string; photoIndex: number } | null,
     photoViewer: null as { ids: string[]; index: number } | null,
     metadata: false,
     sheet: "half" as "small" | "half" | "full",

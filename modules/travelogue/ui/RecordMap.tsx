@@ -7,6 +7,7 @@ import { Button } from "@/components/kumo/components/button/button"
 import { MapPin, Plus } from "lucide-react"
 import { loadAMap, PERIPLUS_AMAP_STYLE } from "@/lib/amap"
 import usePhotoMapLayer, { type MapPhoto } from "./usePhotoMapLayer"
+import type { MapViewport } from "../state/atlas-view-store"
 import { periplusColors } from "@/lib/ui/map-theme"
 
 export interface RecordMapPoint {
@@ -47,7 +48,11 @@ export default function RecordMap({
   focusId = 0,
   photos = emptyPhotos,
   onOpenPhotos,
+  initialViewport,
+  onViewport,
 }: {
+  initialViewport?: MapViewport | null
+  onViewport?: (viewport: MapViewport) => void
   points: RecordMapPoint[]
   photos?: MapPhoto[]
   onOpenPhotos?: (ids: string[]) => void
@@ -61,6 +66,11 @@ export default function RecordMap({
   request?: RecordMapRequest | null
   focusId?: number
 }) {
+  const restoredViewport = useRef(initialViewport)
+  const viewportListener = useRef(onViewport)
+  useEffect(() => {
+    viewportListener.current = onViewport
+  }, [onViewport])
   const container = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<AMap.Map | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -96,8 +106,10 @@ export default function RecordMap({
       .then((sdk) => {
         if (disposed || !container.current) return
         instance = new sdk.Map(container.current, {
-          center: [104.5, 36.5],
-          zoom: 4,
+          center: restoredViewport.current
+            ? [restoredViewport.current.lng, restoredViewport.current.lat]
+            : [104.5, 36.5],
+          zoom: restoredViewport.current?.zoom ?? 4,
           viewMode: "2D",
           mapStyle: PERIPLUS_AMAP_STYLE,
           features: latest.current.onPick
@@ -123,6 +135,14 @@ export default function RecordMap({
           })
         })
         instance.on("movestart", () => setContext(null))
+        instance.on("moveend", () => {
+          const center = instance!.getCenter()
+          viewportListener.current?.({
+            lat: center.getLat(),
+            lng: center.getLng(),
+            zoom: instance!.getZoom(),
+          })
+        })
         instance.on("click", (event) => {
           setContext(null)
           latest.current.onPick?.({
@@ -249,13 +269,18 @@ export default function RecordMap({
     .join("|")
   const { left, right, top, bottom } = insets
   useEffect(() => {
-    if (!map || picking) return
+    if (!map || picking || restoredViewport.current) return
     const { points, photos, selectedEventId } = latest.current
     const all = [...points, ...photos.map((photo) => photo.coordinate)]
     const selected = points.find((point) => point.eventId === selectedEventId)
+    // 无定位的记录保留当前镜头；有独立照片位置时优先使用该记录的照片。
+    const selectedPhoto = photos.find(
+      (photo) => photo.eventId === selectedEventId
+    )
+    if (selectedEventId && !selected && !selectedPhoto) return
     // 将定位点放进浮窗外的可见地图区域；列表滚动、正文修订不触发重新定位。
-    if (selected || all.length === 1) {
-      const point = selected || all[0]
+    if (selected || selectedPhoto || all.length === 1) {
+      const point = selected || selectedPhoto?.coordinate || all[0]
       map.setZoomAndCenter(14, [point.lng, point.lat])
       map.panBy((left - right) / 2, (top - bottom) / 2)
     } else if (all.length)

@@ -250,3 +250,14 @@ export type RecordingMutation = z.infer<typeof recordingMutationSchema>
 export type RecordingMutationResult = z.infer<
   typeof recordingMutationResultSchema
 >
+
+export type RecordingMapPhoto = RecordingPhoto & {
+  journeyId: string
+  journeyTitle: string
+  eventId: string
+  eventTitle: string
+}
+export type RecordingAtlas = {
+  journeys: RecordingJourneySummary[]
+  photos: RecordingMapPhoto[]
+}

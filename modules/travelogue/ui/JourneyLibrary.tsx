@@ -1,27 +1,30 @@
 "use client"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import dynamic from "next/dynamic"
-import {
-  CalendarDays,
-  Clock3,
-  Image as ImageIcon,
-  LockKeyhole,
-  MoreHorizontal,
-  Plus,
-} from "lucide-react"
+import { Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
-import { Tabs } from "@/components/kumo/components/tabs/tabs"
-import type { RecordingJourneySummary } from "@/modules/data-model/contracts/recording"
+import type {
+  RecordingJourneySummary,
+  RecordingMapPhoto,
+} from "@/modules/data-model/contracts/recording"
+import type { JourneyOpenRequest } from "../data/navigation"
 import MapControls from "./workbench/MapControls"
-import ResizableMapPanel from "./workbench/ResizableMapPanel"
+import JourneyMenu from "./workbench/JourneyMenu"
+import PhotoViewer from "./workbench/PhotoViewer"
 import { Modal, useConfirmation } from "./workbench/Modal"
-import { journeyDateLabel } from "./display"
+import { recordingCoordinateToMap } from "./display"
 import type { RecordMapRequest } from "./RecordMap"
+import { atlasViewStore } from "../state/atlas-view-store"
+import type { MapPhoto } from "./usePhotoMapLayer"
 const RecordMap = dynamic(() => import("./RecordMap"), { ssr: false })
 export type JourneyLibraryItem = RecordingJourneySummary
+const emptyPhotos: RecordingMapPhoto[] = []
+const atlasInsets = { left: 32, right: 76, top: 88, bottom: 32 }
+
 export default function JourneyLibrary({
   journeys,
+  photos = emptyPhotos,
   loading,
   error,
   onCreate,
@@ -31,174 +34,155 @@ export default function JourneyLibrary({
   developerMode = false,
 }: {
   journeys: JourneyLibraryItem[]
+  photos?: RecordingMapPhoto[]
   loading: boolean
   error: string | null
-  onCreate: (title: string) => Promise<void>
-  onOpen: (id: string) => void
+  onCreate: (title: string, request?: JourneyOpenRequest) => Promise<void>
+  onOpen: (id: string, request?: JourneyOpenRequest) => void
   onRename: (id: string, title: string) => Promise<void>
   onRetry: () => void
   developerMode?: boolean
 }) {
-  const [sort, setSort] = useState("all")
+  const [initialViewport] = useState(() => atlasViewStore.getState().viewport)
+  const [directory, setDirectory] = useState(false)
+  const [destination, setDestination] = useState<JourneyOpenRequest | null>(
+    null
+  )
+  const [viewer, setViewer] = useState<string[] | null>(null)
   const [form, setForm] = useState<{
     id?: string
     title: string
     initial: string
+    request?: JourneyOpenRequest
   } | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [mapRequest, setMapRequest] = useState<RecordMapRequest | null>(null)
-  const [sheet, setSheet] = useState<"small" | "half" | "full">("half")
   const { ask, confirmation } = useConfirmation()
-  const sorted =
-    sort === "recent"
-      ? [...journeys].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      : journeys
-  const create = () => {
+  const items = useMemo(
+    () =>
+      photos.map((photo) => ({
+        ...photo,
+        id: `${photo.journeyId}:${photo.eventId}:${photo.assetId}`,
+        inherited: false,
+        coordinate: photo.location?.coordinates
+          ? recordingCoordinateToMap(photo.location.coordinates)
+          : null,
+      })),
+    [photos]
+  )
+  const mapPhotos = useMemo(
+    () =>
+      items.filter(
+        (photo): photo is (typeof items)[number] & MapPhoto =>
+          photo.coordinate !== null
+      ),
+    [items]
+  )
+  const byId = useMemo(
+    () => new Map(items.map((photo) => [photo.id, photo])),
+    [items]
+  )
+  const viewerPhotos =
+    viewer?.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])) || []
+  const create = (request?: JourneyOpenRequest) => {
     setFormError(null)
-    setForm({ title: "", initial: "" })
+    setForm({ title: "", initial: "", request })
+  }
+  const add = (request: JourneyOpenRequest = { add: true }) => {
+    setDestination(request)
+    if (journeys.length) setDirectory(true)
+    else create(request)
   }
   return (
     <main className="journal-workbench journal-library fixed inset-0 isolate overflow-hidden bg-cream text-ink">
       <div className="absolute inset-0">
-        <RecordMap points={[]} request={mapRequest} />
+        <RecordMap
+          points={[]}
+          initialViewport={initialViewport}
+          onViewport={(viewport) => atlasViewStore.setState({ viewport })}
+          photos={mapPhotos}
+          insets={atlasInsets}
+          request={mapRequest}
+          onOpenPhotos={setViewer}
+          onAddAtLocation={
+            !loading && !error
+              ? (location) => add({ add: true, location })
+              : undefined
+          }
+        />
       </div>
+      <div className="journal-atlas-selector absolute top-5 left-5 z-20 max-w-[calc(100vw-160px)]">
+        <JourneyMenu
+          journeys={journeys}
+          open={directory}
+          onOpenChange={(open) => {
+            setDirectory(open)
+            if (!open) setDestination(null)
+          }}
+          choosing={!!destination}
+          onOpen={(id) => onOpen(id, destination || undefined)}
+          onCreate={() => create(destination || undefined)}
+          onRename={(id) => {
+            const journey = journeys.find((item) => item.id === id)!
+            setFormError(null)
+            setForm({ id, title: journey.title, initial: journey.title })
+          }}
+          onPhotos={
+            items.length
+              ? () => setViewer(items.map((item) => item.id))
+              : undefined
+          }
+        />
+      </div>
+      <Button
+        variant="ghost"
+        className="journal-atlas-add absolute top-5 right-5 z-20 gap-2! bg-white!"
+        disabled={loading || !!error}
+        onClick={() => add()}
+      >
+        <Plus size={18} />
+        记一笔
+      </Button>
       <MapControls
-        canFit={false}
+        canFit={mapPhotos.length > 0}
         onRequest={(type) =>
           setMapRequest((current) => ({ id: (current?.id || 0) + 1, type }))
         }
       />
-      <ResizableMapPanel width={440} sheet={sheet} onSheet={setSheet}>
-        <header className="shrink-0 px-5 pt-6">
-          <h1 className="text-2xl font-black tracking-tight">我的旅程</h1>
-          <p className="mt-2 mb-5 text-sm text-walnut">
-            把走过的路，慢慢记下来。
-          </p>
-          <Tabs
-            tabs={[
-              { value: "all", label: "全部" },
-              { value: "recent", label: "最近编辑" },
-            ]}
-            value={sort}
-            onValueChange={setSort}
-            variant="segmented"
-            listClassName="mb-5"
-          />
-          {developerMode && (
-            <p className="mb-3 text-xs text-walnut">
-              开发者模式 · 共用调试数据
-            </p>
-          )}
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
-          {loading && (
-            <p role="status" className="py-12 text-sm text-walnut">
-              正在打开我的旅程…
-            </p>
-          )}
-          {error && (
-            <div role="alert" className="py-4 text-sm text-coral">
-              <p>{error}</p>
-              <Button variant="secondary" className="mt-4" onClick={onRetry}>
-                重试
-              </Button>
-            </div>
-          )}
-          {!loading && !error && !journeys.length && (
-            <div className="rounded-2xl border border-dashed border-ink-20 px-6 py-14 text-center">
-              <h2 className="text-2xl font-black">从一段经历开始</h2>
-              <p className="my-5 text-sm leading-7 text-walnut">
-                几张照片、一句话，就能留住这趟旅程。
-                <br />
-                时间和地点可以以后再补。
-              </p>
-              <Button variant="primary" onClick={create}>
-                <Plus size={18} />
-                新建旅程
-              </Button>
-            </div>
-          )}
-          <div className="space-y-3">
-            {sorted.map((journey) => (
-              <article
-                key={journey.id}
-                className="relative flex gap-3 rounded-2xl border border-ink-10 bg-white p-3"
-              >
-                <Button
-                  variant="ghost"
-                  className="h-28! w-24! shrink-0 overflow-hidden rounded-xl bg-mustard/20 p-0!"
-                  aria-label={`打开${journey.title}`}
-                  onClick={() => onOpen(journey.id)}
-                >
-                  {journey.coverUrl ? (
-                    // Private media URLs keep their authenticated request semantics.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={journey.coverUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <ImageIcon size={36} strokeWidth={1.25} />
-                  )}
-                </Button>
-                <div className="min-w-0 flex-1 py-1">
-                  <Button
-                    variant="ghost"
-                    className="h-auto! max-w-full justify-start! p-0! pr-7! text-base font-black"
-                    onClick={() => onOpen(journey.id)}
-                  >
-                    <span className="truncate">{journey.title}</span>
-                  </Button>
-                  <p className="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-walnut">
-                    <CalendarDays size={14} />
-                    {journeyDateLabel(journey)}
-                    <span>·</span>
-                    <LockKeyhole size={13} />
-                    仅自己可见
-                  </p>
-                  {journey.description && (
-                    <p className="mt-2 line-clamp-1 text-xs leading-5 text-walnut">
-                      {journey.description}
-                    </p>
-                  )}
-                  <p className="mt-2 flex items-center gap-1 text-[11px] text-walnut">
-                    <Clock3 size={14} />
-                    {new Date(journey.updatedAt).toLocaleDateString(
-                      "zh-CN"
-                    )}{" "}
-                    编辑
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  shape="square"
-                  size="sm"
-                  className="absolute top-2 right-2"
-                  aria-label={`重命名${journey.title}`}
-                  onClick={() => {
-                    setFormError(null)
-                    setForm({
-                      id: journey.id,
-                      title: journey.title,
-                      initial: journey.title,
-                    })
-                  }}
-                >
-                  <MoreHorizontal size={20} />
-                </Button>
-              </article>
-            ))}
-          </div>
-        </div>
-        <footer className="shrink-0 border-t border-ink-10 p-4">
-          <Button variant="primary" className="w-full" onClick={create}>
-            <Plus size={19} />
-            新建旅程
+      {!loading && !error && !mapPhotos.length && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <Button
+            variant="secondary"
+            className="pointer-events-auto bg-white!"
+            onClick={() => (journeys.length ? setDirectory(true) : create())}
+          >
+            {journeys.length ? "打开游记" : "新建游记"}
           </Button>
-        </footer>
-      </ResizableMapPanel>
+        </div>
+      )}
+      {error && (
+        <div
+          role="alert"
+          className="absolute top-20 left-5 rounded-xl bg-white p-4 text-sm text-coral"
+        >
+          <p>{error}</p>
+          <Button variant="ghost" onClick={onRetry}>
+            重试
+          </Button>
+        </div>
+      )}
+      {developerMode && <span className="sr-only">共用调试数据</span>}
+      {viewer && (
+        <PhotoViewer
+          photos={viewerPhotos}
+          onClose={() => setViewer(null)}
+          onOpenEvent={(photo) => {
+            const source = byId.get(photo.id)
+            if (source) onOpen(source.journeyId, { eventId: source.eventId })
+          }}
+        />
+      )}
       {form && (
         <Modal
           title={form.id ? "旅程名称" : "新建旅程"}
@@ -221,7 +205,7 @@ export default function JourneyLibrary({
                 setFormError(null)
                 try {
                   if (form.id) await onRename(form.id, form.title.trim())
-                  else await onCreate(form.title.trim())
+                  else await onCreate(form.title.trim(), form.request)
                   setForm(null)
                 } catch (cause) {
                   setFormError(
@@ -244,9 +228,6 @@ export default function JourneyLibrary({
                 placeholder="例如：杭州慢游"
                 disabled={saving}
               />
-              <p className="text-sm leading-6 text-walnut">
-                不需要先填完整行程，进入后就可以写文字、加照片。
-              </p>
               {formError && (
                 <p role="alert" className="text-sm text-coral">
                   {formError}

@@ -415,76 +415,96 @@ body {
   color: var(--color-journal-ink);
 }
 .journal-panel {
-  border: 1px solid var(--color-white);
-  border-radius: 22px;
+  border: 0;
+  border-radius: 16px;
   background: var(--color-journal-glass);
   box-shadow: var(--shadow-journal);
   backdrop-filter: blur(20px);
 }
 .journal-dates {
-  padding: 22px 26px 14px;
+  padding: 20px 24px 16px;
 }
 .journal-dates nav {
   gap: 8px;
   padding: 0;
 }
-.journal-dates button {
-  min-height: 40px;
-  padding: 0 18px;
-  font-size: 14px;
-  line-height: 20px;
-  border-radius: 10px;
+.journal-dates nav button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  border: 0;
+  box-shadow: none;
 }
 .journal-dates button[aria-pressed="false"] {
   background: transparent;
+  color: var(--color-journal-muted);
+}
+.journal-dates button[aria-pressed="true"] {
+  background: var(--color-journal-soft);
+  color: var(--color-journal-ink);
+}
+.journal-journey-trigger {
+  min-height: 44px;
+  gap: 10px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-journal-glass);
+  color: var(--color-journal-ink);
   box-shadow: none;
-  color: var(--color-journal-muted) !important;
+}
+.journal-dates .journal-journey-trigger {
+  padding-left: 0;
+  font-size: 20px;
+  font-weight: 600;
 }
 .journal-list {
-  padding: 4px 16px 24px;
+  padding: 0 16px 24px;
 }
 .journal-list > div {
-  gap: 16px;
+  gap: 22px;
 }
 .journal-card {
-  padding: 18px 16px;
-  border: 1px solid var(--color-journal-line);
-  border-radius: 16px;
-  background: var(--color-white);
-  transition:
-    background-color 160ms,
-    border-color 160ms;
-}
-.journal-card:hover {
-  border-color: var(--color-journal-muted);
+  padding: 16px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  transition: background-color 160ms;
 }
 .journal-card[aria-current="true"] {
-  border-color: transparent;
   background: var(--color-journal-selected);
 }
-.journal-card[aria-current="true"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 4px;
-  border-radius: 4px;
-  background: var(--color-journal-accent);
-}
 .journal-card h2 {
-  padding-right: 36px;
-  font-size: 20px;
-  line-height: 28px;
-  font-weight: 650;
-  letter-spacing: -0.025em;
+  font-size: 17px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 .journal-card p {
   margin-top: 10px;
   min-height: 0;
   font-size: 14px;
-  line-height: 22px;
+  line-height: 24px;
   color: var(--color-journal-muted);
+}
+.journal-event-edit {
+  color: var(--color-journal-muted);
+  opacity: 0;
+}
+.journal-card:hover .journal-event-edit,
+.journal-card:focus-within .journal-event-edit {
+  opacity: 1;
+}
+.journal-library .journal-map-controls {
+  top: auto;
+  bottom: 24px;
+}
+.journal-atlas-selector .journal-journey-trigger,
+.journal-atlas-add {
+  box-shadow: var(--shadow-periplus-soft);
+}
+.journal-directory {
+  color: var(--color-journal-ink);
 }
 .journal-photo-strip {
   position: relative;
@@ -496,7 +516,7 @@ body {
   border-radius: 12px;
 }
 .journal-card [data-photo-strip] button {
-  width: clamp(112px, 42%, 168px);
+  width: 100%;
   height: auto;
   aspect-ratio: 4 / 3;
   border-radius: 12px;
@@ -535,61 +555,6 @@ body {
     var(--color-journal-selected)
   );
 }
-.journal-expand {
-  top: 16px;
-  right: 14px;
-  width: 32px !important;
-  height: 32px !important;
-  border: 1px solid var(--color-journal-line);
-  border-radius: 10px;
-  background: var(--color-journal-glass);
-  color: var(--color-journal-muted);
-}
-.journal-transit {
-  display: flex;
-  justify-content: flex-start;
-  gap: 14px;
-  min-height: 62px;
-  padding: 0 18px;
-  border: 0;
-  background: transparent;
-}
-.journal-transit::before {
-  content: "";
-  position: absolute;
-  left: 35px;
-  top: -16px;
-  bottom: -16px;
-  border-left: 2px dotted var(--color-journal-line);
-  z-index: -1;
-}
-.journal-transit h2 {
-  color: var(--color-journal-muted);
-  font-size: 14px;
-  line-height: 24px;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-.journal-transit-icon {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--color-journal-line);
-  border-radius: 50%;
-  background: var(--color-journal-soft);
-  color: var(--color-journal-muted);
-}
-.journal-transit .journal-expand {
-  top: 15px;
-  opacity: 0;
-}
-.journal-transit:hover .journal-expand,
-.journal-transit:focus-within .journal-expand {
-  opacity: 1;
-}
 .journal-add {
   min-height: 48px;
   justify-content: center;
@@ -597,64 +562,6 @@ body {
   border: 0;
   border-radius: 12px;
   font-size: 15px;
-}
-.journal-details {
-  gap: 22px;
-  width: 552px;
-  height: auto;
-  max-height: calc(100dvh - 56px);
-  top: 28px;
-  padding: 28px;
-  border: 1px solid var(--color-white);
-  border-radius: 22px;
-  background: var(--color-journal-glass);
-  backdrop-filter: blur(20px);
-  box-shadow: var(--shadow-journal);
-}
-.journal-details h2 {
-  padding-right: 10px;
-  font-size: 32px;
-  line-height: 40px;
-  font-weight: 650;
-  letter-spacing: -0.035em;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.journal-details header > button {
-  width: 36px !important;
-  height: 36px !important;
-  border: 1px solid var(--color-journal-line);
-  border-radius: 10px;
-  color: var(--color-journal-muted);
-}
-.journal-description {
-  flex: initial;
-  min-height: 0;
-  max-height: min(280px, 28dvh);
-  font-size: 16px;
-  line-height: 28px;
-  color: var(--color-journal-muted);
-}
-.journal-photos {
-  flex: none;
-  height: auto;
-  aspect-ratio: 4 / 3;
-  border-radius: 14px;
-}
-.journal-details footer {
-  height: 36px;
-  margin-top: 0;
-}
-.journal-edit {
-  width: auto;
-  height: 36px !important;
-  min-height: 36px;
-  border: 0;
-  border-radius: 8px;
-  padding: 0 8px;
-  color: var(--color-journal-muted);
-  font-size: 14px;
-  box-shadow: none;
 }
 .journal-dialog {
   background: var(--color-white);
@@ -669,32 +576,6 @@ body {
 }
 .journal-dialog [data-kumo-component="Button"] {
   font-size: 14px;
-}
-.journal-read-mobile {
-  padding: 24px !important;
-  gap: 20px;
-}
-.journal-read-mobile h2 {
-  margin-top: 40px;
-  padding-right: 0;
-  font-size: 26px;
-  line-height: 36px;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-}
-.journal-read-mobile .journal-description {
-  max-height: 35dvh;
-  flex-shrink: 1;
-  font-size: 15px;
-  line-height: 26px;
-}
-.journal-read-mobile .journal-photos {
-  height: auto;
-  aspect-ratio: 6 / 5;
-}
-.journal-read-mobile footer {
-  justify-content: flex-start;
-  margin-top: 0;
 }
 .journal-map-controls {
   top: auto;
@@ -711,34 +592,12 @@ body {
   box-shadow: none;
   color: var(--color-journal-muted);
 }
-.journal-library header h1 {
-  font-size: 28px;
-  line-height: 38px;
-  font-weight: 650;
-}
-.journal-library article {
-  border-color: var(--color-journal-line);
-  padding: 14px;
-  gap: 16px;
-}
-.journal-library article > button:first-child {
-  height: 132px !important;
-  width: 108px !important;
-}
-.journal-library article button span {
-  font-weight: 600;
-}
-.journal-library footer {
-  border-color: transparent;
-}
-.journal-library footer button {
-  min-height: 48px;
-  justify-content: center;
-  gap: 8px;
-}
 @media (max-width: 767px) {
   .journal-dates {
     padding: 10px 20px 14px;
+  }
+  .journal-event-edit {
+    opacity: 1;
   }
   .journal-card h2 {
     font-size: 18px;
@@ -851,25 +710,6 @@ body {
 }
 .journal-photo-viewer [data-gallery-media] {
   padding-top: 56px;
-}
-.journal-photo-viewer [aria-label="照片序号"] {
-  background: transparent;
-  padding: 0;
-  top: 20px;
-  right: 20px;
-  font-size: 14px;
-}
-.journal-photo-viewer [aria-label="上一张照片"] {
-  left: 20px;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--color-photo-line);
-}
-.journal-photo-viewer [aria-label="下一张照片"] {
-  right: 20px;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--color-photo-line);
 }
 .journal-photo-meta {
   padding: 64px 32px 28px;

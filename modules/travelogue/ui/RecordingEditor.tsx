@@ -13,14 +13,18 @@ import { DragDropProvider, PointerSensor, KeyboardSensor } from "@dnd-kit/react"
 import { isSortable } from "@dnd-kit/react/sortable"
 import { ArrowLeft, MoreHorizontal, Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
-import type { RecordingLocation } from "@/modules/data-model/contracts/recording"
+import type {
+  RecordingJourneySummary,
+  RecordingLocation,
+} from "@/modules/data-model/contracts/recording"
 import MapPickBar from "./workbench/MapPickBar"
 import type { RecordingStore } from "../state/recording-store"
 import { createWorkbenchStore } from "../state/workbench-store"
 import ResizableMapPanel from "./workbench/ResizableMapPanel"
 import EventCard from "./workbench/EventCard"
 import EventEditor from "./workbench/EventEditor"
-import EventDetails from "./workbench/EventDetails"
+import JourneyMenu from "./workbench/JourneyMenu"
+import type { JourneyOpenRequest } from "../data/navigation"
 import JourneySettings from "./workbench/JourneySettings"
 import MapControls from "./workbench/MapControls"
 import { useConfirmation } from "./workbench/Modal"
@@ -56,12 +60,24 @@ export default function RecordingEditor({
   mapPreview,
   developerMode = false,
   canEdit = false,
+  journeys = [],
+  onOpenJourney,
+  initialRequest,
+  onRequestHandled,
+  directoryError,
+  onRetryDirectory,
 }: {
   store: RecordingStore
   onBack: () => void
   mapPreview?: ReactNode
   developerMode?: boolean
   canEdit?: boolean
+  journeys?: RecordingJourneySummary[]
+  onOpenJourney?: (id: string, request?: JourneyOpenRequest) => void
+  directoryError?: string | null
+  onRetryDirectory?: () => void
+  onRequestHandled?: () => void
+  initialRequest?: JourneyOpenRequest
 }) {
   const { journey, loading, error, conflict, saving, uploads } = useStore(store)
   const [ui] = useState(createWorkbenchStore)
@@ -71,13 +87,14 @@ export default function RecordingEditor({
     focusId,
     activeDay,
     dialog,
-    expanded,
     metadata,
     sheet,
     panelWidth,
     photoViewer,
   } = useStore(ui)
   const { desktop, height, width } = useRecordingViewport()
+  const [directory, setDirectory] = useState(false)
+  const initialApplied = useRef(false)
   const { ask, confirmation } = useConfirmation()
   const [mapRequest, setMapRequest] = useState<RecordMapRequest | null>(null)
   const pickResult = useRef<
@@ -112,18 +129,13 @@ export default function RecordingEditor({
     [journey]
   )
   const ordinals = useMemo(
-    () =>
-      new Map(
-        journey?.events
-          .filter((event) => event.category !== "TRANSIT")
-          .map((event, i) => [event.id, i + 1])
-      ),
+    () => new Map(journey?.events.map((event, i) => [event.id, i + 1])),
     [journey?.events]
   )
   const points = useMemo<RecordMapPoint[]>(
     () =>
       journey?.events.flatMap((event) =>
-        event.location?.coordinates && event.category !== "TRANSIT"
+        event.location?.coordinates
           ? [
               {
                 eventId: event.id,
@@ -156,25 +168,17 @@ export default function RecordingEditor({
       : sheet === "full"
         ? height - 24
         : Math.round(height * 0.55)
-  const expandedId = journey?.events.some(
-    (entry) => entry.id === expanded?.eventId
-  )
-    ? expanded?.eventId
-    : null
   const insets = useMemo(
     () =>
       desktop
         ? {
-            left: Math.min(
-              width * 0.65,
-              panelWidth + 20 + (expandedId && width >= 1200 ? 568 : 16)
-            ),
+            left: Math.min(width * 0.65, panelWidth + 36),
             right: 64,
-            top: 28,
+            top: 40,
             bottom: 28,
           }
         : { left: 24, right: 60, top: 68, bottom: sheetHeight + 24 },
-    [desktop, panelWidth, sheetHeight, expandedId, width]
+    [desktop, panelWidth, sheetHeight, width]
   )
   useEffect(() => {
     if (!saving && !uploads.length) return
@@ -199,8 +203,42 @@ export default function RecordingEditor({
   ) => {
     if (canEdit) ui.setState({ dialog: { eventId, afterEventId } })
   }
-  const expand = (eventId: string, photoIndex = 0) =>
-    ui.setState({ selected: eventId, expanded: { eventId, photoIndex } })
+  const expand = (eventId: string, photoIndex = 0) => {
+    const ids = photos
+      .filter((photo) => photo.eventId === eventId)
+      .map((photo) => photo.id)
+    ui.setState({ selected: eventId, photoViewer: { ids, index: photoIndex } })
+  }
+  useEffect(() => {
+    if (!journey || initialApplied.current) return
+    initialApplied.current = true
+    if (initialRequest?.add || initialRequest?.eventId) onRequestHandled?.()
+    if (initialRequest?.add && canEdit) {
+      ui.setState({
+        dialog: {
+          eventId: null,
+          afterEventId: journey.events.at(-1)?.id || null,
+          location: initialRequest.location,
+        },
+      })
+    } else if (
+      initialRequest?.eventId &&
+      journey.events.some((event) => event.id === initialRequest.eventId)
+    ) {
+      ui.setState({ selected: initialRequest.eventId, focusId: 1 })
+      document
+        .getElementById(`record-${initialRequest.eventId}`)
+        ?.scrollIntoView({ block: "start" })
+    }
+  }, [journey, initialRequest, canEdit, ui, onRequestHandled])
+  async function leave(action: () => void) {
+    if (
+      (saving || uploads.length) &&
+      !(await ask("还有内容或照片尚未保存完成，仍然离开？"))
+    )
+      return
+    action()
+  }
   function updateDay() {
     const root = list.current
     if (!root) return
@@ -257,7 +295,6 @@ export default function RecordingEditor({
               canEdit && journey && !dialog && !picking
                 ? (location) =>
                     ui.setState({
-                      expanded: null,
                       dialog: {
                         eventId: null,
                         afterEventId: journey.events.at(-1)?.id || null,
@@ -279,41 +316,7 @@ export default function RecordingEditor({
         inert={!!picking}
         className={picking ? "pointer-events-none hidden md:block" : ""}
       >
-        {developerMode && (
-          <p className="absolute top-5 left-5 rounded-lg bg-soft-white px-3 py-2 text-xs text-walnut md:top-auto md:right-20 md:bottom-5 md:left-auto">
-            开发者模式 · 共用调试数据
-          </p>
-        )}
-        <nav aria-label="旅程操作" className="absolute top-2 left-5 flex gap-1">
-          <Button
-            variant="ghost"
-            shape="circle"
-            size="xs"
-            aria-label="返回我的旅程"
-            onClick={async () => {
-              if (
-                (saving || uploads.length) &&
-                !(await ask("还有内容或照片尚未保存完成，仍然离开？"))
-              )
-                return
-              onBack()
-            }}
-          >
-            <ArrowLeft size={16} />
-          </Button>
-          {canEdit && (
-            <Button
-              variant="ghost"
-              shape="circle"
-              size="xs"
-              aria-label="旅程信息"
-              disabled={!journey}
-              onClick={() => ui.setState({ metadata: true })}
-            >
-              <MoreHorizontal size={16} />
-            </Button>
-          )}
-        </nav>
+        {developerMode && <p className="sr-only">共用调试数据</p>}
         <ResizableMapPanel
           recording
           width={384}
@@ -321,16 +324,48 @@ export default function RecordingEditor({
           sheet={sheet}
           onSheet={(sheet) => ui.setState({ sheet })}
         >
-          <header className="journal-dates shrink-0 px-5 pt-4 pb-8 md:px-10 md:pt-5 md:pb-12">
-            <h1
-              className="mb-3 line-clamp-2 text-xl leading-7 font-semibold break-words md:text-[22px] md:leading-8"
-              title={journey?.title}
-            >
-              {journey?.title || "我的旅程"}
-            </h1>
+          <header className="journal-dates shrink-0">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <Button
+                variant="ghost"
+                className="justify-start! px-0! text-sm text-journal-muted"
+                aria-label="返回全部游记"
+                onClick={() => void leave(onBack)}
+              >
+                <ArrowLeft size={16} />
+                全部游记
+              </Button>
+              {canEdit && (
+                <Button
+                  variant="ghost"
+                  shape="square"
+                  aria-label="旅程信息"
+                  disabled={!journey}
+                  onClick={() => ui.setState({ metadata: true })}
+                >
+                  <MoreHorizontal size={18} />
+                </Button>
+              )}
+            </div>
+            {onOpenJourney ? (
+              <JourneyMenu
+                error={directoryError}
+                onRetry={onRetryDirectory}
+                title={journey?.title || "游记"}
+                journeys={journeys}
+                open={directory}
+                onOpenChange={setDirectory}
+                onOpen={(id) => void leave(() => onOpenJourney(id))}
+                onCreate={() => void leave(onBack)}
+              />
+            ) : (
+              <h1 className="mb-3 text-xl font-semibold">
+                {journey?.title || "游记"}
+              </h1>
+            )}
             <nav
               aria-label="记录日期"
-              className="flex gap-2 overflow-x-auto py-1"
+              className="mt-4 flex gap-2 overflow-x-auto py-1"
             >
               {days.map((day) => (
                 <Button
@@ -377,17 +412,7 @@ export default function RecordingEditor({
                 旅程已有其他修改。重新读取后再继续，未保存输入保留在编辑窗中。
               </p>
             )}
-            {journey && !journey.events.length && (
-              <div className="py-12 text-center">
-                <h2 className="text-lg font-black">从一段经历开始</h2>
-                <p className="mt-3 text-sm leading-7 text-walnut">
-                  一句话，几张照片。
-                  <br />
-                  时间和地点可以慢慢补。
-                </p>
-              </div>
-            )}
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-7">
               <DragDropProvider
                 sensors={cardSensors}
                 onDragEnd={(event) => {
@@ -436,6 +461,7 @@ export default function RecordingEditor({
                     canEdit={canEdit}
                     onSelect={() => select(entry.id)}
                     onExpand={(photoIndex) => expand(entry.id, photoIndex)}
+                    onEdit={() => openEditor(entry.id)}
                   />
                 ))}
               </DragDropProvider>
@@ -450,27 +476,12 @@ export default function RecordingEditor({
                   }
                 >
                   <Plus size={20} />
-                  添加记录
+                  记一笔
                 </Button>
               )}
             </div>
           </div>
         </ResizableMapPanel>
-        {expanded &&
-          !dialog &&
-          journey?.events.some((entry) => entry.id === expanded.eventId) && (
-            <EventDetails
-              key={`${expanded.eventId}:${expanded.photoIndex}`}
-              store={store}
-              eventId={expanded.eventId}
-              initialIndex={expanded.photoIndex}
-              panelWidth={panelWidth}
-              canEdit={canEdit}
-              editing={!!dialog}
-              onClose={() => ui.setState({ expanded: null })}
-              onEdit={() => openEditor(expanded.eventId)}
-            />
-          )}
         {photoViewer && viewerPhotos.length > 0 && (
           <PhotoViewer
             photos={viewerPhotos}
@@ -504,13 +515,7 @@ export default function RecordingEditor({
           onPickLocation={pickLocation}
           onClose={() => ui.setState({ dialog: null })}
           onSaved={(id) => {
-            ui.setState((current) => ({
-              selected: id,
-              expanded:
-                current.expanded?.eventId === id
-                  ? current.expanded
-                  : { eventId: id, photoIndex: 0 },
-            }))
+            ui.setState({ selected: id })
             requestAnimationFrame(() =>
               document
                 .getElementById(`record-${id}`)

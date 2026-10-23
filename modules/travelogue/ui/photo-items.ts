@@ -19,4 +19,6 @@ export function photoItems(events: RecordingJourney["events"]) {
     })
   )
 }
-export type PhotoItem = ReturnType<typeof photoItems>[number]
+export type PhotoItem = ReturnType<typeof photoItems>[number] & {
+  journeyTitle?: string
+}

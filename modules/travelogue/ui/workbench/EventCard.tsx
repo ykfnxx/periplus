@@ -1,11 +1,25 @@
 "use client"
 import { useSortable } from "@dnd-kit/react/sortable"
 import { motion, useReducedMotion } from "motion/react"
-import { ArrowUpRight, Footprints } from "lucide-react"
+import {
+  BedDouble,
+  MapPin,
+  NotebookPen,
+  Pencil,
+  TrainFront,
+  Utensils,
+  Activity,
+} from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
 import PhotoStrip from "./PhotoStrip"
-import { eventTitle } from "../display"
+const icons = {
+  VISIT: MapPin,
+  MEAL: Utensils,
+  STAY: BedDouble,
+  ACTIVITY: Activity,
+  TRANSIT: TrainFront,
+}
 
 export default function EventCard({
   entry,
@@ -14,6 +28,7 @@ export default function EventCard({
   canEdit,
   onSelect,
   onExpand,
+  onEdit,
 }: {
   entry: RecordingEvent
   index: number
@@ -21,6 +36,7 @@ export default function EventCard({
   canEdit: boolean
   onSelect: () => void
   onExpand: (index?: number) => void
+  onEdit: () => void
 }) {
   const reduced = useReducedMotion()
   const { ref, isDragging } = useSortable({
@@ -33,8 +49,18 @@ export default function EventCard({
       idle: false,
     },
   })
-  const title = eventTitle(entry)
-  const transit = entry.category === "TRANSIT"
+  const labels = {
+    VISIT: "游览",
+    MEAL: "用餐",
+    STAY: "住宿",
+    ACTIVITY: "活动",
+    TRANSIT: "交通",
+  }
+  const title =
+    entry.title ||
+    entry.location?.name ||
+    (entry.category ? labels[entry.category] : "随记")
+  const Icon = entry.category ? icons[entry.category] : NotebookPen
   return (
     <motion.article
       ref={canEdit ? ref : undefined}
@@ -57,48 +83,35 @@ export default function EventCard({
           onSelect()
         }
       }}
-      animate={{
-        opacity: isDragging ? 0.85 : 1,
-        boxShadow: isDragging
-          ? "0 12px 32px var(--color-ink-20)"
-          : "0 0 0 transparent",
-      }}
-      className={`journal-card ${transit ? "journal-transit" : ""} relative scroll-mt-2 rounded-[20px] border bg-white outline-offset-4 ${transit ? "flex min-h-14 items-center justify-center px-12 py-3" : "p-4"} ${selected ? "border-russet shadow-periplus-soft" : "border-ink-20"} ${canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+      animate={{ opacity: isDragging ? 0.7 : 1 }}
+      className={`journal-card relative scroll-mt-3 outline-offset-4 ${canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
     >
-      {transit && (
-        <span className="journal-transit-icon">
-          <Footprints size={20} strokeWidth={1.75} />
-        </span>
+      <header className="flex items-start gap-3">
+        <Icon
+          size={20}
+          strokeWidth={1.6}
+          className="mt-0.5 shrink-0 text-journal-accent"
+        />
+        <h2 className="min-w-0 flex-1 break-words">{title}</h2>
+        {canEdit && (
+          <Button
+            variant="ghost"
+            shape="square"
+            size="sm"
+            className="journal-event-edit shrink-0"
+            aria-label={`编辑${title}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onEdit}
+          >
+            <Pencil size={16} />
+          </Button>
+        )}
+      </header>
+      {entry.body && (
+        <p className="break-words whitespace-pre-wrap">{entry.body}</p>
       )}
-      <h2
-        className={`min-w-0 text-base font-semibold ${transit ? "truncate text-center" : "pr-7"}`}
-      >
-        {title}
-      </h2>
-      <Button
-        variant="ghost"
-        shape="circle"
-        size="xs"
-        onPointerDown={(event) => event.stopPropagation()}
-        aria-label={`展开${title}`}
-        onClick={() => onExpand()}
-        className="journal-expand absolute p-0!"
-      >
-        <ArrowUpRight size={17} strokeWidth={1.75} />
-      </Button>
-      {!transit && (
-        <>
-          {(entry.body || entry.photos.length > 0) && (
-            <p
-              className={`mt-2 line-clamp-2 text-sm leading-5 text-walnut ${entry.photos.length ? "min-h-10" : ""}`}
-            >
-              {entry.body}
-            </p>
-          )}
-          {entry.photos.length > 0 && (
-            <PhotoStrip photos={entry.photos} title={title} onOpen={onExpand} />
-          )}
-        </>
+      {entry.photos.length > 0 && (
+        <PhotoStrip photos={entry.photos} title={title} onOpen={onExpand} />
       )}
     </motion.article>
   )

@@ -1,8 +1,6 @@
 "use client"
 import { useEffect, useRef } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
-import { Button } from "@/components/kumo/components/button/button"
 export type GalleryPhoto = {
   id: string
   url: string
@@ -28,6 +26,7 @@ export default function MediaGallery({
 }) {
   const reduced = useReducedMotion()
   const swiped = useRef(false)
+  const lastWheel = useRef(0)
   const container = useRef<HTMLDivElement>(null)
   const photo = photos[index]
   useEffect(() => {
@@ -75,6 +74,19 @@ export default function MediaGallery({
       className="relative h-full min-h-0 overflow-hidden bg-photo-stage text-white"
       role="region"
       aria-label="照片轮播"
+      tabIndex={0}
+      onWheel={(event) => {
+        if (
+          Math.abs(event.deltaX) < 20 ||
+          Math.abs(event.deltaX) < Math.abs(event.deltaY) ||
+          Date.now() - lastWheel.current < 350
+        )
+          return
+        const next = index + (event.deltaX > 0 ? 1 : -1)
+        if (next < 0 || next >= photos.length) return
+        lastWheel.current = Date.now()
+        onIndex(next)
+      }}
     >
       <motion.div
         data-gallery-media=""
@@ -110,34 +122,8 @@ export default function MediaGallery({
           image
         )}
       </motion.div>
-      <Button
-        variant="ghost"
-        shape="circle"
-        size="sm"
-        aria-label="上一张照片"
-        disabled={index === 0}
-        onClick={() => onIndex(index - 1)}
-        className="absolute top-1/2 left-2 -translate-y-1/2 bg-photo-overlay text-white disabled:invisible"
-      >
-        <ChevronLeft size={18} />
-      </Button>
-      <Button
-        variant="ghost"
-        shape="circle"
-        size="sm"
-        aria-label="下一张照片"
-        disabled={index === photos.length - 1}
-        onClick={() => onIndex(index + 1)}
-        className="absolute top-1/2 right-2 -translate-y-1/2 bg-photo-overlay text-white disabled:invisible"
-      >
-        <ChevronRight size={18} />
-      </Button>
-      <span
-        aria-live="polite"
-        aria-label="照片序号"
-        className="pointer-events-none absolute top-3 right-3 rounded-full bg-photo-overlay px-3 py-1.5 text-xs tabular-nums"
-      >
-        {index + 1}/{photos.length}
+      <span aria-live="polite" className="sr-only">
+        {photo.caption || "旅行照片"}
       </span>
     </div>
   )
