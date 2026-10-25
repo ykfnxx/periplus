@@ -514,46 +514,40 @@ body {
   margin: 0;
   gap: 8px;
   border-radius: 12px;
+  scroll-snap-type: x mandatory;
 }
 .journal-card [data-photo-strip] button {
   width: 100%;
   height: auto;
   aspect-ratio: 4 / 3;
   border-radius: 12px;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
-.journal-photo-edge {
+.journal-photo-nav {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 42px;
+  top: 50%;
+  width: 32px;
+  height: 32px;
+  transform: translateY(-50%);
+  opacity: 0;
   pointer-events: none;
-  backdrop-filter: blur(5px);
+  transition: opacity 150ms ease;
 }
-.journal-photo-edge-right {
-  right: -1px;
-  border-radius: 0 12px 12px 0;
-  background: linear-gradient(to right, transparent, var(--color-white));
-  mask-image: linear-gradient(to right, transparent, var(--color-photo-stage));
+.journal-photo-strip:has(:focus-visible) .journal-photo-nav {
+  opacity: 1;
+  pointer-events: auto;
 }
-.journal-photo-edge-left {
-  left: -1px;
-  border-radius: 12px 0 0 12px;
-  background: linear-gradient(to left, transparent, var(--color-white));
-  mask-image: linear-gradient(to left, transparent, var(--color-photo-stage));
+@media (hover: hover) and (pointer: fine) {
+  .journal-photo-strip:hover .journal-photo-nav {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
-.journal-card[aria-current="true"] .journal-photo-edge-right {
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--color-journal-selected)
-  );
-}
-.journal-card[aria-current="true"] .journal-photo-edge-left {
-  background: linear-gradient(
-    to left,
-    transparent,
-    var(--color-journal-selected)
-  );
+@media (prefers-reduced-motion: reduce) {
+  .journal-photo-nav {
+    transition: none;
+  }
 }
 .journal-add {
   min-height: 48px;
