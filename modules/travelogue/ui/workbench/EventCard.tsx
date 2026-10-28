@@ -29,6 +29,7 @@ export default function EventCard({
   onSelect,
   onExpand,
   onEdit,
+  onRead,
 }: {
   entry: RecordingEvent
   index: number
@@ -37,6 +38,7 @@ export default function EventCard({
   onSelect: () => void
   onExpand: (index?: number) => void
   onEdit: () => void
+  onRead: () => void
 }) {
   const reduced = useReducedMotion()
   const { ref, isDragging } = useSortable({
@@ -61,6 +63,8 @@ export default function EventCard({
     entry.location?.name ||
     (entry.category ? labels[entry.category] : "随记")
   const Icon = entry.category ? icons[entry.category] : NotebookPen
+  const body = entry.body.trim()
+  const preview = Array.from(body).slice(0, 120).join("")
   return (
     <motion.article
       ref={canEdit ? ref : undefined}
@@ -107,8 +111,23 @@ export default function EventCard({
           </Button>
         )}
       </header>
-      {entry.body && (
-        <p className="break-words whitespace-pre-wrap">{entry.body}</p>
+      {body && (
+        <>
+          <p className="line-clamp-3 break-words">
+            {preview}
+            {body.length > preview.length ? "…" : ""}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-1 px-0! text-journal-muted!"
+            aria-label={`展开${title}的详情`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onRead}
+          >
+            展开详情
+          </Button>
+        </>
       )}
       {entry.photos.length > 0 && (
         <PhotoStrip photos={entry.photos} title={title} onOpen={onExpand} />

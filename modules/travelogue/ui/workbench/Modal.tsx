@@ -83,12 +83,20 @@ export function Modal({
 }
 
 export function useConfirmation() {
-  const [question, setQuestion] = useState<string | null>(null)
+  const [question, setQuestion] = useState<{
+    message: string
+    title: string
+    cancelLabel: string
+    confirmLabel: string
+  } | null>(null)
   const resolve = useRef<((answer: boolean) => void) | null>(null)
-  function ask(message: string) {
+  function ask(
+    message: string,
+    { title = "请确认", cancelLabel = "取消", confirmLabel = "继续" } = {}
+  ) {
     return new Promise<boolean>((done) => {
       resolve.current = done
-      setQuestion(message)
+      setQuestion({ message, title, cancelLabel, confirmLabel })
     })
   }
   const finish = (answer: boolean) => {
@@ -105,16 +113,18 @@ export function useConfirmation() {
       }}
     >
       <Dialog className="journal-dialog top-1/2! -translate-y-1/2 p-6">
-        <Dialog.Title className="text-lg font-bold">请确认</Dialog.Title>
+        <Dialog.Title className="text-lg font-bold">
+          {question.title}
+        </Dialog.Title>
         <Dialog.Description className="my-5 text-sm leading-7 text-walnut">
-          {question}
+          {question.message}
         </Dialog.Description>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={() => finish(false)}>
-            取消
+            {question.cancelLabel}
           </Button>
           <Button variant="primary" onClick={() => finish(true)}>
-            继续
+            {question.confirmLabel}
           </Button>
         </div>
       </Dialog>
