@@ -13,10 +13,19 @@ export type ReceiptReview = {
   values: ReceiptFormValues
 }
 
+const emptyValues: ReceiptFormValues = {
+  merchant: "",
+  date: "",
+  currency: "",
+  total: "",
+  items: [],
+}
+
 export default function ReceiptImport({
   events,
   initialEventId,
   revisionNotice,
+  upload,
   recognize,
   save,
   onClose,
@@ -25,7 +34,8 @@ export default function ReceiptImport({
   initialEventId?: string | null
   revisionNotice?: ReactNode
   events: { id: string; title: string }[]
-  recognize: (file: File, uploadId: string) => Promise<ReceiptReview>
+  upload: (file: File, uploadId: string) => Promise<string>
+  recognize: (assetId: string) => Promise<ReceiptFormValues>
   save: (
     review: ReceiptReview,
     eventId: string | null,
@@ -68,20 +78,47 @@ export default function ReceiptImport({
     setReview(null)
     setError(null)
   }
+  async function recognizeImage() {
+    if (!file || busy) return
+    if (
+      review &&
+      JSON.stringify(review.values) !== JSON.stringify(emptyValues) &&
+      !(await ask("重新识别将替换当前核对内容。", {
+        title: "重新识别账单？",
+        cancelLabel: "继续核对",
+        confirmLabel: "重新识别",
+      }))
+    )
+      return
+    setBusy("recognizing")
+    setError(null)
+    let uploadedAssetId = review?.assetId
+    try {
+      uploadedAssetId ||= await upload(file, uploadId)
+      // 原图上传成功后独立保留；识别失败不阻止手填，也不需要重新上传。
+      const values = await recognize(uploadedAssetId)
+      setReview({ assetId: uploadedAssetId, values })
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "账单识别失败。"
+      if (uploadedAssetId) {
+        const retainedAssetId = uploadedAssetId
+        setReview(
+          (current) =>
+            current || { assetId: retainedAssetId, values: emptyValues }
+        )
+        setError(`${message} 可以手动填写后加入记录，或重新识别。`)
+      } else {
+        setError(message)
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
   async function submit() {
     if (!file || busy) return
     setError(null)
     if (!review) {
-      setBusy("recognizing")
-      try {
-        setReview(await recognize(file, uploadId))
-      } catch (cause) {
-        setError(
-          cause instanceof Error ? cause.message : "账单识别失败，请重试。"
-        )
-      } finally {
-        setBusy(null)
-      }
+      await recognizeImage()
       return
     }
     setBusy("saving")
@@ -182,6 +219,13 @@ export default function ReceiptImport({
                     ]}
                     onValueChange={(value) => value && setTarget(value)}
                   />
+                  <Button
+                    variant="ghost"
+                    disabled={!!busy}
+                    onClick={() => void recognizeImage()}
+                  >
+                    重新识别
+                  </Button>
                 </>
               )}
               <div className="flex gap-3">

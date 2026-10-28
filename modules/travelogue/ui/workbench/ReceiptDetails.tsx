@@ -53,7 +53,7 @@ export default function ReceiptDetails({
       >
         {(close) => (
           <div className="space-y-5">
-            <RevisionReload store={store} />
+            <RevisionReload store={store} onReload={() => setError(null)} />
             {error && (
               <p role="alert" className="text-sm text-coral">
                 {error}

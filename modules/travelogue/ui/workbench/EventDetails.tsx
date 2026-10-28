@@ -31,7 +31,7 @@ export default function EventDetails({
   entry: RecordingEvent
   onClose: () => void
   onEdit?: () => void
-  onReceipt: (receiptId: string) => void
+  onReceipt: (assetId: string) => void
   onAddPhotos?: () => void
   onAddReceipt?: () => void
 }) {
@@ -99,11 +99,11 @@ export default function EventDetails({
             )}
             {entry.receipts?.map((receipt) => (
               <ReceiptCard
-                key={receipt.id}
+                key={receipt.assetId}
                 merchant={receipt.merchant || ""}
                 date={receipt.date ? dateLabel(receipt.date) : ""}
                 total={receiptTotal(receipt)}
-                onOpen={() => onReceipt(receipt.id)}
+                onOpen={() => onReceipt(receipt.assetId)}
               />
             ))}
             {entry.photos.length > 0 && (

@@ -124,7 +124,7 @@ function EditorStory({
   initialJourney?: RecordingJourney
   failures?: {
     upload?: boolean
-    extraction?: boolean
+    extraction?: boolean | "always"
     save?: boolean
     conflict?: boolean
   }
@@ -309,4 +309,23 @@ export const SharedJournal: Story = {
 
 export const ReceiptConflict: Story = {
   render: () => <EditorStory failures={{ conflict: true }} />,
+}
+
+export const ReceiptOcrUnavailable: Story = {
+  render: () => <EditorStory failures={{ extraction: "always" }} />,
+}
+
+export const ReceiptEditConflict: Story = {
+  render: () => (
+    <EditorStory
+      failures={{ conflict: true }}
+      initialJourney={{
+        ...storyJourney,
+        events: [
+          { ...storyJourney.events[0], receipts: [storyReceipt] },
+          ...storyJourney.events.slice(1),
+        ],
+      }}
+    />
+  ),
 }
