@@ -42,3 +42,8 @@ export type JourneyInvitationCreated = z.infer<
 export type JourneyInvitationPreview = z.infer<
   typeof journeyInvitationPreviewSchema
 >
+
+export const journeyInvitationsSchema = z
+  .object({ invitations: z.array(journeyInvitationSchema) })
+  .strict()
+export type JourneyInvitations = z.infer<typeof journeyInvitationsSchema>
