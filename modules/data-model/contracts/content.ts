@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { receiptFieldsSchema } from "./receipts"
 import { recordingLocationSchema } from "./recording"
 import {
   TARGET_ASSET_KINDS,
@@ -44,6 +45,7 @@ export const targetEventAssetLinkSchema = z.object({
   caption: z.string().optional(),
   // The override belongs to this attachment, independently of the original Asset.
   location: recordingLocationSchema.optional(),
+  receipt: receiptFieldsSchema.optional(),
   visibility: z.enum(TARGET_ASSET_VISIBILITIES),
   introducedRevision: z.number().int().positive(),
   createdAt: dateTimeSchema,

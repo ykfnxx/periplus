@@ -6,6 +6,7 @@ import { isAdmin } from "@/modules/auth/server/context"
 import {
   targetActorReferenceSchema,
   targetJourneyRevisionSchema,
+  type RecordingCommand,
   type TargetActorReference,
   type TargetJourneyEvent,
   type TargetJourneyGraphSnapshot,
@@ -19,6 +20,10 @@ import {
   validateJourneyGraphTransition,
 } from "./journey-graph-validator"
 import { journeyInclude, mapJourneyToGraph } from "./journey-mapper"
+import {
+  journeyReadScope,
+  assertRecordingCommandAccess,
+} from "./recording-access"
 
 const journeyRevisionWriteSchema = z
   .object({
@@ -189,14 +194,14 @@ function journeyScopeWhere(
 ) {
   return {
     id,
-    ...(isAdmin(context) ? {} : { ownerId: context.userId }),
+    ...journeyReadScope(context),
     ...(includeDeleted ? {} : { deletedAt: null }),
   }
 }
 
 function journeyListWhere(context: AuthContext) {
   return {
-    ...(isAdmin(context) ? {} : { ownerId: context.userId }),
+    ...journeyReadScope(context),
     deletedAt: null,
   }
 }
@@ -1140,7 +1145,8 @@ function assertRetirableLinkTransition(
 async function persistContentDomain(
   tx: Prisma.TransactionClient,
   previous: TargetJourneyGraphSnapshot,
-  next: TargetJourneyGraphSnapshot
+  next: TargetJourneyGraphSnapshot,
+  context: AuthContext
 ) {
   assertRetirableLinkTransition(
     "EventAssetLink",
@@ -1182,7 +1188,14 @@ async function persistContentDomain(
         `EventAssetLink ${link.id} must pin an active Asset checksum`
       )
     }
-    if (asset.ownerId !== next.ownerId && asset.visibility !== "PUBLIC") {
+    if (
+      asset.ownerId !== next.ownerId &&
+      asset.ownerId !== context.userId &&
+      asset.visibility !== "PUBLIC" &&
+      !previous.eventAssetLinks.some(
+        (existing) => existing.assetId === asset.id
+      )
+    ) {
       throw new JourneyInputError(
         `EventAssetLink ${link.id} cannot expose another owner's Asset`
       )
@@ -1204,6 +1217,7 @@ async function persistContentDomain(
         rank: link.rank,
         caption: link.caption ?? null,
         locationJson: link.location ? json(link.location) : null,
+        receiptJson: link.receipt ? json(link.receipt) : null,
         visibility: link.visibility,
         introducedRevision: link.introducedRevision,
         retiredRevision: link.retiredRevision ?? null,
@@ -1470,7 +1484,8 @@ async function commitJourneyGraphInDomain(
   input: unknown,
   expectedRevision: number | null | undefined,
   domain: JourneyWriteDomain,
-  transactionClient?: Prisma.TransactionClient
+  transactionClient?: Prisma.TransactionClient,
+  recordingCommand?: RecordingCommand
 ): Promise<TargetJourneyGraphSnapshot | null> {
   const write = validatedWrite(input)
   const actor = write.actor ?? defaultActor(context)
@@ -1484,7 +1499,17 @@ async function commitJourneyGraphInDomain(
       include: journeyInclude,
     })
     if (!record) return null
-    assertWriteOwner(context, record.ownerId)
+    if (recordingCommand && record.deletedAt) return null
+    if (recordingCommand) {
+      await assertRecordingCommandAccess(
+        tx,
+        context,
+        mapJourneyToGraph(record),
+        recordingCommand
+      )
+    } else {
+      assertWriteOwner(context, record.ownerId)
+    }
     await assertActorAuthorized(tx, context, actor, write.workspaceRevisionId)
 
     const replay = await findIdempotentRevision(tx, id, write, actor)
@@ -1570,8 +1595,8 @@ async function commitJourneyGraphInDomain(
     ) {
       await persistTransitDomain(tx, previous, next)
     }
-    if (writesContent) {
-      await persistContentDomain(tx, previous, next)
+    if (writesContent && domain === "CONTENT") {
+      await persistContentDomain(tx, previous, next, context)
     }
 
     if (domain === "TRANSIT" || domain === "CONTENT") {
@@ -1619,6 +1644,9 @@ async function commitJourneyGraphInDomain(
         data: { updatedAt: new Date(event.updatedAt) },
       })
     }
+
+    // New record envelopes must exist before their receipt/photo attachments.
+    if (writesContent) await persistContentDomain(tx, previous, next, context)
 
     const previousLinks = new Map(previous.links.map((link) => [link.id, link]))
     const newLinks = next.links.filter((link) => !previousLinks.has(link.id))
@@ -1783,6 +1811,26 @@ async function commitJourneyGraphInDomain(
     }
     throw error
   }
+}
+
+// Only the recording service builds this graph, from its typed command reducer.
+// Generic graph/content APIs retain their owner-only write boundary.
+export function commitRecordingJourneyGraph(
+  context: AuthContext,
+  id: string,
+  write: JourneyRevisionWrite,
+  expectedRevision: number,
+  command: RecordingCommand
+) {
+  return commitJourneyGraphInDomain(
+    context,
+    id,
+    write,
+    expectedRevision,
+    "ALL",
+    undefined,
+    command
+  )
 }
 
 export function commitJourneyGraph(

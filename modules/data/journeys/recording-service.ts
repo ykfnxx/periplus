@@ -1,3 +1,4 @@
+import { isAdmin } from "@/modules/auth/server/context"
 import type { AuthContext } from "@/modules/auth/server/context"
 import {
   recordingJourneyCreateSchema,
@@ -10,7 +11,7 @@ import { prisma } from "@/modules/data/db/prisma"
 import { journeyInclude, mapJourneyToGraph } from "./journey-mapper"
 import {
   createJourney,
-  commitJourneyRevisionChain,
+  commitRecordingJourneyGraph,
   getJourney,
   getJourneyRevisionByIdempotencyKey,
   JourneyIdempotencyConflictError,
@@ -23,6 +24,11 @@ import {
 } from "./recording-projection"
 import { recordingId, reduceRecordingCore } from "./recording-reducer"
 import { reduceRecordingPhotos } from "./recording-photos"
+import { reduceRecordingReceipts } from "./recording-receipts"
+import {
+  assertRecordingCommandAccess,
+  journeyReadScope,
+} from "./recording-access"
 
 export class RecordingNotFoundError extends Error {
   constructor() {
@@ -31,7 +37,10 @@ export class RecordingNotFoundError extends Error {
   }
 }
 
-async function document(graph: TargetJourneyGraphSnapshot) {
+async function document(
+  context: AuthContext,
+  graph: TargetJourneyGraphSnapshot
+) {
   const [journey, revision] = await Promise.all([
     prisma.journey.findUniqueOrThrow({
       where: { id: graph.id },
@@ -44,10 +53,74 @@ async function document(graph: TargetJourneyGraphSnapshot) {
       select: { createdAt: true },
     }),
   ])
-  return projectRecording(graph, {
+  const projected = projectRecording(graph, {
     createdAt: journey.createdAt.toISOString(),
     updatedAt: revision.createdAt.toISOString(),
   })
+  const [owner, revisions, assets] = await Promise.all([
+    prisma.user.findUniqueOrThrow({
+      where: { id: graph.ownerId },
+      select: { id: true, name: true, image: true },
+    }),
+    prisma.journeyRevision.findMany({
+      where: { journeyId: graph.id },
+      select: {
+        revision: true,
+        actorUser: { select: { id: true, name: true, image: true } },
+      },
+    }),
+    prisma.asset.findMany({
+      where: { id: { in: graph.eventAssetLinks.map((link) => link.assetId) } },
+      include: { owner: { select: { id: true, name: true, image: true } } },
+    }),
+  ])
+  const source = (user: typeof owner) => ({
+    userId: user.id,
+    name: user.name,
+    image: user.image,
+  })
+  const manager = isAdmin(context) || context.userId === graph.ownerId
+  const byAsset = new Map(assets.map((asset) => [asset.id, asset]))
+  projected.role = manager ? "OWNER" : "MEMBER"
+  for (const event of projected.events) {
+    const canonical = graph.events.find(
+      (candidate) => candidate.id === event.id
+    )!
+    event.source = source(
+      revisions.find(
+        (record) => record.revision === canonical.introducedRevision
+      )?.actorUser ?? owner
+    )
+    event.canEdit = manager || event.source.userId === context.userId
+    const attachments = graph.eventAssetLinks.filter(
+      (link) => !link.retiredRevision && link.eventId === event.id
+    )
+    event.canRemove =
+      event.canEdit &&
+      (manager ||
+        attachments.every(
+          (link) => byAsset.get(link.assetId)?.ownerId === context.userId
+        ))
+    for (const photo of event.photos) {
+      const asset = byAsset.get(photo.assetId)!
+      photo.source = source(asset.owner)
+      photo.canEdit = manager || asset.ownerId === context.userId
+    }
+    event.receipts = attachments
+      .filter((link) => link.role === "RECEIPT" && link.receipt)
+      .map((link) => {
+        const asset = byAsset.get(link.assetId)!
+        return {
+          id: link.id,
+          assetId: link.assetId,
+          url: `/api/assets/${encodeURIComponent(link.assetId)}/file`,
+          ...link.receipt!,
+          source: source(asset.owner),
+          canEdit: manager || asset.ownerId === context.userId,
+        }
+      })
+  }
+  return projected
 }
 
 function receipt(
@@ -80,7 +153,7 @@ async function replay(
   if (!previous) return null
   const eventId = receipt(previous, context, request)
   return {
-    journey: await document(previous.snapshot),
+    journey: await document(context, previous.snapshot),
     ...(eventId ? { eventId } : {}),
     replayed: true,
   }
@@ -89,7 +162,7 @@ async function replay(
 async function listRecordingDocuments(context: AuthContext) {
   const journeys = await prisma.journey.findMany({
     where: {
-      ownerId: context.userId,
+      ...journeyReadScope(context),
       deletedAt: null,
       visibility: "PRIVATE",
       events: { every: { type: "RECORD" } },
@@ -98,7 +171,9 @@ async function listRecordingDocuments(context: AuthContext) {
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
   })
   return Promise.all(
-    journeys.map(async (journey) => document(mapJourneyToGraph(journey)))
+    journeys.map(async (journey) =>
+      document(context, mapJourneyToGraph(journey))
+    )
   )
 }
 
@@ -106,7 +181,7 @@ export async function listRecordingJourneys(context: AuthContext) {
   return (await listRecordingDocuments(context)).map(summarizeRecording)
 }
 
-// 地点相册是当前作者照片的只读投影，聚合不会改变原事件或游记归属。
+// 地点相册投影当前用户可读的旅程；聚合不改变原事件或照片来源。
 export async function getRecordingAtlas(context: AuthContext) {
   const documents = await listRecordingDocuments(context)
   return {
@@ -130,7 +205,7 @@ export async function getRecordingJourney(context: AuthContext, id: string) {
   const graph = await getJourney(context, id)
   if (!graph) throw new RecordingNotFoundError()
   recordingChain(graph)
-  return document(graph)
+  return document(context, graph)
 }
 
 export async function createRecordingJourney(
@@ -171,7 +246,7 @@ export async function createRecordingJourney(
       patch: [{ request }],
       inversePatch: [],
     })
-    return { journey: await document(created), replayed: false }
+    return { journey: await document(context, created), replayed: false }
   } catch (error) {
     if (
       error instanceof JourneyRevisionConflictError ||
@@ -197,6 +272,7 @@ export async function mutateRecordingJourney(
   recordingChain(current)
   if (current.revision !== request.expectedRevision)
     throw new JourneyRevisionConflictError()
+  await assertRecordingCommandAccess(prisma, context, current, request.command)
   const next = structuredClone(current)
   next.revision += 1
   const now = new Date(
@@ -208,29 +284,37 @@ export async function mutateRecordingJourney(
   const eventId =
     reduceRecordingCore(next, request.command, request.idempotencyKey, now) ??
     (await reduceRecordingPhotos(
+      context,
       next,
       request.command,
       request.idempotencyKey,
       now
     ))
+  await reduceRecordingReceipts(
+    context,
+    next,
+    request.command,
+    request.idempotencyKey,
+    now,
+    eventId
+  )
   try {
-    const saved = await commitJourneyRevisionChain(
+    const saved = await commitRecordingJourneyGraph(
       context,
       id,
-      [
-        {
-          graph: next,
-          operation: `recording.${request.command.name}`,
-          idempotencyKey: request.idempotencyKey,
-          patch: [{ request, ...(eventId ? { eventId } : {}) }],
-          inversePatch: [],
-        },
-      ],
-      current.revision
+      {
+        graph: next,
+        operation: `recording.${request.command.name}`,
+        idempotencyKey: request.idempotencyKey,
+        patch: [{ request, ...(eventId ? { eventId } : {}) }],
+        inversePatch: [],
+      },
+      current.revision,
+      request.command
     )
     if (!saved) throw new RecordingNotFoundError()
     return {
-      journey: await document(saved),
+      journey: await document(context, saved),
       ...(eventId ? { eventId } : {}),
       replayed: false,
     }

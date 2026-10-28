@@ -5,6 +5,7 @@ import {
   type AuthContext,
 } from "@/modules/auth/server/context"
 import { prisma } from "@/modules/data/db/prisma"
+import { journeyReadScope } from "@/modules/data/journeys/recording-access"
 import { AssetUploadConflictError } from "./asset-contract"
 
 export const assetOwnerInclude = {
@@ -144,7 +145,19 @@ export async function getAssetRecord(
     include: assetOwnerInclude,
   })
   if (!asset || asset.deletedAt || (kind && asset.kind !== kind)) return null
-  if (asset.ownerId !== context.userId && !isAdmin(context)) {
+  if (
+    asset.ownerId !== context.userId &&
+    !isAdmin(context) &&
+    !(await prisma.eventAssetLink.findFirst({
+      where: {
+        assetId: id,
+        retiredRevision: null,
+        event: { retiredRevision: null },
+        journey: { deletedAt: null, ...journeyReadScope(context) },
+      },
+      select: { id: true },
+    }))
+  ) {
     throw new PermissionDeniedError("Cannot access another user's resource")
   }
   return asset

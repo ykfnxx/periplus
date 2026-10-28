@@ -51,6 +51,14 @@ export const periplusServerConfig = {
       return url
     },
   },
+  ocr: {
+    get url() {
+      return envString("PERIPLUS_OCR_URL", "http://127.0.0.1:8106/ocr")
+    },
+    get timeoutMs() {
+      return envNumber("PERIPLUS_OCR_TIMEOUT_MS", 60000)
+    },
+  },
   storage: {
     get scheme() {
       const scheme = envString("PERIPLUS_STORAGE_SCHEME", "s3")

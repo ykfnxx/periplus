@@ -1,5 +1,11 @@
 import { z } from "zod"
 import { targetDateTimeSchema, targetIdSchema } from "./common"
+import {
+  contributorSchema,
+  receiptInputSchema,
+  receiptFieldsSchema,
+  recordingReceiptSchema,
+} from "./receipts"
 
 export const RECORDING_CATEGORIES = [
   "VISIT",
@@ -59,6 +65,8 @@ export const recordingEventContentSchema = z
 
 export const recordingPhotoSchema = z
   .object({
+    source: contributorSchema.optional(),
+    canEdit: z.boolean().optional(),
     assetId: id,
     url: z.string(),
     caption: z.string(),
@@ -70,6 +78,10 @@ export const recordingPhotoSchema = z
 
 export const recordingEventSchema = recordingEventContentSchema.extend({
   id,
+  source: contributorSchema.optional(),
+  canEdit: z.boolean().optional(),
+  canRemove: z.boolean().optional(),
+  receipts: z.array(recordingReceiptSchema).optional(),
   photos: z.array(recordingPhotoSchema),
   createdAt: instant,
   updatedAt: instant,
@@ -78,6 +90,7 @@ export const recordingEventSchema = recordingEventContentSchema.extend({
 export const recordingJourneySchema = z
   .object({
     id,
+    role: z.enum(["OWNER", "MEMBER"]).optional(),
     revision: z.number().int().positive(),
     title: z.string().trim().min(1).max(200),
     description: z.string().max(10_000),
@@ -134,6 +147,7 @@ export const recordingCommandSchema = z.discriminatedUnion("name", [
       // null inserts at the beginning; an ID inserts immediately after it.
       afterEventId: id.nullable(),
       content: eventInput,
+      receipt: receiptInputSchema.optional(),
     })
     .strict(),
   z
@@ -173,6 +187,28 @@ export const recordingCommandSchema = z.discriminatedUnion("name", [
         )
         .max(100),
       coverAssetId: id.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      name: z.literal("receipt.add"),
+      eventId: id,
+      receipt: receiptInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      name: z.literal("receipt.update"),
+      eventId: id,
+      receiptId: id,
+      fields: receiptFieldsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      name: z.literal("receipt.remove"),
+      eventId: id,
+      receiptId: id,
     })
     .strict(),
   z
@@ -231,6 +267,9 @@ export const recordingApiErrorSchema = z.object({
     "FORBIDDEN",
     "REVISION_CONFLICT",
     "IDEMPOTENCY_CONFLICT",
+    "OCR_UNAVAILABLE",
+    "OCR_FAILED",
+    "STORAGE_UNAVAILABLE",
   ]),
 })
 
