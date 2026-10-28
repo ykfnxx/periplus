@@ -398,12 +398,12 @@ body {
   }
 }
 
-/* Keep scrolling available without drawing scrollbars, including portaled menus. */
-* {
+/* Menus and photo rails stay uncluttered; the journal list exposes its scroll position. */
+*:not(.journal-list) {
   scrollbar-width: none !important;
   -ms-overflow-style: none;
 }
-*::-webkit-scrollbar {
+*:not(.journal-list)::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -421,8 +421,16 @@ body {
   box-shadow: var(--shadow-journal);
   backdrop-filter: blur(20px);
 }
+.journal-sheet {
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
 .journal-dates {
-  padding: 20px 24px 16px;
+  padding: 14px 16px 12px;
+}
+.journal-write {
+  padding: 0 10px;
+  font-size: 13px;
 }
 .journal-dates nav {
   gap: 8px;
@@ -454,12 +462,33 @@ body {
   box-shadow: none;
 }
 .journal-dates .journal-journey-trigger {
-  padding-left: 0;
-  font-size: 20px;
+  min-width: 0;
+  min-height: 40px;
+  gap: 6px;
+  padding: 0;
+  font-size: 18px;
   font-weight: 600;
 }
 .journal-list {
   padding: 0 16px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-20) transparent;
+}
+.journal-list::-webkit-scrollbar {
+  width: 6px;
+}
+.journal-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--color-ink-20);
+}
+.journal-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+@supports selector(::-webkit-scrollbar) {
+  .journal-list {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
 }
 .journal-list > div {
   gap: 22px;
@@ -483,9 +512,9 @@ body {
 .journal-card p {
   margin-top: 10px;
   min-height: 0;
-  font-size: 14px;
-  line-height: 24px;
-  color: var(--color-journal-muted);
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--color-journal-ink);
 }
 .journal-event-edit {
   color: var(--color-journal-muted);
@@ -510,13 +539,15 @@ body {
   position: relative;
   margin-top: 14px;
 }
-.journal-card [data-photo-strip] {
+.journal-card [data-photo-strip],
+.journal-event-details [data-photo-strip] {
   margin: 0;
   gap: 8px;
   border-radius: 12px;
   scroll-snap-type: x mandatory;
 }
-.journal-card [data-photo-strip] button {
+.journal-card [data-photo-strip] button,
+.journal-event-details [data-photo-strip] button {
   width: 100%;
   height: auto;
   aspect-ratio: 4 / 3;
@@ -534,12 +565,14 @@ body {
   pointer-events: none;
   transition: opacity 150ms ease;
 }
-.journal-photo-strip:has(:focus-visible) .journal-photo-nav {
+.journal-photo-strip:has(:focus-visible) .journal-photo-nav,
+.journal-photo-stage:has(:focus-visible) .journal-photo-nav {
   opacity: 1;
   pointer-events: auto;
 }
 @media (hover: hover) and (pointer: fine) {
-  .journal-photo-strip:hover .journal-photo-nav {
+  .journal-photo-strip:hover .journal-photo-nav,
+  .journal-photo-stage:hover .journal-photo-nav {
     opacity: 1;
     pointer-events: auto;
   }
@@ -588,7 +621,7 @@ body {
 }
 @media (max-width: 767px) {
   .journal-dates {
-    padding: 10px 20px 14px;
+    padding: 0 16px 12px;
   }
   .journal-event-edit {
     opacity: 1;
@@ -611,6 +644,19 @@ body {
 
 .journal-workbench .amap-layers {
   filter: saturate(0.6);
+}
+/* Keep SDK attribution in the exposed map, outside the reading panel. */
+.journal-workbench .amap-logo {
+  left: var(--journal-map-left, 4px) !important;
+  bottom: calc(var(--journal-map-bottom, 0px) + 4px) !important;
+}
+.journal-workbench .amap-copyright {
+  left: calc(var(--journal-map-left, 4px) + 81px) !important;
+  bottom: calc(var(--journal-map-bottom, 0px) + 4px) !important;
+}
+.journal-workbench .amap-scalecontrol {
+  left: calc(var(--journal-map-left, 4px) + 11px) !important;
+  bottom: calc(var(--journal-map-bottom, 0px) + 28px) !important;
 }
 
 .journal-entry h1 {
@@ -815,7 +861,7 @@ body {
 }
 .journal-composer textarea {
   font-size: 16px;
-  line-height: 32px;
+  line-height: 28px;
 }
 /* While picking, photo overlays remain visible and let map clicks reach the SDK. */
 [data-map-picking="true"] .journal-map-photo {

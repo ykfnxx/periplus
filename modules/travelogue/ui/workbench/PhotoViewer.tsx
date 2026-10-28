@@ -1,7 +1,15 @@
 "use client"
 import { MAX_RECORDING_PHOTO_CAPTION_LENGTH } from "@/modules/data-model/contracts/recording"
 import { useState } from "react"
-import { ArrowUpRight, ChevronDown, ChevronUp, MapPin } from "lucide-react"
+import {
+  ArrowUpRight,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  MapPin,
+} from "lucide-react"
+import { Button } from "@/components/kumo/components/button/button"
 import type { PhotoItem } from "../photo-items"
 import MediaGallery from "./MediaGallery"
 import { Modal } from "./Modal"
@@ -66,13 +74,37 @@ export default function PhotoViewer({
       className="journal-photo-viewer h-[min(756px,calc(100dvh-64px))]! w-[min(1176px,calc(100vw-64px))]! max-w-none! overflow-hidden! rounded-2xl! border-none! bg-photo-stage! p-0! ring-0! max-sm:h-dvh! max-sm:max-h-none! max-sm:w-screen! max-sm:rounded-none!"
     >
       {() => (
-        <div className="relative h-full">
+        <div className="journal-photo-stage relative h-full">
           <MediaGallery
             photos={photos}
             index={current}
             onIndex={setIndex}
             globalKeys
           />
+          {photos.length > 1 && (
+            <>
+              <Button
+                variant="ghost"
+                shape="circle"
+                aria-label="上一张照片"
+                disabled={current === 0}
+                onClick={() => setIndex(current - 1)}
+                className="journal-photo-nav left-4 bg-white/70! text-journal-ink! hover:bg-white/90!"
+              >
+                <ChevronLeft size={18} aria-hidden="true" />
+              </Button>
+              <Button
+                variant="ghost"
+                shape="circle"
+                aria-label="下一张照片"
+                disabled={current === photos.length - 1}
+                onClick={() => setIndex(current + 1)}
+                className="journal-photo-nav right-4 bg-white/70! text-journal-ink! hover:bg-white/90!"
+              >
+                <ChevronRight size={18} aria-hidden="true" />
+              </Button>
+            </>
+          )}
           {(photo.caption || photo.location || onOpenEvent) && (
             <footer className="journal-photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-6">
               <div className="min-w-0">

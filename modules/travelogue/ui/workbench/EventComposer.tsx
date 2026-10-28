@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react"
 import { CalendarDays, ChevronRight, MapPin, Plus, X } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
+import { InputArea } from "@/components/kumo/components/input/input-area"
 import type {
   RecordingEventContent,
   RecordingPhoto,
@@ -46,82 +47,86 @@ export default function EventComposer({
   const input = useRef<HTMLInputElement>(null)
   return (
     <div className="px-6 pb-8 md:px-9">
-      <textarea
+      <InputArea
+        autoResize
+        minRows={3}
         aria-label="记录正文"
         placeholder="这一刻，有什么想记下来？"
         value={draft.body}
         maxLength={100_000}
         disabled={busy}
         onChange={(event) => onChange({ ...draft, body: event.target.value })}
-        className="placeholder:text-walnut-50 mt-5 min-h-32 w-full resize-y border-0 bg-transparent p-0 text-base leading-8 text-ink outline-none md:mt-5 md:min-h-24"
+        className="mt-4 w-full border-0 bg-transparent! p-0! text-base text-journal-ink ring-0! outline-none placeholder:text-journal-muted focus:ring-0!"
       />
-      <div className="mt-5 mb-8 grid grid-cols-3 gap-2.5">
-        {photos.map((photo, index) => (
-          <button
-            key={photo.assetId}
-            type="button"
-            aria-label={`整理照片 ${index + 1}`}
-            disabled={busy}
-            onClick={onManagePhotos}
-            className="aspect-square overflow-hidden rounded-md focus-visible:outline-2 focus-visible:outline-russet"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo.url}
-              alt={photo.caption || `照片 ${index + 1}`}
-              className="h-full w-full object-cover"
-            />
-          </button>
-        ))}
-        {uploads.map((upload) => (
-          <div
-            key={upload.id}
-            className="relative aspect-square overflow-hidden rounded-md"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={upload.preview}
-              alt={upload.name}
-              className="h-full w-full object-cover opacity-60"
-            />
+      {(photos.length > 0 || uploads.length > 0 || files.length > 0) && (
+        <div className="mt-5 grid grid-cols-3 gap-2.5">
+          {photos.map((photo, index) => (
             <button
+              key={photo.assetId}
               type="button"
-              className="absolute inset-x-0 bottom-0 bg-ink-70 p-1 text-xs text-white"
-              onClick={onManagePhotos}
-            >
-              {upload.status === "failed" ? "上传失败，点击重试" : "上传中…"}
-            </button>
-          </div>
-        ))}
-        {files.map((file, index) => (
-          <div
-            key={`${file.name}-${index}`}
-            className="relative aspect-square overflow-hidden rounded-md"
-          >
-            <FilePreview file={file} />
-            <Button
-              aria-label={`移除待上传照片 ${file.name}`}
-              variant="secondary"
-              shape="circle"
-              size="xs"
+              aria-label={`整理照片 ${index + 1}`}
               disabled={busy}
-              className="absolute top-1 right-1"
-              onClick={() => onFiles(files.filter((_, i) => i !== index))}
+              onClick={onManagePhotos}
+              className="aspect-square overflow-hidden rounded-md focus-visible:outline-2 focus-visible:outline-russet"
             >
-              <X size={14} />
-            </Button>
-          </div>
-        ))}
-        <button
-          type="button"
-          aria-label="添加照片"
-          disabled={busy}
-          onClick={() => input.current?.click()}
-          className="text-walnut-50 flex aspect-square items-center justify-center rounded-md bg-ink-5 transition-colors hover:bg-ink-10 focus-visible:outline-2 focus-visible:outline-russet"
-        >
-          <Plus size={30} strokeWidth={1.25} />
-        </button>
-      </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photo.url}
+                alt={photo.caption || `照片 ${index + 1}`}
+                className="h-full w-full object-cover"
+              />
+            </button>
+          ))}
+          {uploads.map((upload) => (
+            <div
+              key={upload.id}
+              className="relative aspect-square overflow-hidden rounded-md"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={upload.preview}
+                alt={upload.name}
+                className="h-full w-full object-cover opacity-60"
+              />
+              <button
+                type="button"
+                className="absolute inset-x-0 bottom-0 bg-ink-70 p-1 text-xs text-white"
+                onClick={onManagePhotos}
+              >
+                {upload.status === "failed" ? "上传失败，点击重试" : "上传中…"}
+              </button>
+            </div>
+          ))}
+          {files.map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className="relative aspect-square overflow-hidden rounded-md"
+            >
+              <FilePreview file={file} />
+              <Button
+                aria-label={`移除待上传照片 ${file.name}`}
+                variant="secondary"
+                shape="circle"
+                size="xs"
+                disabled={busy}
+                className="absolute top-1 right-1"
+                onClick={() => onFiles(files.filter((_, i) => i !== index))}
+              >
+                <X size={14} />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Button
+        variant="ghost"
+        disabled={busy}
+        onClick={() => input.current?.click()}
+        className="mt-3 mb-4 gap-2! px-0! text-journal-muted!"
+      >
+        <Plus size={18} />
+        添加照片
+      </Button>
       <input
         ref={input}
         type="file"

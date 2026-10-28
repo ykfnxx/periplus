@@ -71,7 +71,11 @@ export default function EventEditor({
   async function switchView(next: typeof view) {
     if (
       viewDirty &&
-      !(await ask("还有照片输入尚未保存，放弃这部分输入并返回？"))
+      !(await ask("照片的未保存输入将被放弃。", {
+        title: "放弃本次修改？",
+        cancelLabel: "继续编辑",
+        confirmLabel: "放弃修改",
+      }))
     )
       return
     setViewDirty(false)
@@ -153,7 +157,18 @@ export default function EventEditor({
             return ask(
               pending.length
                 ? "这段记录还有照片尚未保存完成。关闭会放弃未保存输入；已开始的上传会继续，失败后可返回重试。仍然关闭？"
-                : "还有内容尚未保存，放弃未保存的输入并关闭？"
+                : "未保存的文字和照片输入将被放弃。",
+              dirty
+                ? {
+                    title: "放弃本次修改？",
+                    cancelLabel: "继续编辑",
+                    confirmLabel: "放弃修改",
+                  }
+                : {
+                    title: "关闭记录？",
+                    cancelLabel: "返回记录",
+                    confirmLabel: "关闭并继续上传",
+                  }
             )
           }}
           className="journal-composer w-[560px]! max-w-[calc(100vw-32px)]! p-0! max-sm:top-0! max-sm:left-0! max-sm:h-dvh! max-sm:max-h-dvh! max-sm:w-screen! max-sm:max-w-none! max-sm:translate-none! max-sm:transform-none! max-sm:rounded-none! max-sm:pt-[env(safe-area-inset-top)]! max-sm:pb-[env(safe-area-inset-bottom)]!"
@@ -161,7 +176,7 @@ export default function EventEditor({
         >
           {(close) => (
             <>
-              <header className="flex h-16 items-center justify-between px-6 md:px-9">
+              <header className="sticky top-0 z-10 flex h-16 items-center justify-between bg-white px-6 md:px-9">
                 <Button
                   variant="ghost"
                   disabled={busy}

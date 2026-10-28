@@ -58,12 +58,12 @@ export default function ResizableMapPanel({
     sheet === "small"
       ? 164
       : sheet === "full"
-        ? height - 24
+        ? height
         : Math.round(height * 0.55)
   return (
     <motion.section
       aria-label="旅程面板"
-      className="journal-panel absolute inset-x-3 bottom-3 z-20 flex flex-col overflow-hidden rounded-[20px] border border-ink-10 bg-soft-white shadow-periplus"
+      className={`journal-panel journal-sheet absolute inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden bg-soft-white shadow-periplus ${sheet === "full" ? "pt-[env(safe-area-inset-top)]" : ""}`}
       animate={{ height: sheetHeight, y: 0 }}
       transition={
         reduced
@@ -85,8 +85,9 @@ export default function ResizableMapPanel({
     >
       <Button
         variant="ghost"
-        aria-label="调整记录列表高度"
-        className="h-6! shrink-0 touch-none rounded-none"
+        aria-label={sheet === "full" ? "收起记录列表" : "展开记录列表"}
+        aria-expanded={sheet === "full"}
+        className="relative h-7! w-full! shrink-0 touch-none items-center! justify-center! rounded-none! text-journal-muted!"
         onPointerDown={(event) => {
           dragged.current = false
           controls.start(event)

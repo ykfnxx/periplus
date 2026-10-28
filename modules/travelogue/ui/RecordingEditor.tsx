@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react"
 import { useStore } from "zustand"
@@ -23,6 +24,7 @@ import { createWorkbenchStore } from "../state/workbench-store"
 import ResizableMapPanel from "./workbench/ResizableMapPanel"
 import EventCard from "./workbench/EventCard"
 import EventEditor from "./workbench/EventEditor"
+import EventDetails from "./workbench/EventDetails"
 import JourneyMenu from "./workbench/JourneyMenu"
 import type { JourneyOpenRequest } from "../data/navigation"
 import JourneySettings from "./workbench/JourneySettings"
@@ -87,12 +89,14 @@ export default function RecordingEditor({
     focusId,
     activeDay,
     dialog,
+    detailsId,
     metadata,
     sheet,
     panelWidth,
     photoViewer,
   } = useStore(ui)
   const { desktop, height, width } = useRecordingViewport()
+  const details = journey?.events.find((entry) => entry.id === detailsId)
   const [directory, setDirectory] = useState(false)
   const initialApplied = useRef(false)
   const { ask, confirmation } = useConfirmation()
@@ -166,7 +170,7 @@ export default function RecordingEditor({
     sheet === "small"
       ? 164
       : sheet === "full"
-        ? height - 24
+        ? height
         : Math.round(height * 0.55)
   const insets = useMemo(
     () =>
@@ -177,7 +181,7 @@ export default function RecordingEditor({
             top: 40,
             bottom: 28,
           }
-        : { left: 24, right: 60, top: 68, bottom: sheetHeight + 24 },
+        : { left: 24, right: 60, top: 68, bottom: sheetHeight + 16 },
     [desktop, panelWidth, sheetHeight, width]
   )
   useEffect(() => {
@@ -258,6 +262,13 @@ export default function RecordingEditor({
     <main
       data-picking={!!picking}
       className="journal-workbench fixed inset-0 isolate overflow-hidden bg-cream text-ink"
+      style={
+        {
+          "--journal-map-bottom":
+            !desktop && !picking ? `${sheetHeight}px` : "0px",
+          "--journal-map-left": desktop ? `${panelWidth + 36}px` : "4px",
+        } as CSSProperties
+      }
     >
       <div className="absolute inset-0">
         {mapPreview || (
@@ -325,16 +336,48 @@ export default function RecordingEditor({
           onSheet={(sheet) => ui.setState({ sheet })}
         >
           <header className="journal-dates shrink-0">
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="journal-heading flex min-w-0 items-center gap-1">
               <Button
                 variant="ghost"
-                className="justify-start! px-0! text-sm text-journal-muted"
+                shape="square"
+                className="shrink-0 text-journal-muted!"
                 aria-label="返回全部游记"
                 onClick={() => void leave(onBack)}
               >
                 <ArrowLeft size={16} />
-                全部游记
               </Button>
+              <div className="min-w-0 flex-1">
+                {onOpenJourney ? (
+                  <JourneyMenu
+                    error={directoryError}
+                    onRetry={onRetryDirectory}
+                    title={journey?.title || "游记"}
+                    journeys={journeys}
+                    open={directory}
+                    onOpenChange={setDirectory}
+                    onOpen={(id) => void leave(() => onOpenJourney(id))}
+                    onCreate={() => void leave(onBack)}
+                  />
+                ) : (
+                  <h1 className="truncate text-lg font-semibold">
+                    {journey?.title || "游记"}
+                  </h1>
+                )}
+              </div>
+              {canEdit && (
+                <Button
+                  variant="primary"
+                  className="journal-write shrink-0 gap-1!"
+                  disabled={!journey || loading}
+                  aria-label="添加记录"
+                  onClick={() =>
+                    openEditor(null, journey?.events.at(-1)?.id || null)
+                  }
+                >
+                  <Plus size={16} />
+                  记一笔
+                </Button>
+              )}
               {canEdit && (
                 <Button
                   variant="ghost"
@@ -347,25 +390,9 @@ export default function RecordingEditor({
                 </Button>
               )}
             </div>
-            {onOpenJourney ? (
-              <JourneyMenu
-                error={directoryError}
-                onRetry={onRetryDirectory}
-                title={journey?.title || "游记"}
-                journeys={journeys}
-                open={directory}
-                onOpenChange={setDirectory}
-                onOpen={(id) => void leave(() => onOpenJourney(id))}
-                onCreate={() => void leave(onBack)}
-              />
-            ) : (
-              <h1 className="mb-3 text-xl font-semibold">
-                {journey?.title || "游记"}
-              </h1>
-            )}
             <nav
               aria-label="记录日期"
-              className="mt-4 flex gap-2 overflow-x-auto py-1"
+              className="mt-3 flex gap-2 overflow-x-auto py-1"
             >
               {days.map((day) => (
                 <Button
@@ -462,23 +489,10 @@ export default function RecordingEditor({
                     onSelect={() => select(entry.id)}
                     onExpand={(photoIndex) => expand(entry.id, photoIndex)}
                     onEdit={() => openEditor(entry.id)}
+                    onRead={() => ui.setState({ detailsId: entry.id })}
                   />
                 ))}
               </DragDropProvider>
-              {canEdit && (
-                <Button
-                  variant="primary"
-                  className="journal-add w-full"
-                  disabled={!journey || loading}
-                  aria-label="添加记录"
-                  onClick={() =>
-                    openEditor(null, journey?.events.at(-1)?.id || null)
-                  }
-                >
-                  <Plus size={20} />
-                  记一笔
-                </Button>
-              )}
             </div>
           </div>
         </ResizableMapPanel>
@@ -506,6 +520,21 @@ export default function RecordingEditor({
             )
           }
           onRemove={() => finishPick(null)}
+        />
+      )}
+      {details && (
+        <EventDetails
+          key={details.id}
+          entry={details}
+          onClose={() => ui.setState({ detailsId: null })}
+          onEdit={
+            canEdit
+              ? () => {
+                  ui.setState({ detailsId: null })
+                  openEditor(details.id)
+                }
+              : undefined
+          }
         />
       )}
       {dialog && canEdit && (
