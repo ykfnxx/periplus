@@ -267,6 +267,9 @@ export const recordingApiErrorSchema = z.object({
     "FORBIDDEN",
     "REVISION_CONFLICT",
     "IDEMPOTENCY_CONFLICT",
+    "OCR_UNAVAILABLE",
+    "OCR_FAILED",
+    "STORAGE_UNAVAILABLE",
   ]),
 })
 
