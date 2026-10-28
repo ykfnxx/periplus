@@ -42,7 +42,8 @@ interface RecordingState {
   retryUpload: (id: string) => void
   discardUpload: (id: string) => void
   dispose: () => void
-  recognizeReceipt: (file: File, uploadId: string) => Promise<ReceiptExtraction>
+  uploadReceipt: (file: File, uploadId: string) => Promise<string>
+  recognizeReceipt: (assetId: string) => Promise<ReceiptExtraction>
   collaboration: Pick<
     RecordingApi,
     "members" | "invitations" | "invite" | "revokeInvitation"
@@ -66,11 +67,11 @@ export function createRecordingStore(
     conflict: false,
     uploads: [],
     collaboration: api,
-    recognizeReceipt: async (file, uploadId) => {
+    uploadReceipt: async (file, uploadId) => {
       const asset = await api.upload(file, uploadId)
-      const result = await api.extractReceipt(asset.id)
-      return result
+      return asset.id
     },
+    recognizeReceipt: (assetId) => api.extractReceipt(assetId),
     load: async () => {
       disposed = false
       set({ loading: true, error: null })

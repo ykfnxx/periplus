@@ -112,7 +112,7 @@ export default function RecordingEditor({
     (entry) => entry.id === receiptDetails?.eventId
   )
   const activeReceipt = receiptEvent?.receipts?.find(
-    (receipt) => receipt.id === receiptDetails?.receiptId
+    (receipt) => receipt.assetId === receiptDetails?.assetId
   )
   const photoEntry = journey?.events.find((entry) => entry.id === photoPanelId)
   const [photoDirty, setPhotoDirty] = useState(false)
@@ -512,9 +512,9 @@ export default function RecordingEditor({
                     selected={selected === entry.id}
                     canEdit={entry.canEdit === true}
                     canMove={isOwner}
-                    onReceipt={(receiptId) =>
+                    onReceipt={(assetId) =>
                       ui.setState({
-                        receiptDetails: { eventId: entry.id, receiptId },
+                        receiptDetails: { eventId: entry.id, assetId },
                       })
                     }
                     onSelect={() => select(entry.id)}
@@ -558,8 +558,8 @@ export default function RecordingEditor({
           key={details.id}
           entry={details}
           onClose={() => ui.setState({ detailsId: null })}
-          onReceipt={(receiptId) =>
-            ui.setState({ receiptDetails: { eventId: details.id, receiptId } })
+          onReceipt={(assetId) =>
+            ui.setState({ receiptDetails: { eventId: details.id, assetId } })
           }
           onAddPhotos={
             canEdit
@@ -618,7 +618,7 @@ export default function RecordingEditor({
       )}
       {activeReceipt && receiptEvent && (
         <ReceiptDetails
-          key={activeReceipt.id}
+          key={`${receiptEvent.id}:${activeReceipt.assetId}`}
           receipt={activeReceipt}
           eventId={receiptEvent.id}
           store={store}
@@ -659,14 +659,12 @@ export default function RecordingEditor({
           }))}
           initialEventId={receiptImport.eventId}
           revisionNotice={<RevisionReload store={store} />}
-          recognize={async (file, uploadId) => {
-            const result = await store
-              .getState()
-              .recognizeReceipt(file, uploadId)
-            return {
-              assetId: result.assetId,
-              values: receiptFormValues(result.fields),
-            }
+          upload={(file, uploadId) =>
+            store.getState().uploadReceipt(file, uploadId)
+          }
+          recognize={async (assetId) => {
+            const result = await store.getState().recognizeReceipt(assetId)
+            return receiptFormValues(result.fields)
           }}
           save={async (review, eventId, saveKey) => {
             const fields = confirmedReceiptFields(review.values)

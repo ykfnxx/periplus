@@ -17,7 +17,7 @@ export const createWorkbenchStore = () =>
     metadata: false,
     members: false,
     receiptImport: null as { eventId: string | null } | null,
-    receiptDetails: null as { eventId: string; receiptId: string } | null,
+    receiptDetails: null as { eventId: string; assetId: string } | null,
     photoPanelId: null as string | null,
     sheet: "half" as "small" | "half" | "full",
     panelWidth: 384,

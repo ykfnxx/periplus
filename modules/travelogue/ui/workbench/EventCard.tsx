@@ -42,7 +42,7 @@ export default function EventCard({
   selected: boolean
   canEdit: boolean
   canMove: boolean
-  onReceipt: (receiptId: string) => void
+  onReceipt: (assetId: string) => void
   onSelect: () => void
   onExpand: (index?: number) => void
   onEdit: () => void
@@ -145,11 +145,11 @@ export default function EventCard({
       </Button>
       {entry.receipts?.map((receipt) => (
         <ReceiptCard
-          key={receipt.id}
+          key={receipt.assetId}
           merchant={receipt.merchant || ""}
           date={receipt.date ? dateLabel(receipt.date) : ""}
           total={receiptTotal(receipt)}
-          onOpen={() => onReceipt(receipt.id)}
+          onOpen={() => onReceipt(receipt.assetId)}
         />
       ))}
       {entry.photos.length > 0 && (

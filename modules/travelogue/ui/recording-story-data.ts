@@ -159,7 +159,7 @@ export function createStoryRecordingApi(
   initialJourney = storyJourney,
   failures: {
     upload?: boolean
-    extraction?: boolean
+    extraction?: boolean | "always"
     save?: boolean
     conflict?: boolean
   } = {}
@@ -220,7 +220,10 @@ export function createStoryRecordingApi(
     }),
     acceptInvitation: async () => ({ journeyId: journey.id }),
     extractReceipt: async (assetId) => {
-      if (failures.extraction && !extractionFailed) {
+      if (
+        failures.extraction &&
+        (!extractionFailed || failures.extraction === "always")
+      ) {
         extractionFailed = true
         throw new RecordingApiError("识别暂时失败，请重试。", 503)
       }
@@ -259,12 +262,21 @@ export function createStoryRecordingApi(
         throw new RecordingApiError("记录已更新", 409, "REVISION_CONFLICT")
       const command = mutation.command
       if (
-        (command.name === "receipt.add" ||
+        (command.name === "receipt.update" ||
+          command.name === "receipt.add" ||
           (command.name === "event.add" && command.receipt)) &&
         failures.conflict &&
         !conflictFailed
       ) {
         conflictFailed = true
+        if (command.name === "receipt.update") {
+          const receipt = journey.events
+            .find((event) => event.id === command.eventId)!
+            .receipts!.find((item) => item.id === command.receiptId)!
+          // 模拟同行者先完成核对：后端替换修订关联，原图身份不变。
+          receipt.id = operationId()
+          receipt.total = "95.00"
+        }
         journey.revision += 1
         throw new RecordingApiError(
           "记录已有同行者的修改。",
@@ -384,12 +396,11 @@ export function createStoryRecordingApi(
           },
         ]
       } else if (command.name === "receipt.update") {
-        Object.assign(
-          journey.events
-            .find((event) => event.id === command.eventId)!
-            .receipts!.find((receipt) => receipt.id === command.receiptId)!,
-          command.fields
-        )
+        const receipt = journey.events
+          .find((event) => event.id === command.eventId)!
+          .receipts!.find((receipt) => receipt.id === command.receiptId)!
+        // receipt.update 会退役旧关联并创建新 ID，不能用关联 ID 保持详情身份。
+        Object.assign(receipt, command.fields, { id: operationId() })
       } else if (command.name === "receipt.remove") {
         const event = journey.events.find(
           (event) => event.id === command.eventId
