@@ -4,6 +4,8 @@ import {
   type RecordingLocation,
   type TargetJourneyGraphSnapshot,
 } from "@/modules/data-model/contracts"
+import type { AuthContext } from "@/modules/auth/server/context"
+import { isAdmin } from "@/modules/auth/server/context"
 import { prisma } from "@/modules/data/db/prisma"
 import { JourneyInputError } from "./journey-repository"
 import { recordingId, requireRecordingEvent } from "./recording-reducer"
@@ -16,7 +18,12 @@ type PhotoSelection = {
 
 function selectedPhotos(graph: TargetJourneyGraphSnapshot, eventId: string) {
   return graph.eventAssetLinks
-    .filter((link) => !link.retiredRevision && link.eventId === eventId)
+    .filter(
+      (link) =>
+        !link.retiredRevision &&
+        link.eventId === eventId &&
+        (link.role === "COVER" || link.role === "GALLERY")
+    )
     .sort((left, right) => left.rank - right.rank)
 }
 
@@ -31,6 +38,7 @@ function selection(
 }
 
 async function setPhotos(
+  context: AuthContext,
   graph: TargetJourneyGraphSnapshot,
   eventId: string,
   photos: PhotoSelection[],
@@ -50,7 +58,15 @@ async function setPhotos(
   const byId = new Map(assets.map((asset) => [asset.id, asset]))
   for (const id of ids) {
     const asset = byId.get(id)
-    if (!asset || asset.ownerId !== graph.ownerId) {
+    if (
+      !asset ||
+      !(
+        asset.ownerId === context.userId ||
+        selectedPhotos(graph, eventId).some((link) => link.assetId === id) ||
+        ((graph.ownerId === context.userId || isAdmin(context)) &&
+          graph.eventAssetLinks.some((link) => link.assetId === id))
+      )
+    ) {
       throw new JourneyInputError(
         "Photo is missing or is not available to this Journey"
       )
@@ -59,7 +75,11 @@ async function setPhotos(
   // Links are revisioned facts. An edit retires its old membership and records
   // the new caption/location/order; Asset and event identities stay put.
   for (const link of graph.eventAssetLinks) {
-    if (!link.retiredRevision && link.eventId === eventId)
+    if (
+      !link.retiredRevision &&
+      link.eventId === eventId &&
+      (link.role === "COVER" || link.role === "GALLERY")
+    )
       link.retiredRevision = graph.revision
   }
   for (const [rank, photo] of photos.entries()) {
@@ -82,6 +102,7 @@ async function setPhotos(
 }
 
 export async function reduceRecordingPhotos(
+  context: AuthContext,
   graph: TargetJourneyGraphSnapshot,
   command: RecordingCommand,
   key: string,
@@ -103,6 +124,7 @@ export async function reduceRecordingPhotos(
         )
     }
     await setPhotos(
+      context,
       graph,
       command.eventId,
       command.photos.map((photo) => ({
@@ -121,6 +143,7 @@ export async function reduceRecordingPhotos(
     if (!links.some((link) => link.assetId === command.assetId))
       throw new JourneyInputError("Photo is not attached to this event")
     await setPhotos(
+      context,
       graph,
       command.eventId,
       selection(links).map((photo) =>
@@ -160,6 +183,7 @@ export async function reduceRecordingPhotos(
   const sourcePhotos = source.filter((link) => link.assetId !== command.assetId)
   destination.splice(at + 1, 0, moved)
   await setPhotos(
+    context,
     graph,
     command.fromEventId,
     selection(sourcePhotos),
@@ -168,6 +192,7 @@ export async function reduceRecordingPhotos(
     now
   )
   await setPhotos(
+    context,
     graph,
     command.toEventId,
     selection(destination),

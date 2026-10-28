@@ -574,6 +574,7 @@ CREATE TABLE "EventAssetLink" (
     "rank" INTEGER NOT NULL,
     "caption" TEXT,
     "locationJson" TEXT,
+    "receiptJson" TEXT,
     "visibility" "AssetVisibility" NOT NULL,
     "introducedRevision" INTEGER NOT NULL,
     "retiredRevision" INTEGER,
@@ -1776,7 +1777,7 @@ BEGIN
     AND (
       NEW."deletedAt" IS NOT NULL OR
       NEW."checksum" <> link."assetChecksum" OR
-      NOT (NEW."ownerId" = journey."ownerId" OR NEW."visibility" = 'PUBLIC') OR
+      NEW."ownerId" <> OLD."ownerId" OR
       CASE link."visibility" WHEN 'PRIVATE' THEN 0 WHEN 'JOURNEY' THEN 1 ELSE 2 END
         > CASE NEW."visibility" WHEN 'PRIVATE' THEN 0 WHEN 'JOURNEY' THEN 1 ELSE 2 END
     )
@@ -1809,7 +1810,10 @@ BEGIN
   WHERE asset."id" = NEW."assetId"
     AND asset."deletedAt" IS NULL
     AND asset."checksum" = NEW."assetChecksum"
-    AND (asset."ownerId" = journey."ownerId" OR asset."visibility" = 'PUBLIC')
+    AND (asset."ownerId" = journey."ownerId" OR asset."visibility" = 'PUBLIC' OR
+      EXISTS (SELECT 1 FROM "EventAssetLink" shared WHERE shared."assetId" = asset."id" AND shared."journeyId" = journey."id") OR
+      (EXISTS (SELECT 1 FROM "JourneyMember" member WHERE member."journeyId" = journey."id" AND member."userId" = asset."ownerId") AND
+       EXISTS (SELECT 1 FROM "JourneyRevision" revision WHERE revision."journeyId" = NEW."journeyId" AND revision."revision" = NEW."introducedRevision" AND revision."actorUserId" = asset."ownerId")))
     AND CASE NEW."visibility" WHEN 'PRIVATE' THEN 0 WHEN 'JOURNEY' THEN 1 ELSE 2 END
         <= CASE asset."visibility" WHEN 'PRIVATE' THEN 0 WHEN 'JOURNEY' THEN 1 ELSE 2 END
 ) THEN
@@ -1832,7 +1836,10 @@ BEGIN
   WHERE asset."id" = NEW."assetId"
     AND asset."deletedAt" IS NULL
     AND asset."checksum" = NEW."assetChecksum"
-    AND (asset."ownerId" = journey."ownerId" OR asset."visibility" = 'PUBLIC')
+    AND (asset."ownerId" = journey."ownerId" OR asset."visibility" = 'PUBLIC' OR
+      EXISTS (SELECT 1 FROM "EventAssetLink" shared WHERE shared."assetId" = asset."id" AND shared."journeyId" = journey."id") OR
+      (EXISTS (SELECT 1 FROM "JourneyMember" member WHERE member."journeyId" = journey."id" AND member."userId" = asset."ownerId") AND
+       EXISTS (SELECT 1 FROM "JourneyRevision" revision WHERE revision."journeyId" = NEW."journeyId" AND revision."revision" = NEW."introducedRevision" AND revision."actorUserId" = asset."ownerId")))
     AND CASE NEW."visibility" WHEN 'PRIVATE' THEN 0 WHEN 'JOURNEY' THEN 1 ELSE 2 END
         <= CASE asset."visibility" WHEN 'PRIVATE' THEN 0 WHEN 'JOURNEY' THEN 1 ELSE 2 END
 ) THEN
@@ -2978,3 +2985,27 @@ END;
 $$;
 CREATE TRIGGER "WorkspaceSession_owner_update_guard" BEFORE UPDATE OF "ownerId", "sourceJourneyId" ON "WorkspaceSession"
 FOR EACH ROW EXECUTE FUNCTION "periplus_guard_636abbbf29bb"();
+
+-- Journey-scoped collaboration does not expose either participant's resource library.
+CREATE TABLE "JourneyMember" (
+  "journeyId" TEXT NOT NULL REFERENCES "Journey"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "JourneyMember_pkey" PRIMARY KEY ("journeyId", "userId")
+);
+CREATE INDEX "JourneyMember_userId_journeyId_idx" ON "JourneyMember"("userId", "journeyId");
+CREATE TABLE "JourneyInvitation" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "journeyId" TEXT NOT NULL REFERENCES "Journey"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "createdById" TEXT NOT NULL REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "tokenHash" TEXT NOT NULL,
+  "expiresAt" TIMESTAMP(3) NOT NULL,
+  "revokedAt" TIMESTAMP(3),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX "JourneyInvitation_tokenHash_key" ON "JourneyInvitation"("tokenHash");
+CREATE INDEX "JourneyInvitation_journeyId_createdAt_idx" ON "JourneyInvitation"("journeyId", "createdAt");
+ALTER TABLE "JourneyRevision" ADD CONSTRAINT "JourneyRevision_actorUserId_fkey"
+ FOREIGN KEY ("actorUserId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "EventAssetLink" ADD CONSTRAINT "EventAssetLink_receipt_check"
+ CHECK ("receiptJson" IS NULL OR ("role" = 'RECEIPT' AND jsonb_typeof("receiptJson"::jsonb) = 'object'));

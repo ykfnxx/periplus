@@ -293,13 +293,16 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  sessions          Session[]          @relation("UserSessions")
-  accounts          Account[]          @relation("UserAccounts")
-  journeys          Journey[]          @relation("OwnedJourneys")
-  workspaces        WorkspaceSession[] @relation("OwnedWorkspaces")
-  assets            Asset[]            @relation("OwnedAssets")
-  sourcePacks       SourcePack[]       @relation("OwnedSourcePacks")
-  providerUsageLogs ProviderUsageLog[] @relation("UserProviderUsage")
+  sessions           Session[]           @relation("UserSessions")
+  accounts           Account[]           @relation("UserAccounts")
+  journeys           Journey[]           @relation("OwnedJourneys")
+  workspaces         WorkspaceSession[]  @relation("OwnedWorkspaces")
+  assets             Asset[]             @relation("OwnedAssets")
+  sourcePacks        SourcePack[]        @relation("OwnedSourcePacks")
+  providerUsageLogs  ProviderUsageLog[]  @relation("UserProviderUsage")
+  journeyMemberships JourneyMember[]
+  journeyInvitations JourneyInvitation[]
+  journeyRevisions   JourneyRevision[]   @relation("JourneyUserActor")
 
   @@map("user")
 }
@@ -376,6 +379,8 @@ model Journey {
   workspaces       WorkspaceSession[]        @relation("JourneyWorkspaces")
   assetLinks       EventAssetLink[]          @relation("JourneyAssetLinks")
   sourceLinks      EventSourceLink[]         @relation("JourneySourceLinks")
+  members          JourneyMember[]
+  invitations      JourneyInvitation[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -397,6 +402,7 @@ model JourneyRevision {
   workspaceRevisionId String?   @unique
   createdAt           DateTime  @default(now())
 
+  actorUser         User?              @relation("JourneyUserActor", fields: [actorUserId], references: [id], onDelete: Restrict)
   journey           Journey            @relation("JourneyRevisions", fields: [journeyId], references: [id], onDelete: Restrict)
   parent            JourneyRevision?   @relation("JourneyRevisionLineage", fields: [journeyId, parentRevisionId], references: [journeyId, id], onDelete: Restrict)
   child             JourneyRevision?   @relation("JourneyRevisionLineage")
@@ -909,6 +915,7 @@ model EventAssetLink {
   rank               Int
   caption            String?
   locationJson       String?
+  receiptJson        String?
   visibility         AssetVisibility
   introducedRevision Int
   retiredRevision    Int?
@@ -1185,4 +1192,29 @@ model ProviderUsageLog {
   @@index([agentRunId])
   @@index([requestId])
   @@index([createdAt])
+}
+
+model JourneyMember {
+  journeyId String
+  userId    String
+  joinedAt  DateTime @default(now())
+  journey   Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([journeyId, userId])
+  @@index([userId, journeyId])
+}
+
+model JourneyInvitation {
+  id          String    @id @default(uuid())
+  journeyId   String
+  createdById String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  journey     Journey   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([journeyId, createdAt])
 }

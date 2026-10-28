@@ -162,3 +162,9 @@ tests/                  unit、Storybook、map integration 与 E2E
 ## License
 
 [MIT](./LICENSE) © 2026 ykfnxx
+
+### 本地账单识别与共写游记
+
+账单识别使用开发服务器上本地运行的 PaddleOCR，原图经 OpenDAL 读取后以 Base64 传给 `/ocr`，不经过规划 Agent 或托管视觉模型。参见 [PaddleOCR 官方部署接口](https://www.paddleocr.ai/v3.3.2/en/version3.x/pipeline_usage/OCR.html)。在 Linux 的独立 Python 3.11 环境安装 `ops/ocr/requirements.txt`，激活该环境后运行 `ops/ocr/start.sh`；模型首次启动需要下载，默认只监听 `127.0.0.1:8106`。Web 的 `.env.local` 配置 `PERIPLUS_OCR_URL=http://127.0.0.1:8106/ocr`。可用 `PERIPLUS_OCR_PORT` 更换服务端口，并相应修改 URL。
+
+识别只返回待确认字段，无法确定的金额、币种或日期留空；用户修改确认后通过事件命令保存结构化账单及原图。识别暂不可用时仍可手动填写。邀请链接默认七天有效，作者可读取已发邀请和撤销；好友登录接受后可直接添加自己的事件、照片和账单。旅程作者可整理全篇，事件来源与照片上传者分别保留；成员权限不开放任何人的未共享素材库。

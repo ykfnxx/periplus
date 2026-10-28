@@ -78,7 +78,12 @@ export function projectRecording(
       createdAt: event.createdAt,
       updatedAt: event.updatedAt,
       photos: graph.eventAssetLinks
-        .filter((link) => !link.retiredRevision && link.eventId === event.id)
+        .filter(
+          (link) =>
+            !link.retiredRevision &&
+            link.eventId === event.id &&
+            (link.role === "COVER" || link.role === "GALLERY")
+        )
         .sort(
           (left, right) =>
             left.rank - right.rank || left.assetId.localeCompare(right.assetId)
