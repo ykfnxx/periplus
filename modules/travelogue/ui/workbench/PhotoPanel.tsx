@@ -1,4 +1,5 @@
 "use client"
+import RevisionReload from "./RevisionReload"
 import { MAX_RECORDING_PHOTO_CAPTION_LENGTH } from "@/modules/data-model/contracts/recording"
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useReducedMotion } from "motion/react"
@@ -14,43 +15,48 @@ import { useStore } from "zustand"
 import { eventTitle } from "../display"
 import { useConfirmation } from "./Modal"
 import PhotoLocationEditor from "./PhotoLocationEditor"
+import UserSource from "./UserSource"
 
 function SortablePhoto({
   id,
   index,
   busy,
+  canSort,
   children,
 }: {
   id: string
   index: number
   busy: boolean
+  canSort: boolean
   children: ReactNode
 }) {
   const reduced = useReducedMotion()
   const { ref, handleRef, isDragging } = useSortable({
     id,
     index,
-    disabled: busy,
+    disabled: busy || !canSort,
     transition: { duration: reduced ? 0 : 220, easing: "ease", idle: false },
   })
   return (
     <section
-      ref={ref}
+      ref={canSort ? ref : undefined}
       data-photo-id={id}
       className={`grid grid-cols-2 gap-2 rounded-xl border border-ink-10 bg-soft-white p-3 ${isDragging ? "shadow-periplus" : ""}`}
     >
       <div className="col-span-2 flex items-center justify-between">
         <span className="text-xs text-walnut">第 {index + 1} 张</span>
-        <Button
-          ref={handleRef}
-          aria-label={`拖动照片 ${index + 1}`}
-          variant="ghost"
-          shape="square"
-          size="sm"
-          className="cursor-grab touch-none"
-        >
-          <GripVertical size={16} />
-        </Button>
+        {canSort && (
+          <Button
+            ref={handleRef}
+            aria-label={`拖动照片 ${index + 1}`}
+            variant="ghost"
+            shape="square"
+            size="sm"
+            className="cursor-grab touch-none"
+          >
+            <GripVertical size={16} />
+          </Button>
+        )}
       </div>
       {children}
     </section>
@@ -129,6 +135,7 @@ export default function PhotoPanel({
 }) {
   const { journey, uploads } = useStore(store)
   const entry = journey!.events.find((event) => event.id === eventId)!
+  const canSort = journey?.role === "OWNER"
   const input = useRef<HTMLInputElement>(null)
   const drafts = useRef(new Set<string>())
   const [busy, setBusy] = useState(false)
@@ -171,7 +178,7 @@ export default function PhotoPanel({
     <div className="space-y-4">
       <h3 className="text-xl font-black">整理照片</h3>
       <p className="text-sm leading-6 text-walnut">
-        无定位照片也能添加。拖动把手调整顺序，移除只解除记录关联。
+        无定位照片也能添加，移除只解除记录关联。
       </p>
       <input
         ref={input}
@@ -195,11 +202,13 @@ export default function PhotoPanel({
           {error}
         </p>
       )}
+      <RevisionReload store={store} />
       <DragDropProvider
         onDragEnd={(event) => {
           const source = event.operation.source
           if (
             event.canceled ||
+            !canSort ||
             !isSortable(source) ||
             source.index === source.initialIndex
           )
@@ -240,6 +249,7 @@ export default function PhotoPanel({
               id={photo.assetId}
               index={index}
               busy={busy}
+              canSort={canSort}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -247,46 +257,69 @@ export default function PhotoPanel({
                 alt={photo.caption || `照片 ${index + 1}`}
                 className="h-16 w-full rounded-lg object-cover"
               />
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy || photo.isCover}
-                onClick={() =>
-                  void run(() =>
-                    setPhotos((entry) => ({
-                      photos: entry.photos.map(({ assetId, caption }) => ({
-                        assetId,
-                        caption,
-                      })),
-                      coverAssetId: photo.assetId,
-                    }))
-                  )
-                }
-              >
-                {photo.isCover ? "当前封面" : "设为这段封面"}
-              </Button>
-              <Caption
-                photo={photo}
-                onDirty={report}
-                onSave={async (caption) => {
-                  await store.getState().mutate({
-                    name: "photo.update",
-                    eventId,
-                    assetId: photo.assetId,
-                    patch: { caption },
-                  })
-                }}
-              />
-              <div className="col-span-2">
-                <PhotoLocationEditor
-                  key={`${photo.assetId}:${JSON.stringify(photo.location)}`}
-                  photo={photo}
-                  entry={entry}
-                  store={store}
-                  onDirty={report}
-                />
-              </div>
-              {journey!.events.length > 1 && (
+              {canSort && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || photo.isCover}
+                  onClick={() =>
+                    void run(() =>
+                      setPhotos((entry) => ({
+                        photos: entry.photos.map(({ assetId, caption }) => ({
+                          assetId,
+                          caption,
+                        })),
+                        coverAssetId: photo.assetId,
+                      }))
+                    )
+                  }
+                >
+                  {photo.isCover ? "当前封面" : "设为这段封面"}
+                </Button>
+              )}
+              {photo.source && (
+                <div className="col-span-2">
+                  <UserSource
+                    user={photo.source}
+                    className="text-journal-muted"
+                  />
+                </div>
+              )}
+              {photo.canEdit === true ? (
+                <>
+                  <Caption
+                    photo={photo}
+                    onDirty={report}
+                    onSave={async (caption) => {
+                      await store.getState().mutate({
+                        name: "photo.update",
+                        eventId,
+                        assetId: photo.assetId,
+                        patch: { caption },
+                      })
+                    }}
+                  />
+                  <div className="col-span-2">
+                    <PhotoLocationEditor
+                      key={`${photo.assetId}:${JSON.stringify(photo.location)}`}
+                      photo={photo}
+                      entry={entry}
+                      store={store}
+                      onDirty={report}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="col-span-2 space-y-2 text-xs text-journal-muted">
+                  <span className="block break-words">{photo.caption}</span>
+                  <span className="block">
+                    {photo.location?.name ||
+                      entry.location?.name ||
+                      "未添加地点"}
+                  </span>
+                </div>
+              )}
+              {photo.canEdit === true && journey!.events.length > 1 && (
                 <Select
                   aria-label={`移动照片 ${index + 1} 到其他记录`}
                   placeholder="移动到其他记录…"
@@ -322,31 +355,33 @@ export default function PhotoPanel({
                   }}
                 />
               )}
-              <Button
-                variant="secondary-destructive"
-                size="sm"
-                disabled={busy}
-                onClick={async () => {
-                  if (await ask("从这段记录移除照片？原素材会保留。"))
-                    void run(() =>
-                      setPhotos((entry) => ({
-                        photos: entry.photos
-                          .filter((item) => item.assetId !== photo.assetId)
-                          .map(({ assetId, caption }) => ({
-                            assetId,
-                            caption,
-                          })),
-                        coverAssetId:
-                          entry.photos.find(
-                            (item) =>
-                              item.isCover && item.assetId !== photo.assetId
-                          )?.assetId || null,
-                      }))
-                    )
-                }}
-              >
-                从记录中移除
-              </Button>
+              {photo.canEdit === true && (
+                <Button
+                  variant="secondary-destructive"
+                  size="sm"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (await ask("从这段记录移除照片？原素材会保留。"))
+                      void run(() =>
+                        setPhotos((entry) => ({
+                          photos: entry.photos
+                            .filter((item) => item.assetId !== photo.assetId)
+                            .map(({ assetId, caption }) => ({
+                              assetId,
+                              caption,
+                            })),
+                          coverAssetId:
+                            entry.photos.find(
+                              (item) =>
+                                item.isCover && item.assetId !== photo.assetId
+                            )?.assetId || null,
+                        }))
+                      )
+                  }}
+                >
+                  从记录中移除
+                </Button>
+              )}
             </SortablePhoto>
           ))}
         </div>

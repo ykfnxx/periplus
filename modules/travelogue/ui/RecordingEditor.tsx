@@ -12,7 +12,7 @@ import { useStore } from "zustand"
 import dynamic from "next/dynamic"
 import { DragDropProvider, PointerSensor, KeyboardSensor } from "@dnd-kit/react"
 import { isSortable } from "@dnd-kit/react/sortable"
-import { ArrowLeft, MoreHorizontal, Plus } from "lucide-react"
+import { ArrowLeft, Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type {
   RecordingJourneySummary,
@@ -29,7 +29,14 @@ import JourneyMenu from "./workbench/JourneyMenu"
 import type { JourneyOpenRequest } from "../data/navigation"
 import JourneySettings from "./workbench/JourneySettings"
 import MapControls from "./workbench/MapControls"
-import { useConfirmation } from "./workbench/Modal"
+import { Modal, useConfirmation } from "./workbench/Modal"
+import RecordingMenu from "./workbench/RecordingMenu"
+import RevisionReload from "./workbench/RevisionReload"
+import ReceiptImport from "./workbench/ReceiptImport"
+import ReceiptDetails from "./workbench/ReceiptDetails"
+import PhotoPanel from "./workbench/PhotoPanel"
+import JourneyMembers from "./workbench/JourneyMembers"
+import { confirmedReceiptFields, receiptFormValues } from "./receipt-display"
 import { dateLabel, eventTitle, recordingCoordinateToMap } from "./display"
 import type { RecordMapPoint, RecordMapRequest } from "./RecordMap"
 import PhotoViewer from "./workbench/PhotoViewer"
@@ -61,7 +68,6 @@ export default function RecordingEditor({
   onBack,
   mapPreview,
   developerMode = false,
-  canEdit = false,
   journeys = [],
   onOpenJourney,
   initialRequest,
@@ -73,7 +79,6 @@ export default function RecordingEditor({
   onBack: () => void
   mapPreview?: ReactNode
   developerMode?: boolean
-  canEdit?: boolean
   journeys?: RecordingJourneySummary[]
   onOpenJourney?: (id: string, request?: JourneyOpenRequest) => void
   directoryError?: string | null
@@ -82,6 +87,8 @@ export default function RecordingEditor({
   initialRequest?: JourneyOpenRequest
 }) {
   const { journey, loading, error, conflict, saving, uploads } = useStore(store)
+  const canEdit = journey?.role === "OWNER" || journey?.role === "MEMBER"
+  const isOwner = journey?.role === "OWNER"
   const [ui] = useState(createWorkbenchStore)
   const {
     picking,
@@ -91,12 +98,24 @@ export default function RecordingEditor({
     dialog,
     detailsId,
     metadata,
+    members,
+    receiptImport,
+    receiptDetails,
+    photoPanelId,
     sheet,
     panelWidth,
     photoViewer,
   } = useStore(ui)
   const { desktop, height, width } = useRecordingViewport()
   const details = journey?.events.find((entry) => entry.id === detailsId)
+  const receiptEvent = journey?.events.find(
+    (entry) => entry.id === receiptDetails?.eventId
+  )
+  const activeReceipt = receiptEvent?.receipts?.find(
+    (receipt) => receipt.id === receiptDetails?.receiptId
+  )
+  const photoEntry = journey?.events.find((entry) => entry.id === photoPanelId)
+  const [photoDirty, setPhotoDirty] = useState(false)
   const [directory, setDirectory] = useState(false)
   const initialApplied = useRef(false)
   const { ask, confirmation } = useConfirmation()
@@ -205,7 +224,12 @@ export default function RecordingEditor({
     eventId: string | null,
     afterEventId: string | null = null
   ) => {
-    if (canEdit) ui.setState({ dialog: { eventId, afterEventId } })
+    if (
+      canEdit &&
+      (!eventId ||
+        journey?.events.find((event) => event.id === eventId)?.canEdit === true)
+    )
+      ui.setState({ dialog: { eventId, afterEventId } })
   }
   const expand = (eventId: string, photoIndex = 0) => {
     const ids = photos
@@ -378,16 +402,16 @@ export default function RecordingEditor({
                   记一笔
                 </Button>
               )}
-              {canEdit && (
-                <Button
-                  variant="ghost"
-                  shape="square"
-                  aria-label="旅程信息"
-                  disabled={!journey}
-                  onClick={() => ui.setState({ metadata: true })}
-                >
-                  <MoreHorizontal size={18} />
-                </Button>
+              {canEdit && journey && (
+                <RecordingMenu
+                  onReceipt={() =>
+                    ui.setState({ receiptImport: { eventId: null } })
+                  }
+                  onMembers={() => ui.setState({ members: true })}
+                  onSettings={
+                    isOwner ? () => ui.setState({ metadata: true }) : undefined
+                  }
+                />
               )}
             </div>
             <nav
@@ -448,7 +472,8 @@ export default function RecordingEditor({
                     event.canceled ||
                     !isSortable(source) ||
                     source.initialIndex === source.index ||
-                    !journey
+                    !journey ||
+                    !isOwner
                   )
                     return
                   const handle = source.handle || source.element
@@ -485,7 +510,13 @@ export default function RecordingEditor({
                     entry={entry}
                     index={index}
                     selected={selected === entry.id}
-                    canEdit={canEdit}
+                    canEdit={entry.canEdit === true}
+                    canMove={isOwner}
+                    onReceipt={(receiptId) =>
+                      ui.setState({
+                        receiptDetails: { eventId: entry.id, receiptId },
+                      })
+                    }
                     onSelect={() => select(entry.id)}
                     onExpand={(photoIndex) => expand(entry.id, photoIndex)}
                     onEdit={() => openEditor(entry.id)}
@@ -527,8 +558,24 @@ export default function RecordingEditor({
           key={details.id}
           entry={details}
           onClose={() => ui.setState({ detailsId: null })}
-          onEdit={
+          onReceipt={(receiptId) =>
+            ui.setState({ receiptDetails: { eventId: details.id, receiptId } })
+          }
+          onAddPhotos={
             canEdit
+              ? () => {
+                  setPhotoDirty(false)
+                  ui.setState({ photoPanelId: details.id })
+                }
+              : undefined
+          }
+          onAddReceipt={
+            canEdit
+              ? () => ui.setState({ receiptImport: { eventId: details.id } })
+              : undefined
+          }
+          onEdit={
+            details.canEdit === true
               ? () => {
                   ui.setState({ detailsId: null })
                   openEditor(details.id)
@@ -553,11 +600,124 @@ export default function RecordingEditor({
           }}
         />
       )}
-      {metadata && journey && canEdit && (
+      {metadata && journey && isOwner && (
         <JourneySettings
           journey={journey}
           store={store}
           onClose={() => ui.setState({ metadata: false })}
+        />
+      )}
+      {members && journey && canEdit && (
+        <JourneyMembers
+          journeyId={journey.id}
+          title={journey.title}
+          owner={isOwner}
+          store={store}
+          onClose={() => ui.setState({ members: false })}
+        />
+      )}
+      {activeReceipt && receiptEvent && (
+        <ReceiptDetails
+          key={activeReceipt.id}
+          receipt={activeReceipt}
+          eventId={receiptEvent.id}
+          store={store}
+          onClose={() => ui.setState({ receiptDetails: null })}
+        />
+      )}
+      {photoEntry && canEdit && (
+        <Modal
+          title="整理照片"
+          hideTitle
+          className="journal-photo-management w-[560px]! p-6! max-sm:top-0! max-sm:left-0! max-sm:h-dvh! max-sm:max-h-dvh! max-sm:w-screen! max-sm:max-w-none! max-sm:translate-none! max-sm:transform-none! max-sm:rounded-none! max-sm:pt-[calc(env(safe-area-inset-top)+24px)]! max-sm:pb-[calc(env(safe-area-inset-bottom)+24px)]!"
+          onClose={() => ui.setState({ photoPanelId: null })}
+          beforeClose={() =>
+            (!photoDirty &&
+              !uploads.some((upload) => upload.eventId === photoEntry.id)) ||
+            ask("未保存输入将被放弃；已开始的上传会继续。", {
+              title: "关闭照片？",
+              cancelLabel: "继续整理",
+              confirmLabel: "关闭照片",
+            })
+          }
+        >
+          {(close) => (
+            <PhotoPanel
+              store={store}
+              eventId={photoEntry.id}
+              onDirtyChange={setPhotoDirty}
+              onClose={close}
+            />
+          )}
+        </Modal>
+      )}
+      {receiptImport && journey && canEdit && (
+        <ReceiptImport
+          events={journey.events.map((entry) => ({
+            id: entry.id,
+            title: eventTitle(entry),
+          }))}
+          initialEventId={receiptImport.eventId}
+          revisionNotice={<RevisionReload store={store} />}
+          recognize={async (file, uploadId) => {
+            const result = await store
+              .getState()
+              .recognizeReceipt(file, uploadId)
+            return {
+              assetId: result.assetId,
+              values: receiptFormValues(result.fields),
+            }
+          }}
+          save={async (review, eventId, saveKey) => {
+            const fields = confirmedReceiptFields(review.values)
+            const receipt = { assetId: review.assetId, ...fields }
+            const result = await store.getState().mutate(
+              eventId
+                ? { name: "receipt.add", eventId, receipt }
+                : {
+                    name: "event.add",
+                    afterEventId:
+                      store.getState().journey!.events.at(-1)?.id || null,
+                    content: {
+                      title: fields.merchant || "账单",
+                      date: fields.date,
+                    },
+                    receipt,
+                  },
+              saveKey
+            )
+            const persistedEvent = result.journey.events.find((entry) =>
+              entry.receipts?.some((item) => item.assetId === review.assetId)
+            )
+            const persisted = persistedEvent?.receipts?.find(
+              (item) => item.assetId === review.assetId
+            )
+            if (!persistedEvent || !persisted)
+              throw new Error("尚未确认账单保存结果，请重试。")
+            if (
+              Object.entries(fields).some(
+                ([key, value]) =>
+                  JSON.stringify(persisted[key as keyof typeof fields]) !==
+                  JSON.stringify(value)
+              )
+            )
+              await store.getState().mutate({
+                name: "receipt.update",
+                eventId: persistedEvent.id,
+                receiptId: persisted.id,
+                fields,
+              })
+            return persistedEvent.id
+          }}
+          onClose={() => ui.setState({ receiptImport: null })}
+          onSaved={(eventId) => {
+            ui.setState({ receiptImport: null, selected: eventId })
+            requestAnimationFrame(() =>
+              document
+                .getElementById(`record-${eventId}`)
+                ?.scrollIntoView({ block: "nearest" })
+            )
+          }}
         />
       )}
       {confirmation}
