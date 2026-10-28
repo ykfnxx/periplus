@@ -7,6 +7,13 @@ import type {
   RecordingMutationResult,
 } from "@/modules/data-model/contracts/recording"
 import type { PhotoDto } from "@/types/photo"
+import type { ReceiptExtraction } from "@/modules/data-model/contracts/receipts"
+import type {
+  JourneyMembers,
+  JourneyInvitations,
+  JourneyInvitationCreated,
+  JourneyInvitationPreview,
+} from "@/modules/data-model/contracts/collaboration"
 
 export class RecordingApiError extends Error {
   constructor(
@@ -24,7 +31,15 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     throw new RecordingApiError(
-      body?.error || "保存请求失败，请重试。",
+      (
+        {
+          OCR_UNAVAILABLE: "账单识别暂时不可用，请稍后重试。",
+          OCR_FAILED: "未能识别这张账单，可重试或换一张清晰图片。",
+          STORAGE_UNAVAILABLE: "图片暂时无法保存，请重试。",
+        } as Record<string, string>
+      )[body?.code] ||
+        body?.error ||
+        "请求失败，请重试。",
       response.status,
       body?.code
     )
@@ -58,5 +73,40 @@ export const recordingApi = {
     body.set("uploadId", uploadId)
     return request<PhotoDto>("/api/photos", { method: "POST", body })
   },
+  extractReceipt: (assetId: string) =>
+    request<ReceiptExtraction>("/api/receipts/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetId }),
+    }),
+  members: (id: string) =>
+    request<JourneyMembers>(`/api/journeys/${encodeURIComponent(id)}/members`),
+  invitations: (id: string) =>
+    request<JourneyInvitations>(
+      `/api/journeys/${encodeURIComponent(id)}/invitations`
+    ),
+  invite: (id: string) =>
+    request<JourneyInvitationCreated>(
+      `/api/journeys/${encodeURIComponent(id)}/invitations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }
+    ),
+  revokeInvitation: (id: string, invitationId: string) =>
+    request<unknown>(
+      `/api/journeys/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitationId)}`,
+      { method: "DELETE" }
+    ),
+  invitation: (token: string) =>
+    request<JourneyInvitationPreview>(
+      `/api/journey-invitations/${encodeURIComponent(token)}`
+    ),
+  acceptInvitation: (token: string) =>
+    request<{ journeyId: string }>(
+      `/api/journey-invitations/${encodeURIComponent(token)}/accept`,
+      { method: "POST" }
+    ),
 }
 export type RecordingApi = typeof recordingApi

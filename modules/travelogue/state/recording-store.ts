@@ -11,6 +11,7 @@ import {
   RecordingApiError,
   type RecordingApi,
 } from "../data/client"
+import type { ReceiptExtraction } from "@/modules/data-model/contracts/receipts"
 export interface RecordUpload {
   id: string
   eventId: string
@@ -41,6 +42,12 @@ interface RecordingState {
   retryUpload: (id: string) => void
   discardUpload: (id: string) => void
   dispose: () => void
+  uploadReceipt: (file: File, uploadId: string) => Promise<string>
+  recognizeReceipt: (assetId: string) => Promise<ReceiptExtraction>
+  collaboration: Pick<
+    RecordingApi,
+    "members" | "invitations" | "invite" | "revokeInvitation"
+  >
 }
 
 export function createRecordingStore(
@@ -59,6 +66,12 @@ export function createRecordingStore(
     error: null,
     conflict: false,
     uploads: [],
+    collaboration: api,
+    uploadReceipt: async (file, uploadId) => {
+      const asset = await api.upload(file, uploadId)
+      return asset.id
+    },
+    recognizeReceipt: (assetId) => api.extractReceipt(assetId),
     load: async () => {
       disposed = false
       set({ loading: true, error: null })

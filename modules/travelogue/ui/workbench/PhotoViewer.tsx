@@ -13,6 +13,7 @@ import { Button } from "@/components/kumo/components/button/button"
 import type { PhotoItem } from "../photo-items"
 import MediaGallery from "./MediaGallery"
 import { Modal } from "./Modal"
+import UserSource from "./UserSource"
 
 function PhotoCaption({ caption }: { caption: string }) {
   const [expanded, setExpanded] = useState(false)
@@ -105,9 +106,12 @@ export default function PhotoViewer({
               </Button>
             </>
           )}
-          {(photo.caption || photo.location || onOpenEvent) && (
+          {(photo.caption || photo.location || photo.source || onOpenEvent) && (
             <footer className="journal-photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-6">
               <div className="min-w-0">
+                {photo.source && (
+                  <UserSource user={photo.source} className="mb-2 text-white" />
+                )}
                 <PhotoCaption key={photo.id} caption={photo.caption} />
                 {onOpenEvent && (
                   <button

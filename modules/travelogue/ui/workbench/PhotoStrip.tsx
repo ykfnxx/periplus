@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
+import UserSource from "./UserSource"
 import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
 
 export default function PhotoStrip({
@@ -74,22 +75,29 @@ export default function PhotoStrip({
         }}
       >
         {photos.map((photo, index) => (
-          <Button
-            key={photo.assetId}
-            variant="ghost"
-            onClick={() => onOpen(index)}
-            aria-label={`查看${title}的照片 ${index + 1}`}
-            className="relative shrink-0 overflow-hidden p-0!"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo.url}
-              alt={photo.caption || ""}
-              loading="lazy"
-              draggable={false}
-              className="h-full w-full object-cover"
-            />
-          </Button>
+          <div key={photo.assetId} className="w-full shrink-0">
+            <Button
+              variant="ghost"
+              onClick={() => onOpen(index)}
+              aria-label={`查看${title}的照片 ${index + 1}`}
+              className="relative shrink-0 overflow-hidden p-0!"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photo.url}
+                alt={photo.caption || ""}
+                loading="lazy"
+                draggable={false}
+                className="h-full w-full object-cover"
+              />
+            </Button>
+            {photo.source && (
+              <UserSource
+                user={photo.source}
+                className="journal-photo-source mt-2 flex! h-5 text-journal-muted"
+              />
+            )}
+          </div>
         ))}
       </div>
       {photos.length > 1 && (

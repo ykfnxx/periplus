@@ -10,11 +10,9 @@ import { journeyHref, type JourneyOpenRequest } from "../data/navigation"
 
 export default function RecordingPage({
   journeyId,
-  canEdit,
   developerMode = false,
 }: {
   journeyId: string
-  canEdit: boolean
   developerMode?: boolean
 }) {
   const router = useRouter()
@@ -73,7 +71,6 @@ export default function RecordingPage({
   }, [reloadDirectory])
   return (
     <RecordingEditor
-      canEdit={canEdit}
       journeys={journeys}
       directoryError={directoryError}
       onRetryDirectory={() => setReloadDirectory((value) => value + 1)}

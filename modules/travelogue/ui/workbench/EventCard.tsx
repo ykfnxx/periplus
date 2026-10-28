@@ -13,6 +13,10 @@ import {
 import { Button } from "@/components/kumo/components/button/button"
 import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
 import PhotoStrip from "./PhotoStrip"
+import UserSource from "./UserSource"
+import ReceiptCard from "./ReceiptCard"
+import { dateLabel } from "../display"
+import { receiptTotal } from "../receipt-display"
 const icons = {
   VISIT: MapPin,
   MEAL: Utensils,
@@ -26,6 +30,8 @@ export default function EventCard({
   index,
   selected,
   canEdit,
+  canMove,
+  onReceipt,
   onSelect,
   onExpand,
   onEdit,
@@ -35,6 +41,8 @@ export default function EventCard({
   index: number
   selected: boolean
   canEdit: boolean
+  canMove: boolean
+  onReceipt: (assetId: string) => void
   onSelect: () => void
   onExpand: (index?: number) => void
   onEdit: () => void
@@ -44,7 +52,7 @@ export default function EventCard({
   const { ref, isDragging } = useSortable({
     id: entry.id,
     index,
-    disabled: !canEdit,
+    disabled: !canMove,
     transition: {
       duration: reduced ? 0 : 220,
       easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
@@ -67,7 +75,7 @@ export default function EventCard({
   const preview = Array.from(body).slice(0, 120).join("")
   return (
     <motion.article
-      ref={canEdit ? ref : undefined}
+      ref={canMove ? ref : undefined}
       id={`record-${entry.id}`}
       data-record-id={entry.id}
       tabIndex={0}
@@ -88,7 +96,7 @@ export default function EventCard({
         }
       }}
       animate={{ opacity: isDragging ? 0.7 : 1 }}
-      className={`journal-card relative scroll-mt-3 outline-offset-4 ${canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+      className={`journal-card relative scroll-mt-3 outline-offset-4 ${canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
     >
       <header className="flex items-start gap-3">
         <Icon
@@ -111,24 +119,39 @@ export default function EventCard({
           </Button>
         )}
       </header>
+      {entry.source && (
+        <div className="mt-2 flex items-center gap-2 text-xs text-journal-muted">
+          <UserSource user={entry.source} />
+          {entry.date && <span>· {dateLabel(entry.date)}</span>}
+        </div>
+      )}
       {body && (
         <>
           <p className="line-clamp-3 break-words">
             {preview}
             {body.length > preview.length ? "…" : ""}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-1 px-0! text-journal-muted!"
-            aria-label={`展开${title}的详情`}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={onRead}
-          >
-            展开详情
-          </Button>
         </>
       )}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mt-1 px-0! text-journal-muted!"
+        aria-label={`展开${title}的详情`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={onRead}
+      >
+        展开详情
+      </Button>
+      {entry.receipts?.map((receipt) => (
+        <ReceiptCard
+          key={receipt.assetId}
+          merchant={receipt.merchant || ""}
+          date={receipt.date ? dateLabel(receipt.date) : ""}
+          total={receiptTotal(receipt)}
+          onOpen={() => onReceipt(receipt.assetId)}
+        />
+      ))}
       {entry.photos.length > 0 && (
         <PhotoStrip photos={entry.photos} title={title} onOpen={onExpand} />
       )}

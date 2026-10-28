@@ -555,6 +555,9 @@ body {
   scroll-snap-align: start;
   scroll-snap-stop: always;
 }
+.journal-photo-strip:has(.journal-photo-source) .journal-photo-nav {
+  top: calc((100% - 28px) / 2);
+}
 .journal-photo-nav {
   position: absolute;
   top: 50%;

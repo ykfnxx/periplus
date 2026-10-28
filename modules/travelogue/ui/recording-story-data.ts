@@ -3,15 +3,47 @@ import type {
   RecordingJourney,
   RecordingEvent,
 } from "@/modules/data-model/contracts/recording"
+import type {
+  Contributor,
+  RecordingReceipt,
+} from "@/modules/data-model/contracts/receipts"
+import type { JourneyInvitation } from "@/modules/data-model/contracts/collaboration"
 import type { RecordingApi } from "../data/client"
 import { RecordingApiError } from "../data/client"
 import lake from "./story-assets/lake.jpg"
 import walk from "./story-assets/walk.jpg"
 import tea from "./story-assets/tea.jpg"
 
+const receiptImage = new URL("./story-assets/receipt.svg", import.meta.url).href
+export const storyOwner: Contributor = {
+  userId: "owner",
+  name: "小林",
+  image: null,
+}
+export const storyFriend: Contributor = {
+  userId: "friend",
+  name: "阿宁",
+  image: null,
+}
+export const storyReceipt: RecordingReceipt = {
+  id: "receipt-tea",
+  assetId: "receipt-image",
+  url: receiptImage,
+  merchant: "西湖茶馆",
+  date: "2026-10-28",
+  total: "92.00",
+  currency: "CNY",
+  items: [{ name: "茶饮", quantity: "2", amount: "92.00" }],
+  source: storyOwner,
+  canEdit: true,
+}
 const now = "2026-10-19T12:00:00Z"
 const eventBase: RecordingEvent = {
   id: "lake",
+  source: storyOwner,
+  canEdit: true,
+  canRemove: true,
+  receipts: [],
   title: "西湖边的傍晚",
   body: "沿着湖边慢慢走，风有点凉。坐在长椅上等天色变暗，今天不赶路。",
   category: "VISIT",
@@ -26,6 +58,8 @@ const eventBase: RecordingEvent = {
   photos: [
     {
       assetId: "lake-photo",
+      source: storyOwner,
+      canEdit: true,
       url: lake.src,
       caption: "风慢慢停下来，湖面变成了温柔的金色。",
       isCover: true,
@@ -33,6 +67,8 @@ const eventBase: RecordingEvent = {
     },
     {
       assetId: "walk-photo",
+      source: storyFriend,
+      canEdit: true,
       url: walk.src,
       caption: "",
       location: null,
@@ -40,6 +76,8 @@ const eventBase: RecordingEvent = {
     },
     {
       assetId: "tea-photo",
+      source: storyOwner,
+      canEdit: true,
       url: tea.src,
       caption: "",
       location: null,
@@ -51,6 +89,7 @@ const eventBase: RecordingEvent = {
 }
 export const storyJourney: RecordingJourney = {
   id: "hangzhou",
+  role: "OWNER",
   revision: 1,
   title: "杭州慢游",
   description: "湖边散步，巷子里喝茶，留一点时间给自己。",
@@ -81,6 +120,8 @@ export const storyJourney: RecordingJourney = {
       photos: [
         {
           assetId: "tea-2",
+          source: storyOwner,
+          canEdit: true,
           url: tea.src,
           caption: "",
           location: null,
@@ -115,7 +156,13 @@ export const storyJourney: RecordingJourney = {
 export function createStoryRecordingApi(
   empty = false,
   uploadDelay = 0,
-  initialJourney = storyJourney
+  initialJourney = storyJourney,
+  failures: {
+    upload?: boolean
+    extraction?: boolean | "always"
+    save?: boolean
+    conflict?: boolean
+  } = {}
 ): RecordingApi {
   let journey = structuredClone({
     ...initialJourney,
@@ -126,6 +173,12 @@ export function createStoryRecordingApi(
     { journey: RecordingJourney; eventId?: string; replayed: boolean }
   >()
   const assets = new Map<string, string>()
+  const viewer = initialJourney.role === "MEMBER" ? storyFriend : storyOwner
+  let uploadFailed = false,
+    extractionFailed = false,
+    saveFailed = false,
+    conflictFailed = false
+  let invitations: JourneyInvitation[] = []
   return {
     get: async () => structuredClone(journey),
     atlas: async () => ({ journeys: [], photos: [] }),
@@ -134,7 +187,58 @@ export function createStoryRecordingApi(
       journey: structuredClone(journey),
       replayed: false,
     }),
+    members: async () => ({
+      members: [
+        { user: storyOwner, role: "OWNER", joinedAt: now },
+        { user: storyFriend, role: "MEMBER", joinedAt: now },
+      ],
+    }),
+    invitations: async () => ({ invitations: structuredClone(invitations) }),
+    invite: async () => {
+      const invitation = {
+        id: operationId(),
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+        revokedAt: null,
+      }
+      invitations.push(invitation)
+      return {
+        invitation: structuredClone(invitation),
+        url: `https://example.test/join/${invitation.id}`,
+      }
+    },
+    revokeInvitation: async (_journeyId, id) => {
+      invitations = invitations.map((item) =>
+        item.id === id ? { ...item, revokedAt: new Date().toISOString() } : item
+      )
+      return {}
+    },
+    invitation: async () => ({
+      journeyId: journey.id,
+      journeyTitle: journey.title,
+      owner: storyOwner,
+      expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+    }),
+    acceptInvitation: async () => ({ journeyId: journey.id }),
+    extractReceipt: async (assetId) => {
+      if (
+        failures.extraction &&
+        (!extractionFailed || failures.extraction === "always")
+      ) {
+        extractionFailed = true
+        throw new RecordingApiError("识别暂时失败，请重试。", 503)
+      }
+      const { merchant, date, total, currency, items } = storyReceipt
+      return {
+        assetId,
+        fields: { merchant, date, total, currency, items },
+        lines: [{ text: "西湖茶馆 合计 92.00", confidence: 0.97 }],
+      }
+    },
     upload: async (file, uploadId) => {
+      if (failures.upload && !uploadFailed) {
+        uploadFailed = true
+        throw new RecordingApiError("图片上传失败，请重试。", 503)
+      }
       if (uploadDelay)
         await new Promise((resolve) => setTimeout(resolve, uploadDelay))
       if (!assets.has(uploadId)) assets.set(uploadId, URL.createObjectURL(file))
@@ -157,6 +261,42 @@ export function createStoryRecordingApi(
       if (mutation.expectedRevision !== journey.revision)
         throw new RecordingApiError("记录已更新", 409, "REVISION_CONFLICT")
       const command = mutation.command
+      if (
+        (command.name === "event.update" ||
+          command.name === "receipt.update" ||
+          command.name === "receipt.add" ||
+          (command.name === "event.add" && command.receipt)) &&
+        failures.conflict &&
+        !conflictFailed
+      ) {
+        conflictFailed = true
+        if (command.name === "receipt.update") {
+          const receipt = journey.events
+            .find((event) => event.id === command.eventId)!
+            .receipts!.find((item) => item.id === command.receiptId)!
+          // 模拟同行者先完成核对：后端替换修订关联，原图身份不变。
+          receipt.id = operationId()
+          receipt.total = "95.00"
+        } else if (command.name === "event.update") {
+          journey.events.find((event) => event.id === command.eventId)!.body =
+            "同行者先保存了这段记录。"
+        }
+        journey.revision += 1
+        throw new RecordingApiError(
+          "记录已有同行者的修改。",
+          409,
+          "REVISION_CONFLICT"
+        )
+      }
+      if (
+        (command.name === "receipt.add" ||
+          (command.name === "event.add" && command.receipt)) &&
+        failures.save &&
+        !saveFailed
+      ) {
+        saveFailed = true
+        throw new RecordingApiError("保存失败，核对内容保留，请重试。", 503)
+      }
       let eventId: string | undefined
       if (command.name === "journey.update")
         Object.assign(journey, command.patch)
@@ -164,6 +304,20 @@ export function createStoryRecordingApi(
         eventId = operationId()
         const entry: RecordingEvent = {
           id: eventId,
+          source: viewer,
+          canEdit: true,
+          canRemove: true,
+          receipts: command.receipt
+            ? [
+                {
+                  ...command.receipt,
+                  id: operationId(),
+                  url: assets.get(command.receipt.assetId) || receiptImage,
+                  source: viewer,
+                  canEdit: true,
+                },
+              ]
+            : [],
           title: "",
           body: "",
           category: null,
@@ -214,7 +368,14 @@ export function createStoryRecordingApi(
         )!
         const existing = journey.events.flatMap((event) => event.photos)
         event.photos = command.photos.map((photo) => ({
+          ...existing.find((item) => item.assetId === photo.assetId),
           ...photo,
+          source:
+            existing.find((item) => item.assetId === photo.assetId)?.source ||
+            viewer,
+          canEdit:
+            existing.find((item) => item.assetId === photo.assetId)?.canEdit ??
+            true,
           location:
             event.photos.find((item) => item.assetId === photo.assetId)
               ?.location ?? null,
@@ -223,6 +384,34 @@ export function createStoryRecordingApi(
             assets.get(photo.assetId)!,
           isCover: photo.assetId === command.coverAssetId,
         }))
+      } else if (command.name === "receipt.add") {
+        const event = journey.events.find(
+          (event) => event.id === command.eventId
+        )!
+        eventId = event.id
+        event.receipts = [
+          ...(event.receipts || []),
+          {
+            ...command.receipt,
+            id: operationId(),
+            url: assets.get(command.receipt.assetId) || receiptImage,
+            source: viewer,
+            canEdit: true,
+          },
+        ]
+      } else if (command.name === "receipt.update") {
+        const receipt = journey.events
+          .find((event) => event.id === command.eventId)!
+          .receipts!.find((receipt) => receipt.id === command.receiptId)!
+        // receipt.update 会退役旧关联并创建新 ID，不能用关联 ID 保持详情身份。
+        Object.assign(receipt, command.fields, { id: operationId() })
+      } else if (command.name === "receipt.remove") {
+        const event = journey.events.find(
+          (event) => event.id === command.eventId
+        )!
+        event.receipts = event.receipts?.filter(
+          (receipt) => receipt.id !== command.receiptId
+        )
       } else if (command.name === "photo.update") {
         Object.assign(
           journey.events
@@ -267,4 +456,21 @@ export function createStoryRecordingApi(
       return structuredClone(result)
     },
   }
+}
+
+export const sharedJourney: RecordingJourney = {
+  ...storyJourney,
+  role: "MEMBER",
+  events: storyJourney.events.map((event, index) => ({
+    ...event,
+    source: index === 1 ? storyFriend : storyOwner,
+    canEdit: index === 1,
+    canRemove: index === 1,
+    receipts: index === 0 ? [{ ...storyReceipt, canEdit: false }] : [],
+    photos: event.photos.map((photo, photoIndex) => ({
+      ...photo,
+      source: photoIndex === 1 ? storyFriend : storyOwner,
+      canEdit: photoIndex === 1,
+    })),
+  })),
 }

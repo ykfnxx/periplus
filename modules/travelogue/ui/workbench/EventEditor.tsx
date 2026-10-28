@@ -1,4 +1,5 @@
 "use client"
+import RevisionReload from "./RevisionReload"
 import { useEffect, useRef, useState } from "react"
 import { useStore } from "zustand"
 import { ChevronLeft, MoreHorizontal } from "lucide-react"
@@ -188,18 +189,20 @@ export default function EventEditor({
                   {view === "edit" ? "取消" : "返回"}
                 </Button>
                 <div className="flex items-center gap-2">
-                  {entry && view === "edit" && (
-                    <Button
-                      variant="ghost"
-                      shape="circle"
-                      size="sm"
-                      aria-label="整理记录"
-                      disabled={busy}
-                      onClick={() => setView("actions")}
-                    >
-                      <MoreHorizontal size={18} />
-                    </Button>
-                  )}
+                  {entry &&
+                    view === "edit" &&
+                    (journey?.role === "OWNER" || entry.canRemove === true) && (
+                      <Button
+                        variant="ghost"
+                        shape="circle"
+                        size="sm"
+                        aria-label="整理记录"
+                        disabled={busy}
+                        onClick={() => setView("actions")}
+                      >
+                        <MoreHorizontal size={18} />
+                      </Button>
+                    )}
                   {view === "edit" && (
                     <Button
                       variant="primary"
@@ -211,6 +214,9 @@ export default function EventEditor({
                   )}
                 </div>
               </header>
+              <div className="mx-6 md:mx-9">
+                <RevisionReload store={store} onReload={() => setError(null)} />
+              </div>
               {error && (
                 <p
                   role="alert"

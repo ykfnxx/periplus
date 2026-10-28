@@ -1,4 +1,5 @@
 "use client"
+import RevisionReload from "./RevisionReload"
 import { useState } from "react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
@@ -92,8 +93,9 @@ export default function JourneySettings({
               }}
             />
             <p className="text-sm text-walnut">
-              结束旅行不影响继续补记，内容仍仅自己可见。
+              结束旅行不影响继续补记，内容仅对本旅程成员可见。
             </p>
+            <RevisionReload store={store} />
             {error && (
               <p role="alert" className="text-sm text-coral">
                 {error}
