@@ -215,7 +215,7 @@ export default function EventEditor({
                 </div>
               </header>
               <div className="mx-6 md:mx-9">
-                <RevisionReload store={store} />
+                <RevisionReload store={store} onReload={() => setError(null)} />
               </div>
               {error && (
                 <p

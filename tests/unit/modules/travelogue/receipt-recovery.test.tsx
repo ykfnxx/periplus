@@ -16,6 +16,7 @@ import {
 import { createRecordingStore } from "@/modules/travelogue/state/recording-store"
 import RecordingEditor from "@/modules/travelogue/ui/RecordingEditor"
 import ReceiptImport from "@/modules/travelogue/ui/workbench/ReceiptImport"
+import EventEditor from "@/modules/travelogue/ui/workbench/EventEditor"
 
 const fields = {
   merchant: "茶馆",
@@ -267,4 +268,59 @@ describe("receipt recovery", () => {
       expect(command).toHaveBeenCalledTimes(conflict ? 3 : 2)
     }
   )
+})
+
+describe("event draft conflict recovery", () => {
+  it("clears the obsolete warning and saves preserved input after two consecutive conflicts", async () => {
+    let persisted = savedJourney()
+    const command = vi.fn<typeof recordingApi.command>(
+      async (_id, mutation) => {
+        if (mutation.expectedRevision !== persisted.revision)
+          throw new RecordingApiError("同行者已修改", 409, "REVISION_CONFLICT")
+        if (mutation.command.name !== "event.update")
+          throw new Error("Unexpected command")
+        Object.assign(persisted.events[0], mutation.command.patch)
+        persisted.revision++
+        return { journey: structuredClone(persisted), replayed: false }
+      }
+    )
+    const store = createRecordingStore("journey", {
+      ...recordingApi,
+      get: async () => structuredClone(persisted),
+      command,
+    })
+    await store.getState().load()
+    const onSaved = vi.fn()
+    render(
+      <EventEditor
+        store={store}
+        request={{ eventId: "event", afterEventId: null }}
+        onClose={() => {}}
+        onSaved={onSaved}
+        onPickLocation={async () => undefined}
+      />
+    )
+    for (let turn = 1; turn <= 2; turn++) {
+      const body = `第 ${turn} 轮保留的本人草稿`
+      fireEvent.change(screen.getByLabelText("记录正文"), {
+        target: { value: body },
+      })
+      // Another page commits before this editor; its snapshot stays stale until reread.
+      persisted = structuredClone(persisted)
+      persisted.events[0].body = `同行者第 ${turn} 轮修改`
+      persisted.revision++
+      fireEvent.click(screen.getByRole("button", { name: "保存" }))
+      const reload = await screen.findByRole("button", { name: "读取最新记录" })
+      await act(async () => {
+        fireEvent.click(reload)
+      })
+      expect(screen.getByLabelText("记录正文")).toHaveValue(body)
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole("button", { name: "保存" }))
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(turn))
+      expect(persisted.events[0].body).toBe(body)
+      expect(screen.getByRole("status")).toHaveTextContent("已保存")
+    }
+    expect(command).toHaveBeenCalledTimes(4)
+  })
 })

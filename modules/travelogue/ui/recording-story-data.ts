@@ -262,7 +262,8 @@ export function createStoryRecordingApi(
         throw new RecordingApiError("记录已更新", 409, "REVISION_CONFLICT")
       const command = mutation.command
       if (
-        (command.name === "receipt.update" ||
+        (command.name === "event.update" ||
+          command.name === "receipt.update" ||
           command.name === "receipt.add" ||
           (command.name === "event.add" && command.receipt)) &&
         failures.conflict &&
@@ -276,6 +277,9 @@ export function createStoryRecordingApi(
           // 模拟同行者先完成核对：后端替换修订关联，原图身份不变。
           receipt.id = operationId()
           receipt.total = "95.00"
+        } else if (command.name === "event.update") {
+          journey.events.find((event) => event.id === command.eventId)!.body =
+            "同行者先保存了这段记录。"
         }
         journey.revision += 1
         throw new RecordingApiError(
