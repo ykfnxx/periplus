@@ -315,6 +315,10 @@ export const ReceiptOcrUnavailable: Story = {
   render: () => <EditorStory failures={{ extraction: "always" }} />,
 }
 
+export const EventConflict: Story = {
+  render: () => <EditorStory failures={{ conflict: true }} />,
+}
+
 export const ReceiptEditConflict: Story = {
   render: () => (
     <EditorStory
