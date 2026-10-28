@@ -1,7 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { CalendarDays, MapPin, Pencil, X } from "lucide-react"
+import {
+  CalendarDays,
+  MapPin,
+  Pencil,
+  X,
+  Camera,
+  ReceiptText,
+} from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
 import { dateLabel, eventTitle } from "../display"
@@ -9,15 +16,24 @@ import { photoItems } from "../photo-items"
 import { Modal } from "./Modal"
 import PhotoStrip from "./PhotoStrip"
 import PhotoViewer from "./PhotoViewer"
+import UserSource from "./UserSource"
+import ReceiptCard from "./ReceiptCard"
+import { receiptTotal } from "../receipt-display"
 
 export default function EventDetails({
   entry,
   onClose,
   onEdit,
+  onReceipt,
+  onAddPhotos,
+  onAddReceipt,
 }: {
   entry: RecordingEvent
   onClose: () => void
   onEdit?: () => void
+  onReceipt: (receiptId: string) => void
+  onAddPhotos?: () => void
+  onAddReceipt?: () => void
 }) {
   const [photoIndex, setPhotoIndex] = useState<number | null>(null)
   const title = eventTitle(entry)
@@ -52,6 +68,14 @@ export default function EventDetails({
             </Button>
           </header>
           <div className="px-6 pb-8 md:px-9">
+            {entry.source && (
+              <div className="mb-4">
+                <UserSource
+                  user={entry.source}
+                  className="text-journal-muted"
+                />
+              </div>
+            )}
             {(entry.date || entry.location) && (
               <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-journal-muted">
                 {entry.date && (
@@ -73,12 +97,37 @@ export default function EventDetails({
                 {entry.body}
               </p>
             )}
+            {entry.receipts?.map((receipt) => (
+              <ReceiptCard
+                key={receipt.id}
+                merchant={receipt.merchant || ""}
+                date={receipt.date ? dateLabel(receipt.date) : ""}
+                total={receiptTotal(receipt)}
+                onOpen={() => onReceipt(receipt.id)}
+              />
+            ))}
             {entry.photos.length > 0 && (
               <PhotoStrip
                 photos={entry.photos}
                 title={title}
                 onOpen={setPhotoIndex}
               />
+            )}
+            {(onAddPhotos || onAddReceipt) && (
+              <div className="mt-5 flex flex-wrap gap-2">
+                {onAddPhotos && (
+                  <Button variant="secondary" onClick={onAddPhotos}>
+                    <Camera size={16} />
+                    补照片
+                  </Button>
+                )}
+                {onAddReceipt && (
+                  <Button variant="ghost" onClick={onAddReceipt}>
+                    <ReceiptText size={16} />
+                    加账单
+                  </Button>
+                )}
+              </div>
             )}
           </div>
           {photoIndex !== null && (

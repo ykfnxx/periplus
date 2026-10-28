@@ -8,9 +8,13 @@ import { authClient } from "@/modules/auth/client"
 
 interface LoginFormProps {
   onSwitchToRegister: () => void
+  onAuthenticated?: () => void
 }
 
-export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
+export default function LoginForm({
+  onSwitchToRegister,
+  onAuthenticated,
+}: LoginFormProps) {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -35,8 +39,11 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       return
     }
 
-    router.replace("/journeys")
-    router.refresh()
+    if (onAuthenticated) onAuthenticated()
+    else {
+      router.replace("/journeys")
+      router.refresh()
+    }
   }
 
   return (
@@ -64,7 +71,7 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       )}
       <Button
         variant="primary"
-        className="w-full"
+        className="w-full justify-center!"
         type="submit"
         loading={isSubmitting}
       >

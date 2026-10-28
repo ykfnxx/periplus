@@ -9,7 +9,12 @@ import LandingGate from "@/modules/auth/ui/LandingGate"
 import JourneyLibrary from "./JourneyLibrary"
 import RecordingEditor from "./RecordingEditor"
 import { createRecordingStore } from "../state/recording-store"
-import { createStoryRecordingApi, storyJourney } from "./recording-story-data"
+import {
+  createStoryRecordingApi,
+  storyJourney,
+  storyReceipt,
+  sharedJourney,
+} from "./recording-story-data"
 import lake from "./story-assets/lake.jpg"
 import walk from "./story-assets/walk.jpg"
 import tea from "./story-assets/tea.jpg"
@@ -109,6 +114,7 @@ function EditorStory({
   longContent = false,
   onBack = () => {},
   initialJourney = storyJourney,
+  failures,
 }: {
   empty?: boolean
   slowUpload?: boolean
@@ -116,6 +122,12 @@ function EditorStory({
   longContent?: boolean
   onBack?: () => void
   initialJourney?: RecordingJourney
+  failures?: {
+    upload?: boolean
+    extraction?: boolean
+    save?: boolean
+    conflict?: boolean
+  }
 }) {
   const [store] = useState(() =>
     createRecordingStore(
@@ -143,7 +155,26 @@ function EditorStory({
                     }
               ),
             }
-          : initialJourney
+          : !canEdit
+            ? {
+                ...initialJourney,
+                role: undefined,
+                events: initialJourney.events.map((event) => ({
+                  ...event,
+                  canEdit: false,
+                  canRemove: false,
+                  photos: event.photos.map((photo) => ({
+                    ...photo,
+                    canEdit: false,
+                  })),
+                  receipts: event.receipts?.map((receipt) => ({
+                    ...receipt,
+                    canEdit: false,
+                  })),
+                })),
+              }
+            : initialJourney,
+        failures
       )
     )
   )
@@ -153,7 +184,6 @@ function EditorStory({
   }, [store])
   return (
     <RecordingEditor
-      canEdit={canEdit}
       store={store}
       onBack={onBack}
       journeys={library}
@@ -253,4 +283,30 @@ const photoMapJourney: RecordingJourney = {
 }
 export const MapPhotos: Story = {
   render: () => <EditorStory initialJourney={photoMapJourney} />,
+}
+
+export const Receipts: Story = {
+  render: () => (
+    <EditorStory
+      initialJourney={{
+        ...storyJourney,
+        events: [
+          { ...storyJourney.events[0], receipts: [storyReceipt] },
+          ...storyJourney.events.slice(1),
+        ],
+      }}
+    />
+  ),
+}
+export const ReceiptFailures: Story = {
+  render: () => (
+    <EditorStory failures={{ upload: true, extraction: true, save: true }} />
+  ),
+}
+export const SharedJournal: Story = {
+  render: () => <EditorStory initialJourney={sharedJourney} />,
+}
+
+export const ReceiptConflict: Story = {
+  render: () => <EditorStory failures={{ conflict: true }} />,
 }

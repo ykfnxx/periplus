@@ -104,7 +104,7 @@ export default function JourneyMenu({
                       </span>
                     </span>
                   </Button>
-                  {onRename && (
+                  {onRename && journey.role === "OWNER" && (
                     <Button
                       variant="ghost"
                       shape="square"
