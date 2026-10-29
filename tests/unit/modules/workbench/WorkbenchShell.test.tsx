@@ -1,11 +1,31 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
-import { createSilkRoadJourney } from "@/lib/mock-journeys"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { singleChainJourney } from "@/tests/storybook/journey-fixtures"
 import type { TargetWorkspaceSummary } from "@/modules/data-model/contracts"
 import WorkbenchShell from "@/modules/workbench/ui/WorkbenchShell"
 import type { WorkspaceSwitcherController } from "@/modules/workbench/ui/WorkspaceSwitcherPanel"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
+
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+  }))
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  )
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+})
+afterEach(() => vi.unstubAllGlobals())
 
 const workspaceHistory: TargetWorkspaceSummary[] = [
   {
@@ -54,13 +74,13 @@ describe("mobile workbench presentation flow", () => {
     })
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
     act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(
-          workspaceDocumentForStory(
-            createSilkRoadJourney({ id: "journey", ownerId: "owner" })
-          )
-        )
+      useWorkspaceStore.getState().applyWorkspaceDocument(
+        workspaceDocumentForStory({
+          ...singleChainJourney,
+          id: "journey",
+          ownerId: "owner",
+        })
+      )
     })
   })
 
@@ -92,13 +112,13 @@ describe("wide workbench presentation flow", () => {
     })
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
     act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(
-          workspaceDocumentForStory(
-            createSilkRoadJourney({ id: "journey", ownerId: "owner" })
-          )
-        )
+      useWorkspaceStore.getState().applyWorkspaceDocument(
+        workspaceDocumentForStory({
+          ...singleChainJourney,
+          id: "journey",
+          ownerId: "owner",
+        })
+      )
     })
   })
 
@@ -142,13 +162,13 @@ describe("workspace manager interaction flow", () => {
     })
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
     act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(
-          workspaceDocumentForStory(
-            createSilkRoadJourney({ id: "journey", ownerId: "owner" })
-          )
-        )
+      useWorkspaceStore.getState().applyWorkspaceDocument(
+        workspaceDocumentForStory({
+          ...singleChainJourney,
+          id: "journey",
+          ownerId: "owner",
+        })
+      )
       useWorkspaceStore.setState({ composerInput: "保留的草稿" })
     })
   })
@@ -203,7 +223,7 @@ describe("workspace manager interaction flow", () => {
         .getState()
         .applyWorkspaceDocument(
           workspaceDocumentForStory(
-            createSilkRoadJourney({ id: "journey", ownerId: "owner" }),
+            { ...singleChainJourney, id: "journey", ownerId: "owner" },
             { locked: true }
           )
         )

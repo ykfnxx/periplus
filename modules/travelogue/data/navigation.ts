@@ -1,9 +1,9 @@
-import type { RecordingLocation } from "@/modules/data-model/contracts/recording"
+import type { EventLocation } from "@/modules/data-model/contracts"
 
 export type JourneyOpenRequest = {
   eventId?: string
   add?: boolean
-  location?: RecordingLocation
+  location?: EventLocation
 }
 export function journeyHref(id: string, request?: JourneyOpenRequest) {
   const query = new URLSearchParams()

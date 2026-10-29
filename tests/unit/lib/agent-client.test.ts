@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { bootstrapWorkspace } from "@/lib/agent/client"
-import { createSilkRoadJourney } from "@/lib/mock-journeys"
+import { singleChainJourney } from "@/tests/storybook/journey-fixtures"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
 
 function bootstrapResponse(ticket: string) {
-  const workspace = workspaceDocumentForStory(
-    createSilkRoadJourney({ id: "journey-1", ownerId: "owner-1" })
-  )
+  const workspace = workspaceDocumentForStory({
+    ...singleChainJourney,
+    id: "journey-1",
+    ownerId: "owner-1",
+  })
   workspace.session.id = "workspace-1"
   return new Response(JSON.stringify({ workspace, ticket }), {
     status: 200,

@@ -7,9 +7,8 @@ import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import RoutePolyline from "./RoutePolyline"
 import RouteMarkers from "./RouteMarkers"
 import PhotoMarkers from "./PhotoMarkers"
-import LocationSelector from "./LocationSelector"
 import LocationInfoBubble from "./LocationInfoBubble"
-import MapRouteLevelControls from "./MapRouteLevelControls"
+import MapJourneySummary from "./MapJourneySummary"
 import MapViewportController from "./MapViewportController"
 
 interface MapSurfaceProps {
@@ -40,17 +39,7 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
         })
 
         mapInstance.addControl(new AMap.Scale())
-        mapInstance.on("click", (event) => {
-          if (useWorkspaceStore.getState().isSelectingLocation) {
-            onIntent?.({
-              type: "map.location-picked",
-              coordinate: {
-                lat: event.lnglat.getLat(),
-                lng: event.lnglat.getLng(),
-              },
-            })
-            return
-          }
+        mapInstance.on("click", () => {
           onIntent?.({ type: "map.background-clicked" })
         })
 
@@ -93,10 +82,9 @@ export default function MapSurface({ onIntent }: MapSurfaceProps) {
       <RoutePolyline key="polyline" onIntent={onIntent} />
       <RouteMarkers key="markers" onIntent={onIntent} />
       <LocationInfoBubble key="location-info" />
-      <PhotoMarkers key="photo-markers" onIntent={onIntent} />
-      <LocationSelector key="location-selector" />
+      <PhotoMarkers key="photo-markers" />
       <MapViewportController key="map-viewport-controller" />
-      {!mapError && <MapRouteLevelControls key="map-route-level-controls" />}
+      {!mapError && <MapJourneySummary key="map-route-level-controls" />}
     </div>
   )
 }

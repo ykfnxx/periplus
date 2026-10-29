@@ -242,7 +242,7 @@ function DialogContent({
     role === "alertdialog" ? AlertDialogBase.Popup : DialogBase.Popup
 
   return (
-    <BasePortal container={container}>
+    <BasePortal container={container} className="relative z-50">
       <BaseBackdrop
         render={
           <motion.div

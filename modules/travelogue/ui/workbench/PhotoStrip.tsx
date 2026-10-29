@@ -3,14 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import UserSource from "./UserSource"
-import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
 
 export default function PhotoStrip({
   photos,
   title,
   onOpen,
 }: {
-  photos: RecordingEvent["photos"]
+  photos: JourneyEvent["photos"]
   title: string
   onOpen: (index: number) => void
 }) {

@@ -5,7 +5,7 @@ import {
   connectAgentSocket,
   sendAgentEvent,
 } from "@/lib/agent/client"
-import { createSilkRoadJourney } from "@/lib/mock-journeys"
+import { singleChainJourney } from "@/tests/storybook/journey-fixtures"
 import AgentSync from "@/modules/workbench/ui/AgentSync"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
@@ -29,9 +29,11 @@ class FakeWebSocket extends EventTarget {
 }
 
 function bootstrap() {
-  const workspace = workspaceDocumentForStory(
-    createSilkRoadJourney({ id: "journey-1", ownerId: "owner-1" })
-  )
+  const workspace = workspaceDocumentForStory({
+    ...singleChainJourney,
+    id: "journey-1",
+    ownerId: "owner-1",
+  })
   workspace.session.id = "workspace-1"
   return { workspace, ticket: "ticket-1" }
 }
@@ -132,7 +134,7 @@ describe("AgentSync", () => {
 
     const updated = structuredClone(response.workspace)
     updated.session.headWorkspaceRevision = 2
-    updated.session.flatJourney.revision = 2
+    updated.session.journey.revision = 2
     act(() =>
       socket.dispatchEvent(
         new MessageEvent("message", {
@@ -143,7 +145,7 @@ describe("AgentSync", () => {
               revision: 2,
               document: updated,
               summary: "增加了故宫，并按步行顺序调整路线。",
-              changedEventIds: [updated.session.flatJourney.events[0]!.eventId],
+              changedEventIds: [updated.session.journey.events[0]!.id],
             },
           }),
         })
@@ -157,7 +159,7 @@ describe("AgentSync", () => {
     expect(useWorkspaceStore.getState().journeyCommitPresentation).toEqual({
       revision: 2,
       summary: "增加了故宫，并按步行顺序调整路线。",
-      changedEventIds: [updated.session.flatJourney.events[0]!.eventId],
+      changedEventIds: [updated.session.journey.events[0]!.id],
     })
   })
 

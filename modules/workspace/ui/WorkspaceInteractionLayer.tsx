@@ -1,6 +1,5 @@
 "use client"
 
-import PhotoLightbox from "@/modules/workbench/ui/PhotoLightbox"
 import WorkbenchShell from "@/modules/workbench/ui/WorkbenchShell"
 import type { WorkspaceSwitcherController } from "@/modules/workbench/ui/WorkspaceSwitcherPanel"
 import WorkspaceCornerControls from "@/modules/workbench/ui/WorkspaceCornerControls"
@@ -32,7 +31,6 @@ function WorkspaceInteractionContent({
     <div className="pointer-events-none absolute inset-0 z-10">
       <WorkbenchShell workspaceSwitcher={workspaceSwitcher} />
       <WorkspaceCornerControls />
-      <PhotoLightbox />
     </div>
   )
 }

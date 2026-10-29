@@ -4,10 +4,10 @@ import dynamic from "next/dynamic"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
-import type { RecordingEventContent } from "@/modules/data-model/contracts/recording"
+import type { EventContent } from "@/modules/data-model/contracts"
 import { recordingCoordinateToMap } from "../display"
 const RecordMap = dynamic(() => import("../RecordMap"), { ssr: false })
-type Location = NonNullable<RecordingEventContent["location"]>
+type Location = NonNullable<EventContent["location"]>
 export default function LocationPanel({
   initialLocation,
   onSave,

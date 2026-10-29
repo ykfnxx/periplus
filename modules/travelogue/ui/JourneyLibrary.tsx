@@ -5,9 +5,9 @@ import { Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
 import type {
-  RecordingJourneySummary,
-  RecordingMapPhoto,
-} from "@/modules/data-model/contracts/recording"
+  JourneySummary,
+  MapPhoto as AtlasPhoto,
+} from "@/modules/data-model/contracts"
 import type { JourneyOpenRequest } from "../data/navigation"
 import MapControls from "./workbench/MapControls"
 import JourneyMenu from "./workbench/JourneyMenu"
@@ -18,8 +18,8 @@ import type { RecordMapRequest } from "./RecordMap"
 import { atlasViewStore } from "../state/atlas-view-store"
 import type { MapPhoto } from "./usePhotoMapLayer"
 const RecordMap = dynamic(() => import("./RecordMap"), { ssr: false })
-export type JourneyLibraryItem = RecordingJourneySummary
-const emptyPhotos: RecordingMapPhoto[] = []
+export type JourneyLibraryItem = JourneySummary
+const emptyPhotos: AtlasPhoto[] = []
 const atlasInsets = { left: 32, right: 76, top: 88, bottom: 32 }
 
 export default function JourneyLibrary({
@@ -34,7 +34,7 @@ export default function JourneyLibrary({
   developerMode = false,
 }: {
   journeys: JourneyLibraryItem[]
-  photos?: RecordingMapPhoto[]
+  photos?: AtlasPhoto[]
   loading: boolean
   error: string | null
   onCreate: (title: string, request?: JourneyOpenRequest) => Promise<void>

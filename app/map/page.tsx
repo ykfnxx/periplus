@@ -6,7 +6,5 @@ interface MapPageProps {
 
 export default async function MapPage({ searchParams }: MapPageProps) {
   const { journey } = await searchParams
-  redirect(
-    journey ? `/workspace?journey=${encodeURIComponent(journey)}` : "/workspace"
-  )
+  redirect(journey ? `/journeys/${encodeURIComponent(journey)}` : "/journeys")
 }

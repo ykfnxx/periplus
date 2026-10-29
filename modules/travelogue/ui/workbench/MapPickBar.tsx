@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
-import type { RecordingLocation } from "@/modules/data-model/contracts/recording"
+import type { EventLocation } from "@/modules/data-model/contracts"
 
 export default function MapPickBar({
   location,
@@ -11,8 +11,8 @@ export default function MapPickBar({
   onConfirm,
   onRemove,
 }: {
-  location: RecordingLocation | null
-  onChange: (location: RecordingLocation | null) => void
+  location: EventLocation | null
+  onChange: (location: EventLocation | null) => void
   onCancel: () => void
   onRemove: () => void
   onConfirm: () => void

@@ -15,9 +15,10 @@ import { isSortable } from "@dnd-kit/react/sortable"
 import { ArrowLeft, Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type {
-  RecordingJourneySummary,
-  RecordingLocation,
-} from "@/modules/data-model/contracts/recording"
+  JourneySummary,
+  EventLocation,
+} from "@/modules/data-model/contracts"
+import { eventCalendarDate } from "@/lib/journeys/calendar"
 import MapPickBar from "./workbench/MapPickBar"
 import type { RecordingStore } from "../state/recording-store"
 import { createWorkbenchStore } from "../state/workbench-store"
@@ -68,6 +69,7 @@ export default function RecordingEditor({
   onBack,
   mapPreview,
   developerMode = false,
+  readOnly = false,
   journeys = [],
   onOpenJourney,
   initialRequest,
@@ -79,7 +81,8 @@ export default function RecordingEditor({
   onBack: () => void
   mapPreview?: ReactNode
   developerMode?: boolean
-  journeys?: RecordingJourneySummary[]
+  readOnly?: boolean
+  journeys?: JourneySummary[]
   onOpenJourney?: (id: string, request?: JourneyOpenRequest) => void
   directoryError?: string | null
   onRetryDirectory?: () => void
@@ -87,8 +90,9 @@ export default function RecordingEditor({
   initialRequest?: JourneyOpenRequest
 }) {
   const { journey, loading, error, conflict, saving, uploads } = useStore(store)
-  const canEdit = journey?.role === "OWNER" || journey?.role === "MEMBER"
-  const isOwner = journey?.role === "OWNER"
+  const canEdit =
+    !readOnly && (journey?.role === "OWNER" || journey?.role === "MEMBER")
+  const isOwner = !readOnly && journey?.role === "OWNER"
   const [ui] = useState(createWorkbenchStore)
   const {
     picking,
@@ -121,10 +125,10 @@ export default function RecordingEditor({
   const { ask, confirmation } = useConfirmation()
   const [mapRequest, setMapRequest] = useState<RecordMapRequest | null>(null)
   const pickResult = useRef<
-    ((location: RecordingLocation | null | undefined) => void) | null
+    ((location: EventLocation | null | undefined) => void) | null
   >(null)
   const finishPick = useCallback(
-    (location: RecordingLocation | null | undefined) => {
+    (location: EventLocation | null | undefined) => {
       ui.setState({ picking: null })
       pickResult.current?.(location)
       pickResult.current = null
@@ -132,9 +136,9 @@ export default function RecordingEditor({
     [ui]
   )
   const cancelPick = useCallback(() => finishPick(undefined), [finishPick])
-  function pickLocation(location: RecordingLocation | null) {
+  function pickLocation(location: EventLocation | null) {
     ui.setState({ picking: { location } })
-    return new Promise<RecordingLocation | null | undefined>((resolve) => {
+    return new Promise<EventLocation | null | undefined>((resolve) => {
       pickResult.current = resolve
     })
   }
@@ -142,11 +146,15 @@ export default function RecordingEditor({
   const days = useMemo(
     () =>
       Array.from(
-        new Set(journey?.events.map((event) => event.date || "undated") || [])
+        new Set(
+          journey?.events.map(
+            (event) => eventCalendarDate(event) || "undated"
+          ) || []
+        )
       ).map((key) => ({
         key,
         first: journey!.events.find(
-          (event) => (event.date || "undated") === key
+          (event) => (eventCalendarDate(event) || "undated") === key
         )!.id,
       })),
     [journey]
@@ -297,6 +305,7 @@ export default function RecordingEditor({
       <div className="absolute inset-0">
         {mapPreview || (
           <RecordMap
+            events={journey?.events}
             points={points}
             photos={mapPhotos}
             onOpenPhotos={(ids) =>
@@ -510,7 +519,7 @@ export default function RecordingEditor({
                     entry={entry}
                     index={index}
                     selected={selected === entry.id}
-                    canEdit={entry.canEdit === true}
+                    canEdit={canEdit && entry.canEdit === true}
                     canMove={isOwner}
                     onReceipt={(assetId) =>
                       ui.setState({
@@ -575,7 +584,7 @@ export default function RecordingEditor({
               : undefined
           }
           onEdit={
-            details.canEdit === true
+            canEdit && details.canEdit === true
               ? () => {
                   ui.setState({ detailsId: null })
                   openEditor(details.id)
@@ -621,7 +630,7 @@ export default function RecordingEditor({
           key={`${receiptEvent.id}:${activeReceipt.assetId}`}
           receipt={activeReceipt}
           eventId={receiptEvent.id}
-          store={store}
+          store={canEdit ? store : undefined}
           onClose={() => ui.setState({ receiptDetails: null })}
         />
       )}

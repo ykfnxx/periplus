@@ -4,7 +4,7 @@ import RevisionReload from "./RevisionReload"
 import { useState } from "react"
 import { Pencil } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
-import type { RecordingReceipt } from "@/modules/data-model/contracts/receipts"
+import type { Receipt } from "@/modules/data-model/contracts/receipts"
 import type { RecordingStore } from "../../state/recording-store"
 import {
   confirmedReceiptFields,
@@ -22,9 +22,9 @@ export default function ReceiptDetails({
   store,
   onClose,
 }: {
-  receipt: RecordingReceipt
+  receipt: Receipt
   eventId: string
-  store: RecordingStore
+  store?: RecordingStore
   onClose: () => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -53,7 +53,9 @@ export default function ReceiptDetails({
       >
         {(close) => (
           <div className="space-y-5">
-            <RevisionReload store={store} onReload={() => setError(null)} />
+            {store && (
+              <RevisionReload store={store} onReload={() => setError(null)} />
+            )}
             {error && (
               <p role="alert" className="text-sm text-coral">
                 {error}
@@ -103,7 +105,7 @@ export default function ReceiptDetails({
                 />
               </>
             )}
-            {receipt.canEdit && (
+            {store && receipt.canEdit && (
               <div className="flex flex-wrap justify-end gap-2">
                 {editing ? (
                   <>

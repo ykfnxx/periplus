@@ -7,7 +7,7 @@ import {
   Plus,
 } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
-import type { RecordingJourneySummary } from "@/modules/data-model/contracts/recording"
+import type { JourneySummary } from "@/modules/data-model/contracts"
 import { journeyDateLabel } from "../display"
 
 export default function JourneyMenu({
@@ -24,7 +24,7 @@ export default function JourneyMenu({
   onRetry,
 }: {
   title?: string
-  journeys: RecordingJourneySummary[]
+  journeys: JourneySummary[]
   onOpen: (id: string) => void
   onCreate: () => void
   onRename?: (id: string) => void

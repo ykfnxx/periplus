@@ -3,10 +3,9 @@
 import { useState } from "react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import type {
-  TargetJourneyGraphSnapshot,
+  JourneySnapshot,
   TargetWorkspaceDocument,
 } from "@/modules/data-model/contracts"
-import { projectFlatJourney } from "@/modules/data/journeys/flat-journey-projection"
 
 const EXAMPLE_JSON = `[
   {"name": "北京", "lat": 39.9042, "lng": 116.4074},
@@ -62,47 +61,42 @@ export default function DebugPanel() {
       const journeyId = `debug-${Date.now()}`
       const eventIds = points.map((_, index) => `${journeyId}-event-${index}`)
       const now = new Date().toISOString()
-      const graph: TargetJourneyGraphSnapshot = {
+      const journey: JourneySnapshot = {
         id: journeyId,
         ownerId: "debug-user",
-        revision: 1,
+        role: "OWNER",
+        revision: 0,
         title: "调试路线",
         description: "通过坐标调试工具创建",
         status: "DRAFT",
         visibility: "PRIVATE",
+        createdAt: now,
+        updatedAt: now,
         events: points.map((point, index) => ({
           id: eventIds[index],
-          journeyId,
-          parentSectionEventId: null,
-          placementStatus: "SCHEDULED",
-          type: "VISIT",
-          origin: "USER_INSERTED",
-          executionStatus: "PLANNED",
           title: point.name,
-          introducedRevision: 1,
+          body: "",
+          category: "VISIT",
+          date: null,
+          time: null,
+          timeZone: null,
+          source: { userId: "debug-user", name: "调试用户", image: null },
+          canEdit: false,
+          canRemove: false,
+          location: {
+            name: point.name,
+            address: null,
+            coordinates: {
+              lat: point.lat,
+              lng: point.lng,
+              coordinateSystem: "GCJ02",
+            },
+          },
+          photos: [],
+          receipts: [],
           createdAt: now,
           updatedAt: now,
-          detail: {
-            plannedLat: point.lat,
-            plannedLng: point.lng,
-            coordinateSystem: "GCJ02",
-          },
         })),
-        links: eventIds.slice(1).map((toEventId, index) => ({
-          id: `${journeyId}-link-${index}`,
-          journeyId,
-          fromEventId: eventIds[index],
-          toEventId,
-          kind: "MAIN",
-          rank: index,
-          introducedRevision: 1,
-        })),
-        replacements: [],
-        branchSelections: [],
-        transitPlanningRuns: [],
-        eventAssetLinks: [],
-        observations: [],
-        eventSourceLinks: [],
       }
       const document: TargetWorkspaceDocument = {
         session: {
@@ -113,8 +107,7 @@ export default function DebugPanel() {
           headWorkspaceRevision: 0,
           status: "ACTIVE",
           title: "新工作区",
-          headGraph: graph,
-          flatJourney: projectFlatJourney(graph, 0),
+          journey,
           lastAccessAt: now,
           createdAt: now,
           updatedAt: now,

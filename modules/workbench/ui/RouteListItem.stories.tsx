@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { fn } from "storybook/test"
-import { silkRoadJourney } from "@/lib/mock-journeys"
+import { singleChainJourney } from "@/tests/storybook/journey-fixtures"
 import RouteListItem from "./RouteListItem"
 
 const meta = {
@@ -13,7 +13,7 @@ const meta = {
       </div>
     ),
   ],
-  args: { journey: silkRoadJourney, onSelect: fn() },
+  args: { journey: singleChainJourney, onSelect: fn() },
 } satisfies Meta<typeof RouteListItem>
 
 export default meta
@@ -24,7 +24,7 @@ export const Default: Story = {}
 export const LongContent: Story = {
   args: {
     journey: {
-      ...silkRoadJourney,
+      ...singleChainJourney,
       title: "一条用于验证标题截断、描述换行和计数布局的超长旅行路线名称",
       description: "较窄面板内的超长说明文字仍应保持清晰层级。",
     },

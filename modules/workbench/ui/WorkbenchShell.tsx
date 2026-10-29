@@ -17,7 +17,7 @@ import {
 import { measuredWorkspaceViewportInsets } from "@/modules/workspace/viewport"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
-  selectWorkspaceJourneyView,
+  selectWorkspaceJourney,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
 import type {
@@ -53,7 +53,7 @@ export default function WorkbenchShell({
     () => new Set()
   )
   const chatMessages = useWorkspaceStore((state) => state.chatMessages)
-  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
+  const journey = useWorkspaceStore(selectWorkspaceJourney)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const workbenchTab = useWorkspaceStore((state) => state.workbenchTab)
   const setWorkbenchTab = useWorkspaceStore((state) => state.setWorkbenchTab)
@@ -64,7 +64,11 @@ export default function WorkbenchShell({
   const setMapViewportInsets = useWorkspaceStore(
     (state) => state.setMapViewportInsets
   )
-  const showInitialState = chatMessages.length === 0 && !isWorkspaceLocked
+  const bootstrapped = useWorkspaceStore(
+    (state) => state.workspaceDocument !== null
+  )
+  const showInitialState =
+    bootstrapped && chatMessages.length === 0 && !isWorkspaceLocked
 
   useEffect(() => {
     const section = sectionRef.current
@@ -166,7 +170,7 @@ export default function WorkbenchShell({
       >
         <MobileSheetHandle
           snap={mobileSheetSnap}
-          routeName={graph?.title ?? "行程工作台"}
+          routeName={journey?.title ?? "行程工作台"}
           onSnapChange={setMobileSheetSnap}
         />
         {mobileSheetSnap === "collapsed" ? null : (
@@ -251,11 +255,11 @@ function AIWorkbenchContent({
 }: {
   showInitialState: boolean
 }) {
-  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
+  const journey = useWorkspaceStore(selectWorkspaceJourney)
 
   return (
     <>
-      {graph ? (
+      {journey ? (
         <div className="shrink-0">
           <p className="px-5 pb-2 text-[11px] font-black text-teak">
             当前上下文

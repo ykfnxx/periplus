@@ -1,8 +1,8 @@
 import { bd09ToGcj02, wgs84ToGcj02 } from "@/lib/journeys/coordinates"
 import type {
-  RecordingEvent,
-  RecordingJourneySummary,
-} from "@/modules/data-model/contracts/recording"
+  JourneyEvent,
+  JourneySummary,
+} from "@/modules/data-model/contracts"
 
 export function dateLabel(date: string) {
   const [, month, day] = date.split("-")
@@ -10,7 +10,7 @@ export function dateLabel(date: string) {
 }
 
 export function journeyDateLabel(
-  journey: Pick<RecordingJourneySummary, "startDate" | "endDate">
+  journey: Pick<JourneySummary, "startDate" | "endDate">
 ) {
   if (!journey.startDate) return "日期待补"
   return journey.endDate && journey.endDate !== journey.startDate
@@ -18,16 +18,14 @@ export function journeyDateLabel(
     : dateLabel(journey.startDate)
 }
 
-export function eventTitle(event: Pick<RecordingEvent, "title" | "body">) {
+export function eventTitle(event: Pick<JourneyEvent, "title" | "body">) {
   return (
     event.title || event.body.trim().split("\n")[0]?.slice(0, 40) || "一段经历"
   )
 }
 
 export function recordingCoordinateToMap(
-  coordinates: NonNullable<
-    NonNullable<RecordingEvent["location"]>["coordinates"]
-  >
+  coordinates: NonNullable<NonNullable<JourneyEvent["location"]>["coordinates"]>
 ) {
   const { lng, lat, coordinateSystem } = coordinates
   const pair =

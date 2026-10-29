@@ -1,29 +1,24 @@
 "use client"
 
+import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft } from "lucide-react"
 import {
   deriveJourneyDayGroups,
   type JourneyDayProjection,
 } from "@/lib/journeys/day-groups"
-import {
-  getJourneyScopeProjection,
-  getJourneyScopeTreeEvents,
-} from "@/lib/journeys/projections"
-import { totalDurationDays } from "@/lib/journeys/summary"
+
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import {
-  selectWorkspaceJourneyView,
+  selectWorkspaceJourney,
   selectWorkspaceLocked,
 } from "@/modules/workspace/state/selectors"
-import RouteOverview from "./RouteOverview"
-import RouteScopeTabs from "./RouteScopeTabs"
+import RouteDayNavigation from "./RouteDayNavigation"
 import RouteTimeline from "./RouteTimeline"
 
 const EMPTY_DAY_PROJECTION: JourneyDayProjection = {
   groups: [],
   groupKeyByEventId: new Map(),
-  hasValidTimeZone: true,
 }
 
 export default function RoutePreview({
@@ -35,32 +30,24 @@ export default function RoutePreview({
   const dayNavigationLockedRef = useRef(false)
   const dayNavigationTimeoutRef = useRef<number | null>(null)
   const [activeDayKey, setActiveDayKey] = useState<string | null>(null)
-  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
-  const viewLevel = useWorkspaceStore((state) => state.viewLevel)
-  const activeSectionEventId = useWorkspaceStore(
-    (state) => state.activeSectionEventId
-  )
+  const journey = useWorkspaceStore(selectWorkspaceJourney)
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
+  const sourceJourneyId = useWorkspaceStore(
+    (state) => state.workspaceDocument?.session.sourceJourneyId
+  )
   const commitPresentation = useWorkspaceStore(
     (state) => state.journeyCommitPresentation
   )
-  const view = getJourneyScopeProjection(graph, viewLevel, activeSectionEventId)
-  const dayProjection = useMemo(() => {
-    if (view.level !== "section" || view.section?.detail.kind !== "CITY") {
-      return EMPTY_DAY_PROJECTION
-    }
-    return deriveJourneyDayGroups(view.events, view.section.detail.timeZone)
-  }, [view.events, view.level, view.section])
+  const dayProjection = useMemo(
+    () =>
+      journey ? deriveJourneyDayGroups(journey.events) : EMPTY_DAY_PROJECTION,
+    [journey]
+  )
   const visibleActiveDayKey = dayProjection.groups.some(
     (group) => group.key === activeDayKey
   )
     ? activeDayKey
     : (dayProjection.groups[0]?.key ?? null)
-
-  useEffect(() => {
-    const scrollContainer = rootRef.current?.closest(".periplus-chat-scroll")
-    if (scrollContainer) scrollContainer.scrollTop = 0
-  }, [activeSectionEventId, viewLevel])
 
   useEffect(
     () => () => {
@@ -130,36 +117,19 @@ export default function RoutePreview({
     [dayProjection.groups]
   )
 
-  if (!graph) {
-    return (
-      <div className="flex h-full min-h-72 items-center justify-center px-6 text-center text-sm leading-6 text-teak">
-        暂无路线预览
-      </div>
-    )
-  }
-
-  const durationDays = totalDurationDays(
-    getJourneyScopeTreeEvents(graph, viewLevel, activeSectionEventId)
-  )
-  const scopeLabel = "城市行程"
-  const title =
-    view.level === "overview"
-      ? `${graph.title}${durationDays ? ` · ${durationDays} 天` : ""}`
-      : `${view.title}${durationDays ? ` · ${durationDays} 天` : ""}`
+  const title = journey?.title ?? "旅程"
 
   return (
-    <div ref={rootRef} data-route-preview className="min-h-full">
+    <div ref={rootRef} data-route-preview className="journal-shell min-h-full">
       <header
         data-route-preview-header
         className="sticky top-0 z-10 bg-soft-white/98 px-5 pt-4 pb-3 backdrop-blur-sm"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-black text-teak">
-              {view.level === "overview" ? "行程总览" : scopeLabel}
-            </p>
+            <p className="text-[11px] font-black text-teak">旅程事件</p>
             <h1
-              aria-label={view.level === "overview" ? graph.title : view.title}
+              aria-label={title}
               className="mt-1 truncate text-[22px] leading-7 font-black text-ink"
             >
               {title}
@@ -179,8 +149,15 @@ export default function RoutePreview({
             ) : null}
           </div>
         </div>
-        <div className="mt-3 h-px bg-ink-10" />
-        <RouteScopeTabs
+        {sourceJourneyId && (
+          <Link
+            href={`/journeys/${encodeURIComponent(sourceJourneyId)}`}
+            className="mt-3 inline-block text-xs font-semibold text-russet"
+          >
+            打开旅程编辑
+          </Link>
+        )}
+        <RouteDayNavigation
           dayGroups={dayProjection.groups}
           activeDayKey={visibleActiveDayKey}
           onSelectDay={handleSelectDay}
@@ -201,26 +178,18 @@ export default function RoutePreview({
         </div>
       ) : null}
 
-      {view.events.length === 0 && view.level === "overview" ? (
-        <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
-          路线尚无地点，可以在 AI 面板中添加第一站。
-        </div>
-      ) : view.level === "overview" ? (
-        <RouteOverview
-          changedEventIds={commitPresentation?.changedEventIds ?? []}
-        />
-      ) : view.isEmptySection ? (
-        <div className="m-5 rounded-xl border border-dashed border-ink-20 bg-white/45 p-4 text-sm leading-6 text-walnut">
-          这个城市还没有安排地点，可以在 AI 面板中继续规划。
-        </div>
-      ) : (
+      {journey?.events.length === 0 ? (
+        <p className="px-5 py-6 text-sm leading-6 text-teak">
+          还没有记录，可以添加经历或让 AI 帮你规划。
+        </p>
+      ) : journey ? (
         <RouteTimeline
-          items={view.items}
+          events={journey.events}
           dayProjection={dayProjection}
           onActiveDayChange={handleActiveDayChange}
           changedEventIds={commitPresentation?.changedEventIds ?? []}
         />
-      )}
+      ) : null}
     </div>
   )
 }

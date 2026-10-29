@@ -2,17 +2,16 @@ import { useState } from "react"
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import MapSurface from "@/modules/map-renderer/ui/MapSurface"
 import type {
-  TargetJourneyGraphSnapshot,
+  JourneySnapshot,
   TargetWorkspaceSummary,
 } from "@/modules/data-model/contracts"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { dispatchMapIntent } from "@/modules/workspace/ui/WorkspaceController"
 import WorkspaceInteractionLayer from "@/modules/workspace/ui/WorkspaceInteractionLayer"
-import { deriveFlatJourneyLayout } from "@/lib/journeys/flat-workspace-projection"
 import {
-  dunhuangRouteStoryJourney,
-  silkRoadJourneyWithPlans,
-} from "@/tests/storybook/route-fixtures"
+  planningJourney,
+  singleChainJourney,
+} from "@/tests/storybook/journey-fixtures"
 import {
   withWorkspaceState,
   workspaceDocumentForStory,
@@ -25,14 +24,14 @@ const STORY_NOW = Date.parse("2026-08-12T10:00:00+08:00")
 const workspaceHistory: TargetWorkspaceSummary[] = [
   {
     id: "storybook-workspace",
-    sourceJourneyId: silkRoadJourneyWithPlans.id,
-    title: silkRoadJourneyWithPlans.title,
+    sourceJourneyId: singleChainJourney.id,
+    title: singleChainJourney.title,
     preview: "把敦煌多留一天，再确认兰州到张掖的交通顺序",
     updatedAt: "2026-08-12T09:48:00+08:00",
   },
   {
     id: "workspace-dunhuang",
-    sourceJourneyId: dunhuangRouteStoryJourney.id,
+    sourceJourneyId: singleChainJourney.id,
     title: "敦煌壁画与河西古道",
     preview: "莫高窟上午参观，下午沿鸣沙山安排轻松一些",
     updatedAt: "2026-08-12T07:35:00+08:00",
@@ -78,10 +77,10 @@ function WorkspaceManagementSurface() {
   const activateWorkspace = (workspace: TargetWorkspaceSummary) => {
     setCurrentWorkspaceId(workspace.id)
     const document = workspaceDocumentForStory(
-      graphForWorkspaceStory(workspace)
+      journeyForWorkspaceStory(workspace)
     )
     document.session.id = workspace.id
-    useWorkspaceStore.setState({ workspaceDocument: document })
+    useWorkspaceStore.getState().applyWorkspaceDocument(document)
   }
 
   const createWorkspace = () => {
@@ -143,44 +142,26 @@ function WorkspaceManagementSurface() {
   )
 }
 
-function graphForWorkspaceStory(workspace: TargetWorkspaceSummary) {
-  const baseGraph =
+function journeyForWorkspaceStory(workspace: TargetWorkspaceSummary) {
+  const baseJourney =
     workspace.id === "workspace-dunhuang"
-      ? dunhuangRouteStoryJourney
-      : silkRoadJourneyWithPlans
-  const graph: TargetJourneyGraphSnapshot = {
-    ...baseGraph,
+      ? singleChainJourney
+      : singleChainJourney
+  const journey: JourneySnapshot = {
+    ...baseJourney,
     title: workspace.title,
   }
 
-  if (workspace.id !== "workspace-new") return graph
+  if (workspace.id !== "workspace-new") return journey
 
   return {
-    ...graph,
+    ...journey,
     events: [],
-    links: [],
-    replacements: [],
-    branchSelections: [],
-    transitPlanningRuns: [],
-    eventAssetLinks: [],
-    observations: [],
-    eventSourceLinks: [],
   }
 }
 
-function cityWorkspaceState(
-  graph: TargetJourneyGraphSnapshot,
-  cityName: string
-) {
-  const workspaceDocument = workspaceDocumentForStory(graph)
-  const segment = deriveFlatJourneyLayout(
-    workspaceDocument.session.flatJourney
-  ).segments.find((candidate) => candidate.city.name === cityName)
-  return {
-    workspaceDocument,
-    viewLevel: "section" as const,
-    activeSectionEventId: segment?.id ?? null,
-  }
+function journeyWorkspaceState(journey: JourneySnapshot) {
+  return { workspaceDocument: workspaceDocumentForStory(journey) }
 }
 
 const meta = {
@@ -216,7 +197,7 @@ export const ProductionWorkspace: Story = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans),
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney),
       workbenchTab: "preview",
       composerInput: "保留行程调整要求",
     }),
@@ -229,7 +210,7 @@ export const DateNavigationWorkspace: Story = {
   },
   decorators: [
     withWorkspaceState({
-      ...cityWorkspaceState(dunhuangRouteStoryJourney, "敦煌"),
+      ...journeyWorkspaceState(singleChainJourney),
       workbenchTab: "preview",
       composerInput: "保留行程调整要求",
       mapFocusRequest: {
@@ -247,7 +228,7 @@ export const WorkspaceManagement: Story = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans),
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney),
       workbenchTab: "chat",
       composerInput: "继续调整这条路线",
     }),
@@ -261,7 +242,7 @@ export const WorkspaceManagementRunning: Story = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans, {
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney, {
         locked: true,
       }),
       agentRunStage: "VERIFYING_PLACES",
@@ -276,7 +257,7 @@ export const PlanningWhileBrowsingWide: Story = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans, {
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney, {
         locked: true,
       }),
       agentRunStage: "VERIFYING_PLACES",
@@ -291,19 +272,17 @@ export const CommittedUpdateWide: Story = {
   },
   decorators: [
     (() => {
-      const workspaceDocument = workspaceDocumentForStory(
-        silkRoadJourneyWithPlans
-      )
+      const workspaceDocument = workspaceDocumentForStory(singleChainJourney)
       return withWorkspaceState({
         workspaceDocument,
         workbenchTab: "preview",
         journeyCommitPresentation: {
-          revision: workspaceDocument.session.flatJourney.revision,
+          revision: workspaceDocument.session.journey.revision,
           summary: "保留西安与敦煌重点，并把跨城交通顺序调整得更连贯。",
-          changedEventIds: workspaceDocument.session.flatJourney.events
-            .filter((event) => event.kind !== "TRANSIT")
+          changedEventIds: workspaceDocument.session.journey.events
+            .filter((event) => event.category !== "TRANSIT")
             .slice(0, 3)
-            .map((event) => event.eventId),
+            .map((event) => event.id),
         },
       })
     })(),
@@ -317,7 +296,7 @@ export const WorkspaceManagementMobile: Story = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans),
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney),
       workbenchTab: "chat",
       mobileSheetSnap: "expanded",
       composerInput: "继续调整这条路线",
@@ -331,12 +310,25 @@ export const PlanningWhileBrowsingMobile: Story = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans, {
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney, {
         locked: true,
       }),
       agentRunStage: "CHECKING_ROUTE",
       workbenchTab: "preview",
       mobileSheetSnap: "half",
+    }),
+  ],
+}
+
+export const UnifiedPlanning: Story = {
+  decorators: [
+    withWorkspaceState({
+      workspaceDocument: workspaceDocumentForStory(planningJourney),
+      workbenchTab: "preview",
+      mapFocusRequest: {
+        requestId: 1,
+        target: { type: "active-journey", maxZoom: 13 },
+      },
     }),
   ],
 }

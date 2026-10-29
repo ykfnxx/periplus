@@ -1,5 +1,5 @@
 "use client"
-import { MAX_RECORDING_PHOTO_CAPTION_LENGTH } from "@/modules/data-model/contracts/recording"
+import { MAX_PHOTO_CAPTION_LENGTH } from "@/modules/data-model/contracts"
 import { useState } from "react"
 import {
   ArrowUpRight,
@@ -40,7 +40,7 @@ function PhotoCaption({ caption }: { caption: string }) {
       }}
     >
       <span className={expanded ? "block whitespace-pre-wrap" : "line-clamp-1"}>
-        {caption.slice(0, MAX_RECORDING_PHOTO_CAPTION_LENGTH)}
+        {caption.slice(0, MAX_PHOTO_CAPTION_LENGTH)}
         {expanded && (
           <ChevronDown size={15} className="ml-2 inline-block align-middle" />
         )}

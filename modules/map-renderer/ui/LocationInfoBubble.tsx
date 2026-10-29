@@ -1,29 +1,27 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { plannedLocationOf } from "@/lib/journeys/locations"
-import { eventDurationMinutes } from "@/lib/journeys/summary"
+import { effectiveLocationOf } from "@/lib/journeys/locations"
+import { selectSelectedWorkspaceEvent } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 
 export default function LocationInfoBubble() {
   const map = useWorkspaceStore((state) => state.map)
-  const selectedLocationEvent = useWorkspaceStore(
-    (state) => state.selectedLocationEvent
-  )
-  const selectedLocationAnchor = useWorkspaceStore(
-    (state) => state.selectedLocationAnchor
+  const selectedEvent = useWorkspaceStore(selectSelectedWorkspaceEvent)
+  const selectedEventAnchor = useWorkspaceStore(
+    (state) => state.selectedEventAnchor
   )
   const overlayRef = useRef<HTMLDivElement | null>(null)
 
   const updatePosition = useCallback(() => {
-    if (!map || !selectedLocationEvent || !overlayRef.current) return
-    const location = plannedLocationOf(selectedLocationEvent)
-    const anchor = selectedLocationAnchor ?? location
+    if (!map || !selectedEvent || !overlayRef.current) return
+    const location = effectiveLocationOf(selectedEvent)
+    const anchor = selectedEventAnchor ?? location
     if (!anchor) return
     const pixel = map.lngLatToContainer(new AMap.LngLat(anchor.lng, anchor.lat))
     overlayRef.current.style.left = `${pixel.getX()}px`
     overlayRef.current.style.top = `${pixel.getY() - 24}px`
-  }, [map, selectedLocationEvent, selectedLocationAnchor])
+  }, [map, selectedEvent, selectedEventAnchor])
 
   useEffect(() => {
     if (!map) return
@@ -37,8 +35,7 @@ export default function LocationInfoBubble() {
 
   useEffect(() => updatePosition(), [updatePosition])
 
-  if (!selectedLocationEvent) return null
-  const duration = eventDurationMinutes(selectedLocationEvent)
+  if (!selectedEvent || !effectiveLocationOf(selectedEvent)) return null
   return (
     <div
       ref={overlayRef}
@@ -47,16 +44,11 @@ export default function LocationInfoBubble() {
     >
       <div className="relative rounded-xl border-2 border-russet bg-soft-white p-4 text-ink shadow-periplus">
         <h3 className="text-base leading-5 font-black">
-          {selectedLocationEvent.title}
+          {selectedEvent.title}
         </h3>
-        {duration ? (
-          <p className="mt-2 text-[11px] font-bold text-teak">
-            建议停留 {formatDuration(duration)}
-          </p>
-        ) : null}
-        {selectedLocationEvent.description ? (
+        {selectedEvent.body ? (
           <p className="mt-2 text-[13px] leading-5 text-walnut">
-            {selectedLocationEvent.description}
+            {selectedEvent.body}
           </p>
         ) : null}
         <p className="mt-3 text-[10px] font-black text-russet">
@@ -66,10 +58,4 @@ export default function LocationInfoBubble() {
       </div>
     </div>
   )
-}
-
-function formatDuration(minutes: number) {
-  if (minutes < 60) return `${minutes} 分钟`
-  const hours = minutes / 60
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} 小时`
 }
