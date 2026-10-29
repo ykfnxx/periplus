@@ -29,7 +29,7 @@ describe("AMapPlaceProvider", () => {
 
     expect(result.candidates).toEqual([])
     expect(result.warnings).toMatchObject([
-      { provider: "amap", code: "provider_error", retryable: false },
+      { provider: "amap", code: "provider_error" },
     ])
   })
 
@@ -60,10 +60,10 @@ describe("AMapPlaceProvider", () => {
     const query = normalizePlaceSearchInput({ query: "西湖", city: "杭州" })
 
     await expect(provider.search(query)).resolves.toMatchObject({
-      warnings: [{ code: "rate_limited", retryable: true }],
+      warnings: [{ code: "rate_limited" }],
     })
     await expect(provider.search(query)).resolves.toMatchObject({
-      warnings: [{ code: "quota_exceeded", retryable: false }],
+      warnings: [{ code: "quota_exceeded" }],
     })
   })
 

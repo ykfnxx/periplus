@@ -50,10 +50,7 @@ function amapCandidate(): PlaceCandidate {
   }
 }
 
-function serviceFor(
-  confidenceSource = catalogCandidate(),
-  retry: ConstructorParameters<typeof PlaceIntelligenceService>[2] = {}
-) {
+function serviceFor(confidenceSource = catalogCandidate()) {
   const repository = {
     findById: vi.fn().mockResolvedValue(confidenceSource),
     linkProviderMatch: vi.fn().mockResolvedValue(undefined),
@@ -65,7 +62,7 @@ function serviceFor(
       .mockResolvedValue({ candidates: [amapCandidate()], warnings: [] }),
   }
   return {
-    service: new PlaceIntelligenceService(repository, provider, retry),
+    service: new PlaceIntelligenceService(repository, provider),
     repository,
     provider,
   }
@@ -84,71 +81,48 @@ describe("PlaceIntelligenceService", () => {
     )
   })
 
-  it("retries transient provider failures twice before returning a result", async () => {
-    const sleep = vi.fn().mockResolvedValue(undefined)
-    const { service, provider } = serviceFor(catalogCandidate(), {
-      sleep,
-      random: () => 0.5,
+  it("returns a provider failure directly and allows a later explicit attempt", async () => {
+    const { service, provider, repository } = serviceFor()
+    provider.search.mockResolvedValueOnce({
+      candidates: [],
+      warnings: [
+        { provider: "amap", code: "timeout", message: "temporary timeout" },
+      ],
     })
-    provider.search
-      .mockResolvedValueOnce({
-        candidates: [],
-        warnings: [
-          {
-            provider: "amap",
-            code: "timeout",
-            message: "temporary timeout",
-            retryable: true,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({
-        candidates: [],
-        warnings: [
-          {
-            provider: "amap",
-            code: "provider_error",
-            message: "temporary 503",
-            retryable: true,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ candidates: [amapCandidate()], warnings: [] })
+
+    await expect(
+      service.enrichPlace({ placeId: "palace" })
+    ).resolves.toMatchObject({
+      matchStatus: "NO_MATCH",
+      warnings: [{ code: "timeout", message: "temporary timeout" }],
+    })
+    expect(provider.search).toHaveBeenCalledTimes(1)
+    expect(repository.linkProviderMatch).not.toHaveBeenCalled()
+    expect(repository.persistMatchReview).not.toHaveBeenCalled()
 
     await expect(
       service.enrichPlace({ placeId: "palace" })
     ).resolves.toMatchObject({
       matchStatus: "AUTO_APPROVED",
-      providerAttempts: 3,
+      warnings: [],
     })
-    expect(provider.search).toHaveBeenCalledTimes(3)
-    expect(sleep).toHaveBeenNthCalledWith(1, 200)
-    expect(sleep).toHaveBeenNthCalledWith(2, 400)
+    expect(provider.search).toHaveBeenCalledTimes(2)
+    expect(repository.linkProviderMatch).toHaveBeenCalledTimes(1)
   })
 
-  it("returns NO_MATCH after retryable provider exhaustion", async () => {
-    const { service, provider } = serviceFor(catalogCandidate(), {
-      sleep: vi.fn().mockResolvedValue(undefined),
-      random: () => 0.5,
-    })
-    provider.search.mockResolvedValue({
-      candidates: [],
-      warnings: [
-        {
-          provider: "amap",
-          code: "timeout",
-          message: "provider timed out",
-          retryable: true,
-        },
-      ],
-    })
+  it("returns an unmatched response without retrying or writing a match", async () => {
+    const { service, provider, repository } = serviceFor()
+    provider.search.mockResolvedValue({ candidates: [], warnings: [] })
 
     const result = await service.enrichPlace({ placeId: "palace" })
 
-    expect(provider.search).toHaveBeenCalledTimes(3)
+    expect(provider.search).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({
       matchStatus: "NO_MATCH",
-      warnings: [expect.objectContaining({ attempts: 3, exhausted: true })],
+      results: [],
+      warnings: [],
     })
+    expect(repository.linkProviderMatch).not.toHaveBeenCalled()
+    expect(repository.persistMatchReview).not.toHaveBeenCalled()
   })
 })

@@ -129,15 +129,11 @@ export interface ProviderWarning {
   provider: PlaceProvider
   code: "timeout" | "rate_limited" | "quota_exceeded" | "provider_error"
   message: string
-  retryable?: boolean
-  attempts?: number
-  exhausted?: boolean
 }
 
 export interface PlaceSearchResponse {
   results: PlaceSearchResult[]
   warnings: ProviderWarning[]
-  providerAttempts?: number
 }
 
 export interface PlaceEnrichInput {
