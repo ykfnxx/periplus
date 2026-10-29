@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { resolve } from "node:path"
-import { Operator, RetryLayer, TimeoutLayer } from "opendal"
+import { Operator, TimeoutLayer } from "opendal"
 import { periplusServerConfig } from "@/config/periplus.server"
 
 export interface ObjectStorageConfig {
@@ -28,12 +28,7 @@ export function createAssetOperator(config: ObjectStorageConfig) {
   const timeout = new TimeoutLayer()
   timeout.timeout = 30_000
   timeout.ioTimeout = 30_000
-  const retry = new RetryLayer()
-  retry.maxTimes = 2
-  retry.jitter = true
-  return new Operator(config.scheme, options)
-    .layer(retry.build())
-    .layer(timeout.build())
+  return new Operator(config.scheme, options).layer(timeout.build())
 }
 
 let operator: Operator | undefined

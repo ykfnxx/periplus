@@ -155,7 +155,6 @@ function warningForResponse(
       provider: "amap",
       code: "rate_limited",
       message: response.info ?? fallbackMessage,
-      retryable: true,
     }
   }
   if (isQuotaError(response)) {
@@ -163,14 +162,12 @@ function warningForResponse(
       provider: "amap",
       code: "quota_exceeded",
       message: response.info ?? fallbackMessage,
-      retryable: false,
     }
   }
   return {
     provider: "amap",
     code: "provider_error",
     message: response.info ?? fallbackMessage,
-    retryable: false,
   }
 }
 
@@ -183,7 +180,6 @@ function warningForError(
       provider: "amap",
       code: "timeout",
       message: error.message,
-      retryable: true,
     }
   }
   if (error instanceof AMapHttpError) {
@@ -191,14 +187,12 @@ function warningForError(
       provider: "amap",
       code: error.status === 429 ? "rate_limited" : "provider_error",
       message: error.message,
-      retryable: error.status === 429 || error.status >= 500,
     }
   }
   return {
     provider: "amap",
     code: "provider_error",
     message: error instanceof Error ? error.message : fallbackMessage,
-    retryable: true,
   }
 }
 
@@ -228,7 +222,6 @@ export class AMapPlaceProvider {
             provider: "amap",
             code: "provider_error",
             message: "缺少 PERIPLUS_AMAP_WEB_SERVICE_KEY",
-            retryable: false,
           },
         ],
       }
