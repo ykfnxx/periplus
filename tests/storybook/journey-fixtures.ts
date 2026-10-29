@@ -125,6 +125,7 @@ export const journeyWithDetails: JourneySnapshot = {
             receipts: [storyReceipt],
             title: "在上海住一晚",
             date: null,
+            time: null,
             timeZone: "America/Los_Angeles",
             planning: {
               startAt: "2026-10-20T01:00:00Z",
