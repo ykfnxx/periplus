@@ -44,6 +44,7 @@ export const eventLocationSchema = z
   .object({
     name: z.string().trim().min(1).max(300),
     address: z.string().max(1000).nullable(),
+    city: z.string().trim().min(1).optional(),
     coordinates: eventCoordinatesSchema.nullable(),
   })
   .strict()
@@ -149,6 +150,24 @@ export const journeyEventSchema = eventContentSchema
   })
   .strict()
   .superRefine((event, ctx) => {
+    if (event.time !== null && event.date === null)
+      ctx.addIssue({
+        code: "custom",
+        path: ["time"],
+        message: "A recorded time requires a recorded date",
+      })
+    if (event.timeZone !== null) {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: event.timeZone })
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          path: ["timeZone"],
+          message: "Invalid recording time zone",
+        })
+      }
+    }
+
     if (event.hotel && event.category !== "STAY")
       ctx.addIssue({
         code: "custom",
