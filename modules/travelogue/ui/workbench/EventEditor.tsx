@@ -229,7 +229,10 @@ export default function EventEditor({
                       .journey?.events.find((event) => event.id === eventId)
                     if (current) {
                       const fresh = eventContent(current)
-                      setDraft({ ...fresh, ...eventContentPatch(draft, saved) })
+                      setDraft((current) => ({
+                        ...fresh,
+                        ...eventContentPatch(current, saved),
+                      }))
                       setSaved(fresh)
                     }
                     setError(null)

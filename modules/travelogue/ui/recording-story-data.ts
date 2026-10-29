@@ -2,6 +2,12 @@ import { operationId } from "../data/operation-id"
 import type {
   JourneySnapshot,
   JourneyEvent,
+  EventInput,
+} from "@/modules/data-model/contracts"
+import {
+  eventInputSchema,
+  journeyEventSchema,
+  journeySnapshotSchema,
 } from "@/modules/data-model/contracts"
 import type {
   Contributor,
@@ -15,6 +21,78 @@ const walk = new URL("./story-assets/walk.jpg", import.meta.url).href
 const tea = new URL("./story-assets/tea.jpg", import.meta.url).href
 
 const receiptImage = new URL("./story-assets/receipt.svg", import.meta.url).href
+
+function applyEventInput(
+  previous: JourneyEvent,
+  value: EventInput
+): JourneyEvent {
+  const parsed = eventInputSchema.safeParse(value)
+  if (!parsed.success) throw new RecordingApiError("记录资料无效。", 400)
+  const { hotel, transit, planning, cuisine, bookingReference, ...content } =
+    parsed.data
+  if (hotel && !previous.hotel)
+    throw new RecordingApiError("没有可修改的酒店资料。", 400)
+
+  let nextTransit = previous.transit
+  if (transit === null) nextTransit = undefined
+  else if (transit) {
+    const merged = { ...previous.transit, ...transit }
+    if (!merged.fromEventId || !merged.toEventId || !merged.transportMode)
+      throw new RecordingApiError("请补齐交通的出发、到达事件和方式。", 400)
+    const routeChanged =
+      previous.transit &&
+      (
+        [
+          "fromEventId",
+          "toEventId",
+          "transportMode",
+          "requestMode",
+          "preference",
+        ] as const
+      ).some((key) => merged[key] !== previous.transit![key])
+    nextTransit = {
+      ...merged,
+      fromEventId: merged.fromEventId,
+      toEventId: merged.toEventId,
+      transportMode: merged.transportMode,
+      routeState: routeChanged
+        ? "ROUTE_STALE"
+        : (previous.transit?.routeState ?? "EMPTY"),
+      route: routeChanged ? undefined : previous.transit?.route,
+    }
+  }
+  const result = journeyEventSchema.safeParse({
+    ...previous,
+    ...content,
+    planning:
+      planning === undefined
+        ? previous.planning
+        : planning === null
+          ? undefined
+          : { ...previous.planning, ...planning },
+    hotel:
+      hotel === undefined
+        ? previous.hotel
+        : hotel === null
+          ? undefined
+          : {
+              ...previous.hotel,
+              checkInNote:
+                hotel.checkInNote === undefined
+                  ? previous.hotel?.checkInNote
+                  : (hotel.checkInNote ?? undefined),
+            },
+    transit: nextTransit,
+    cuisine: cuisine === undefined ? previous.cuisine : (cuisine ?? undefined),
+    bookingReference:
+      bookingReference === undefined
+        ? previous.bookingReference
+        : (bookingReference ?? undefined),
+  })
+  if (!result.success) throw new RecordingApiError("记录资料不完整。", 400)
+  return result.data
+}
+
 export const storyOwner: Contributor = {
   userId: "owner",
   name: "小林",
@@ -165,7 +243,7 @@ export function createStoryRecordingApi(
     conflict?: boolean
   } = {}
 ): RecordingApi {
-  let journey = structuredClone({
+  let journey = journeySnapshotSchema.parse({
     ...initialJourney,
     events: empty ? [] : initialJourney.events,
   })
@@ -181,7 +259,12 @@ export function createStoryRecordingApi(
     conflictFailed = false
   let invitations: JourneyInvitation[] = []
   return {
-    get: async () => structuredClone(journey),
+    get: async () => {
+      // Conflict stories allow editing while the server reread is still pending.
+      if (conflictFailed)
+        await new Promise((resolve) => setTimeout(resolve, 1200))
+      return structuredClone(journey)
+    },
     atlas: async () => ({ journeys: [], photos: [] }),
     list: async () => [],
     create: async () => ({
@@ -303,39 +386,36 @@ export function createStoryRecordingApi(
         Object.assign(journey, command.patch)
       else if (command.name === "event.add") {
         eventId = operationId()
-        const entry: JourneyEvent = {
-          id: eventId,
-          source: viewer,
-          canEdit: true,
-          canRemove: true,
-          receipts: command.receipt
-            ? [
-                {
-                  ...command.receipt,
-                  id: operationId(),
-                  url: assets.get(command.receipt.assetId) || receiptImage,
-                  source: viewer,
-                  canEdit: true,
-                },
-              ]
-            : [],
-          title: "",
-          body: "",
-          category: null,
-          date: null,
-          time: null,
-          timeZone: null,
-          location: null,
-          photos: [],
-          createdAt: now,
-          updatedAt: now,
-          ...command.content,
-          planning: command.content.planning ?? undefined,
-          hotel: command.content.hotel ?? undefined,
-          transit: command.content.transit ?? undefined,
-          cuisine: command.content.cuisine ?? undefined,
-          bookingReference: command.content.bookingReference ?? undefined,
-        }
+        const entry = applyEventInput(
+          {
+            id: eventId,
+            source: viewer,
+            canEdit: true,
+            canRemove: true,
+            receipts: command.receipt
+              ? [
+                  {
+                    ...command.receipt,
+                    id: operationId(),
+                    url: assets.get(command.receipt.assetId) || receiptImage,
+                    source: viewer,
+                    canEdit: true,
+                  },
+                ]
+              : [],
+            title: "",
+            body: "",
+            category: null,
+            date: null,
+            time: null,
+            timeZone: null,
+            location: null,
+            photos: [],
+            createdAt: now,
+            updatedAt: now,
+          },
+          command.content
+        )
         journey.events.splice(
           command.afterEventId === null
             ? 0
@@ -345,12 +425,15 @@ export function createStoryRecordingApi(
           0,
           entry
         )
-      } else if (command.name === "event.update")
-        Object.assign(
-          journey.events.find((event) => event.id === command.eventId)!,
+      } else if (command.name === "event.update") {
+        const index = journey.events.findIndex(
+          (event) => event.id === command.eventId
+        )
+        journey.events[index] = applyEventInput(
+          journey.events[index],
           command.patch
         )
-      else if (command.name === "event.remove")
+      } else if (command.name === "event.remove")
         journey.events = journey.events.filter(
           (event) => event.id !== command.eventId
         )
