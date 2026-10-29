@@ -22,10 +22,6 @@ import {
   mutateRecordingJourney,
 } from "@/modules/data/journeys/recording-service"
 import {
-  getJourney,
-  commitJourney,
-} from "@/modules/data/journeys/journey-repository"
-import {
   createJourneyInvitation,
   acceptJourneyInvitation,
   listJourneyInvitations,
@@ -349,21 +345,6 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
           )
         ).status
       ).toBe(403)
-    const snapshot = (await getJourney(friend, current.id))!
-    await expect(
-      commitJourney(
-        friend,
-        current.id,
-        {
-          journey: { ...snapshot, revision: snapshot.revision + 1 },
-          operation: "bypass",
-          idempotencyKey: randomUUID(),
-          patch: [],
-          inversePatch: [],
-        },
-        snapshot.revision
-      )
-    ).rejects.toThrow("author")
     expect((await getRecordingJourney(owner, current.id)).revision).toBe(
       current.revision
     )

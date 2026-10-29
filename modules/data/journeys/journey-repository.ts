@@ -11,7 +11,6 @@ import {
   type JourneySnapshot,
   type JourneyRevision,
   type JourneyCommand,
-  type JourneyActor,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
 import { lockAssetRows } from "@/modules/data/assets/asset-repository"
@@ -43,7 +42,6 @@ export interface JourneyRevisionWrite {
   operation: string
   patch: unknown
   inversePatch: unknown
-  actor?: JourneyActor
   idempotencyKey: string
 }
 type Tx = Prisma.TransactionClient
@@ -153,28 +151,8 @@ function mapRevision(
     createdAt: record.createdAt.toISOString(),
   })
 }
-function signature(write: JourneyRevisionWrite) {
-  return json({
-    operation: write.operation,
-    patch: write.patch,
-    actor: write.actor,
-  })
-}
-function recordSignature(record: JourneyRevision) {
-  return json({
-    operation: record.operation,
-    patch: record.patch,
-    actor: record.actor,
-  })
-}
-async function authorizeActor(
-  context: AuthContext,
-  write: JourneyRevisionWrite
-) {
-  const actor = write.actor ?? { kind: "USER" as const, userId: context.userId }
-  if (actor.kind === "USER" && actor.userId !== context.userId)
-    throw new PermissionDeniedError("Journey actor must be authenticated")
-  return actor
+function signature(operation: string, patch: unknown, userId: string) {
+  return json({ operation, patch, userId })
 }
 async function persistIndex(tx: Tx, journey: JourneySnapshot) {
   // These rows are read indexes for ownership and active asset access, rebuilt
@@ -265,7 +243,6 @@ async function writeRevision(
   if (!before && journey.revision !== 1)
     throw new JourneyInputError("New Journey starts at revision 1")
   if (before) assertJourneyTransition(before, journey)
-  const actor = await authorizeActor(context, write)
   await validateSourcesAndAssets(tx, context, before, journey)
   const parent = before
     ? await tx.journeyRevision.findUniqueOrThrow({
@@ -302,7 +279,7 @@ async function writeRevision(
       snapshotJson: json(journey),
       patchJson: json(write.patch),
       inversePatchJson: json(write.inversePatch),
-      actorUserId: actor.userId,
+      actorUserId: context.userId,
       idempotencyKey: write.idempotencyKey,
       parentRevisionId: parent?.id,
     },
@@ -363,12 +340,8 @@ export async function getJourney(context: AuthContext, id: string) {
 }
 export async function createJourney(
   context: AuthContext,
-  input: JourneyRevisionWrite
+  write: JourneyRevisionWrite
 ) {
-  const write = {
-    ...input,
-    actor: input.actor ?? { kind: "USER" as const, userId: context.userId },
-  }
   if (!isAdmin(context) && write.journey.ownerId !== context.userId)
     throw new PermissionDeniedError("Journey must belong to its writer")
   const run = async (transaction: Tx) => {
@@ -382,7 +355,10 @@ export async function createJourney(
     })
     if (existing) {
       const revision = mapRevision(existing)
-      if (recordSignature(revision) !== signature(write))
+      if (
+        signature(revision.operation, revision.patch, revision.actor.userId) !==
+        signature(write.operation, write.patch, context.userId)
+      )
         throw new JourneyIdempotencyConflictError()
       return revision.snapshot
     }
@@ -408,14 +384,10 @@ export async function createJourney(
 export async function commitJourney(
   context: AuthContext,
   id: string,
-  input: JourneyRevisionWrite,
+  write: JourneyRevisionWrite,
   expectedRevision: number,
-  command?: JourneyCommand
+  command: JourneyCommand
 ) {
-  const write = {
-    ...input,
-    actor: input.actor ?? { kind: "USER" as const, userId: context.userId },
-  }
   const run = async (tx: Tx) => {
     await tx.$queryRaw`SELECT "id" FROM "Journey" WHERE "id" = ${id} FOR UPDATE`
     const row = await tx.journey.findFirst({
@@ -432,16 +404,17 @@ export async function commitJourney(
     })
     if (replay) {
       const revision = mapRevision(replay)
-      if (recordSignature(revision) !== signature(write))
+      if (
+        signature(revision.operation, revision.patch, revision.actor.userId) !==
+        signature(write.operation, write.patch, context.userId)
+      )
         throw new JourneyIdempotencyConflictError()
       return revision.snapshot
     }
     if (row.revision !== expectedRevision)
       throw new JourneyRevisionConflictError()
     const before = journeySnapshotSchema.parse(JSON.parse(row.snapshotJson))
-    if (command) await assertJourneyCommandAccess(tx, context, before, command)
-    else if (!isAdmin(context) && row.ownerId !== context.userId)
-      throw new PermissionDeniedError("Only the author can replace a Journey")
+    await assertJourneyCommandAccess(tx, context, before, command)
     return writeRevision(tx, context, write, before)
   }
   return prisma.$transaction(run)
