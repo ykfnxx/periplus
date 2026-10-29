@@ -134,7 +134,7 @@ export async function presentJourney(
           (item) => item.source.userId === context.userId
         ))
   }
-  return journeySnapshotSchema.parse(journey)
+  return journey
 }
 function mapRevision(
   record: Prisma.JourneyRevisionGetPayload<object>
@@ -451,7 +451,13 @@ export async function getJourneyRevisionByIdempotencyKey(
   id: string,
   idempotencyKey: string
 ) {
-  if (!(await getJourney(context, id))) return null
+  if (
+    !(await prisma.journey.findFirst({
+      where: { id, deletedAt: null, ...journeyReadScope(context) },
+      select: { id: true },
+    }))
+  )
+    return null
   const row = await prisma.journeyRevision.findUnique({
     where: { journeyId_idempotencyKey: { journeyId: id, idempotencyKey } },
   })
