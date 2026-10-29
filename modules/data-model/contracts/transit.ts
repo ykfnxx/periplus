@@ -48,24 +48,25 @@ export const targetTransitSegmentSchema = z
     }
   })
 
-export const targetTransitPlanSchema = z
-  .object({
-    id: idSchema,
-    planningRunId: idSchema,
-    transitEventId: idSchema,
-    provider: z.string().trim().min(1),
-    rank: z.number().int().nonnegative(),
-    label: z.string().trim().min(1),
-    strategy: z.string().trim().min(1),
-    distanceMeters: z.number().nonnegative(),
-    durationSeconds: z.number().int().nonnegative(),
-    fareAmount: z.number().nonnegative().optional(),
-    trafficBasis: z.enum(TARGET_TRAFFIC_BASES),
-    calculatedAt: dateTimeSchema,
-    validUntil: dateTimeSchema.optional(),
-    segments: z.array(targetTransitSegmentSchema),
-  })
-  .superRefine((plan, context) => {
+const transitPlanFieldsSchema = z.object({
+  id: idSchema,
+  planningRunId: idSchema,
+  transitEventId: idSchema,
+  provider: z.string().trim().min(1),
+  rank: z.number().int().nonnegative(),
+  label: z.string().trim().min(1),
+  strategy: z.string().trim().min(1),
+  distanceMeters: z.number().nonnegative(),
+  durationSeconds: z.number().int().nonnegative(),
+  fareAmount: z.number().nonnegative().optional(),
+  trafficBasis: z.enum(TARGET_TRAFFIC_BASES),
+  calculatedAt: dateTimeSchema,
+  validUntil: dateTimeSchema.optional(),
+  segments: z.array(targetTransitSegmentSchema),
+})
+
+export const targetTransitPlanSchema = transitPlanFieldsSchema.superRefine(
+  (plan, context) => {
     if (plan.validUntil && plan.validUntil < plan.calculatedAt) {
       context.addIssue({
         code: "custom",
@@ -73,7 +74,8 @@ export const targetTransitPlanSchema = z
         message: "plan validity cannot precede calculation",
       })
     }
-  })
+  }
+)
 
 export const targetTransitPlanningRunSchema = z
   .object({
