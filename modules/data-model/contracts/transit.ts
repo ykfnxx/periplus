@@ -186,7 +186,7 @@ export const transitRouteSchema = z
     requestFingerprint: z.string().min(1),
     plans: z
       .array(
-        targetTransitPlanSchema
+        transitPlanFieldsSchema
           .omit({ planningRunId: true, transitEventId: true })
           .safeExtend({ requestFingerprint: z.string().min(1) })
       )
