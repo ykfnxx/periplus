@@ -15,7 +15,7 @@ import {
   POST as createJourney,
 } from "@/app/api/journeys/route"
 import { GET as readAtlas } from "@/app/api/journeys/map/route"
-import type { RecordingAtlas } from "@/modules/data-model/contracts/recording"
+import type { JourneyAtlas } from "@/modules/data-model/contracts"
 import { GET as readJourney } from "@/app/api/journeys/[id]/route"
 import { POST as command } from "@/app/api/journeys/[id]/commands/route"
 import { GET as listPhotos, POST as uploadPhoto } from "@/app/api/photos/route"
@@ -23,13 +23,15 @@ import { DELETE as deletePhoto } from "@/app/api/photos/[id]/route"
 import { GET as readPhoto } from "@/app/api/photos/[id]/file/route"
 import { setTestAuthContext } from "@/modules/auth/server/context"
 import {
-  recordingJourneySchema,
-  recordingMutationResultSchema,
-  type RecordingCommand,
-  type RecordingJourney,
-  type RecordingMutation,
+  journeySnapshotSchema,
+  journeyMutationResultSchema,
+  type JourneyCommand,
+  type JourneySnapshot,
+  type JourneyMutation,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
+import { createJourney as persistJourney } from "@/modules/data/journeys/journey-repository"
+import { transitJourneyFixture } from "@/tests/fixtures/journey"
 import { assetOperator } from "@/modules/data/assets/object-storage"
 
 const ownerId = `recording-owner-${randomUUID()}`
@@ -59,12 +61,12 @@ async function newJourney(title = "海边的周末") {
     json({ idempotencyKey: randomUUID(), title })
   )
   expect(response.status).toBe(201)
-  return recordingMutationResultSchema.parse(await response.json()).journey
+  return journeyMutationResultSchema.parse(await response.json()).journey
 }
 
 async function write(
-  journey: RecordingJourney,
-  action: RecordingCommand,
+  journey: JourneySnapshot,
+  action: JourneyCommand,
   key = randomUUID()
 ) {
   const response = await command(
@@ -78,7 +80,7 @@ async function write(
   expect(response.status, JSON.stringify(await response.clone().json())).toBe(
     200
   )
-  return recordingMutationResultSchema.parse(await response.json())
+  return journeyMutationResultSchema.parse(await response.json())
 }
 
 async function reopen(id: string) {
@@ -87,7 +89,7 @@ async function reopen(id: string) {
     params(id)
   )
   expect(response.status).toBe(200)
-  return recordingJourneySchema.parse(await response.json())
+  return journeySnapshotSchema.parse(await response.json())
 }
 
 async function upload(
@@ -195,7 +197,7 @@ describe.sequential("manual recording API and durable event identity", () => {
     ).journey
     const response = await readAtlas()
     expect(response.status).toBe(200)
-    const atlas = (await response.json()) as RecordingAtlas
+    const atlas = (await response.json()) as JourneyAtlas
     expect(atlas.journeys.some((item) => item.id === foreign.id)).toBe(false)
     expect(
       atlas.journeys.find((item) => item.id === journey.id)?.photoCount
@@ -215,7 +217,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       name: "event.remove",
       eventId: added.eventId!,
     })
-    const refreshed = (await (await readAtlas()).json()) as RecordingAtlas
+    const refreshed = (await (await readAtlas()).json()) as JourneyAtlas
     expect(
       refreshed.photos.some((item) => item.eventId === added.eventId)
     ).toBe(false)
@@ -226,6 +228,82 @@ describe.sequential("manual recording API and durable event identity", () => {
     setTestAuthContext(null)
     expect((await readAtlas()).status).toBe(401)
   })
+
+  it.each(["location", "mode"] as const)(
+    "edits all event categories and invalidates changed %s without dropping records",
+    async (change) => {
+      const initial = transitJourneyFixture(ownerId, randomUUID())
+      await persistJourney(owner, {
+        journey: initial,
+        operation: "fixture",
+        idempotencyKey: randomUUID(),
+        patch: [],
+        inversePatch: [],
+      })
+      let current = await reopen(initial.id)
+      expect(current.events.map((event) => event.category)).toEqual([
+        "VISIT",
+        "TRANSIT",
+        "MEAL",
+      ])
+      const transitId = current.events[1]!.id
+      const route = current.events[1]!.transit!.route
+      current = (
+        await write(current, {
+          name: "event.update",
+          eventId: transitId,
+          patch: { body: "沿湖步行" },
+        })
+      ).journey
+      expect(current.events[1]!.transit!.route).toEqual(route)
+      current = (
+        await write(current, {
+          name: "event.add",
+          afterEventId: current.events.at(-1)!.id,
+          content: { body: "稍后补记" },
+        })
+      ).journey
+      const ids = current.events.map((event) => event.id)
+      current = (
+        await write(
+          current,
+          change === "location"
+            ? {
+                name: "event.update",
+                eventId: ids[0]!,
+                patch: {
+                  location: {
+                    name: "湖边入口",
+                    address: null,
+                    coordinates: {
+                      lat: 30.26,
+                      lng: 120.16,
+                      coordinateSystem: "GCJ02",
+                    },
+                  },
+                },
+              }
+            : {
+                name: "event.update",
+                eventId: transitId,
+                patch: { transit: { requestMode: "DRIVE" } },
+              }
+        )
+      ).journey
+      expect(current.events.map((event) => event.id)).toEqual(ids)
+      expect(current.events[1]).toMatchObject({
+        body: "沿湖步行",
+        transit: { routeState: "ROUTE_STALE" },
+      })
+      expect(current.events[1]!.transit).not.toHaveProperty("route")
+      expect(current.events.at(-1)).toMatchObject({
+        body: "稍后补记",
+        date: null,
+        location: null,
+      })
+      expect(await reopen(initial.id)).toEqual(current)
+    }
+  )
 
   it("saves text and three no-GPS photos, enriches and reorders, then restores the exact document", async () => {
     let journey = await newJourney()
@@ -324,24 +402,17 @@ describe.sequential("manual recording API and durable event identity", () => {
     expect(
       await prisma.journeyEvent.findUnique({ where: { id: eventId } })
     ).toMatchObject({
-      type: "RECORD",
-      executionStatus: null,
-      plannedStartAt: null,
-      actualStartAt: null,
+      sourceUserId: ownerId,
+      journeyId: journey.id,
     })
-    expect(
-      await prisma.workspaceSession.count({
-        where: { sourceJourneyId: journey.id },
-      })
-    ).toBe(0)
   })
 
   it("replays creation and a lost command reply without a duplicate or overwriting later edits", async () => {
     const createInput = { idempotencyKey: randomUUID(), title: "重试旅程" }
-    const first = recordingMutationResultSchema.parse(
+    const first = journeyMutationResultSchema.parse(
       await (await createJourney(json(createInput))).json()
     )
-    const repeated = recordingMutationResultSchema.parse(
+    const repeated = journeyMutationResultSchema.parse(
       await (await createJourney(json(createInput))).json()
     )
     expect(repeated).toEqual({ ...first, replayed: true })
@@ -349,7 +420,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       json({ ...createInput, title: "不同内容" })
     )
     expect(createConflict.status).toBe(409)
-    const request: RecordingMutation = {
+    const request: JourneyMutation = {
       expectedRevision: first.journey.revision,
       idempotencyKey: randomUUID(),
       command: {
@@ -358,7 +429,7 @@ describe.sequential("manual recording API and durable event identity", () => {
         content: { body: "原文" },
       },
     }
-    const original = recordingMutationResultSchema.parse(
+    const original = journeyMutationResultSchema.parse(
       await (await command(json(request), params(first.journey.id))).json()
     )
     const edited = await write(original.journey, {
@@ -366,7 +437,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       eventId: original.eventId!,
       patch: { body: "继续写的新内容" },
     })
-    const replayed = recordingMutationResultSchema.parse(
+    const replayed = journeyMutationResultSchema.parse(
       await (await command(json(request), params(first.journey.id))).json()
     )
     expect(replayed).toEqual({ ...original, replayed: true })
@@ -525,7 +596,28 @@ describe.sequential("manual recording API and durable event identity", () => {
       content: {},
     })
     let journey = first.journey
-    const invalid: RecordingCommand[] = [
+    const invalid: JourneyCommand[] = [
+      {
+        name: "event.add",
+        afterEventId: null,
+        content: { category: "STAY", hotel: { checkInNote: "late" } },
+      },
+      {
+        name: "event.add",
+        afterEventId: null,
+        content: { category: "TRANSIT", transit: { notes: "incomplete" } },
+      },
+      {
+        name: "event.add",
+        afterEventId: null,
+        content: {
+          transit: {
+            fromEventId: "from",
+            toEventId: "to",
+            transportMode: "WALK",
+          },
+        },
+      },
       {
         name: "event.update",
         eventId: first.eventId!,
@@ -640,9 +732,48 @@ describe.sequential("manual recording API and durable event identity", () => {
     })
   })
 
+  it("creates unresolved transit only from complete editable endpoint and mode fields", async () => {
+    const from = await write(await newJourney(), {
+      name: "event.add",
+      afterEventId: null,
+      content: { title: "出发" },
+    })
+    const to = await write(from.journey, {
+      name: "event.add",
+      afterEventId: from.eventId!,
+      content: { title: "到达" },
+    })
+    const added = await write(to.journey, {
+      name: "event.add",
+      afterEventId: from.eventId!,
+      content: {
+        category: "TRANSIT",
+        transit: {
+          fromEventId: from.eventId!,
+          toEventId: to.eventId!,
+          transportMode: "TRAIN",
+          notes: "手动记录",
+        },
+      },
+    })
+    expect(added.journey.events[1]).toMatchObject({
+      id: added.eventId,
+      category: "TRANSIT",
+      transit: {
+        fromEventId: from.eventId,
+        toEventId: to.eventId,
+        transportMode: "TRAIN",
+        routeState: "EMPTY",
+        notes: "手动记录",
+      },
+    })
+    expect(added.journey.events[1]!.transit).not.toHaveProperty("route")
+    expect(await reopen(added.journey.id)).toEqual(added.journey)
+  })
+
   it("arbitrates simultaneous retries and competing writes with one durable head advance", async () => {
     const journey = await newJourney()
-    const request: RecordingMutation = {
+    const request: JourneyMutation = {
       expectedRevision: 1,
       idempotencyKey: randomUUID(),
       command: {
@@ -658,7 +789,7 @@ describe.sequential("manual recording API and durable event identity", () => {
     expect(responses.map((response) => response.status)).toEqual([200, 200])
     const results = await Promise.all(
       responses.map(async (response) =>
-        recordingMutationResultSchema.parse(await response.json())
+        journeyMutationResultSchema.parse(await response.json())
       )
     )
     expect(results[0]!.eventId).toBe(results[1]!.eventId)

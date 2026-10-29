@@ -5,10 +5,9 @@ import {
   type AuthContext,
 } from "@/modules/auth/server/context"
 import type {
-  RecordingCommand,
-  TargetJourneyGraphSnapshot,
+  JourneyCommand,
+  JourneySnapshot,
 } from "@/modules/data-model/contracts"
-
 export function journeyReadScope(
   context: AuthContext
 ): Prisma.JourneyWhereInput {
@@ -21,94 +20,85 @@ export function journeyReadScope(
         ],
       }
 }
-
-export async function assertRecordingCommandAccess(
+export async function assertJourneyCommandAccess(
   tx: Prisma.TransactionClient,
   context: AuthContext,
-  graph: TargetJourneyGraphSnapshot,
-  command: RecordingCommand
+  journey: JourneySnapshot,
+  command: JourneyCommand
 ) {
-  if (isAdmin(context) || graph.ownerId === context.userId) return
-  const member = await tx.journeyMember.findUnique({
-    where: {
-      journeyId_userId: { journeyId: graph.id, userId: context.userId },
-    },
-  })
-  if (!member)
-    throw new PermissionDeniedError("You are not a member of this journey")
+  if (isAdmin(context) || journey.ownerId === context.userId) return
+  if (
+    !(await tx.journeyMember.findUnique({
+      where: {
+        journeyId_userId: { journeyId: journey.id, userId: context.userId },
+      },
+    }))
+  )
+    throw new PermissionDeniedError("You are not a member of this Journey")
   const deny = () => {
     throw new PermissionDeniedError("Members may change only their own content")
   }
-  const eventId = "eventId" in command ? command.eventId : undefined
   if (command.name === "journey.update") deny()
+  const event =
+    "eventId" in command
+      ? journey.events.find((event) => event.id === command.eventId)
+      : undefined
   if (
     ["event.update", "event.move", "event.remove"].includes(command.name) &&
-    eventId
-  ) {
-    const event = await tx.journeyEvent.findUnique({
-      where: { id: eventId },
-      include: { introducedBy: true },
-    })
-    if (
-      !event ||
-      event.journeyId !== graph.id ||
-      event.introducedBy.actorUserId !== context.userId
-    )
-      deny()
-  }
-  const links = graph.eventAssetLinks.filter((link) => !link.retiredRevision)
-  const assets = await tx.asset.findMany({
-    where: { id: { in: links.map((link) => link.assetId) } },
-    select: { id: true, ownerId: true },
-  })
-  const own = (assetId: string) =>
-    assets.find((asset) => asset.id === assetId)?.ownerId === context.userId
+    event?.source.userId !== context.userId
+  )
+    deny()
   if (
     command.name === "event.remove" &&
-    links.some((link) => link.eventId === command.eventId && !own(link.assetId))
+    event &&
+    [...event.photos, ...event.receipts].some(
+      (item) => item.source.userId !== context.userId
+    )
+  )
+    deny()
+  const ownPhoto = (assetId: string) =>
+    journey.events.some((event) =>
+      event.photos.some(
+        (photo) =>
+          photo.assetId === assetId && photo.source.userId === context.userId
+      )
+    )
+  if (
+    (command.name === "photo.update" || command.name === "photo.move") &&
+    !ownPhoto(command.assetId)
   )
     deny()
   if (
-    (command.name === "photo.update" || command.name === "photo.move") &&
-    !own(command.assetId)
+    (command.name === "receipt.update" || command.name === "receipt.remove") &&
+    !event?.receipts.some(
+      (receipt) =>
+        receipt.id === command.receiptId &&
+        receipt.source.userId === context.userId
+    )
   )
     deny()
-  if (command.name === "receipt.update" || command.name === "receipt.remove") {
-    const link = links.find(
-      (link) =>
-        link.id === command.receiptId &&
-        link.eventId === command.eventId &&
-        link.role === "RECEIPT"
-    )
-    if (!link || !own(link.assetId)) deny()
-  }
   if (command.name === "photos.set") {
-    const protectedPhotos = links
-      .filter(
-        (link) =>
-          link.eventId === command.eventId &&
-          ["COVER", "GALLERY"].includes(link.role) &&
-          !own(link.assetId)
-      )
-      .sort((a, b) => a.rank - b.rank)
-    for (const link of protectedPhotos) {
-      const photo = command.photos.find(
-        (photo) => photo.assetId === link.assetId
+    const protectedPhotos =
+      event?.photos.filter((photo) => photo.source.userId !== context.userId) ??
+      []
+    for (const photo of protectedPhotos) {
+      const submitted = command.photos.find(
+        (item) => item.assetId === photo.assetId
       )
       if (
-        !photo ||
-        photo.caption !== (link.caption ?? "") ||
-        (link.role === "COVER") !== (command.coverAssetId === link.assetId)
+        !submitted ||
+        submitted.caption !== photo.caption ||
+        photo.isCover !== (photo.assetId === command.coverAssetId)
       )
         deny()
     }
-    const protectedIds = new Set(protectedPhotos.map((link) => link.assetId))
+    const ids = new Set(protectedPhotos.map((photo) => photo.assetId))
     if (
       JSON.stringify(
         command.photos
-          .filter((photo) => protectedIds.has(photo.assetId))
+          .filter((photo) => ids.has(photo.assetId))
           .map((photo) => photo.assetId)
-      ) !== JSON.stringify(protectedPhotos.map((link) => link.assetId))
+      ) !== JSON.stringify(protectedPhotos.map((photo) => photo.assetId))
     )
       deny()
   }

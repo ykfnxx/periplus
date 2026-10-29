@@ -1,180 +1,334 @@
+import { routeMatchesCurrent } from "@/lib/journeys/planning"
 import { createHash } from "node:crypto"
+import type { Prisma } from "@prisma/client"
+import { isAdmin, type AuthContext } from "@/modules/auth/server/context"
 import {
-  recordingEventContentSchema,
-  type RecordingCommand,
-  type RecordingEventContent,
-  type TargetJourneyGraphSnapshot,
+  type JourneySnapshot,
+  type JourneyCommand,
+  type JourneyEvent,
+  type Contributor,
+  type EventInput,
+  MAX_PHOTO_CAPTION_LENGTH,
+  eventTransitSchema,
 } from "@/modules/data-model/contracts"
+import { prisma } from "@/modules/data/db/prisma"
 import { JourneyInputError } from "./journey-repository"
-import {
-  recordingChain,
-  type RecordingChainEvent,
-} from "./recording-projection"
-
-export const emptyRecordingContent: RecordingEventContent = {
-  title: "",
-  body: "",
-  category: null,
-  date: null,
-  time: null,
-  timeZone: null,
-  location: null,
-}
-
 export function recordingId(journeyId: string, key: string, label: string) {
-  return createHash("sha256")
-    .update(JSON.stringify([journeyId, key, label]))
-    .digest("hex")
+  return `event-${createHash("sha256").update(`${journeyId}:${key}:${label}`).digest("hex").slice(0, 32)}`
 }
-
-export function recordingContent(input: unknown): RecordingEventContent {
-  const content = recordingEventContentSchema.parse(input)
-  if (content.time !== null && content.date === null) {
-    throw new JourneyInputError("A recorded time requires a recorded date")
-  }
-  if (content.timeZone !== null) {
-    try {
-      new Intl.DateTimeFormat("en", { timeZone: content.timeZone })
-    } catch {
-      throw new JourneyInputError("Invalid recording time zone")
-    }
-  }
-  return content
-}
-
-function indexTitle(content: RecordingEventContent) {
-  return (
-    content.title.trim() ||
-    content.body.trim().split("\n")[0] ||
-    "未命名记录"
-  ).slice(0, 200)
-}
-
-export function requireRecordingEvent(
-  graph: TargetJourneyGraphSnapshot,
-  id: string
-): RecordingChainEvent {
-  const event = graph.events.find(
-    (event) => event.id === id && !event.retiredRevision
-  )
-  if (!event || event.type !== "RECORD")
-    throw new JourneyInputError("Recording event not found")
+export function requireJourneyEvent(journey: JourneySnapshot, id: string) {
+  const event = journey.events.find((event) => event.id === id)
+  if (!event) throw new JourneyInputError("Event not found")
   return event
 }
-
-function insertAfter(
-  ids: string[],
-  eventId: string,
-  afterEventId: string | null
-) {
-  if (afterEventId === eventId)
-    throw new JourneyInputError("An event cannot be placed after itself")
-  const index = afterEventId === null ? -1 : ids.indexOf(afterEventId)
-  if (afterEventId !== null && index < 0)
-    throw new JourneyInputError("Insertion anchor not found")
-  ids.splice(index + 1, 0, eventId)
+export function blankEvent(
+  id: string,
+  source: Contributor,
+  now: string
+): JourneyEvent {
+  return {
+    id,
+    title: "",
+    body: "",
+    category: null,
+    date: null,
+    time: null,
+    timeZone: null,
+    location: null,
+    source,
+    canEdit: true,
+    canRemove: true,
+    photos: [],
+    receipts: [],
+    createdAt: now,
+    updatedAt: now,
+  }
 }
-
-function persistOrder(
-  graph: TargetJourneyGraphSnapshot,
-  ids: string[],
-  key: string
-) {
-  const desired = ids
-    .slice(1)
-    .map((to, index) => ({ from: ids[index]!, to, rank: index }))
-  const retained = new Set<string>()
-  for (const edge of desired) {
-    const existing = graph.links.find(
-      (link) =>
-        !link.retiredRevision &&
-        link.kind === "MAIN" &&
-        link.fromEventId === edge.from &&
-        link.toEventId === edge.to &&
-        link.rank === edge.rank
-    )
-    if (existing) {
-      retained.add(existing.id)
+export function applyEventPatch(event: JourneyEvent, patch: EventInput) {
+  const previousLocation = JSON.stringify(event.location)
+  const category =
+    patch.category === undefined ? event.category : patch.category
+  for (const [field, value] of Object.entries(patch)) {
+    if (field === "planning" && value !== null) {
+      event.planning = { ...event.planning, ...patch.planning }
       continue
     }
-    const id = recordingId(graph.id, key, `link:${edge.from}:${edge.to}`)
-    graph.links.push({
-      id,
-      journeyId: graph.id,
-      fromEventId: edge.from,
-      toEventId: edge.to,
-      kind: "MAIN",
-      rank: edge.rank,
-      introducedRevision: graph.revision,
-    })
-    retained.add(id)
+    if (field === "hotel" && value !== null) {
+      if (!event.hotel || category !== "STAY")
+        throw new JourneyInputError(
+          "Choose a verified hotel before editing its details"
+        )
+      if (patch.hotel?.checkInNote === null) delete event.hotel.checkInNote
+      else
+        event.hotel = { ...event.hotel, ...patch.hotel } as NonNullable<
+          JourneyEvent["hotel"]
+        >
+      continue
+    }
+    if (field === "transit" && value !== null) {
+      if (category !== "TRANSIT")
+        throw new JourneyInputError("Transit details require a transit event")
+      event.transit = eventTransitSchema.parse({
+        routeState: "EMPTY",
+        ...event.transit,
+        ...patch.transit,
+      })
+      continue
+    }
+    if (
+      value === null &&
+      ["planning", "hotel", "transit", "cuisine", "bookingReference"].includes(
+        field
+      )
+    )
+      delete (event as unknown as Record<string, unknown>)[field]
+    else (event as unknown as Record<string, unknown>)[field] = value
   }
-  for (const link of graph.links) {
-    if (!link.retiredRevision && !retained.has(link.id)) {
-      link.retiredRevision = graph.revision
+  if (JSON.stringify(event.location) !== previousLocation) {
+    if (event.planning)
+      for (const field of [
+        "placeId",
+        "provider",
+        "providerPlaceId",
+        "coverImageUrl",
+      ] as const)
+        delete event.planning[field]
+    delete event.hotel
+  }
+  if (event.category !== "STAY") delete event.hotel
+  if (event.category !== "TRANSIT") delete event.transit
+}
+function invalidateChangedRoutes(journey: JourneySnapshot) {
+  for (const [index, event] of journey.events.entries()) {
+    if (!event.transit?.route) continue
+    if (
+      journey.events[index - 1]?.id !== event.transit.fromEventId ||
+      journey.events[index + 1]?.id !== event.transit.toEventId ||
+      !routeMatchesCurrent(event, journey.events)
+    ) {
+      event.transit.routeState = "ROUTE_STALE"
+      delete event.transit.route
     }
   }
 }
-
-export function reduceRecordingCore(
-  graph: TargetJourneyGraphSnapshot,
-  command: RecordingCommand,
+export async function reduceJourneyCommand(
+  context: AuthContext,
+  journey: JourneySnapshot,
+  command: JourneyCommand,
   key: string,
-  now: string
-): string | undefined {
-  const ids = recordingChain(graph).map((event) => event.id)
-  if (command.name === "journey.update") {
-    Object.assign(graph, command.patch)
-    return
+  now: string,
+  tx: Prisma.TransactionClient = prisma
+) {
+  const before = structuredClone(journey)
+  let eventId: string | undefined
+  const sourceUser = await tx.user.findUniqueOrThrow({
+    where: { id: context.userId },
+    select: { id: true, name: true, image: true },
+  })
+  const source = {
+    userId: sourceUser.id,
+    name: sourceUser.name,
+    image: sourceUser.image,
   }
-  if (command.name === "event.add") {
-    const id = recordingId(graph.id, key, "event")
-    const detail = recordingContent({
-      ...emptyRecordingContent,
-      ...command.content,
+  const image = async (assetId: string, existingEventId?: string) => {
+    const asset = await tx.asset.findUnique({
+      where: { id: assetId },
+      include: { owner: { select: { id: true, name: true, image: true } } },
     })
-    insertAfter(ids, id, command.afterEventId)
-    graph.events.push({
-      id,
-      journeyId: graph.id,
-      type: "RECORD",
-      detail,
-      title: indexTitle(detail),
-      parentSectionEventId: null,
-      placementStatus: "SCHEDULED",
-      origin: "USER_INSERTED",
-      introducedRevision: graph.revision,
-      createdAt: now,
-      updatedAt: now,
-    })
-    persistOrder(graph, ids, key)
-    return id
-  }
-  if (command.name === "event.update") {
-    const event = requireRecordingEvent(graph, command.eventId)
-    event.detail = recordingContent({ ...event.detail, ...command.patch })
-    event.title = indexTitle(event.detail)
-    event.updatedAt = now
-    return event.id
-  }
-  if (command.name === "event.move") {
-    const event = requireRecordingEvent(graph, command.eventId)
-    ids.splice(ids.indexOf(event.id), 1)
-    insertAfter(ids, event.id, command.afterEventId)
-    event.updatedAt = now
-    persistOrder(graph, ids, key)
-    return event.id
-  }
-  if (command.name === "event.remove") {
-    const event = requireRecordingEvent(graph, command.eventId)
-    ids.splice(ids.indexOf(event.id), 1)
-    event.retiredRevision = graph.revision
-    event.updatedAt = now
-    for (const link of graph.eventAssetLinks) {
-      if (!link.retiredRevision && link.eventId === event.id)
-        link.retiredRevision = graph.revision
+    const shared = before.events.some((event) =>
+      [...event.photos, ...event.receipts].some(
+        (item) => item.assetId === assetId
+      )
+    )
+    if (
+      !asset ||
+      asset.deletedAt ||
+      asset.kind !== "IMAGE" ||
+      !(
+        asset.ownerId === context.userId ||
+        before.events
+          .find((event) => event.id === existingEventId)
+          ?.photos.some((photo) => photo.assetId === assetId) ||
+        ((journey.ownerId === context.userId || isAdmin(context)) && shared)
+      )
+    )
+      throw new JourneyInputError("Image is not available to this Journey")
+    return {
+      assetId,
+      url: `/api/assets/${encodeURIComponent(assetId)}/file`,
+      source: {
+        userId: asset.owner.id,
+        name: asset.owner.name,
+        image: asset.owner.image,
+      },
+      canEdit: true,
     }
-    persistOrder(graph, ids, key)
-    return event.id
   }
+  const insert = (event: JourneyEvent, afterId: string | null) => {
+    const at =
+      afterId === null
+        ? -1
+        : journey.events.findIndex((item) => item.id === afterId)
+    if (afterId !== null && at < 0)
+      throw new JourneyInputError("Event insertion anchor not found")
+    journey.events.splice(at + 1, 0, event)
+  }
+  switch (command.name) {
+    case "journey.update":
+      Object.assign(journey, command.patch)
+      break
+    case "event.add": {
+      const event = blankEvent(
+        recordingId(journey.id, key, "event"),
+        source,
+        now
+      )
+      applyEventPatch(event, command.content)
+      insert(event, command.afterEventId)
+      eventId = event.id
+      if (command.receipt) {
+        const { assetId, ...fields } = command.receipt
+        event.receipts.push({
+          ...fields,
+          ...(await image(assetId)),
+          id: recordingId(journey.id, key, `receipt:${assetId}`),
+        })
+      }
+      break
+    }
+    case "event.update": {
+      const event = requireJourneyEvent(journey, command.eventId)
+      applyEventPatch(event, command.patch)
+      event.updatedAt = now
+      eventId = event.id
+      break
+    }
+    case "event.move": {
+      if (command.eventId === command.afterEventId)
+        throw new JourneyInputError("An event cannot follow itself")
+      const event = requireJourneyEvent(journey, command.eventId)
+      journey.events = journey.events.filter((item) => item.id !== event.id)
+      insert(event, command.afterEventId)
+      eventId = event.id
+      break
+    }
+    case "event.remove":
+      requireJourneyEvent(journey, command.eventId)
+      journey.events = journey.events.filter(
+        (item) => item.id !== command.eventId
+      )
+      eventId = command.eventId
+      break
+    case "photos.set": {
+      const event = requireJourneyEvent(journey, command.eventId)
+      if (
+        new Set(command.photos.map((item) => item.assetId)).size !==
+        command.photos.length
+      )
+        throw new JourneyInputError("A photo can appear only once in an event")
+      if (
+        command.coverAssetId !== null &&
+        !command.photos.some((item) => item.assetId === command.coverAssetId)
+      )
+        throw new JourneyInputError("Cover must belong to this event")
+      const photos = []
+      for (const photo of command.photos) {
+        const previous = event.photos.find(
+          (item) => item.assetId === photo.assetId
+        )
+        if (
+          photo.caption !== previous?.caption &&
+          photo.caption.length > MAX_PHOTO_CAPTION_LENGTH
+        )
+          throw new JourneyInputError(
+            "Photo descriptions allow at most 100 characters"
+          )
+        photos.push({
+          ...(await image(photo.assetId, event.id)),
+          caption: photo.caption,
+          location: previous?.location ?? null,
+          isCover: command.coverAssetId === photo.assetId,
+        })
+      }
+      event.photos = photos
+      event.updatedAt = now
+      eventId = event.id
+      break
+    }
+    case "photo.update": {
+      const event = requireJourneyEvent(journey, command.eventId)
+      const photo = event.photos.find(
+        (item) => item.assetId === command.assetId
+      )
+      if (!photo) throw new JourneyInputError("Photo not found on this event")
+      Object.assign(photo, command.patch)
+      event.updatedAt = now
+      eventId = event.id
+      break
+    }
+    case "photo.move": {
+      if (command.fromEventId === command.toEventId)
+        throw new JourneyInputError(
+          "Use photos.set to reorder within one event"
+        )
+      const from = requireJourneyEvent(journey, command.fromEventId),
+        to = requireJourneyEvent(journey, command.toEventId)
+      const photo = from.photos.find((item) => item.assetId === command.assetId)
+      if (
+        !photo ||
+        to.photos.some((item) => item.assetId === command.assetId) ||
+        to.photos.length >= 100
+      )
+        throw new JourneyInputError("Photo cannot be moved to this event")
+      const at =
+        command.afterAssetId === null
+          ? -1
+          : to.photos.findIndex((item) => item.assetId === command.afterAssetId)
+      if (command.afterAssetId !== null && at < 0)
+        throw new JourneyInputError("Photo insertion anchor not found")
+      from.photos = from.photos.filter((item) => item.assetId !== photo.assetId)
+      to.photos.splice(at + 1, 0, { ...photo, isCover: false })
+      from.updatedAt = to.updatedAt = now
+      eventId = to.id
+      break
+    }
+    case "receipt.add": {
+      const event = requireJourneyEvent(journey, command.eventId)
+      if (
+        event.receipts.length >= 20 ||
+        event.receipts.some((item) => item.assetId === command.receipt.assetId)
+      )
+        throw new JourneyInputError("Receipt cannot be attached to this event")
+      const { assetId, ...fields } = command.receipt
+      event.receipts.push({
+        ...fields,
+        ...(await image(assetId)),
+        id: recordingId(journey.id, key, `receipt:${assetId}`),
+      })
+      event.updatedAt = now
+      eventId = event.id
+      break
+    }
+    case "receipt.update":
+    case "receipt.remove": {
+      const event = requireJourneyEvent(journey, command.eventId)
+      const receipt = event.receipts.find(
+        (item) => item.id === command.receiptId
+      )
+      if (!receipt)
+        throw new JourneyInputError("Receipt not found on this event")
+      if (command.name === "receipt.update")
+        Object.assign(receipt, command.fields)
+      else
+        event.receipts = event.receipts.filter(
+          (item) => item.id !== command.receiptId
+        )
+      event.updatedAt = now
+      eventId = event.id
+      break
+    }
+  }
+  journey.updatedAt = now
+  invalidateChangedRoutes(journey)
+  return eventId
 }

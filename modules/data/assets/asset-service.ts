@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { Readable } from "node:stream"
 import { isAdmin, type AuthContext } from "@/modules/auth/server/context"
-import { deleteAsset } from "@/modules/data/content/content-repository"
+import { deleteAsset } from "@/modules/data/assets/asset-repository"
 import {
   AssetInputError,
   AssetStorageError,

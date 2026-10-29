@@ -1,38 +1,14 @@
-import { plannedLocationOf } from "./locations"
-import type {
-  TargetJourneyEvent,
-  TargetTransitPlanningRun,
-} from "@/modules/data-model/contracts"
-
-export type TransitProviderErrorCode =
-  | "INVALID_ENDPOINT"
-  | "NO_ROUTE"
-  | "AUTH_OR_QUOTA"
-  | "RATE_LIMIT"
-  | "TIMEOUT"
-  | "MALFORMED_RESPONSE"
-
-export type TransportMode = Extract<
-  TargetJourneyEvent,
-  { type: "TRANSIT" }
->["detail"]["transportMode"]
+import { canonicalizeTransitPlanRequest } from "./coordinates"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
+export type TransportMode = NonNullable<
+  JourneyEvent["transit"]
+>["transportMode"]
 export type TransitRequestMode = NonNullable<
-  Extract<TargetJourneyEvent, { type: "TRANSIT" }>["detail"]["requestMode"]
+  NonNullable<JourneyEvent["transit"]>["requestMode"]
 >
 export type TransitPreference = NonNullable<
-  Extract<TargetJourneyEvent, { type: "TRANSIT" }>["detail"]["preference"]
+  NonNullable<JourneyEvent["transit"]>["preference"]
 >
-export type TransitPlan = Omit<
-  TargetTransitPlanningRun["plans"][number],
-  "planningRunId" | "transitEventId"
-> & { requestFingerprint: string }
-export type TransitSegment = TransitPlan["segments"][number]
-export type TransitSegmentMode = TransitSegment["mode"]
-export type TransitTrafficBasis = TransitPlan["trafficBasis"]
-export type TransitTrafficSection = NonNullable<
-  TransitSegment["trafficSections"]
->[number]
-
 export interface TransitPlanEndpoint {
   name: string
   lat: number
@@ -51,19 +27,6 @@ export interface TransitPlanRequest {
   departAt?: string
   preference: TransitPreference
   alternatives: number
-}
-
-export interface TransitPlanBundle {
-  transitEventId: string
-  requestFingerprint: string
-  plans: TransitPlan[]
-  warning?: string
-}
-
-export interface TransitPlanFailure {
-  transitEventId: string
-  code: TransitProviderErrorCode
-  message: string
 }
 
 const TRANSIT_PLANNING_VERSION = 3
@@ -90,50 +53,34 @@ export function requestModeForTransport(
 }
 
 export function buildTransitPlanRequest(
-  event: Extract<TargetJourneyEvent, { type: "TRANSIT" }>,
-  events: readonly TargetJourneyEvent[]
+  event: JourneyEvent,
+  events: readonly JourneyEvent[]
 ): TransitPlanRequest | null {
-  const eventById = new Map(
-    events.map((candidate) => [candidate.id, candidate])
-  )
-  const from = plannedLocationOf(
-    eventById.get(event.detail.plannedFromEventId ?? "")
-  )
-  const to = plannedLocationOf(
-    eventById.get(event.detail.plannedToEventId ?? "")
-  )
-  if (!from || !to) return null
-
-  const mode =
-    event.detail.requestMode ??
-    requestModeForTransport(event.detail.transportMode)
-  if (!mode) return null
+  const detail = event.transit
+  if (!detail) return null
+  const endpoint = (id: string): TransitPlanEndpoint | null => {
+    const value = events.find((event) => event.id === id)
+    if (!value?.location?.coordinates) return null
+    return {
+      name: value.location.name,
+      ...value.location.coordinates,
+      ...(value.planning?.provider === "amap"
+        ? { providerPlaceId: value.planning.providerPlaceId }
+        : {}),
+    }
+  }
+  const origin = endpoint(detail.fromEventId),
+    destination = endpoint(detail.toEventId),
+    mode = detail.requestMode ?? requestModeForTransport(detail.transportMode)
+  if (!origin || !destination || !mode) return null
   return {
     transitEventId: event.id,
-    origin: {
-      name: from.name,
-      lat: from.lat,
-      lng: from.lng,
-      coordinateSystem: from.coordinateSystem,
-      providerPlaceId:
-        from.coordinateProvider?.toLowerCase() === "amap"
-          ? from.providerPlaceId
-          : undefined,
-    },
-    destination: {
-      name: to.name,
-      lat: to.lat,
-      lng: to.lng,
-      coordinateSystem: to.coordinateSystem,
-      providerPlaceId:
-        to.coordinateProvider?.toLowerCase() === "amap"
-          ? to.providerPlaceId
-          : undefined,
-    },
+    origin,
+    destination,
     mode,
-    transportMode: event.detail.transportMode,
-    departAt: event.detail.plannedDepartAt,
-    preference: event.detail.preference ?? "RECOMMENDED",
+    transportMode: detail.transportMode,
+    departAt: event.planning?.startAt,
+    preference: detail.preference ?? "RECOMMENDED",
     alternatives: 3,
   }
 }
@@ -175,23 +122,19 @@ function endpointFingerprint(endpoint: TransitPlanEndpoint) {
   }
 }
 
-export function activeTransitPlanningRun(
-  event: Extract<TargetJourneyEvent, { type: "TRANSIT" }>,
-  runs: readonly TargetTransitPlanningRun[]
+export function routeMatchesCurrent(
+  event: JourneyEvent,
+  events: readonly JourneyEvent[]
 ) {
-  return event.detail.activePlanningRunId
-    ? runs.find((run) => run.id === event.detail.activePlanningRunId)
-    : undefined
-}
-
-export function selectedTransitPlan(
-  event: Extract<TargetJourneyEvent, { type: "TRANSIT" }>,
-  runs: readonly TargetTransitPlanningRun[]
-) {
-  const run = activeTransitPlanningRun(event, runs)
-  if (!run?.plans.length) return undefined
-  return (
-    run.plans.find((plan) => plan.id === event.detail.selectedPlanId) ??
-    run.plans[0]
-  )
+  const route = event.transit?.route,
+    request = buildTransitPlanRequest(event, events)
+  if (!route || !request) return false
+  try {
+    return (
+      route.requestFingerprint ===
+      transitPlanFingerprint(canonicalizeTransitPlanRequest(request))
+    )
+  } catch {
+    return false
+  }
 }

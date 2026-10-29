@@ -14,7 +14,7 @@ export function endpointToGcj02(
     const [lng, lat] = wgs84ToGcj02(endpoint.lng, endpoint.lat)
     return { ...endpoint, lng, lat, coordinateSystem: "GCJ02" }
   }
-  if (system === "BD09LL") {
+  if (system === "BD09LL" || system === "BD09") {
     const [lng, lat] = bd09ToGcj02(endpoint.lng, endpoint.lat)
     return { ...endpoint, lng, lat, coordinateSystem: "GCJ02" }
   }
