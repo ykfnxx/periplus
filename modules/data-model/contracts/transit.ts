@@ -188,7 +188,15 @@ export const transitRouteSchema = z
       .array(
         transitPlanFieldsSchema
           .omit({ planningRunId: true, transitEventId: true })
-          .safeExtend({ requestFingerprint: z.string().min(1) })
+          .extend({ requestFingerprint: z.string().min(1) })
+          .superRefine((plan, context) => {
+            if (plan.validUntil && plan.validUntil < plan.calculatedAt)
+              context.addIssue({
+                code: "custom",
+                path: ["validUntil"],
+                message: "plan validity cannot precede calculation",
+              })
+          })
       )
       .min(1),
     warning: z.string().optional(),
