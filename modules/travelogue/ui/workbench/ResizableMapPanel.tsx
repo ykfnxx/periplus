@@ -35,7 +35,7 @@ export default function ResizableMapPanel({
           id="records"
           defaultSize={width}
           minSize={recording ? 336 : 320}
-          maxSize={recording ? 440 : 560}
+          maxSize={recording ? 480 : 560}
           onResize={(size) => onWidth?.(size.inPixels)}
         >
           <section
@@ -59,7 +59,7 @@ export default function ResizableMapPanel({
       ? 164
       : sheet === "full"
         ? height
-        : Math.round(height * 0.55)
+        : Math.round(height * 0.8)
   return (
     <motion.section
       aria-label="旅程面板"
@@ -87,7 +87,7 @@ export default function ResizableMapPanel({
         variant="ghost"
         aria-label={sheet === "full" ? "收起记录列表" : "展开记录列表"}
         aria-expanded={sheet === "full"}
-        className="relative h-7! w-full! shrink-0 touch-none items-center! justify-center! rounded-none! text-journal-muted!"
+        className="relative h-6! w-full! shrink-0 touch-none items-center! justify-center! rounded-none! text-journal-muted!"
         onPointerDown={(event) => {
           dragged.current = false
           controls.start(event)

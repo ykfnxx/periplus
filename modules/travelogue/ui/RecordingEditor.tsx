@@ -16,6 +16,7 @@ import { ArrowLeft, Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type {
   JourneySummary,
+  JourneyEvent,
   EventLocation,
 } from "@/modules/data-model/contracts"
 import { eventCalendarDate } from "@/lib/journeys/calendar"
@@ -163,6 +164,13 @@ export default function RecordingEditor({
     () => new Map(journey?.events.map((event, i) => [event.id, i + 1])),
     [journey?.events]
   )
+  const eventsById = useMemo(
+    () =>
+      new Map<string, JourneyEvent>(
+        journey?.events.map((event) => [event.id, event])
+      ),
+    [journey?.events]
+  )
   const points = useMemo<RecordMapPoint[]>(
     () =>
       journey?.events.flatMap((event) =>
@@ -198,7 +206,7 @@ export default function RecordingEditor({
       ? 164
       : sheet === "full"
         ? height
-        : Math.round(height * 0.55)
+        : Math.round(height * 0.8)
   const insets = useMemo(
     () =>
       desktop
@@ -363,7 +371,7 @@ export default function RecordingEditor({
         {developerMode && <p className="sr-only">共用调试数据</p>}
         <ResizableMapPanel
           recording
-          width={384}
+          width={420}
           onWidth={(panelWidth) => ui.setState({ panelWidth })}
           sheet={sheet}
           onSheet={(sheet) => ui.setState({ sheet })}
@@ -400,7 +408,9 @@ export default function RecordingEditor({
               {canEdit && (
                 <Button
                   variant="primary"
-                  className="journal-write shrink-0 gap-1!"
+                  shape="square"
+                  className="journal-write shrink-0"
+                  title="添加记录"
                   disabled={!journey || loading}
                   aria-label="添加记录"
                   onClick={() =>
@@ -408,7 +418,6 @@ export default function RecordingEditor({
                   }
                 >
                   <Plus size={16} />
-                  记一笔
                 </Button>
               )}
               {canEdit && journey && (
@@ -517,6 +526,7 @@ export default function RecordingEditor({
                   <EventCard
                     key={entry.id}
                     entry={entry}
+                    eventsById={eventsById}
                     index={index}
                     selected={selected === entry.id}
                     canEdit={canEdit && entry.canEdit === true}
