@@ -97,7 +97,7 @@ npm run build       # 生产构建
 - `.env.local`：本机开发实际配置，已被 `.gitignore` 忽略
 - `.env.example`：可提交的配置模板
 - `config/periplus.ts`：浏览器可见配置读取层，只读取 `NEXT_PUBLIC_*`
-- `config/periplus.server.ts`：服务端配置读取层，读取数据库、认证、Kimi、MCP 等配置
+- `config/periplus.server.ts`：服务端配置读取层，读取数据库、认证、资源存储和 OCR 等配置
 
 **注意**：
 

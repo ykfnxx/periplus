@@ -5,7 +5,7 @@ import {
   requireCurrentUser,
   type AuthContext,
 } from "@/modules/auth/server/context"
-import { AssetInUseError } from "@/modules/data/content/content-repository"
+import { AssetInUseError } from "@/modules/data/assets/asset-contract"
 import {
   AssetInputError,
   AssetStorageError,

@@ -23,8 +23,6 @@ import { queryWithRetry } from "../providers/query-retry"
 
 export interface PlaceProviderUsageContext {
   userId?: string
-  workspaceId?: string
-  agentRunId?: string
   requestId?: string
   signal?: AbortSignal
 }
@@ -68,10 +66,7 @@ type ImageProbe = (url: string, signal?: AbortSignal) => Promise<boolean>
 interface PlaceServiceRetryOptions {
   sleep?: (milliseconds: number) => Promise<void>
   random?: () => number
-  now?: () => number
 }
-
-const PROVIDER_CIRCUIT_TTL_MS = 2 * 60 * 1_000
 
 function providerFailureWarning(warnings: PlaceSearchResponse["warnings"]) {
   return warnings.find(
@@ -90,18 +85,6 @@ async function probeImage(url: string, signal?: AbortSignal) {
 }
 
 export class PlaceIntelligenceService {
-  private readonly providerCircuitUntil = new Map<string, number>()
-
-  private openProviderCircuit(circuitKey: string, until: number) {
-    this.providerCircuitUntil.set(circuitKey, until)
-    const cleanup = setTimeout(() => {
-      if (this.providerCircuitUntil.get(circuitKey) === until) {
-        this.providerCircuitUntil.delete(circuitKey)
-      }
-    }, PROVIDER_CIRCUIT_TTL_MS)
-    cleanup.unref?.()
-  }
-
   constructor(
     private readonly repository: Pick<
       PlaceCatalogRepository,
@@ -329,35 +312,6 @@ export class PlaceIntelligenceService {
     usageContext?: PlaceProviderUsageContext
   ) {
     try {
-      const circuitKey = usageContext?.agentRunId
-      const now = this.retry.now?.() ?? Date.now()
-      const circuitUntil = circuitKey
-        ? this.providerCircuitUntil.get(circuitKey)
-        : undefined
-      if (circuitKey && circuitUntil && circuitUntil <= now) {
-        this.providerCircuitUntil.delete(circuitKey)
-      }
-      if (circuitUntil && circuitUntil > now) {
-        const result = {
-          candidates: [],
-          warnings: [
-            {
-              provider: "amap" as const,
-              code: "quota_exceeded" as const,
-              message: "当前 Agent run 的高德查询已因硬额度错误停止",
-              retryable: false,
-              attempts: 0,
-              exhausted: true,
-            },
-          ],
-          providerAttempts: 0,
-        }
-        if (usageContext) {
-          await this.logUsage(purpose, "error", "quota_exceeded", usageContext)
-        }
-        return result
-      }
-
       const retried = await queryWithRetry({
         operation: () => this.amapProvider.search(query, usageContext?.signal),
         failure: (result) => {
@@ -390,14 +344,6 @@ export class PlaceIntelligenceService {
         ),
       }
       const terminalFailure = providerFailureWarning(result.warnings)
-      if (
-        circuitKey &&
-        terminalFailure?.exhausted &&
-        terminalFailure.retryable === false &&
-        terminalFailure.code === "quota_exceeded"
-      ) {
-        this.openProviderCircuit(circuitKey, now + PROVIDER_CIRCUIT_TTL_MS)
-      }
       if (usageContext) {
         await this.logUsage(
           purpose,
@@ -460,8 +406,6 @@ async function logPlaceProviderUsage(
       status,
       code,
       userId: context.userId,
-      workspaceId: context.workspaceId,
-      agentRunId: context.agentRunId,
       requestId: context.requestId,
     },
   })

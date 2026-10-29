@@ -6,7 +6,7 @@ import {
 } from "@/modules/auth/server/context"
 import { prisma } from "@/modules/data/db/prisma"
 import { journeyReadScope } from "@/modules/data/journeys/recording-access"
-import { AssetUploadConflictError } from "./asset-contract"
+import { AssetUploadConflictError, AssetInUseError } from "./asset-contract"
 
 export const assetOwnerInclude = {
   owner: { select: { id: true, name: true, banned: true } },
@@ -151,8 +151,6 @@ export async function getAssetRecord(
     !(await prisma.eventAssetLink.findFirst({
       where: {
         assetId: id,
-        retiredRevision: null,
-        event: { retiredRevision: null },
         journey: { deletedAt: null, ...journeyReadScope(context) },
       },
       select: { id: true },
@@ -161,4 +159,45 @@ export async function getAssetRecord(
     throw new PermissionDeniedError("Cannot access another user's resource")
   }
   return asset
+}
+
+function hasPrismaCode(error: unknown, code: string) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  )
+}
+
+export async function deleteAsset(context: AuthContext, assetId: string) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Reference inserts lock this same row in their database guards. Acquire
+      // it before inspecting references so attach and soft delete serialize.
+      await tx.$queryRaw`SELECT "id" FROM "Asset" WHERE "id" = ${assetId} FOR UPDATE`
+      const record = await tx.asset.findUnique({ where: { id: assetId } })
+      if (!record) return false
+      if (!isAdmin(context) && record.ownerId !== context.userId) {
+        throw new PermissionDeniedError("Cannot delete another user's asset")
+      }
+      if (record.deletedAt) return true
+
+      const activeEventLink = await tx.eventAssetLink.findFirst({
+        where: { assetId },
+        select: { id: true },
+      })
+      if (activeEventLink) throw new AssetInUseError()
+
+      await tx.asset.update({
+        where: { id: assetId },
+        data: { deletedAt: new Date() },
+      })
+      return true
+    })
+  } catch (error) {
+    if (error instanceof AssetInUseError) throw error
+    if (hasPrismaCode(error, "P2003")) throw new AssetInUseError()
+    throw error
+  }
 }

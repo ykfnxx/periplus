@@ -13,11 +13,12 @@ import {
 import { POST as command } from "@/app/api/journeys/[id]/commands/route"
 import { setTestAuthContext } from "@/modules/auth/server/context"
 import type {
-  RecordingCommand,
-  RecordingJourney,
-  RecordingLocation,
-  RecordingMutation,
-} from "@/modules/data-model/contracts/recording"
+  JourneyCommand,
+  JourneySnapshot,
+  EventLocation,
+  JourneyMutation,
+} from "@/modules/data-model/contracts"
+import { commitJourney } from "@/modules/data/journeys/journey-repository"
 import { prisma } from "@/modules/data/db/prisma"
 import {
   createRecordingJourney,
@@ -29,7 +30,7 @@ const owner = { userId: randomUUID(), role: "user" as const }
 const other = { userId: randomUUID(), role: "user" as const }
 const assetIds = [randomUUID(), randomUUID(), randomUUID()]
 const [a, b, c] = assetIds as [string, string, string]
-const location = (name: string, lat = 30.25): RecordingLocation => ({
+const location = (name: string, lat = 30.25): EventLocation => ({
   name,
   address: null,
   coordinates: { lat, lng: 120.15, coordinateSystem: "GCJ02" },
@@ -39,20 +40,20 @@ async function create() {
   return (await createRecordingJourney(owner, { idempotencyKey: randomUUID() }))
     .journey
 }
-async function write(journey: RecordingJourney, action: RecordingCommand) {
+async function write(journey: JourneySnapshot, action: JourneyCommand) {
   return mutateRecordingJourney(owner, journey.id, {
     expectedRevision: journey.revision,
     idempotencyKey: randomUUID(),
     command: action,
   })
 }
-function photo(journey: RecordingJourney, eventId: string, assetId = a) {
+function photo(journey: JourneySnapshot, eventId: string, assetId = a) {
   return journey.events
     .find((event) => event.id === eventId)!
     .photos.find((item) => item.assetId === assetId)!
 }
 async function post(
-  journey: RecordingJourney,
+  journey: JourneySnapshot,
   action: unknown,
   revision = journey.revision
 ) {
@@ -128,7 +129,7 @@ describe.sequential(
       ).journey
       expect(photo(journey, firstId).location).toBeNull()
       const override = location("照片单独的位置", 30.27)
-      const request: RecordingMutation = {
+      const request: JourneyMutation = {
         expectedRevision: journey.revision,
         idempotencyKey: randomUUID(),
         command: {
@@ -233,10 +234,12 @@ describe.sequential(
           journeyId: journey.id,
           eventId: secondId,
           assetId: a,
-          retiredRevision: null,
         },
       })
-      expect(JSON.parse(persisted.locationJson!)).toEqual(override)
+      expect(persisted.eventId).toBe(secondId)
+      expect(
+        photo(await getRecordingJourney(owner, journey.id), secondId).location
+      ).toEqual(override)
 
       journey = (
         await write(journey, {
@@ -289,11 +292,25 @@ describe.sequential(
           coverAssetId: null,
         })
       ).journey
-      // Fixture for a description persisted before the shorter new-input limit.
-      await prisma.eventAssetLink.updateMany({
-        where: { journeyId: journey.id, assetId: a, retiredRevision: null },
-        data: { caption: "旧".repeat(160) },
-      })
+      // A long existing caption can pass through order/location edits without
+      // accepting a newly entered over-limit caption.
+      const snapshot = structuredClone(journey)
+      snapshot.events
+        .find((event) => event.id === first.eventId)!
+        .photos.find((photo) => photo.assetId === a)!.caption = "旧".repeat(160)
+      snapshot.revision++
+      await commitJourney(
+        owner,
+        journey.id,
+        {
+          journey: snapshot,
+          operation: "fixture.caption",
+          idempotencyKey: randomUUID(),
+          patch: [],
+          inversePatch: [],
+        },
+        journey.revision
+      )
       journey = await getRecordingJourney(owner, journey.id)
       journey = (
         await write(journey, {

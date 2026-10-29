@@ -23,7 +23,7 @@ import {
 } from "@/modules/data/journeys/recording-service"
 import {
   getJourney,
-  commitJourneyGraph,
+  commitJourney,
 } from "@/modules/data/journeys/journey-repository"
 import {
   createJourneyInvitation,
@@ -39,8 +39,8 @@ import { GET as invitationRoute } from "@/app/api/journey-invitations/[token]/ro
 import { POST as acceptRoute } from "@/app/api/journey-invitations/[token]/accept/route"
 import { GET as fileRoute } from "@/app/api/assets/[id]/file/route"
 import type {
-  RecordingCommand,
-  RecordingJourney,
+  JourneyCommand,
+  JourneySnapshot,
 } from "@/modules/data-model/contracts"
 
 const contexts = ["owner", "friend", "stranger"].map((label) => ({
@@ -91,8 +91,8 @@ async function journey() {
 }
 async function write(
   context: typeof owner,
-  current: RecordingJourney,
-  command: RecordingCommand,
+  current: JourneySnapshot,
+  command: JourneyCommand,
   key = randomUUID()
 ) {
   return mutateRecordingJourney(context, current.id, {
@@ -101,7 +101,7 @@ async function write(
     command,
   })
 }
-async function joined(current: RecordingJourney) {
+async function joined(current: JourneySnapshot) {
   const invite = await createJourneyInvitation(owner, current.id)
   const token = invite.url.split("/").at(-1)!
   await acceptJourneyInvitation(friend, token)
@@ -132,7 +132,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     let current = await journey()
     const asset = await upload()
     const key = randomUUID()
-    const command: RecordingCommand = {
+    const command: JourneyCommand = {
       name: "event.add",
       afterEventId: null,
       content: { body: "午饭", date: null, location: null },
@@ -170,12 +170,12 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
       source: { userId: owner.userId },
     })
     expect(
-      (
-        await prisma.eventAssetLink.findUniqueOrThrow({
-          where: { id: receiptId },
-        })
-      ).retiredRevision
-    ).toBe(current.revision)
+      await prisma.eventAssetLink.findUnique({ where: { id: receiptId } })
+    ).toMatchObject({
+      eventId: current.events[0]!.id,
+      assetId: asset.id,
+      role: "RECEIPT",
+    })
     expect((await getAssetRecord(owner, asset.id))!.storageKey).toBe(
       asset.storageKey
     )
@@ -296,7 +296,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
       "Journey not found"
     )
   })
-  it("rejects member edits to other content and generic graph writes, preserving revision and original inputs", async () => {
+  it("rejects member edits to other content and whole-document replacement, preserving revision and original inputs", async () => {
     let current = await journey()
     await joined(current)
     const added = await write(owner, current, {
@@ -314,7 +314,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
         coverAssetId: asset.id,
       })
     ).journey
-    const forbidden: RecordingCommand[] = [
+    const forbidden: JourneyCommand[] = [
       {
         name: "event.update",
         eventId: added.eventId!,
@@ -349,21 +349,21 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
           )
         ).status
       ).toBe(403)
-    const graph = (await getJourney(friend, current.id))!
+    const snapshot = (await getJourney(friend, current.id))!
     await expect(
-      commitJourneyGraph(
+      commitJourney(
         friend,
         current.id,
         {
-          graph: { ...graph, revision: graph.revision + 1 },
+          journey: { ...snapshot, revision: snapshot.revision + 1 },
           operation: "bypass",
           idempotencyKey: randomUUID(),
           patch: [],
           inversePatch: [],
         },
-        graph.revision
+        snapshot.revision
       )
-    ).rejects.toThrow("owner")
+    ).rejects.toThrow("author")
     expect((await getRecordingJourney(owner, current.id)).revision).toBe(
       current.revision
     )
@@ -415,11 +415,8 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
           journeyId: current.id,
           eventId: added.eventId!,
           assetId: privateAsset.id,
-          assetChecksum: privateAsset.checksum,
           role: "GALLERY",
           rank: 0,
-          visibility: "PRIVATE",
-          introducedRevision: current.revision,
         },
       })
     ).rejects.toThrow()
