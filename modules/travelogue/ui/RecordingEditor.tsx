@@ -288,7 +288,7 @@ export default function RecordingEditor({
     const entry = journey?.events.find(
       (event) => event.id === first?.dataset.recordId
     )
-    if (entry) ui.setState({ activeDay: entry.date || "undated" })
+    if (entry) ui.setState({ activeDay: eventCalendarDate(entry) || "undated" })
   }
   return (
     <main

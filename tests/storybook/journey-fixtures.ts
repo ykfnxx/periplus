@@ -124,7 +124,12 @@ export const journeyWithDetails: JourneySnapshot = {
             category: "STAY",
             receipts: [storyReceipt],
             title: "在上海住一晚",
-            planning: { durationMinutes: 720 },
+            date: null,
+            timeZone: "America/Los_Angeles",
+            planning: {
+              startAt: "2026-10-20T01:00:00Z",
+              durationMinutes: 720,
+            },
             hotel: {
               provider: "rollinggo",
               providerHotelId: "story-hotel",
