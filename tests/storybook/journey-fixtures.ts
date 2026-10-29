@@ -63,9 +63,9 @@ export const singleChainJourney: JourneySnapshot = {
   ],
 }
 
-export const planningJourney: JourneySnapshot = {
+export const journeyWithDetails: JourneySnapshot = {
   ...singleChainJourney,
-  title: "手动补记与规划共用的旅程",
+  title: "杭州与上海的旅行记录",
   events: singleChainJourney.events.map((event) =>
     event.id === "train-to-shanghai"
       ? {

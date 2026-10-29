@@ -5,7 +5,10 @@ import type {
   JourneySnapshot,
   JourneySummary,
 } from "@/modules/data-model/contracts"
-import { planningJourney } from "@/tests/storybook/journey-fixtures"
+import {
+  singleChainJourney,
+  journeyWithDetails,
+} from "@/tests/storybook/journey-fixtures"
 import LandingGate from "@/modules/auth/ui/LandingGate"
 import JourneyLibrary from "./JourneyLibrary"
 import RecordingEditor from "./RecordingEditor"
@@ -335,6 +338,10 @@ export const ReceiptEditConflict: Story = {
   ),
 }
 
-export const UnifiedPlanning: Story = {
-  render: () => <EditorStory initialJourney={planningJourney} />,
+export const EventDetails: Story = {
+  render: () => <EditorStory initialJourney={journeyWithDetails} />,
+}
+
+export const SingleChain: Story = {
+  render: () => <EditorStory initialJourney={singleChainJourney} />,
 }

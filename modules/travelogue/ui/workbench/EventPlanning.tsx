@@ -5,7 +5,7 @@ import {
   formatTransitDuration,
   transitModeLabel,
 } from "@/lib/journeys/display"
-import { ProviderImage } from "@/modules/workbench/ui/ProviderImage"
+import { ProviderImage } from "./ProviderImage"
 
 export default function EventPlanning({
   event,

@@ -20,8 +20,6 @@ const config: StorybookConfig = {
       include: [
         ...(viteConfig.optimizeDeps?.include ?? []),
         "@amap/amap-jsapi-loader",
-        "react-markdown",
-        "remark-gfm",
       ],
     }
     return viteConfig

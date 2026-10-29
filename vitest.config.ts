@@ -58,10 +58,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: [
-      "@amap/amap-jsapi-loader",
-      "react-markdown",
-      "remark-gfm",
-    ],
+    include: ["@amap/amap-jsapi-loader"],
   },
 })
