@@ -3,15 +3,9 @@ import { targetIdSchema as idSchema } from "./common"
 
 export const PLAN_VALIDATION_ISSUE_CODES = [
   "PROJECTION_INVALID",
-  "ROOT_EVENT_TYPE_INVALID",
-  "ROOT_ROUTE_DISCONNECTED",
-  "CITY_TIMEZONE_INVALID",
-  "CITY_ROUTE_EMPTY",
-  "CITY_EVENT_TYPE_INVALID",
   "STAY_NOT_SUPPORTED",
   "PLANNED_START_MISSING",
   "TIME_ORDER_INVALID",
-  "CROSS_CITY_CONNECTION",
   "MISSING_TRANSIT_BETWEEN",
   "TRANSIT_ENDPOINT_MISMATCH",
   "TRANSIT_ROUTE_NOT_READY",
@@ -24,7 +18,6 @@ export const planValidationIssueCodeSchema = z.enum(PLAN_VALIDATION_ISSUE_CODES)
 export const planValidationIssueSchema = z
   .object({
     code: planValidationIssueCodeSchema,
-    cityEventId: idSchema.optional(),
     localDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -43,7 +36,7 @@ export const planValidationReportSchema = z
   .object({
     valid: z.boolean(),
     workspaceRevision: z.number().int().nonnegative(),
-    journeyRevision: z.number().int().positive(),
+    journeyRevision: z.number().int().nonnegative(),
     projectionHash: z.string().regex(/^[a-f0-9]{64}$/),
     issues: z.array(planValidationIssueSchema),
   })

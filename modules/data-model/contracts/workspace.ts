@@ -11,8 +11,7 @@ import {
   targetDateTimeSchema as dateTimeSchema,
   targetIdSchema as idSchema,
 } from "./common"
-import { targetJourneyGraphSnapshotSchema } from "./journey"
-import { targetFlatJourneySnapshotSchema } from "./flat-journey"
+import { journeySnapshotSchema } from "./journey"
 
 export const WORKSPACE_WEBSOCKET_TICKET_SECONDS = 300
 export const WORKSPACE_AGENT_RUN_LEASE_SECONDS = 60
@@ -28,43 +27,34 @@ export const targetWorkspaceSessionSchema = z
     headWorkspaceRevision: z.number().int().nonnegative(),
     status: z.enum(TARGET_WORKSPACE_STATUSES),
     title: targetWorkspaceTitleSchema,
-    headGraph: targetJourneyGraphSnapshotSchema,
-    flatJourney: targetFlatJourneySnapshotSchema,
+    journey: journeySnapshotSchema,
     lastAccessAt: dateTimeSchema,
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
     archivedAt: dateTimeSchema.optional(),
   })
   .superRefine((session, context) => {
-    if (session.ownerId !== session.headGraph.ownerId) {
+    if (session.ownerId !== session.journey.ownerId) {
       context.addIssue({
         code: "custom",
-        path: ["headGraph", "ownerId"],
-        message: "workspace owner must own its draft graph",
+        path: ["journey", "ownerId"],
+        message: "workspace owner must own its journey",
       })
     }
-    if (session.flatJourney.journeyId !== session.headGraph.id) {
+    if (session.journey.revision !== session.headWorkspaceRevision)
       context.addIssue({
         code: "custom",
-        path: ["flatJourney", "journeyId"],
-        message: "flat Journey must project the Workspace Journey",
+        path: ["journey", "revision"],
+        message: "Journey revision must match Workspace head",
       })
-    }
-    if (session.flatJourney.revision !== session.headWorkspaceRevision) {
-      context.addIssue({
-        code: "custom",
-        path: ["flatJourney", "revision"],
-        message: "flat Journey revision must match Workspace head revision",
-      })
-    }
     if (
       session.sourceJourneyId !== null &&
-      session.sourceJourneyId !== session.headGraph.id
+      session.sourceJourneyId !== session.journey.id
     ) {
       context.addIssue({
         code: "custom",
         path: ["sourceJourneyId"],
-        message: "workspace source journey must match its draft graph",
+        message: "workspace source journey must match its journey",
       })
     }
     if (
@@ -87,8 +77,8 @@ export const targetWorkspaceRevisionSchema = z
     revision: z.number().int().positive(),
     parentRevisionId: idSchema.optional(),
     commandName: z.enum(TARGET_COMMAND_NAMES),
-    before: targetJourneyGraphSnapshotSchema,
-    after: targetJourneyGraphSnapshotSchema,
+    before: journeySnapshotSchema,
+    after: journeySnapshotSchema,
     patch: z.unknown(),
     inversePatch: z.unknown(),
     actor: targetActorReferenceSchema,

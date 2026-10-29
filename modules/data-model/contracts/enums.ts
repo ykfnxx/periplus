@@ -6,17 +6,6 @@ export const TARGET_JOURNEY_VISIBILITIES = [
   "PUBLIC",
 ] as const
 
-export const TARGET_EVENT_TYPES = [
-  "RECORD",
-  "SECTION",
-  "VISIT",
-  "TRANSIT",
-  "STAY",
-  "MEAL",
-  "ACTIVITY",
-  "NOTE",
-] as const
-
 export const TARGET_EVENT_EXECUTION_STATUSES = [
   "PLANNED",
   "STARTED",
@@ -32,15 +21,6 @@ export const TARGET_EVENT_ORIGINS = [
   "FORKED",
   "SOURCE_DERIVED",
 ] as const
-
-export const TARGET_EVENT_PLACEMENT_STATUSES = [
-  "SCHEDULED",
-  "UNSCHEDULED",
-] as const
-
-export const TARGET_LINK_KINDS = ["MAIN", "ALTERNATIVE"] as const
-
-export const TARGET_SECTION_KINDS = ["CITY"] as const
 
 export const TARGET_ACTOR_KINDS = ["USER", "AGENT", "SYSTEM"] as const
 
@@ -187,23 +167,17 @@ export const TARGET_EVENT_SOURCE_ROLES = [
 ] as const
 
 export const TARGET_COMMAND_NAMES = [
-  "journey.add_event",
-  "journey.update_event",
-  "journey.move_event",
-  "journey.place_event",
-  "journey.retire_event",
-  "journey.replace_event",
-  "journey.add_link",
-  "journey.retire_link",
-  "journey.select_branch",
-  "journey.plan_transit",
-  "journey.select_transit_plan",
-  "journey.confirm_actual",
-  "journey.skip_event",
-  "journey.cancel_event",
-  "journey.attach_asset",
-  "journey.add_observation",
-  "journey.link_source_item",
+  "journey.update",
+  "event.add",
+  "event.update",
+  "event.move",
+  "event.remove",
+  "photos.set",
+  "photo.update",
+  "photo.move",
+  "receipt.add",
+  "receipt.update",
+  "receipt.remove",
   "journey.undo",
   "journey.apply_draft",
   "workspace.refresh",
