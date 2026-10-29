@@ -184,6 +184,7 @@ export type TargetTransitPlanningRun = z.infer<
 export const transitRouteSchema = z
   .object({
     requestFingerprint: z.string().min(1),
+    // Exactly the selected plan; provider candidate lists stay run-local.
     plans: z
       .array(
         transitPlanFieldsSchema
@@ -198,7 +199,7 @@ export const transitRouteSchema = z
               })
           })
       )
-      .min(1),
+      .length(1),
     warning: z.string().optional(),
   })
   .strict()
