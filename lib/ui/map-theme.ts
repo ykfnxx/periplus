@@ -1,4 +1,9 @@
-import type { TransitSegmentMode, TransportMode } from "@/lib/journeys/planning"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
+
+type TransportMode = NonNullable<JourneyEvent["transit"]>["transportMode"]
+type TransitSegmentMode = NonNullable<
+  NonNullable<JourneyEvent["transit"]>["route"]
+>["plans"][number]["segments"][number]["mode"]
 
 // 与 app/globals.css @theme 中的 --color-* token 一一对应，改色需双改
 export const periplusColors = {
@@ -14,33 +19,7 @@ export const periplusColors = {
   bluegray: "#4f6d79",
   coral: "#a84643",
   routeBlue: "#5fb7ff",
-  routeBluePending: "#9dd8ff",
-  routeAlternative: "#8fa1a8",
 } as const
-
-export const routeDayColors = [
-  "#ff8a4c",
-  "#48c9a9",
-  "#ffd166",
-  "#a78bfa",
-  "#ef6f6c",
-  "#3b82f6",
-  "#65a30d",
-  "#db5f9a",
-  "#6366f1",
-  "#0d9488",
-] as const
-
-export const routeMarkerColors = [
-  ...routeDayColors,
-  periplusColors.coral,
-  periplusColors.bluegray,
-] as const
-
-export function getRouteDayColor(colorIndex: number | null) {
-  if (colorIndex === null) return periplusColors.teak
-  return routeDayColors[colorIndex % routeDayColors.length]!
-}
 
 export interface TransportEdgeStyle {
   color: string

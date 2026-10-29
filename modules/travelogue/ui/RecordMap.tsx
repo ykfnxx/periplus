@@ -11,7 +11,7 @@ import { MapPin, Plus } from "lucide-react"
 import { loadAMap, PERIPLUS_AMAP_STYLE } from "@/lib/amap"
 import usePhotoMapLayer, { type MapPhoto } from "./usePhotoMapLayer"
 import type { MapViewport } from "../state/atlas-view-store"
-import useJourneyRoutes from "@/modules/map-renderer/ui/useJourneyRoutes"
+import useJourneyRoutes from "./useJourneyRoutes"
 import { eventRouteBounds } from "@/lib/journeys/route-paths"
 import { periplusColors } from "@/lib/ui/map-theme"
 
