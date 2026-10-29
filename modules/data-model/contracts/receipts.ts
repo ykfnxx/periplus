@@ -44,7 +44,7 @@ export const receiptFieldsSchema = z
   })
   .strict()
 export const receiptInputSchema = receiptFieldsSchema.extend({ assetId: id })
-export const recordingReceiptSchema = receiptInputSchema.extend({
+export const receiptSchema = receiptInputSchema.extend({
   id,
   url: z.string(),
   source: contributorSchema,
@@ -65,5 +65,5 @@ export const receiptExtractionSchema = z
 export type Contributor = z.infer<typeof contributorSchema>
 export type ReceiptFields = z.infer<typeof receiptFieldsSchema>
 export type ReceiptInput = z.infer<typeof receiptInputSchema>
-export type RecordingReceipt = z.infer<typeof recordingReceiptSchema>
+export type Receipt = z.infer<typeof receiptSchema>
 export type ReceiptExtraction = z.infer<typeof receiptExtractionSchema>
