@@ -153,7 +153,7 @@ export async function mutateRecordingJourney(
         inversePatch: [{ journey: before }],
       },
       request.expectedRevision,
-      { command: request.command }
+      request.command
     )
     if (!saved) throw new RecordingNotFoundError()
     return {
