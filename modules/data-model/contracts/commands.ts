@@ -2,6 +2,7 @@ import { z } from "zod"
 import { targetIdSchema as id, targetDateTimeSchema as instant } from "./common"
 import {
   eventContentSchema,
+  eventDateSchema,
   eventLocationSchema,
   eventPlanningSchema,
   MAX_PHOTO_CAPTION_LENGTH,
@@ -20,6 +21,7 @@ export const eventInputSchema = eventContentSchema
   .extend({
     planning: eventPlanningSchema
       .pick({ startAt: true, endAt: true, durationMinutes: true })
+      .extend({ endAt: instant.nullable().optional() })
       .nullable()
       .optional(),
     hotel: z
@@ -29,6 +31,8 @@ export const eventInputSchema = eventContentSchema
       .optional(),
     transit: z
       .object({
+        fromName: z.string().trim().min(1).max(300).optional(),
+        toName: z.string().trim().min(1).max(300).optional(),
         fromEventId: id.optional(),
         toEventId: id.optional(),
         transportMode: z.enum(TARGET_TRANSPORT_MODES).optional(),
@@ -71,7 +75,7 @@ export const journeyCommandSchema = z.discriminatedUnion("name", [
       name: z.literal("event.add"),
       // null inserts at the beginning; an ID inserts immediately after it.
       afterEventId: id.nullable(),
-      content: eventInput,
+      content: eventInput.extend({ date: eventDateSchema }),
       receipt: receiptInputSchema.optional(),
     })
     .strict(),

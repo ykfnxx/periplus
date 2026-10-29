@@ -38,7 +38,7 @@ export const journeySnapshotSchema = journeyBaseSchema.superRefine(
       if (!event.transit) continue
       const { fromEventId, toEventId, routeState } = event.transit
       if (
-        fromEventId === toEventId ||
+        (fromEventId !== undefined && fromEventId === toEventId) ||
         fromEventId === event.id ||
         toEventId === event.id
       )

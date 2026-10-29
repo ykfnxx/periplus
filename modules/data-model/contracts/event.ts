@@ -56,7 +56,7 @@ export const eventContentSchema = z
     category: z.enum(EVENT_CATEGORIES).nullable(),
     // Local calendar facts retain their precision; a date-only entry is not a
     // fabricated midnight instant, and none of these fields control chain order.
-    date: eventDateSchema.nullable(),
+    date: eventDateSchema,
     time: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
@@ -109,8 +109,10 @@ export const eventHotelSchema = z
 
 export const eventTransitSchema = z
   .object({
-    fromEventId: id,
-    toEventId: id,
+    fromName: z.string().trim().min(1).max(300),
+    toName: z.string().trim().min(1).max(300),
+    fromEventId: id.optional(),
+    toEventId: id.optional(),
     transportMode: z.enum(TARGET_TRANSPORT_MODES),
     requestMode: z.enum(TARGET_TRANSIT_REQUEST_MODES).optional(),
     preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
@@ -120,6 +122,14 @@ export const eventTransitSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (
+      value.routeState === "READY" &&
+      (!value.fromEventId || !value.toEventId)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "A resolved route requires linked endpoint events",
+      })
     if ((value.routeState === "READY") !== Boolean(value.route))
       ctx.addIssue({
         code: "custom",
@@ -128,7 +138,7 @@ export const eventTransitSchema = z
       })
   })
 
-// Recording and planning share these fields. Unknown calendar/location facts stay null.
+// Recording and planning share a required local date and optional time/location facts.
 export const journeyEventSchema = eventContentSchema
   .extend({
     id,
@@ -150,12 +160,6 @@ export const journeyEventSchema = eventContentSchema
   })
   .strict()
   .superRefine((event, ctx) => {
-    if (event.time !== null && event.date === null)
-      ctx.addIssue({
-        code: "custom",
-        path: ["time"],
-        message: "A recorded time requires a recorded date",
-      })
     if (event.timeZone !== null) {
       try {
         new Intl.DateTimeFormat("en", { timeZone: event.timeZone })
@@ -179,6 +183,13 @@ export const journeyEventSchema = eventContentSchema
         code: "custom",
         path: ["transit"],
         message: "Route details belong to a transit event",
+      })
+    if (event.category === "TRANSIT" && !event.transit)
+      ctx.addIssue({
+        code: "custom",
+        path: ["transit"],
+        message:
+          "A transit event requires its endpoint names and transport mode",
       })
     for (const [start, end] of [
       [event.planning?.startAt, event.planning?.endAt],
