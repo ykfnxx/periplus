@@ -758,6 +758,7 @@ describe.sequential("manual recording API and durable event identity", () => {
         toName: "上海虹桥站",
         transportMode: "TRAIN" as const,
         notes: "手动记录",
+        distanceMeters: 169_000,
       },
     }
     const added = await write(
@@ -778,9 +779,22 @@ describe.sequential("manual recording API and durable event identity", () => {
     const edited = await write(added.journey, {
       name: "event.update",
       eventId: added.eventId!,
-      patch: { transit: { toName: "上海站" } },
+      patch: { transit: { toName: "上海站", distanceMeters: 150_000 } },
     })
     expect(edited.journey.events[0]!.transit).toMatchObject({
+      fromName: "杭州东站",
+      toName: "上海站",
+      distanceMeters: 150_000,
+    })
+    const cleared = await write(edited.journey, {
+      name: "event.update",
+      eventId: added.eventId!,
+      patch: { transit: { distanceMeters: null } },
+    })
+    expect(cleared.journey.events[0]!.transit).not.toHaveProperty(
+      "distanceMeters"
+    )
+    expect(cleared.journey.events[0]!.transit).toMatchObject({
       fromName: "杭州东站",
       toName: "上海站",
     })
@@ -790,7 +804,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       key
     )
     expect(replay).toEqual({ ...added, replayed: true })
-    expect(await reopen(journey.id)).toEqual(edited.journey)
+    expect(await reopen(journey.id)).toEqual(cleared.journey)
   })
 
   it.each(["startAt", "endAt"] as const)(

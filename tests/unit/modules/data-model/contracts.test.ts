@@ -142,12 +142,16 @@ describe("one Journey event contract", () => {
           toName: "上海虹桥站",
           transportMode: "TRAIN",
           routeState: "EMPTY",
+          distanceMeters: 0,
         },
       },
     ]
     expect(
       journeySnapshotSchema.parse(journey).events[0]!.transit
     ).toMatchObject({ fromName: "杭州东站", toName: "上海虹桥站" })
+    journey.events[0]!.transit!.distanceMeters = -1
+    expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
+    journey.events[0]!.transit!.distanceMeters = 0
     journey.events[0]!.transit!.fromName = " "
     expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
   })
