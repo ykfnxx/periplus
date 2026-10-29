@@ -31,7 +31,6 @@ interface AMapSearchResponse {
   infocode?: string
   info?: string
   pois?: AMapPoi[]
-  locations?: string
 }
 
 export interface AMapSearchOutput {
@@ -205,29 +204,21 @@ function warningForError(
 
 async function fetchJson(
   url: URL,
-  timeoutMs: number,
-  signal?: AbortSignal
+  timeoutMs: number
 ): Promise<AMapSearchResponse> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  const abortFromParent = () => controller.abort()
-  if (signal?.aborted) controller.abort()
-  else signal?.addEventListener("abort", abortFromParent, { once: true })
   try {
     const response = await fetch(url, { signal: controller.signal })
     if (!response.ok) throw new AMapHttpError(response.status)
     return (await response.json()) as AMapSearchResponse
   } finally {
     clearTimeout(timeout)
-    signal?.removeEventListener("abort", abortFromParent)
   }
 }
 
 export class AMapPlaceProvider {
-  async search(
-    query: NormalizedPlaceQuery,
-    signal?: AbortSignal
-  ): Promise<AMapSearchOutput> {
+  async search(query: NormalizedPlaceQuery): Promise<AMapSearchOutput> {
     const key = periplusServerConfig.amap.webServiceKey
     if (!key) {
       return {
@@ -236,22 +227,19 @@ export class AMapPlaceProvider {
           {
             provider: "amap",
             code: "provider_error",
-            message:
-              "缺少 PERIPLUS_AMAP_WEB_SERVICE_KEY 或 NEXT_PUBLIC_AMAP_KEY",
+            message: "缺少 PERIPLUS_AMAP_WEB_SERVICE_KEY",
             retryable: false,
           },
         ],
       }
     }
 
-    if (query.near) return this.searchAround(query, key, signal)
-    return this.searchByKeyword(query, key, signal)
+    return this.searchByKeyword(query, key)
   }
 
   private async searchByKeyword(
     query: NormalizedPlaceQuery,
-    key: string,
-    signal?: AbortSignal
+    key: string
   ): Promise<AMapSearchOutput> {
     if (!query.query) return { candidates: [], warnings: [] }
 
@@ -271,89 +259,15 @@ export class AMapPlaceProvider {
       isAttractionSearch(query) ? "all" : "base"
     )
 
-    return this.fetchCandidates(url, isAttractionSearch(query), signal)
-  }
-
-  private async searchAround(
-    query: NormalizedPlaceQuery,
-    key: string,
-    signal?: AbortSignal
-  ): Promise<AMapSearchOutput> {
-    if (!query.near) return { candidates: [], warnings: [] }
-    const location = await this.locationForAroundSearch(query, key, signal)
-    if (!location.location) {
-      return { candidates: [], warnings: location.warnings }
-    }
-
-    const url = new URL("https://restapi.amap.com/v3/place/around")
-    url.searchParams.set("key", key)
-    if (query.query) url.searchParams.set("keywords", query.query)
-    url.searchParams.set("location", location.location)
-    url.searchParams.set("radius", String(query.radiusMeters ?? 3000))
-    url.searchParams.set("offset", String(Math.min(query.limit, 20)))
-    url.searchParams.set("page", "1")
-    url.searchParams.set(
-      "extensions",
-      isAttractionSearch(query) ? "all" : "base"
-    )
-
-    const result = await this.fetchCandidates(
-      url,
-      isAttractionSearch(query),
-      signal
-    )
-    return {
-      candidates: result.candidates,
-      warnings: [...location.warnings, ...result.warnings],
-    }
-  }
-
-  private async locationForAroundSearch(
-    query: NormalizedPlaceQuery,
-    key: string,
-    signal?: AbortSignal
-  ): Promise<{ location: string | null; warnings: ProviderWarning[] }> {
-    if (!query.near) return { location: null, warnings: [] }
-    if (query.near.coordinateSystem === "GCJ02") {
-      return {
-        location: `${query.near.lng},${query.near.lat}`,
-        warnings: [],
-      }
-    }
-
-    const coordsys = query.near.coordinateSystem === "BD09LL" ? "baidu" : "gps"
-    const url = new URL(
-      "https://restapi.amap.com/v3/assistant/coordinate/convert"
-    )
-    url.searchParams.set("key", key)
-    url.searchParams.set("locations", `${query.near.lng},${query.near.lat}`)
-    url.searchParams.set("coordsys", coordsys)
-
-    try {
-      const response = await fetchJson(url, 1000, signal)
-      const location = response.locations?.split(";")[0]
-      if (response.status === "1" && location && parseLngLat(location)) {
-        return { location, warnings: [] }
-      }
-      return {
-        location: null,
-        warnings: [warningForResponse(response, "高德坐标转换失败")],
-      }
-    } catch (error) {
-      return {
-        location: null,
-        warnings: [warningForError(error, "高德坐标转换失败")],
-      }
-    }
+    return this.fetchCandidates(url, isAttractionSearch(query))
   }
 
   private async fetchCandidates(
     url: URL,
-    includeAttractionImages: boolean,
-    signal?: AbortSignal
+    includeAttractionImages: boolean
   ): Promise<AMapSearchOutput> {
     try {
-      const response = await fetchJson(url, 2500, signal)
+      const response = await fetchJson(url, 2500)
       if (response.status !== "1") {
         return {
           candidates: [],
