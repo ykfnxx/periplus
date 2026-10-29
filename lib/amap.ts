@@ -23,9 +23,3 @@ export async function loadAMap(): Promise<typeof AMap> {
   }
   return amapPromise
 }
-
-export type AMapInstance = AMap.Map
-export type AMapMarker = AMap.Marker
-export type AMapPolyline = AMap.Polyline
-export type AMapInfoWindow = AMap.InfoWindow
-export type AMapLngLat = AMap.LngLat

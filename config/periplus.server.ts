@@ -27,12 +27,6 @@ export const periplusServerConfig = {
     get baseUrl() {
       return periplusPublicConfig.app.baseUrl
     },
-    get frontendOrigin() {
-      return envString(
-        "PERIPLUS_FRONTEND_ORIGIN",
-        periplusPublicConfig.app.baseUrl
-      )
-    },
   },
   auth: {
     get secret() {

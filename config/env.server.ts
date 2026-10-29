@@ -50,22 +50,3 @@ export function loadProjectEnv() {
     }
   }
 }
-
-export function envString(name: string, fallback = "") {
-  loadProjectEnv()
-  return process.env[name] || fallback
-}
-
-export function envNumber(name: string, fallback: number) {
-  const value = envString(name)
-  if (!value) return fallback
-
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
-export function envBoolean(name: string, fallback = false) {
-  const value = envString(name)
-  if (!value) return fallback
-  return !["0", "false", "no", "off"].includes(value.toLowerCase())
-}
