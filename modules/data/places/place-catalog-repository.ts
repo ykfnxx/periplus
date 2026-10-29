@@ -1,10 +1,6 @@
-import { createHash } from "node:crypto"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/modules/data/db/prisma"
-import { normalizePlaceName } from "@/lib/places/normalize"
 import type {
-  LocalSearchResult,
-  NormalizedPlaceQuery,
   PlaceCandidate,
   PlaceCategory,
   PlaceCoordinate,
@@ -28,13 +24,6 @@ const sourceQualityConfidence: Record<Uppercase<PlaceQuality>, number> = {
   CANDIDATE: 0.65,
   NEEDS_REVIEW: 0.4,
 }
-
-const sourceQualityPriority = [
-  "VERIFIED",
-  "PROBABLE",
-  "CANDIDATE",
-  "NEEDS_REVIEW",
-] as const
 
 function providerFromString(value: string): PlaceProvider {
   if (
@@ -142,71 +131,7 @@ function placeToCandidate(place: PlaceWithRelations): PlaceCandidate {
   }
 }
 
-function queryHash(value: unknown) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex")
-}
-
 export class PlaceCatalogRepository {
-  async search(query: NormalizedPlaceQuery): Promise<LocalSearchResult> {
-    const where: Prisma.PlaceWhereInput = {
-      AND: [
-        query.categories.length
-          ? { category: { in: query.categories as never[] } }
-          : {},
-        query.city
-          ? {
-              OR: [
-                { city: { contains: query.city } },
-                { province: { contains: query.city } },
-              ],
-            }
-          : {},
-        query.normalizedQuery
-          ? {
-              OR: [
-                { normalizedName: { contains: query.normalizedQuery } },
-                {
-                  aliases: {
-                    some: {
-                      normalizedName: { contains: query.normalizedQuery },
-                    },
-                  },
-                },
-              ],
-            }
-          : {},
-      ],
-    }
-
-    const prefetchLimit = query.limit * 3
-    const places = (
-      await Promise.all(
-        sourceQualityPriority.map((sourceQuality) =>
-          prisma.place.findMany({
-            where: { AND: [where, { sourceQuality }] },
-            include: {
-              aliases: true,
-              sources: true,
-              providerMatches: true,
-            },
-            take: prefetchLimit,
-            orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
-          })
-        )
-      )
-    )
-      .flat()
-      .slice(0, prefetchLimit)
-    const candidates = places.map(placeToCandidate)
-    return {
-      candidates,
-      topConfidence: Math.max(
-        0,
-        ...candidates.map((candidate) => candidate.sourceConfidence)
-      ),
-    }
-  }
-
   async findById(placeId: string): Promise<PlaceCandidate | null> {
     const place = await prisma.place.findUnique({
       where: { id: placeId },
@@ -217,40 +142,6 @@ export class PlaceCatalogRepository {
       },
     })
     return place ? placeToCandidate(place) : null
-  }
-
-  async persistLiveCandidates(
-    query: NormalizedPlaceQuery,
-    candidates: PlaceCandidate[]
-  ) {
-    const hash = queryHash(query)
-    for (const candidate of candidates) {
-      if (!candidate.fromLiveProvider || candidate.placeId) continue
-      await prisma.rawPlaceCandidate.create({
-        data: {
-          provider: candidate.provider,
-          providerId: candidate.providerId,
-          queryHash: hash,
-          name: candidate.name,
-          normalizedName: candidate.normalizedName,
-          category: candidate.category,
-          lat: candidate.coordinates[0]?.lat,
-          lng: candidate.coordinates[0]?.lng,
-          coordinateSystem: candidate.coordinates[0]
-            ? toDatabaseCoordinateSystem(
-                candidate.coordinates[0].coordinateSystem
-              )
-            : undefined,
-          rawPayload: JSON.stringify({
-            address: candidate.address,
-            city: candidate.city,
-            district: candidate.district,
-            sources: candidate.sources,
-          }),
-          confidence: candidate.sourceConfidence,
-        },
-      })
-    }
   }
 
   async linkProviderMatch(placeId: string, result: PlaceSearchResult) {
@@ -398,36 +289,5 @@ export class PlaceCatalogRepository {
       placeId: payload.placeId,
       status: approved ? "APPROVED" : "REJECTED",
     }
-  }
-}
-
-export function createLocalCandidate(input: {
-  name: string
-  category: PlaceCategory
-  lat: number
-  lng: number
-  city?: string
-}): PlaceCandidate {
-  return {
-    candidateId: `local-${normalizePlaceName(input.name)}`,
-    provider: "periplus",
-    name: input.name,
-    normalizedName: normalizePlaceName(input.name),
-    aliases: [],
-    category: input.category,
-    city: input.city,
-    coordinates: [
-      {
-        provider: "periplus",
-        coordinateSystem: "WGS84",
-        lat: input.lat,
-        lng: input.lng,
-        accuracy: "approximate",
-        source: "catalog",
-      },
-    ],
-    sources: [{ provider: "periplus", confidence: 0.7 }],
-    sourceConfidence: 0.7,
-    fromLiveProvider: false,
   }
 }

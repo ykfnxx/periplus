@@ -125,42 +125,10 @@ export interface PlaceSearchResult {
   reason: string
 }
 
-export interface PlaceRef {
-  provider: PlaceProvider
-  providerId?: string
-  canonicalName: string
-  city?: string
-  address?: string
-  lat: number
-  lng: number
-  coordinateSystem: CoordinateSystem
-  confidence: number
-  candidates: Array<{
-    id: string
-    name: string
-    city?: string
-    confidence: number
-  }>
-}
-
-export interface PlaceVerification {
-  ref: PlaceRef
-  coverImage?: PlaceImage
-  verificationStatus?: "VERIFIED" | "UNVERIFIED"
-  sourceUrls?: string[]
-}
-
 export interface ProviderWarning {
   provider: PlaceProvider
-  code:
-    | "timeout"
-    | "rate_limited"
-    | "quota_exceeded"
-    | "provider_error"
-    | "low_confidence"
-    | "IMAGE_UNAVAILABLE"
+  code: "timeout" | "rate_limited" | "quota_exceeded" | "provider_error"
   message: string
-  image?: PlaceImage
   retryable?: boolean
   attempts?: number
   exhausted?: boolean
@@ -172,43 +140,8 @@ export interface PlaceSearchResponse {
   providerAttempts?: number
 }
 
-export interface PlaceResolveInput {
-  text: string
-  city?: string
-  intent?: PlaceSearchIntent
-  journeyContext?: {
-    currentCity?: string
-    nearbyEventIds?: string[]
-  }
-}
-
-export type PlaceResolveResult =
-  | {
-      status: "resolved"
-      place: PlaceSearchResult
-      placeRef: PlaceRef
-      warnings: ProviderWarning[]
-      providerAttempts?: number
-    }
-  | {
-      status: "not_found"
-      reason: string
-      warnings: ProviderWarning[]
-      providerAttempts?: number
-    }
-
 export interface PlaceEnrichInput {
-  placeId?: string
-  provider?: PlaceProvider
-  providerId?: string
-  fields: Array<
-    | "coordinates"
-    | "aliases"
-    | "description"
-    | "provider_match"
-    | "categories"
-    | "images"
-  >
+  placeId: string
 }
 
 export interface PlaceEnrichResult extends PlaceSearchResponse {
@@ -242,15 +175,4 @@ export interface PlaceCandidate {
   sources: PlaceResultSource[]
   sourceConfidence: number
   fromLiveProvider: boolean
-}
-
-export interface LocalSearchResult {
-  candidates: PlaceCandidate[]
-  topConfidence: number
-}
-
-export interface ProviderPlan {
-  useAmap: boolean
-  writeBack: "none" | "cache_only" | "provider_match"
-  reason: string
 }

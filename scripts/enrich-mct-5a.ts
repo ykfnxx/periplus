@@ -2,15 +2,12 @@ import { loadProjectEnv } from "@/config/env.server"
 
 loadProjectEnv()
 
-const [
-  { PlaceCatalogRepository },
-  { createPlaceIntelligenceService },
-  { prisma },
-] = await Promise.all([
-  import("@/modules/data/places/place-catalog-repository"),
-  import("@/modules/data/places/place-service"),
-  import("@/modules/data/db/prisma"),
-])
+const [{ PlaceCatalogRepository }, { PlaceIntelligenceService }, { prisma }] =
+  await Promise.all([
+    import("@/modules/data/places/place-catalog-repository"),
+    import("@/modules/data/places/place-service"),
+    import("@/modules/data/db/prisma"),
+  ])
 
 function argValue(name: string) {
   const index = process.argv.indexOf(name)
@@ -31,7 +28,7 @@ async function main() {
   const limit = positiveInteger("--limit")
   const delayMs = positiveInteger("--delay-ms", 250)!
   const repository = new PlaceCatalogRepository()
-  const service = createPlaceIntelligenceService()
+  const service = new PlaceIntelligenceService()
   const targets = await repository.listProviderEnrichmentTargets("amap", limit)
   const counts = { AUTO_APPROVED: 0, PENDING_REVIEW: 0, NO_MATCH: 0 }
   let consecutiveProviderErrors = 0
@@ -39,8 +36,6 @@ async function main() {
   for (const [index, target] of targets.entries()) {
     const result = await service.enrichPlace({
       placeId: target.placeId,
-      provider: "amap",
-      fields: ["coordinates", "provider_match"],
     })
     counts[result.matchStatus] += 1
     const providerErrors = result.warnings.filter(
