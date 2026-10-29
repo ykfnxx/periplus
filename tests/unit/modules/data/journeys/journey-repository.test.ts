@@ -6,7 +6,6 @@ import {
   createJourney,
   commitJourney,
   getJourney,
-  getJourneyRevision,
 } from "@/modules/data/journeys/journey-repository"
 import { journeyFixture, eventFixture } from "@/tests/fixtures/journey"
 const context = {
@@ -55,13 +54,10 @@ describe("canonical Journey snapshots in PostgreSQL", () => {
     expect(rows.map((row) => row.id)).toEqual(
       next.events.map((event) => event.id)
     )
-    expect(
-      (await getJourneyRevision(context, journey.id, 1))!.snapshot.events[0]!
-        .body
-    ).toBe("")
     const first = await prisma.journeyRevision.findUniqueOrThrow({
       where: { journeyId_revision: { journeyId: journey.id, revision: 1 } },
     })
+    expect(JSON.parse(first.snapshotJson).events[0].body).toBe("")
     await expect(
       prisma.journeyRevision.update({
         where: { id: first.id },

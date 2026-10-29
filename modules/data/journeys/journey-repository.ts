@@ -363,8 +363,7 @@ export async function getJourney(context: AuthContext, id: string) {
 }
 export async function createJourney(
   context: AuthContext,
-  input: JourneyRevisionWrite,
-  tx?: Tx
+  input: JourneyRevisionWrite
 ) {
   const write = {
     ...input,
@@ -394,7 +393,7 @@ export async function createJourney(
     return writeRevision(transaction, context, write)
   }
   try {
-    return tx ? await run(tx) : await prisma.$transaction(run)
+    return await prisma.$transaction(run)
   } catch (error) {
     if (
       error &&
@@ -411,7 +410,7 @@ export async function commitJourney(
   id: string,
   input: JourneyRevisionWrite,
   expectedRevision: number,
-  options: { command?: JourneyCommand; tx?: Tx } = {}
+  command?: JourneyCommand
 ) {
   const write = {
     ...input,
@@ -440,37 +439,12 @@ export async function commitJourney(
     if (row.revision !== expectedRevision)
       throw new JourneyRevisionConflictError()
     const before = journeySnapshotSchema.parse(JSON.parse(row.snapshotJson))
-    if (options.command)
-      await assertJourneyCommandAccess(tx, context, before, options.command)
+    if (command) await assertJourneyCommandAccess(tx, context, before, command)
     else if (!isAdmin(context) && row.ownerId !== context.userId)
       throw new PermissionDeniedError("Only the author can replace a Journey")
     return writeRevision(tx, context, write, before)
   }
-  return options.tx ? run(options.tx) : prisma.$transaction(run)
-}
-export async function deleteJourney(context: AuthContext, id: string) {
-  return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "id" FROM "Journey" WHERE "id" = ${id} FOR UPDATE`
-    const row = await tx.journey.findFirst({
-      where: { id, deletedAt: null, ...journeyReadScope(context) },
-    })
-    if (!row) return null
-    if (!isAdmin(context) && row.ownerId !== context.userId)
-      throw new PermissionDeniedError("Only the author can delete this Journey")
-    await tx.journey.update({ where: { id }, data: { deletedAt: new Date() } })
-    return { id }
-  })
-}
-export async function getJourneyRevision(
-  context: AuthContext,
-  id: string,
-  revision: number
-) {
-  if (!(await getJourney(context, id))) return null
-  const row = await prisma.journeyRevision.findUnique({
-    where: { journeyId_revision: { journeyId: id, revision } },
-  })
-  return row ? mapRevision(row) : null
+  return prisma.$transaction(run)
 }
 export async function getJourneyRevisionByIdempotencyKey(
   context: AuthContext,
