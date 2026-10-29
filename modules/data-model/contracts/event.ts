@@ -9,13 +9,7 @@ import {
   TARGET_EVENT_EXECUTION_STATUSES,
 } from "./enums"
 
-export const EVENT_CATEGORIES = [
-  "VISIT",
-  "MEAL",
-  "STAY",
-  "ACTIVITY",
-  "TRANSIT",
-] as const
+export const EVENT_CATEGORIES = ["VISIT", "MEAL", "STAY", "TRANSIT"] as const
 
 const id = targetIdSchema
 const instant = targetDateTimeSchema
@@ -53,7 +47,7 @@ export const eventContentSchema = z
   .object({
     title: z.string().max(200),
     body: z.string().max(100_000),
-    category: z.enum(EVENT_CATEGORIES).nullable(),
+    category: z.enum(EVENT_CATEGORIES),
     // Local calendar facts retain their precision; a date-only entry is not a
     // fabricated midnight instant, and none of these fields control chain order.
     date: eventDateSchema,
