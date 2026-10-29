@@ -71,6 +71,11 @@ function savedJourney(): JourneySnapshot {
 
 beforeEach(() => {
   vi.stubGlobal("innerWidth", 390)
+  vi.stubGlobal("scrollTo", vi.fn())
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  })
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addListener() {},
@@ -100,6 +105,7 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView")
 })
 
 describe("receipt recovery", () => {
@@ -273,6 +279,69 @@ describe("receipt recovery", () => {
 })
 
 describe("event draft conflict recovery", () => {
+  it("keeps edits made while a slow reread is pending and saves against the new revision", async () => {
+    let persisted = savedJourney()
+    let resolveReload!: (journey: JourneySnapshot) => void
+    const reload = new Promise<JourneySnapshot>((resolve) => {
+      resolveReload = resolve
+    })
+    let reads = 0
+    const command = vi.fn<typeof recordingApi.command>(
+      async (_id, mutation) => {
+        if (mutation.expectedRevision !== persisted.revision)
+          throw new RecordingApiError("同行者已修改", 409, "REVISION_CONFLICT")
+        if (mutation.command.name !== "event.update")
+          throw new Error("Unexpected command")
+        Object.assign(persisted.events[0], mutation.command.patch)
+        persisted.revision++
+        return { journey: structuredClone(persisted), replayed: false }
+      }
+    )
+    const store = createRecordingStore("journey", {
+      ...recordingApi,
+      get: async () => (reads++ ? reload : structuredClone(persisted)),
+      command,
+    })
+    await store.getState().load()
+    render(
+      <RecordingEditor
+        store={store}
+        onBack={() => {}}
+        mapPreview={<div>地图</div>}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: "编辑喝茶" }))
+    fireEvent.change(screen.getByLabelText("记录正文"), {
+      target: { value: "重读之前的草稿" },
+    })
+    persisted = structuredClone(persisted)
+    persisted.events[0].body = "同行者的正文"
+    persisted.events[0].date = "2026-10-29"
+    persisted.revision++
+    fireEvent.click(screen.getByRole("button", { name: "保存" }))
+    fireEvent.click(await screen.findByRole("button", { name: "读取最新记录" }))
+    expect(store.getState().loading).toBe(true)
+    expect(screen.getByLabelText("记录正文")).toBeEnabled()
+    fireEvent.change(screen.getByLabelText("记录正文"), {
+      target: { value: "重读等待期间继续写下的正文" },
+    })
+    await act(async () => resolveReload(structuredClone(persisted)))
+    expect(screen.getByLabelText("记录正文")).toHaveValue(
+      "重读等待期间继续写下的正文"
+    )
+    fireEvent.click(screen.getByRole("button", { name: "保存" }))
+    await waitFor(() => expect(persisted.revision).toBe(3))
+    expect(persisted.events[0].date).toBe("2026-10-29")
+    expect(command.mock.calls.at(-1)![1]).toMatchObject({
+      expectedRevision: 2,
+      command: {
+        name: "event.update",
+        eventId: "event",
+        patch: { body: "重读等待期间继续写下的正文" },
+      },
+    })
+  })
+
   it("clears the obsolete warning and saves preserved input after two consecutive conflicts", async () => {
     let persisted = savedJourney()
     const command = vi.fn<typeof recordingApi.command>(
