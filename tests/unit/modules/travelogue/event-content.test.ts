@@ -38,6 +38,17 @@ describe("dated event editing", () => {
       "2026-10-19T06:20:00.000Z"
     )
   })
+  it.each([
+    ["2026-03-08T03:30", "2026-03-08T10:30:00.000Z"],
+    ["2026-11-01T02:30", "2026-11-01T10:30:00.000Z"],
+  ])(
+    "preserves %s across a daylight-saving transition and reopening",
+    (local, expected) => {
+      const instant = eventTimeInstant(local, "America/Los_Angeles")
+      expect(instant).toBe(expected)
+      expect(eventLocalDateTime(instant, "America/Los_Angeles")).toBe(local)
+    }
+  )
   it("keeps cleared times empty when a saved event is reopened", () => {
     const original = paperCardJourney.events[1]
     const draft = eventContent({ ...original, time: null, planning: undefined })

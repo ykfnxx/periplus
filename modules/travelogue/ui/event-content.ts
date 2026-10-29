@@ -90,14 +90,20 @@ export function eventLocalDateTime(
 }
 
 export function eventTimeInstant(local: string, zone: string) {
-  const provisional = new Date(`${local}:00Z`)
-  const offset =
-    new Intl.DateTimeFormat("en", {
-      timeZone: zone,
-      timeZoneName: "longOffset",
-    })
-      .formatToParts(provisional)
-      .find((part) => part.type === "timeZoneName")!
-      .value.replace("GMT", "") || "Z"
-  return new Date(`${local}:00${offset}`).toISOString()
+  const formatter = new Intl.DateTimeFormat("en", {
+    timeZone: zone,
+    timeZoneName: "longOffset",
+  })
+  let candidate = new Date(`${local}:00Z`)
+  // The UTC probe can fall before a daylight-saving switch while the entered
+  // local time is after it. Re-read the offset at the resulting instant.
+  for (let pass = 0; pass < 2; pass++) {
+    const offset =
+      formatter
+        .formatToParts(candidate)
+        .find((part) => part.type === "timeZoneName")!
+        .value.replace("GMT", "") || "Z"
+    candidate = new Date(`${local}:00${offset}`)
+  }
+  return candidate.toISOString()
 }
