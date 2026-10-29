@@ -1,9 +1,9 @@
 "use client"
+import { useEffect, useRef, useState } from "react"
+import { ContextMenu } from "@base-ui/react/context-menu"
 import { useSortable } from "@dnd-kit/react/sortable"
 import { motion, useReducedMotion } from "motion/react"
-import { ChevronRight, MapPin, Pencil } from "lucide-react"
-import { eventCalendarDate } from "@/lib/journeys/calendar"
-import { Button } from "@/components/kumo/components/button/button"
+import { Clock3, Pencil, Trash2 } from "lucide-react"
 import type { JourneyEvent } from "@/modules/data-model/contracts"
 import UserSource from "./UserSource"
 import ReceiptCard from "./ReceiptCard"
@@ -20,31 +20,40 @@ import {
 
 export default function EventCard({
   entry,
-  eventsById,
   index,
   selected,
   canEdit,
+  canRemove,
   canMove,
   onReceipt,
   onSelect,
   onExpand,
   onEdit,
+  onRemove,
   onRead,
 }: {
   entry: JourneyEvent
-  eventsById: ReadonlyMap<string, JourneyEvent>
   index: number
   selected: boolean
   canEdit: boolean
+  canRemove: boolean
   canMove: boolean
   onReceipt: (assetId: string) => void
   onSelect: () => void
   onExpand: (index?: number) => void
   onEdit: () => void
+  onRemove: () => void
   onRead: () => void
 }) {
-  const date = eventCalendarDate(entry)
   const reduced = useReducedMotion()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const hold = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pointer = useRef({ x: 0, y: 0 })
+  function cancelHold() {
+    if (hold.current) clearTimeout(hold.current)
+    hold.current = null
+  }
+  useEffect(() => cancelHold, [])
   const { ref, isDragging } = useSortable({
     id: entry.id,
     index,
@@ -57,15 +66,9 @@ export default function EventCard({
   })
   const title = eventCardTitle(entry)
   const city = eventCity(entry)
-  const body = entry.body.trim()
   const transit = entry.category === "TRANSIT"
-  const origin = entry.transit && eventsById.get(entry.transit.fromEventId)
-  const destination = entry.transit && eventsById.get(entry.transit.toEventId)
-  const preview = Array.from(
-    body || (transit ? entry.transit?.notes || "" : "")
-  )
-    .slice(0, 120)
-    .join("")
+  const horizontal = entry.category === "MEAL" || entry.category === "STAY"
+  const body = entry.body.trim() || (transit ? entry.transit?.notes || "" : "")
   const times = eventCardTimes(entry)
   const hasCover =
     !transit &&
@@ -75,125 +78,191 @@ export default function EventCard({
       entry.planning?.coverImageUrl
     )
   return (
-    <motion.article
-      ref={canMove ? ref : undefined}
-      id={`record-${entry.id}`}
-      data-record-id={entry.id}
-      data-event-category={entry.category || "NOTE"}
-      tabIndex={0}
-      aria-label={title}
-      aria-current={selected ? "true" : undefined}
-      onClick={(event) => {
-        if (!isDragging && !(event.target as HTMLElement).closest("button"))
-          onSelect()
-      }}
-      onKeyDown={(event) => {
-        if (
-          event.target === event.currentTarget &&
-          event.key === "Enter" &&
-          !isDragging
-        ) {
-          event.preventDefault()
-          onSelect()
-        }
-      }}
-      animate={{ opacity: isDragging ? 0.7 : 1 }}
-      className={`journal-card ${transit ? "journal-card-transit" : ""} relative scroll-mt-3 outline-offset-4 ${canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+    <ContextMenu.Root
+      disabled={!canEdit && !canRemove}
+      open={menuOpen}
+      onOpenChange={setMenuOpen}
     >
-      {hasCover && <EventCover event={entry} title={title} onOpen={onExpand} />}
-      <div
-        className={`journal-card-content ${hasCover ? "journal-card-content-cover" : ""}`}
-      >
-        {!transit && city && (
-          <div className="journal-card-city">
-            <MapPin size={14} strokeWidth={1.8} aria-hidden="true" />
-            <span>{city}</span>
-          </div>
-        )}
-        <header
-          className={`journal-card-heading flex items-start gap-2 ${transit && origin && destination ? "journal-transit-actions" : ""}`}
-        >
-          <h2
-            className={`min-w-0 flex-1 break-words ${transit && origin && destination ? "sr-only" : ""}`}
-          >
-            {title}
-          </h2>
-          {canEdit && (
-            <Button
-              variant="ghost"
-              shape="square"
-              size="sm"
-              className="journal-event-edit shrink-0"
-              aria-label={`编辑${title}`}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={onEdit}
-            >
-              <Pencil size={15} />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            shape="square"
-            size="sm"
-            className="journal-card-read shrink-0"
-            aria-label={`展开${title}的详情`}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={onRead}
-          >
-            <ChevronRight size={16} />
-          </Button>
-        </header>
-        <div className="journal-card-meta flex flex-wrap items-center gap-x-2 gap-y-1">
-          <UserSource user={entry.source} />
-          {date && <span>· {dateLabel(date)}</span>}
-          {!transit && times.range && (
-            <span className="font-mono">{times.range}</span>
-          )}
-        </div>
-        {transit && (
-          <TransitEventCard
-            event={entry}
-            origin={origin}
-            destination={destination}
-          />
-        )}
-        <div
-          className={
-            transit && (preview || entry.receipts.length)
-              ? "journal-transit-footer"
-              : undefined
+      <ContextMenu.Trigger
+        render={<motion.article animate={{ opacity: isDragging ? 0.7 : 1 }} />}
+        ref={canMove ? ref : undefined}
+        id={`record-${entry.id}`}
+        data-record-id={entry.id}
+        data-event-category={entry.category || "VISIT"}
+        tabIndex={0}
+        aria-label={title}
+        aria-current={selected ? "true" : undefined}
+        onPointerDownCapture={(event) => {
+          if (
+            event.pointerType !== "mouse" ||
+            event.button !== 0 ||
+            (!canEdit && !canRemove)
+          )
+            return
+          const target = event.currentTarget
+          pointer.current = { x: event.clientX, y: event.clientY }
+          hold.current = setTimeout(() => {
+            target.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                clientX: pointer.current.x,
+                clientY: pointer.current.y,
+              })
+            )
+          }, 550)
+        }}
+        onPointerMove={(event) => {
+          if (
+            Math.abs(event.clientX - pointer.current.x) > 10 ||
+            Math.abs(event.clientY - pointer.current.y) > 10
+          )
+            cancelHold()
+        }}
+        onPointerUp={cancelHold}
+        onPointerCancel={cancelHold}
+        onPointerLeave={cancelHold}
+        onClickCapture={(event) => {
+          if (menuOpen) {
+            event.preventDefault()
+            event.stopPropagation()
           }
-        >
-          {preview && (
-            <p className={transit ? "line-clamp-1" : "line-clamp-3"}>
-              {preview}
-              {body.length > preview.length ? "…" : ""}
-            </p>
-          )}
-          {entry.receipts.map((receipt) => (
-            <ReceiptCard
-              key={receipt.assetId}
-              compact
-              merchant={receipt.merchant || ""}
-              date={receipt.date ? dateLabel(receipt.date) : ""}
-              total={
-                receipt.currency === "CNY" && receipt.total !== null
-                  ? `¥${receipt.total}`
-                  : receiptTotal(receipt)
-              }
-              onOpen={() => onReceipt(receipt.assetId)}
-            />
-          ))}
-        </div>
-        {!transit && (entry.category || entry.cuisine) && (
-          <div className="journal-card-tags">
-            {entry.category && (
-              <span>{eventCategoryLabels[entry.category]}</span>
-            )}
-            {entry.cuisine && <span>{entry.cuisine}</span>}
-          </div>
+        }}
+        onClick={(event) => {
+          if (
+            !menuOpen &&
+            !isDragging &&
+            !(event.target as HTMLElement).closest("button")
+          )
+            onSelect()
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget || isDragging) return
+          if (event.key === "Enter") {
+            event.preventDefault()
+            onSelect()
+          }
+          if (
+            event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10")
+          ) {
+            event.preventDefault()
+            const box = event.currentTarget.getBoundingClientRect()
+            event.currentTarget.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                clientX: box.x + box.width / 2,
+                clientY: box.y + 40,
+              })
+            )
+          }
+        }}
+        className={`journal-card ${transit ? "journal-card-transit" : horizontal ? "journal-card-horizontal" : "journal-card-portrait"} relative scroll-mt-3 outline-offset-4 ${canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+      >
+        {hasCover && (
+          <EventCover event={entry} title={title} onOpen={onExpand} />
         )}
-      </div>
-    </motion.article>
+        <div className="journal-card-content">
+          {transit ? (
+            <>
+              <h2 className="sr-only">{title}</h2>
+              <TransitEventCard event={entry} />
+            </>
+          ) : (
+            <>
+              <div className="journal-card-topline">
+                {city && <div className="journal-card-city">{city}</div>}
+                {horizontal && times.range && (
+                  <span className="journal-card-time">{times.range}</span>
+                )}
+              </div>
+              <h2>
+                <button
+                  type="button"
+                  className="text-left focus-visible:outline-2 focus-visible:outline-russet"
+                  aria-label={`展开${title}的详情`}
+                  onClick={onRead}
+                >
+                  {title}
+                </button>
+              </h2>
+              {!horizontal && times.range && (
+                <div className="journal-card-time">
+                  <Clock3 size={14} aria-hidden="true" />
+                  {times.range}
+                </div>
+              )}
+            </>
+          )}
+          <div
+            className={
+              transit && (body || entry.receipts.length)
+                ? "journal-transit-footer"
+                : undefined
+            }
+          >
+            {body && (
+              <p className={transit ? "line-clamp-1" : "line-clamp-3"}>
+                {body}
+              </p>
+            )}
+            {entry.receipts.map((receipt) => (
+              <ReceiptCard
+                key={receipt.assetId}
+                compact
+                merchant={receipt.merchant || ""}
+                date={receipt.date ? dateLabel(receipt.date) : ""}
+                total={
+                  receipt.currency === "CNY" && receipt.total !== null
+                    ? `¥${receipt.total}`
+                    : receiptTotal(receipt)
+                }
+                onOpen={() => onReceipt(receipt.assetId)}
+              />
+            ))}
+          </div>
+          {!transit && (
+            <div className="journal-card-tags">
+              {entry.category && (
+                <span>{eventCategoryLabels[entry.category]}</span>
+              )}
+              {entry.cuisine && <span>{entry.cuisine}</span>}
+            </div>
+          )}
+          {entry.source && (
+            <div className="journal-card-source">
+              <UserSource user={entry.source} />
+            </div>
+          )}
+        </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-50"
+        >
+          <ContextMenu.Popup className="min-w-36 rounded-xl border border-journal-paper-line bg-journal-paper p-1.5 text-sm shadow-journal outline-none">
+            {canEdit && (
+              <ContextMenu.Item
+                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 outline-none data-highlighted:bg-journal-paper-soft"
+                onClick={onEdit}
+              >
+                <Pencil size={16} />
+                编辑
+              </ContextMenu.Item>
+            )}
+            {canRemove && (
+              <ContextMenu.Item
+                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-coral outline-none data-highlighted:bg-journal-paper-soft"
+                onClick={onRemove}
+              >
+                <Trash2 size={16} />
+                删除
+              </ContextMenu.Item>
+            )}
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   )
 }

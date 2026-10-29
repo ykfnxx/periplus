@@ -1,10 +1,16 @@
 "use client"
 import { useEffect, useRef } from "react"
-import { CalendarDays, ChevronRight, MapPin, Plus, X } from "lucide-react"
+import { ChevronRight, MapPin, Plus, X } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { InputArea } from "@/components/kumo/components/input/input-area"
-import type { EventContent, EventPhoto } from "@/modules/data-model/contracts"
-import { dateLabel } from "../display"
+import type { EventPhoto } from "@/modules/data-model/contracts"
+import {
+  eventLocalDateTime,
+  eventTimeInstant,
+  type EventDraft,
+} from "../event-content"
+import { Input } from "@/components/kumo/components/input/input"
+import { Select } from "@/components/kumo/components/select/select"
 import type { RecordUpload } from "../../state/recording-store"
 
 function FilePreview({ file }: { file: File }) {
@@ -31,19 +37,164 @@ export default function EventComposer({
   onPickLocation,
   onManagePhotos,
 }: {
-  draft: EventContent
+  draft: EventDraft
   files: File[]
   photos: EventPhoto[]
   uploads: RecordUpload[]
   busy: boolean
-  onChange: (draft: EventContent) => void
+  onChange: (draft: EventDraft) => void
   onFiles: (files: File[]) => void
   onPickLocation: () => void
   onManagePhotos?: () => void
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const zone =
+    draft.timeZone ||
+    (draft.planning.startAt || draft.planning.endAt
+      ? "UTC"
+      : Intl.DateTimeFormat().resolvedOptions().timeZone)
+  const start = eventLocalDateTime(draft.planning.startAt, zone)
+  function startTime(date: string, time: string) {
+    onChange({
+      ...draft,
+      date,
+      time: time || null,
+      timeZone: zone,
+      planning: {
+        ...draft.planning,
+        startAt:
+          date && time ? eventTimeInstant(`${date}T${time}`, zone) : null,
+      },
+    })
+  }
   return (
     <div className="px-6 pb-8 md:px-9">
+      <fieldset className="mt-2 flex gap-2" disabled={busy}>
+        <legend className="sr-only">事件类型</legend>
+        {(
+          [
+            ["VISIT", "游览"],
+            ["MEAL", "餐饮"],
+            ["STAY", "住宿"],
+            ["TRANSIT", "交通"],
+          ] as const
+        ).map(([value, label]) => (
+          <Button
+            key={value}
+            size="sm"
+            variant={draft.category === value ? "primary" : "secondary"}
+            aria-pressed={draft.category === value}
+            onClick={() =>
+              onChange({
+                ...draft,
+                category: value,
+                transit:
+                  value === "TRANSIT"
+                    ? draft.transit || {
+                        fromName: "",
+                        toName: "",
+                        transportMode: "TRAIN",
+                      }
+                    : null,
+              })
+            }
+          >
+            {label}
+          </Button>
+        ))}
+      </fieldset>
+      {draft.category === "TRANSIT" ? (
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <Input
+            label="出发地"
+            value={draft.transit?.fromName || ""}
+            disabled={busy}
+            required
+            onChange={(e) =>
+              onChange({
+                ...draft,
+                transit: { ...draft.transit, fromName: e.target.value },
+              })
+            }
+          />
+          <Input
+            label="目的地"
+            value={draft.transit?.toName || ""}
+            disabled={busy}
+            required
+            onChange={(e) =>
+              onChange({
+                ...draft,
+                transit: { ...draft.transit, toName: e.target.value },
+              })
+            }
+          />
+          <div className="col-span-2">
+            <Select
+              label="交通方式"
+              value={draft.transit?.transportMode || "TRAIN"}
+              disabled={busy}
+              items={Object.entries({
+                WALK: "步行",
+                BUS: "公交",
+                SUBWAY: "地铁",
+                TRAIN: "火车",
+                FLIGHT: "飞机",
+                CAR: "驾车",
+                TAXI: "出租车",
+                RENTAL: "租车",
+              }).map(([value, label]) => ({ value, label }))}
+              onValueChange={(value) => {
+                if (value)
+                  onChange({
+                    ...draft,
+                    transit: {
+                      ...draft.transit,
+                      transportMode: value as NonNullable<
+                        EventDraft["transit"]
+                      >["transportMode"],
+                    },
+                  })
+              }}
+            />
+          </div>
+          <Input
+            label="距离（公里）"
+            type="number"
+            min="0"
+            step="0.001"
+            value={
+              draft.transit?.distanceMeters == null
+                ? ""
+                : draft.transit.distanceMeters / 1000
+            }
+            disabled={busy}
+            onChange={(e) =>
+              onChange({
+                ...draft,
+                transit: {
+                  ...draft.transit,
+                  distanceMeters:
+                    e.target.value === ""
+                      ? null
+                      : Number(e.target.value) * 1000,
+                },
+              })
+            }
+          />
+        </div>
+      ) : (
+        <Input
+          aria-label="记录标题"
+          placeholder="标题"
+          value={draft.title}
+          maxLength={200}
+          disabled={busy}
+          onChange={(e) => onChange({ ...draft, title: e.target.value })}
+          className="mt-5"
+        />
+      )}
+
       <InputArea
         autoResize
         minRows={3}
@@ -147,40 +298,49 @@ export default function EventComposer({
         </span>
         <ChevronRight size={15} className="text-walnut-50" />
       </button>
-      <label className="relative flex min-h-14 items-center gap-3 border-t border-ink-10 text-sm text-walnut">
-        <CalendarDays size={17} strokeWidth={1.5} />
-        <span className="min-w-0 flex-1">
-          {draft.date ? dateLabel(draft.date) : "添加日期"}
-        </span>
-        <input
+      <div className="space-y-4 border-t border-ink-10 pt-4 text-sm">
+        <Input
+          label="事件日期"
           type="date"
-          aria-label="记录日期"
+          required
           value={draft.date || ""}
           disabled={busy}
-          onChange={(event) =>
-            onChange({
-              ...draft,
-              date: event.target.value || null,
-              ...(!event.target.value ? { time: null, timeZone: null } : {}),
-            })
+          onChange={(e) =>
+            startTime(e.target.value, draft.time || start.slice(11, 16))
           }
-          className="absolute inset-y-0 right-9 left-7 min-w-0 cursor-pointer opacity-0"
         />
-        {draft.date && (
-          <Button
-            aria-label="清除日期"
-            variant="ghost"
-            shape="circle"
-            size="xs"
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input
+            label={draft.category === "TRANSIT" ? "出发时间" : "开始时间"}
+            type="time"
+            value={draft.time || start.slice(11, 16)}
             disabled={busy}
-            onClick={() =>
-              onChange({ ...draft, date: null, time: null, timeZone: null })
+            onChange={(e) => startTime(draft.date || "", e.target.value)}
+          />
+          <Input
+            label={
+              draft.category === "TRANSIT"
+                ? "到达日期与时间"
+                : "结束时间（选填）"
             }
-          >
-            <X size={14} />
-          </Button>
-        )}
-      </label>
+            type="datetime-local"
+            value={eventLocalDateTime(draft.planning.endAt, zone)}
+            disabled={busy}
+            onChange={(e) =>
+              onChange({
+                ...draft,
+                planning: {
+                  ...draft.planning,
+                  endAt: e.target.value
+                    ? eventTimeInstant(e.target.value, zone)
+                    : null,
+                },
+              })
+            }
+          />
+        </div>
+        <p className="text-xs text-journal-muted">{zone}</p>
+      </div>
     </div>
   )
 }

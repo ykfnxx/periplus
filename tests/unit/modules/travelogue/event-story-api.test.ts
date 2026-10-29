@@ -73,7 +73,11 @@ it("rejects a note without hotel facts or an incomplete transit without adding a
       api.command(before.id, {
         expectedRevision: before.revision,
         idempotencyKey: key,
-        command: { name: "event.add", afterEventId: null, content },
+        command: {
+          name: "event.add",
+          afterEventId: null,
+          content: { ...content, date: "2026-10-29" },
+        },
       })
     ).rejects.toMatchObject({ status: 400 })
   }
@@ -91,8 +95,11 @@ it("creates complete manual transit details without resolved route geometry", as
       afterEventId: before.events.at(-1)!.id,
       content: {
         title: "回程",
+        date: "2026-10-29",
         category: "TRANSIT",
         transit: {
+          fromName: "上海虹桥站",
+          toName: "杭州东站",
           fromEventId: "shanghai-walk",
           toEventId: "hangzhou-return",
           transportMode: "TRAIN",
@@ -102,6 +109,8 @@ it("creates complete manual transit details without resolved route geometry", as
   })
   expect(journey.events.at(-1)?.id).toBe(eventId)
   expect(journey.events.at(-1)?.transit).toEqual({
+    fromName: "上海虹桥站",
+    toName: "杭州东站",
     fromEventId: "shanghai-walk",
     toEventId: "hangzhou-return",
     transportMode: "TRAIN",

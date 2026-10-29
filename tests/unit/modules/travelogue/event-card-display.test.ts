@@ -13,7 +13,7 @@ const transit = paperCardJourney.events[1]
 describe("event card facts", () => {
   it("does not repeat an untitled note body as its heading", () => {
     expect(eventCardTitle({ ...paperCardJourney.events[3], title: "" })).toBe(
-      "随记"
+      "游览"
     )
   })
   it("shows only declared city information, never a detailed place or address", () => {
@@ -63,6 +63,7 @@ describe("event card facts", () => {
     expect(eventTransitDisplay(transit)).toEqual({
       mode: "公交",
       duration: "40 分钟",
+      distance: "6.5 公里",
       line: "7路",
     })
     expect(
@@ -74,7 +75,12 @@ describe("event card facts", () => {
           route: undefined,
         },
       })
-    ).toEqual({ mode: "公交", duration: null, line: null })
+    ).toEqual({
+      mode: "公交",
+      duration: "40 分钟",
+      distance: "6.5 公里",
+      line: null,
+    })
   })
 
   it("keeps the rendered design fixture on the production journey contract", () => {
@@ -84,4 +90,46 @@ describe("event card facts", () => {
         .events.map((event) => event.id)
     ).toEqual(["lake", "bus", "temple", "unlocated"])
   })
+})
+
+it("calculates an overnight duration from the entered dates rather than provider ETA", () => {
+  const event = {
+    ...transit,
+    planning: {
+      startAt: "2026-10-18T23:20:00+08:00",
+      endAt: "2026-10-19T01:00:00+08:00",
+      durationMinutes: 2,
+    },
+  }
+  expect(eventTransitDisplay(event).duration).toBe("1 小时 40 分钟")
+  expect(
+    eventTransitDisplay({
+      ...event,
+      planning: { startAt: event.planning.startAt, durationMinutes: 2 },
+    }).duration
+  ).toBeNull()
+  expect(
+    eventTransitDisplay({
+      ...event,
+      planning: {
+        startAt: event.planning.startAt,
+        endAt: event.planning.startAt,
+      },
+    }).duration
+  ).toBe("0 分钟")
+})
+
+it("shows an explicitly entered zero distance and hides an absent distance", () => {
+  expect(
+    eventTransitDisplay({
+      ...transit,
+      transit: { ...transit.transit!, distanceMeters: 0 },
+    }).distance
+  ).toBe("0 米")
+  expect(
+    eventTransitDisplay({
+      ...transit,
+      transit: { ...transit.transit!, distanceMeters: undefined },
+    }).distance
+  ).toBeNull()
 })

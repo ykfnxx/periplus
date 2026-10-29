@@ -12,7 +12,7 @@ export function dateLabel(date: string) {
 export function journeyDateLabel(
   journey: Pick<JourneySummary, "startDate" | "endDate">
 ) {
-  if (!journey.startDate) return "日期待补"
+  if (!journey.startDate) return ""
   return journey.endDate && journey.endDate !== journey.startDate
     ? `${dateLabel(journey.startDate)} — ${dateLabel(journey.endDate)}`
     : dateLabel(journey.startDate)

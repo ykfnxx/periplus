@@ -1,14 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import {
-  CalendarDays,
-  MapPin,
-  Pencil,
-  X,
-  Camera,
-  ReceiptText,
-} from "lucide-react"
+import { CalendarDays, MapPin, X, Camera, ReceiptText } from "lucide-react"
 import EventPlanning from "./EventPlanning"
 import { eventCalendarDate } from "@/lib/journeys/calendar"
 import { Button } from "@/components/kumo/components/button/button"
@@ -25,14 +18,12 @@ import { receiptTotal } from "../receipt-display"
 export default function EventDetails({
   entry,
   onClose,
-  onEdit,
   onReceipt,
   onAddPhotos,
   onAddReceipt,
 }: {
   entry: JourneyEvent
   onClose: () => void
-  onEdit?: () => void
   onReceipt: (assetId: string) => void
   onAddPhotos?: () => void
   onAddReceipt?: () => void
@@ -54,12 +45,7 @@ export default function EventDetails({
             <p className="min-w-0 flex-1 text-lg font-semibold break-words">
               {title}
             </p>
-            {onEdit && (
-              <Button variant="ghost" className="shrink-0" onClick={onEdit}>
-                <Pencil size={16} />
-                编辑记录
-              </Button>
-            )}
+
             <Button
               variant="ghost"
               shape="square"

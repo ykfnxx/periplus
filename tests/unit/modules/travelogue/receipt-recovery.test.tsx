@@ -44,8 +44,8 @@ function savedJourney(): JourneySnapshot {
         source: { userId: "friend", name: "阿宁", image: null },
         title: "喝茶",
         body: "",
-        category: null,
-        date: null,
+        category: "VISIT",
+        date: "2026-10-28",
         time: null,
         timeZone: null,
         location: null,
@@ -310,7 +310,8 @@ describe("event draft conflict recovery", () => {
         mapPreview={<div>地图</div>}
       />
     )
-    fireEvent.click(screen.getByRole("button", { name: "编辑喝茶" }))
+    fireEvent.contextMenu(screen.getByRole("article", { name: "喝茶" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^编辑$/ }))
     fireEvent.change(screen.getByLabelText("记录正文"), {
       target: { value: "重读之前的草稿" },
     })

@@ -1,11 +1,13 @@
 import type { JourneyEvent } from "@/modules/data-model/contracts"
-import { formatTransitDuration } from "@/lib/journeys/display"
+import {
+  formatTransitDistance,
+  formatTransitDuration,
+} from "@/lib/journeys/display"
 
 export const eventCategoryLabels = {
   VISIT: "游览",
-  MEAL: "用餐",
+  MEAL: "餐饮",
   STAY: "住宿",
-  ACTIVITY: "活动",
   TRANSIT: "交通",
 }
 
@@ -83,10 +85,18 @@ export function eventTransitDisplay(event: JourneyEvent) {
   }
   return {
     mode: mode ? modes[mode] : "交通",
-    duration: plan
-      ? formatTransitDuration(plan.durationSeconds)
-      : event.planning?.durationMinutes !== undefined
-        ? formatTransitDuration(event.planning.durationMinutes * 60)
+    duration: (() => {
+      const start = event.actualStartAt ?? event.planning?.startAt
+      const end = event.actualStartAt
+        ? event.actualEndAt
+        : event.planning?.endAt
+      if (!start || !end) return null
+      const seconds = (Date.parse(end) - Date.parse(start)) / 1000
+      return seconds === 0 ? "0 分钟" : formatTransitDuration(seconds)
+    })(),
+    distance:
+      event.transit?.distanceMeters !== undefined
+        ? formatTransitDistance(event.transit.distanceMeters)
         : null,
     line: plan
       ? Array.from(

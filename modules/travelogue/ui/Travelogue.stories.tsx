@@ -1,4 +1,7 @@
-import { paperCardJourney } from "@/tests/storybook/paper-card-fixture"
+import {
+  paperCardJourney,
+  fourTypeJourney,
+} from "@/tests/storybook/paper-card-fixture"
 import { operationId } from "../data/operation-id"
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { useEffect, useState } from "react"
@@ -353,5 +356,14 @@ export const PaperCards: Story = {
 export const PaperCardsReadOnly: Story = {
   render: () => (
     <EditorStory initialJourney={paperCardJourney} canEdit={false} />
+  ),
+}
+
+export const FourTypes: Story = {
+  render: () => <EditorStory initialJourney={fourTypeJourney} />,
+}
+export const FourTypesReadOnly: Story = {
+  render: () => (
+    <EditorStory initialJourney={fourTypeJourney} canEdit={false} />
   ),
 }

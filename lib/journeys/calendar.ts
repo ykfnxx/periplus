@@ -1,24 +1,7 @@
 import type { JourneyEvent } from "@/modules/data-model/contracts"
 
-export function eventCalendarDate(event: JourneyEvent): string | null {
-  if (event.date) return event.date
-  const instant = event.actualStartAt ?? event.planning?.startAt
-  if (!instant || !event.timeZone) return null
-  try {
-    const parts = Object.fromEntries(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: event.timeZone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      })
-        .formatToParts(new Date(instant))
-        .map((part) => [part.type, part.value])
-    )
-    return `${parts.year}-${parts.month}-${parts.day}`
-  } catch {
-    return null
-  }
+export function eventCalendarDate(event: JourneyEvent): string {
+  return event.date
 }
 
 export function eventInstantLabel(

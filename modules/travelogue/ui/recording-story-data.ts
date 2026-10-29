@@ -37,8 +37,8 @@ function applyEventInput(
   if (transit === null) nextTransit = undefined
   else if (transit) {
     const merged = { ...previous.transit, ...transit }
-    if (!merged.fromEventId || !merged.toEventId || !merged.transportMode)
-      throw new RecordingApiError("请补齐交通的出发、到达事件和方式。", 400)
+    if (!merged.fromName || !merged.toName || !merged.transportMode)
+      throw new RecordingApiError("请补齐交通的出发地、目的地和方式。", 400)
     const routeChanged =
       previous.transit &&
       (
@@ -52,9 +52,11 @@ function applyEventInput(
       ).some((key) => merged[key] !== previous.transit![key])
     nextTransit = {
       ...merged,
-      fromEventId: merged.fromEventId,
-      toEventId: merged.toEventId,
+      fromName: merged.fromName,
+      toName: merged.toName,
       transportMode: merged.transportMode,
+      distanceMeters:
+        merged.distanceMeters === null ? undefined : merged.distanceMeters,
       routeState: routeChanged
         ? "ROUTE_STALE"
         : (previous.transit?.routeState ?? "EMPTY"),
@@ -69,7 +71,18 @@ function applyEventInput(
         ? previous.planning
         : planning === null
           ? undefined
-          : { ...previous.planning, ...planning },
+          : {
+              ...previous.planning,
+              ...planning,
+              startAt:
+                planning.startAt === null
+                  ? undefined
+                  : (planning.startAt ?? previous.planning?.startAt),
+              endAt:
+                planning.endAt === null
+                  ? undefined
+                  : (planning.endAt ?? previous.planning?.endAt),
+            },
     hotel:
       hotel === undefined
         ? previous.hotel
@@ -82,7 +95,10 @@ function applyEventInput(
                   ? previous.hotel?.checkInNote
                   : (hotel.checkInNote ?? undefined),
             },
-    transit: nextTransit,
+    transit:
+      content.category && content.category !== "TRANSIT"
+        ? undefined
+        : nextTransit,
     cuisine: cuisine === undefined ? previous.cuisine : (cuisine ?? undefined),
     bookingReference:
       bookingReference === undefined
@@ -193,7 +209,7 @@ export const storyJourney: JourneySnapshot = {
       id: "tea",
       title: "等雨停的一杯茶",
       body: "在小巷里坐了一会儿，把今天的照片整理好。",
-      category: null,
+      category: "VISIT",
       time: null,
       location: null,
       photos: [
@@ -223,7 +239,7 @@ export const storyJourney: JourneySnapshot = {
       id: "undated",
       title: "回程随手记",
       body: "还想再来一次。",
-      date: null,
+      date: "2026-10-18",
       time: null,
       photos: [],
       location: null,
@@ -405,8 +421,8 @@ export function createStoryRecordingApi(
               : [],
             title: "",
             body: "",
-            category: null,
-            date: null,
+            category: "VISIT",
+            date: "2026-10-18",
             time: null,
             timeZone: null,
             location: null,
