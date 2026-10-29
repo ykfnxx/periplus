@@ -21,7 +21,10 @@ export const eventInputSchema = eventContentSchema
   .extend({
     planning: eventPlanningSchema
       .pick({ startAt: true, endAt: true, durationMinutes: true })
-      .extend({ endAt: instant.nullable().optional() })
+      .extend({
+        startAt: instant.nullable().optional(),
+        endAt: instant.nullable().optional(),
+      })
       .nullable()
       .optional(),
     hotel: z
