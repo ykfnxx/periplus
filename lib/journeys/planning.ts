@@ -57,7 +57,7 @@ export function buildTransitPlanRequest(
   events: readonly JourneyEvent[]
 ): TransitPlanRequest | null {
   const detail = event.transit
-  if (!detail) return null
+  if (!detail?.fromEventId || !detail.toEventId) return null
   const endpoint = (id: string): TransitPlanEndpoint | null => {
     const value = events.find((event) => event.id === id)
     if (!value?.location?.coordinates) return null

@@ -24,14 +24,15 @@ export function requireJourneyEvent(journey: JourneySnapshot, id: string) {
 export function blankEvent(
   id: string,
   source: Contributor,
-  now: string
+  now: string,
+  date: JourneyEvent["date"]
 ): JourneyEvent {
   return {
     id,
     title: "",
     body: "",
-    category: null,
-    date: null,
+    category: "VISIT",
+    date,
     time: null,
     timeZone: null,
     location: null,
@@ -50,7 +51,12 @@ export function applyEventPatch(event: JourneyEvent, patch: EventInput) {
     patch.category === undefined ? event.category : patch.category
   for (const [field, value] of Object.entries(patch)) {
     if (field === "planning" && value !== null) {
-      event.planning = { ...event.planning, ...patch.planning }
+      const { startAt, endAt, ...fields } = patch.planning!
+      event.planning = { ...event.planning, ...fields }
+      if (startAt === null) delete event.planning.startAt
+      else if (startAt !== undefined) event.planning.startAt = startAt
+      if (endAt === null) delete event.planning.endAt
+      else if (endAt !== undefined) event.planning.endAt = endAt
       continue
     }
     if (field === "hotel" && value !== null) {
@@ -181,7 +187,8 @@ export async function reduceJourneyCommand(
       const event = blankEvent(
         recordingId(journey.id, key, "event"),
         source,
-        now
+        now,
+        command.content.date
       )
       applyEventPatch(event, command.content)
       insert(event, command.afterEventId)

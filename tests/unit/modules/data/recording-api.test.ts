@@ -171,7 +171,7 @@ describe.sequential("manual recording API and durable event identity", () => {
     const added = await write(journey, {
       name: "event.add",
       afterEventId: null,
-      content: { body: "真实经历", location },
+      content: { date: "2026-10-29", body: "真实经历", location },
     })
     journey = added.journey
     const first = await photo(),
@@ -260,7 +260,7 @@ describe.sequential("manual recording API and durable event identity", () => {
         await write(current, {
           name: "event.add",
           afterEventId: current.events.at(-1)!.id,
-          content: { body: "稍后补记" },
+          content: { date: "2026-10-29", body: "稍后补记" },
         })
       ).journey
       const ids = current.events.map((event) => event.id)
@@ -298,7 +298,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       expect(current.events[1]!.transit).not.toHaveProperty("route")
       expect(current.events.at(-1)).toMatchObject({
         body: "稍后补记",
-        date: null,
+        date: "2026-10-29",
         location: null,
       })
       expect(await reopen(initial.id)).toEqual(current)
@@ -310,14 +310,14 @@ describe.sequential("manual recording API and durable event identity", () => {
     const added = await write(journey, {
       name: "event.add",
       afterEventId: null,
-      content: { body: "傍晚去了海边，风很大。" },
+      content: { date: "2026-10-29", body: "傍晚去了海边，风很大。" },
     })
     journey = added.journey
     const eventId = added.eventId!
     expect(journey.events[0]).toMatchObject({
       id: eventId,
-      category: null,
-      date: null,
+      category: "VISIT",
+      date: "2026-10-29",
       time: null,
       location: null,
     })
@@ -336,7 +336,7 @@ describe.sequential("manual recording API and durable event identity", () => {
     const second = await write(journey, {
       name: "event.add",
       afterEventId: eventId,
-      content: { body: "下一段经历" },
+      content: { date: "2026-10-29", body: "下一段经历" },
     })
     journey = second.journey
     journey = (
@@ -344,7 +344,7 @@ describe.sequential("manual recording API and durable event identity", () => {
         name: "event.update",
         eventId,
         patch: {
-          category: "ACTIVITY",
+          category: "VISIT",
           date: "2026-10-18",
           location: { name: "海边", address: null, coordinates: null },
         },
@@ -426,7 +426,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       command: {
         name: "event.add",
         afterEventId: null,
-        content: { body: "原文" },
+        content: { date: "2026-10-29", body: "原文" },
       },
     }
     const original = journeyMutationResultSchema.parse(
@@ -452,7 +452,10 @@ describe.sequential("manual recording API and durable event identity", () => {
     const collision = await command(
       json({
         ...request,
-        command: { ...request.command, content: { body: "替换内容" } },
+        command: {
+          ...request.command,
+          content: { date: "2026-10-29", body: "替换内容" },
+        },
       }),
       params(first.journey.id)
     )
@@ -497,12 +500,12 @@ describe.sequential("manual recording API and durable event identity", () => {
     const first = await write(journey, {
       name: "event.add",
       afterEventId: null,
-      content: { body: "第一段" },
+      content: { date: "2026-10-29", body: "第一段" },
     })
     const second = await write(first.journey, {
       name: "event.add",
       afterEventId: first.eventId!,
-      content: { body: "第二段" },
+      content: { date: "2026-10-29", body: "第二段" },
     })
     journey = second.journey
     const [a, b] = await Promise.all([photo(), photo()])
@@ -593,24 +596,36 @@ describe.sequential("manual recording API and durable event identity", () => {
     const first = await write(await newJourney(), {
       name: "event.add",
       afterEventId: null,
-      content: {},
+      content: { date: "2026-10-29" },
     })
     let journey = first.journey
-    const invalid: JourneyCommand[] = [
+    const invalid: unknown[] = [
+      { name: "event.add", afterEventId: null, content: {} },
+      { name: "event.add", afterEventId: null, content: { date: null } },
+      { name: "event.update", eventId: first.eventId!, patch: { date: null } },
       {
         name: "event.add",
         afterEventId: null,
-        content: { category: "STAY", hotel: { checkInNote: "late" } },
-      },
-      {
-        name: "event.add",
-        afterEventId: null,
-        content: { category: "TRANSIT", transit: { notes: "incomplete" } },
+        content: {
+          date: "2026-10-29",
+          category: "STAY",
+          hotel: { checkInNote: "late" },
+        },
       },
       {
         name: "event.add",
         afterEventId: null,
         content: {
+          date: "2026-10-29",
+          category: "TRANSIT",
+          transit: { notes: "incomplete" },
+        },
+      },
+      {
+        name: "event.add",
+        afterEventId: null,
+        content: {
+          date: "2026-10-29",
           transit: {
             fromEventId: "from",
             toEventId: "to",
@@ -626,7 +641,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       {
         name: "event.update",
         eventId: first.eventId!,
-        patch: { time: "10:30" },
+        patch: { time: "25:30" },
       },
       {
         name: "event.update",
@@ -732,44 +747,102 @@ describe.sequential("manual recording API and durable event identity", () => {
     })
   })
 
-  it("creates unresolved transit only from complete editable endpoint and mode fields", async () => {
-    const from = await write(await newJourney(), {
-      name: "event.add",
-      afterEventId: null,
-      content: { title: "出发" },
-    })
-    const to = await write(from.journey, {
-      name: "event.add",
-      afterEventId: from.eventId!,
-      content: { title: "到达" },
-    })
-    const added = await write(to.journey, {
-      name: "event.add",
-      afterEventId: from.eventId!,
-      content: {
-        category: "TRANSIT",
-        transit: {
-          fromEventId: from.eventId!,
-          toEventId: to.eventId!,
-          transportMode: "TRAIN",
-          notes: "手动记录",
-        },
-      },
-    })
-    expect(added.journey.events[1]).toMatchObject({
-      id: added.eventId,
-      category: "TRANSIT",
+  it("creates and edits standalone transit names without other events, then reopens and replays", async () => {
+    const journey = await newJourney()
+    const key = randomUUID()
+    const content = {
+      date: "2026-10-29",
+      category: "TRANSIT" as const,
       transit: {
-        fromEventId: from.eventId,
-        toEventId: to.eventId,
-        transportMode: "TRAIN",
-        routeState: "EMPTY",
+        fromName: "杭州东站",
+        toName: "上海虹桥站",
+        transportMode: "TRAIN" as const,
         notes: "手动记录",
       },
+    }
+    const added = await write(
+      journey,
+      { name: "event.add", afterEventId: null, content },
+      key
+    )
+    expect(added.journey.events).toHaveLength(1)
+    expect(added.journey.events[0]).toMatchObject({
+      id: added.eventId,
+      date: "2026-10-29",
+      category: "TRANSIT",
+      transit: { ...content.transit, routeState: "EMPTY" },
     })
-    expect(added.journey.events[1]!.transit).not.toHaveProperty("route")
-    expect(await reopen(added.journey.id)).toEqual(added.journey)
+    expect(added.journey.events[0]!.transit).not.toHaveProperty("fromEventId")
+    expect(added.journey.events[0]!.transit).not.toHaveProperty("route")
+    expect(await reopen(journey.id)).toEqual(added.journey)
+    const edited = await write(added.journey, {
+      name: "event.update",
+      eventId: added.eventId!,
+      patch: { transit: { toName: "上海站" } },
+    })
+    expect(edited.journey.events[0]!.transit).toMatchObject({
+      fromName: "杭州东站",
+      toName: "上海站",
+    })
+    const replay = await write(
+      journey,
+      { name: "event.add", afterEventId: null, content },
+      key
+    )
+    expect(replay).toEqual({ ...added, replayed: true })
+    expect(await reopen(journey.id)).toEqual(edited.journey)
   })
+
+  it.each(["startAt", "endAt"] as const)(
+    "clears only %s and preserves other time and place facts through reopening and replay",
+    async (field) => {
+      const initial = transitJourneyFixture(ownerId, randomUUID())
+      const target = initial.events[0]!
+      target.planning = {
+        ...target.planning,
+        placeId: "place-lake",
+        providerPlaceId: "amap-lake",
+        coverImageUrl: "https://images.example/lake.jpg",
+      }
+      await persistJourney(owner, {
+        journey: initial,
+        operation: "fixture",
+        idempotencyKey: randomUUID(),
+        patch: [],
+        inversePatch: [],
+      })
+      const before = await reopen(initial.id)
+      const key = randomUUID()
+      const change: JourneyCommand = {
+        name: "event.update",
+        eventId: target.id,
+        patch: { planning: { [field]: null } },
+      }
+      const cleared = await write(before, change, key)
+      const expected = { ...target.planning }
+      delete expected[field]
+      expect(cleared.journey.events[0]!.planning).toEqual(expected)
+      expect(cleared.journey.events[0]!.location).toEqual(target.location)
+      expect(await reopen(initial.id)).toEqual(cleared.journey)
+      const edited = await write(cleared.journey, {
+        name: "event.update",
+        eventId: target.id,
+        patch: { body: "继续写" },
+      })
+      expect(await write(before, change, key)).toEqual({
+        ...cleared,
+        replayed: true,
+      })
+      expect(await reopen(initial.id)).toEqual(edited.journey)
+      const removed = await write(edited.journey, {
+        name: "event.update",
+        eventId: target.id,
+        patch: { planning: null },
+      })
+      expect(removed.journey.events[0]).not.toHaveProperty("planning")
+      expect(removed.journey.events[0]!.location).toEqual(target.location)
+    }
+  )
 
   it("arbitrates simultaneous retries and competing writes with one durable head advance", async () => {
     const journey = await newJourney()
@@ -779,7 +852,7 @@ describe.sequential("manual recording API and durable event identity", () => {
       command: {
         name: "event.add",
         afterEventId: null,
-        content: { body: "只保存一次" },
+        content: { date: "2026-10-29", body: "只保存一次" },
       },
     }
     const responses = await Promise.all([
@@ -806,7 +879,7 @@ describe.sequential("manual recording API and durable event identity", () => {
             command: {
               name: "event.add",
               afterEventId: results[0]!.eventId,
-              content: { body },
+              content: { date: "2026-10-29", body },
             },
           }),
           params(journey.id)

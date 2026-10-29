@@ -46,11 +46,10 @@ async function main() {
   const now = new Date().toISOString(),
     source = { userId: "dev-user-1", name: "User One", image: null }
   const walk = {
-    ...blankEvent("sample-lake", source, now),
+    ...blankEvent("sample-lake", source, now, "2026-10-29"),
     title: "西湖散步",
     body: "沿着湖边慢慢走。",
     category: "VISIT" as const,
-    date: "2026-10-29",
     location: {
       name: "西湖",
       address: "杭州",
@@ -62,7 +61,7 @@ async function main() {
     },
   }
   const note = {
-    ...blankEvent("sample-note", source, now),
+    ...blankEvent("sample-note", source, now, "2026-10-29"),
     body: "雨停后再去喝茶。",
   }
   const journey: JourneySnapshot = {
@@ -73,7 +72,7 @@ async function main() {
     status: "DRAFT",
     visibility: "PRIVATE",
     title: "杭州慢游",
-    description: "一份保留完整与未填记录的示例游记",
+    description: "一份手动记录的示例游记",
     events: [walk, note],
     createdAt: now,
     updatedAt: now,

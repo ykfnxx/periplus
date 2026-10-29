@@ -131,7 +131,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     const command: JourneyCommand = {
       name: "event.add",
       afterEventId: null,
-      content: { body: "午饭", date: null, location: null },
+      content: { body: "午饭", date: "2026-10-29", location: null },
       receipt: { assetId: asset.id, ...fields },
     }
     const saved = await write(owner, current, command, key)
@@ -149,7 +149,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     expect(current.events[0]!.photos).toEqual([])
     expect(current.events[0]).toMatchObject({
       source: { userId: owner.userId },
-      date: null,
+      date: "2026-10-29",
       location: null,
     })
     const receiptId = current.events[0]!.receipts![0]!.id
@@ -191,7 +191,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     const event = await write(owner, current, {
       name: "event.add",
       afterEventId: null,
-      content: { body: "作者的文字" },
+      content: { date: "2026-10-29", body: "作者的文字" },
     })
     current = event.journey
     const ownerPhoto = await upload()
@@ -298,7 +298,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     const added = await write(owner, current, {
       name: "event.add",
       afterEventId: null,
-      content: { body: "不可改" },
+      content: { date: "2026-10-29", body: "不可改" },
     })
     current = added.journey
     const asset = await upload()
@@ -351,7 +351,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     const own = await write(friend, current, {
       name: "event.add",
       afterEventId: added.eventId!,
-      content: { body: "好友" },
+      content: { date: "2026-10-29", body: "好友" },
     })
     current = own.journey
     current = (
@@ -378,7 +378,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     const added = await write(owner, current, {
       name: "event.add",
       afterEventId: null,
-      content: {},
+      content: { date: "2026-10-29" },
     })
     current = added.journey
     const privateAsset = await upload(friend)
@@ -409,7 +409,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
     const added = await write(owner, current, {
       name: "event.add",
       afterEventId: null,
-      content: {},
+      content: { date: "2026-10-29" },
       receipt: { assetId: asset.id, ...fields },
     })
     current = added.journey
@@ -428,7 +428,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
         await invoke(initial.revision, {
           name: "event.add",
           afterEventId: null,
-          content: {},
+          content: { date: "2026-10-29" },
         })
       ).status
     ).toBe(409)
@@ -437,7 +437,7 @@ describe.sequential("confirmed receipts and journey collaboration", () => {
         await invoke(current.revision, {
           name: "event.add",
           afterEventId: null,
-          content: {},
+          content: { date: "2026-10-29" },
           source: { userId: friend.userId },
         })
       ).status

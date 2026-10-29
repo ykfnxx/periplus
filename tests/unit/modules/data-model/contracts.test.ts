@@ -11,13 +11,13 @@ import {
   transitJourneyFixture,
 } from "@/tests/fixtures/journey"
 describe("one Journey event contract", () => {
-  it("retains incomplete manual records alongside planned events in array order", () => {
+  it("retains dated manual records alongside planned events in array order", () => {
     const journey = transitJourneyFixture()
     journey.events.push(eventFixture("note"))
     const parsed = journeySnapshotSchema.parse(journey)
     expect(parsed.events.at(-1)).toMatchObject({
-      category: null,
-      date: null,
+      category: "VISIT",
+      date: "2026-10-29",
       time: null,
       location: null,
     })
@@ -82,4 +82,94 @@ describe("one Journey event contract", () => {
     route.plans[0]!.validUntil = "2020-01-01T00:00:00.000Z"
     expect(transitRouteSchema.safeParse(route).success).toBe(false)
   })
+  it("requires dates in snapshots and new records, and rejects clearing them", () => {
+    const request = (command: unknown) => ({
+      expectedRevision: 1,
+      idempotencyKey: "key",
+      command,
+    })
+    for (const content of [{}, { date: null }, { date: "2026-02-30" }])
+      expect(
+        journeyMutationSchema.safeParse(
+          request({ name: "event.add", afterEventId: null, content })
+        ).success
+      ).toBe(false)
+    expect(
+      journeyMutationSchema.safeParse(
+        request({
+          name: "event.add",
+          afterEventId: null,
+          content: { date: "2026-10-29" },
+        })
+      ).success
+    ).toBe(true)
+    expect(
+      journeyMutationSchema.safeParse(
+        request({
+          name: "event.update",
+          eventId: "a",
+          patch: { body: "changed" },
+        })
+      ).success
+    ).toBe(true)
+    expect(
+      journeyMutationSchema.safeParse(
+        request({ name: "event.update", eventId: "a", patch: { date: null } })
+      ).success
+    ).toBe(false)
+    for (const category of [null, "ACTIVITY", "CITY"])
+      expect(
+        journeyMutationSchema.safeParse(
+          request({
+            name: "event.add",
+            afterEventId: null,
+            content: { date: "2026-10-29", category },
+          })
+        ).success
+      ).toBe(false)
+    const journey = journeyFixture()
+    journey.events = [{ ...eventFixture("a"), date: null } as never]
+    expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
+  })
+  it("stores standalone transit endpoint names without linked events", () => {
+    const journey = journeyFixture()
+    journey.events = [
+      {
+        ...eventFixture("train"),
+        category: "TRANSIT",
+        transit: {
+          fromName: "杭州东站",
+          toName: "上海虹桥站",
+          transportMode: "TRAIN",
+          routeState: "EMPTY",
+        },
+      },
+    ]
+    expect(
+      journeySnapshotSchema.parse(journey).events[0]!.transit
+    ).toMatchObject({ fromName: "杭州东站", toName: "上海虹桥站" })
+    journey.events[0]!.transit!.fromName = " "
+    expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
+  })
+  it.each(["startAt", "endAt"] as const)(
+    "allows clearing %s in input while snapshots omit it",
+    (field) => {
+      expect(
+        journeyMutationSchema.safeParse({
+          expectedRevision: 1,
+          idempotencyKey: "key",
+          command: {
+            name: "event.update",
+            eventId: "a",
+            patch: { planning: { [field]: null } },
+          },
+        }).success
+      ).toBe(true)
+      const journey = journeyFixture()
+      journey.events = [
+        { ...eventFixture("a"), planning: { [field]: null } } as never,
+      ]
+      expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
+    }
+  )
 })
