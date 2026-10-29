@@ -1,6 +1,6 @@
 "use client"
 import RevisionReload from "./RevisionReload"
-import { MAX_RECORDING_PHOTO_CAPTION_LENGTH } from "@/modules/data-model/contracts/recording"
+import { MAX_PHOTO_CAPTION_LENGTH } from "@/modules/data-model/contracts"
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useReducedMotion } from "motion/react"
 import { DragDropProvider } from "@dnd-kit/react"
@@ -9,7 +9,7 @@ import { Camera, GripVertical, RefreshCw, X } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
 import { Select } from "@/components/kumo/components/select/select"
-import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
 import type { RecordingStore } from "../../state/recording-store"
 import { useStore } from "zustand"
 import { eventTitle } from "../display"
@@ -67,7 +67,7 @@ function Caption({
   onSave,
   onDirty,
 }: {
-  photo: RecordingEvent["photos"][number]
+  photo: JourneyEvent["photos"][number]
   onSave: (caption: string) => Promise<void>
   onDirty: (id: string, dirty: boolean) => void
 }) {
@@ -98,7 +98,7 @@ function Caption({
         className="w-full min-w-0"
         aria-label="照片说明"
         placeholder="为照片写一句描述"
-        maxLength={MAX_RECORDING_PHOTO_CAPTION_LENGTH}
+        maxLength={MAX_PHOTO_CAPTION_LENGTH}
         value={value}
         onChange={(event) => {
           setValue(event.target.value)
@@ -163,7 +163,7 @@ export default function PhotoPanel({
     }
   }
   function setPhotos(
-    transform: (event: RecordingEvent) => {
+    transform: (event: JourneyEvent) => {
       photos: { assetId: string; caption: string }[]
       coverAssetId: string | null
     }

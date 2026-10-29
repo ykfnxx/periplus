@@ -1,13 +1,13 @@
-import type { RecordingLocation } from "@/modules/data-model/contracts/recording"
+import type { EventLocation } from "@/modules/data-model/contracts"
 import { createStore } from "zustand/vanilla"
 export type EventWindowRequest = {
   eventId: string | null
   afterEventId: string | null
-  location?: RecordingLocation
+  location?: EventLocation
 }
 export const createWorkbenchStore = () =>
   createStore(() => ({
-    picking: null as { location: RecordingLocation | null } | null,
+    picking: null as { location: EventLocation | null } | null,
     selected: null as string | null,
     focusId: 0,
     activeDay: null as string | null,

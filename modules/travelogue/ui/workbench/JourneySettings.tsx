@@ -5,7 +5,7 @@ import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
 import { InputArea } from "@/components/kumo/components/input/input-area"
 import { Select } from "@/components/kumo/components/select/select"
-import type { RecordingJourney } from "@/modules/data-model/contracts/recording"
+import type { JourneySnapshot } from "@/modules/data-model/contracts"
 import type { RecordingStore } from "../../state/recording-store"
 import { Modal, useConfirmation } from "./Modal"
 export default function JourneySettings({
@@ -13,7 +13,7 @@ export default function JourneySettings({
   store,
   onClose,
 }: {
-  journey: RecordingJourney
+  journey: JourneySnapshot
   store: RecordingStore
   onClose: () => void
 }) {

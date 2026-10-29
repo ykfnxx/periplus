@@ -24,3 +24,10 @@ export class AssetStorageError extends Error {
     super("Resource storage is temporarily unavailable")
   }
 }
+
+export class AssetInUseError extends Error {
+  constructor(message = "Asset is attached to a Journey") {
+    super(message)
+    this.name = "AssetInUseError"
+  }
+}

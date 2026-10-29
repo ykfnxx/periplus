@@ -1,7 +1,7 @@
-import type { RecordingJourney } from "@/modules/data-model/contracts/recording"
+import type { JourneySnapshot } from "@/modules/data-model/contracts"
 import { eventTitle, recordingCoordinateToMap } from "./display"
 
-export function photoItems(events: RecordingJourney["events"]) {
+export function photoItems(events: JourneySnapshot["events"]) {
   return events.flatMap((entry) =>
     entry.photos.map((photo) => {
       const location = photo.location ?? entry.location

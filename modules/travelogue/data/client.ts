@@ -1,11 +1,11 @@
 import type {
-  RecordingAtlas,
-  RecordingJourney,
-  RecordingJourneySummary,
-  RecordingJourneyCreate,
-  RecordingMutation,
-  RecordingMutationResult,
-} from "@/modules/data-model/contracts/recording"
+  JourneyAtlas,
+  JourneySnapshot,
+  JourneySummary,
+  JourneyCreate,
+  JourneyMutation,
+  JourneyMutationResult,
+} from "@/modules/data-model/contracts"
 import type { PhotoDto } from "@/types/photo"
 import type { ReceiptExtraction } from "@/modules/data-model/contracts/receipts"
 import type {
@@ -48,18 +48,18 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const recordingApi = {
-  atlas: () => request<RecordingAtlas>("/api/journeys/map"),
-  list: () => request<RecordingJourneySummary[]>("/api/journeys"),
+  atlas: () => request<JourneyAtlas>("/api/journeys/map"),
+  list: () => request<JourneySummary[]>("/api/journeys"),
   get: (id: string) =>
-    request<RecordingJourney>(`/api/journeys/${encodeURIComponent(id)}`),
-  create: (input: RecordingJourneyCreate) =>
-    request<RecordingMutationResult>("/api/journeys", {
+    request<JourneySnapshot>(`/api/journeys/${encodeURIComponent(id)}`),
+  create: (input: JourneyCreate) =>
+    request<JourneyMutationResult>("/api/journeys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-  command: (id: string, mutation: RecordingMutation) =>
-    request<RecordingMutationResult>(
+  command: (id: string, mutation: JourneyMutation) =>
+    request<JourneyMutationResult>(
       `/api/journeys/${encodeURIComponent(id)}/commands`,
       {
         method: "POST",

@@ -1,13 +1,18 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import type { RecordingLocation } from "@/modules/data-model/contracts/recording"
+import type {
+  JourneyEvent,
+  EventLocation,
+} from "@/modules/data-model/contracts"
 import { recordingCoordinateToMap } from "./display"
 import { Button } from "@/components/kumo/components/button/button"
 import { MapPin, Plus } from "lucide-react"
 import { loadAMap, PERIPLUS_AMAP_STYLE } from "@/lib/amap"
 import usePhotoMapLayer, { type MapPhoto } from "./usePhotoMapLayer"
 import type { MapViewport } from "../state/atlas-view-store"
+import useJourneyRoutes from "./useJourneyRoutes"
+import { eventRouteBounds } from "@/lib/journeys/route-paths"
 import { periplusColors } from "@/lib/ui/map-theme"
 
 export interface RecordMapPoint {
@@ -28,6 +33,7 @@ export interface RecordMapRequest {
   type: "zoom-in" | "zoom-out" | "fit"
 }
 const emptyPhotos: MapPhoto[] = []
+const emptyEvents: JourneyEvent[] = []
 const defaultInsets: RecordMapInsets = {
   left: 40,
   right: 40,
@@ -37,6 +43,7 @@ const defaultInsets: RecordMapInsets = {
 
 export default function RecordMap({
   points,
+  events = emptyEvents,
   selectedEventId,
   onSelect,
   onPick,
@@ -54,14 +61,15 @@ export default function RecordMap({
   initialViewport?: MapViewport | null
   onViewport?: (viewport: MapViewport) => void
   points: RecordMapPoint[]
+  events?: JourneyEvent[]
   photos?: MapPhoto[]
   onOpenPhotos?: (ids: string[]) => void
   selectedEventId?: string | null
   onSelect?: (eventId: string) => void
   onPick?: (coordinate: { lat: number; lng: number }) => void
   picking?: boolean
-  pickedLocation?: RecordingLocation | null
-  onAddAtLocation?: (location: RecordingLocation) => void
+  pickedLocation?: EventLocation | null
+  onAddAtLocation?: (location: EventLocation) => void
   insets?: RecordMapInsets
   request?: RecordMapRequest | null
   focusId?: number
@@ -83,6 +91,7 @@ export default function RecordMap({
   const contextButton = useRef<HTMLButtonElement>(null)
   const latest = useRef({
     points,
+    events,
     photos,
     selectedEventId,
     onSelect,
@@ -92,13 +101,22 @@ export default function RecordMap({
   useEffect(() => {
     latest.current = {
       points,
+      events,
       photos,
       selectedEventId,
       onSelect,
       onPick,
       onAddAtLocation,
     }
-  }, [points, photos, selectedEventId, onSelect, onPick, onAddAtLocation])
+  }, [
+    points,
+    events,
+    photos,
+    selectedEventId,
+    onSelect,
+    onPick,
+    onAddAtLocation,
+  ])
   useEffect(() => {
     let disposed = false
     let instance: AMap.Map | null = null
@@ -161,6 +179,7 @@ export default function RecordMap({
     }
   }, [])
 
+  useJourneyRoutes(map, events, selectedEventId, onSelect)
   const photoMode = usePhotoMapLayer(
     map,
     photos,
@@ -262,6 +281,13 @@ export default function RecordMap({
   }, [context])
   const fitPoints = [
     ...points,
+    ...events.flatMap((event) =>
+      eventRouteBounds(event).map(([lng, lat]) => ({
+        eventId: event.id,
+        lng,
+        lat,
+      }))
+    ),
     ...photos.map((photo) => ({ eventId: photo.eventId, ...photo.coordinate })),
   ]
   const positionKey = fitPoints
@@ -270,13 +296,30 @@ export default function RecordMap({
   const { left, right, top, bottom } = insets
   useEffect(() => {
     if (!map || picking || restoredViewport.current) return
-    const { points, photos, selectedEventId } = latest.current
-    const all = [...points, ...photos.map((photo) => photo.coordinate)]
+    const { points, events, photos, selectedEventId } = latest.current
+    const all = [
+      ...points,
+      ...photos.map((photo) => photo.coordinate),
+      ...events.flatMap((event) =>
+        eventRouteBounds(event).map(([lng, lat]) => ({ lng, lat }))
+      ),
+    ]
+    const selectedRoute = events.find((event) => event.id === selectedEventId)
+    const routeBounds = selectedRoute ? eventRouteBounds(selectedRoute) : []
     const selected = points.find((point) => point.eventId === selectedEventId)
     // 无定位的记录保留当前镜头；有独立照片位置时优先使用该记录的照片。
     const selectedPhoto = photos.find(
       (photo) => photo.eventId === selectedEventId
     )
+    if (routeBounds.length) {
+      map.setFitView(
+        routeBounds.map((position) => new AMap.Marker({ position })),
+        false,
+        [top + 24, bottom + 24, left + 72, right + 72],
+        14
+      )
+      return
+    }
     if (selectedEventId && !selected && !selectedPhoto) return
     // 将定位点放进浮窗外的可见地图区域；列表滚动、正文修订不触发重新定位。
     if (selected || selectedPhoto || all.length === 1) {
@@ -301,6 +344,9 @@ export default function RecordMap({
     else {
       const all = [
         ...latest.current.points,
+        ...latest.current.events.flatMap((event) =>
+          eventRouteBounds(event).map(([lng, lat]) => ({ lng, lat }))
+        ),
         ...latest.current.photos.map((photo) => photo.coordinate),
       ]
       if (all.length)

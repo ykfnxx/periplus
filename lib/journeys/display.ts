@@ -1,7 +1,8 @@
-import type { TargetTransitPlanningRun } from "@/modules/data-model/contracts"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
 
-type TransitSegmentMode =
-  TargetTransitPlanningRun["plans"][number]["segments"][number]["mode"]
+type TransitSegmentMode = NonNullable<
+  NonNullable<JourneyEvent["transit"]>["route"]
+>["plans"][number]["segments"][number]["mode"]
 
 export function formatTransitDuration(seconds: number) {
   const minutes = Math.max(1, Math.round(seconds / 60))

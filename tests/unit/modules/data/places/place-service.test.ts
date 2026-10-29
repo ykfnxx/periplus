@@ -106,8 +106,6 @@ describe("PlaceIntelligenceService", () => {
       },
       {
         userId: "owner-1",
-        workspaceId: "workspace-1",
-        agentRunId: "run-1",
         requestId: "place-request-1",
       }
     )
@@ -132,8 +130,6 @@ describe("PlaceIntelligenceService", () => {
       undefined,
       {
         userId: "owner-1",
-        workspaceId: "workspace-1",
-        agentRunId: "run-1",
         requestId: "place-request-1",
       }
     )
@@ -289,39 +285,6 @@ describe("PlaceIntelligenceService", () => {
     expect(result).not.toHaveProperty("fallbackQuery")
   })
 
-  it("opens a run-level circuit after a hard provider quota failure", async () => {
-    const { service, repository, provider } = serviceFor(catalogCandidate(), {
-      now: () => 1000,
-    })
-    repository.search.mockResolvedValue({ candidates: [], topConfidence: 0 })
-    provider.search.mockResolvedValue({
-      candidates: [],
-      warnings: [
-        {
-          provider: "amap",
-          code: "quota_exceeded",
-          message: "hard quota exhausted",
-          retryable: false,
-        },
-      ],
-    })
-    const context = { agentRunId: "hard-quota-run" }
-
-    await expect(
-      service.resolvePlace({ text: "故宫", city: "北京" }, context)
-    ).resolves.toMatchObject({
-      status: "not_found",
-      warnings: [expect.objectContaining({ attempts: 1, exhausted: true })],
-    })
-    await expect(
-      service.resolvePlace({ text: "天坛", city: "北京" }, context)
-    ).resolves.toMatchObject({
-      status: "not_found",
-      warnings: [expect.objectContaining({ attempts: 0, exhausted: true })],
-    })
-    expect(provider.search).toHaveBeenCalledOnce()
-  })
-
   it("records provider warning failures against the scoped request", async () => {
     const { service, repository, provider, logUsage } = serviceFor()
     repository.search.mockResolvedValue({ candidates: [], topConfidence: 0 })
@@ -338,14 +301,14 @@ describe("PlaceIntelligenceService", () => {
 
     await service.searchPlaces(
       { query: "故宫", includeLiveProvider: true },
-      { workspaceId: "workspace-1", requestId: "search-error-1" }
+      { requestId: "search-error-1" }
     )
 
     expect(logUsage).toHaveBeenCalledWith(
       "place_search",
       "error",
       "quota_exceeded",
-      { workspaceId: "workspace-1", requestId: "search-error-1" }
+      { requestId: "search-error-1" }
     )
   })
 })

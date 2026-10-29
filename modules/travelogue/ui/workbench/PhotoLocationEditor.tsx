@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
-import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
 import type { RecordingStore } from "../../state/recording-store"
 import { useConfirmation } from "./Modal"
 import LocationPanel from "./LocationPanel"
@@ -13,8 +13,8 @@ export default function PhotoLocationEditor({
   store,
   onDirty,
 }: {
-  photo: RecordingEvent["photos"][number]
-  entry: RecordingEvent
+  photo: JourneyEvent["photos"][number]
+  entry: JourneyEvent
   store: RecordingStore
   onDirty: (id: string, dirty: boolean) => void
 }) {
@@ -34,7 +34,7 @@ export default function PhotoLocationEditor({
     return () => onDirty(key, false)
   }, [key, dirty, onDirty])
   const location = photo.location ?? entry.location
-  async function save(location: RecordingEvent["location"]) {
+  async function save(location: JourneyEvent["location"]) {
     setSaving(true)
     setError(null)
     try {

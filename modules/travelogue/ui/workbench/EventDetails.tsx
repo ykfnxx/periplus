@@ -9,8 +9,10 @@ import {
   Camera,
   ReceiptText,
 } from "lucide-react"
+import EventPlanning from "./EventPlanning"
+import { eventCalendarDate } from "@/lib/journeys/calendar"
 import { Button } from "@/components/kumo/components/button/button"
-import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
 import { dateLabel, eventTitle } from "../display"
 import { photoItems } from "../photo-items"
 import { Modal } from "./Modal"
@@ -28,7 +30,7 @@ export default function EventDetails({
   onAddPhotos,
   onAddReceipt,
 }: {
-  entry: RecordingEvent
+  entry: JourneyEvent
   onClose: () => void
   onEdit?: () => void
   onReceipt: (assetId: string) => void
@@ -37,6 +39,7 @@ export default function EventDetails({
 }) {
   const [photoIndex, setPhotoIndex] = useState<number | null>(null)
   const title = eventTitle(entry)
+  const date = eventCalendarDate(entry)
   return (
     <Modal
       title={title}
@@ -76,12 +79,12 @@ export default function EventDetails({
                 />
               </div>
             )}
-            {(entry.date || entry.location) && (
+            {(date || entry.location) && (
               <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-journal-muted">
-                {entry.date && (
+                {date && (
                   <span className="flex items-center gap-2">
                     <CalendarDays size={16} />
-                    {dateLabel(entry.date)}
+                    {dateLabel(date!)}
                   </span>
                 )}
                 {entry.location && (
@@ -97,6 +100,7 @@ export default function EventDetails({
                 {entry.body}
               </p>
             )}
+            <EventPlanning event={entry} expanded />
             {entry.receipts?.map((receipt) => (
               <ReceiptCard
                 key={receipt.assetId}
