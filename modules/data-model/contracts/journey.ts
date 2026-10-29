@@ -2,7 +2,7 @@ import { z } from "zod"
 import {
   targetIdSchema as id,
   targetDateTimeSchema as instant,
-  targetActorReferenceSchema,
+  journeyActorSchema,
 } from "./common"
 import { journeyEventSchema, eventDateSchema } from "./event"
 
@@ -86,10 +86,9 @@ export const journeyRevisionSchema = z
     snapshot: journeySnapshotSchema,
     patch: z.unknown(),
     inversePatch: z.unknown(),
-    actor: targetActorReferenceSchema,
+    actor: journeyActorSchema,
     idempotencyKey: id,
     parentRevisionId: id.optional(),
-    workspaceRevisionId: id.optional(),
     createdAt: instant,
   })
   .strict()
