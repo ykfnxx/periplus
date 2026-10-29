@@ -39,6 +39,7 @@ export const eventInputSchema = eventContentSchema
         fromEventId: id.optional(),
         toEventId: id.optional(),
         transportMode: z.enum(TARGET_TRANSPORT_MODES).optional(),
+        distanceMeters: z.number().finite().nonnegative().nullable().optional(),
         requestMode: z.enum(TARGET_TRANSIT_REQUEST_MODES).optional(),
         preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
         notes: z.string().optional(),

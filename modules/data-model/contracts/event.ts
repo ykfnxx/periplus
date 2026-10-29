@@ -108,6 +108,7 @@ export const eventTransitSchema = z
     fromEventId: id.optional(),
     toEventId: id.optional(),
     transportMode: z.enum(TARGET_TRANSPORT_MODES),
+    distanceMeters: z.number().finite().nonnegative().optional(),
     requestMode: z.enum(TARGET_TRANSIT_REQUEST_MODES).optional(),
     preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),
     routeState: z.enum(["EMPTY", "READY", "ROUTE_STALE"]),
