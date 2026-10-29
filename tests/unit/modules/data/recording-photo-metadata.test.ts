@@ -18,7 +18,8 @@ import type {
   EventLocation,
   JourneyMutation,
 } from "@/modules/data-model/contracts"
-import { commitJourney } from "@/modules/data/journeys/journey-repository"
+import { createJourney } from "@/modules/data/journeys/journey-repository"
+import { eventFixture, journeyFixture } from "@/tests/fixtures/journey"
 import { prisma } from "@/modules/data/db/prisma"
 import {
   createRecordingJourney,
@@ -274,48 +275,34 @@ describe.sequential(
     })
 
     it("preserves existing long descriptions during membership and location-only writes", async () => {
-      const first = await write(await create(), {
-        name: "event.add",
-        afterEventId: null,
-        content: {},
-      })
-      const second = await write(first.journey, {
-        name: "event.add",
-        afterEventId: first.eventId!,
-        content: {},
-      })
-      let journey = (
-        await write(second.journey, {
-          name: "photos.set",
-          eventId: first.eventId!,
-          photos: [{ assetId: a, caption: "" }],
-          coverAssetId: null,
-        })
-      ).journey
-      // A long existing caption can pass through order/location edits without
-      // accepting a newly entered over-limit caption.
-      const snapshot = structuredClone(journey)
-      snapshot.events
-        .find((event) => event.id === first.eventId)!
-        .photos.find((photo) => photo.assetId === a)!.caption = "旧".repeat(160)
-      snapshot.revision++
-      await commitJourney(
-        owner,
-        journey.id,
+      const first = eventFixture(randomUUID(), owner.userId)
+      const second = eventFixture(randomUUID(), owner.userId)
+      // Existing captions may exceed today's input limit.
+      first.photos = [
         {
-          journey: snapshot,
-          operation: "fixture.caption",
-          idempotencyKey: randomUUID(),
-          patch: [],
-          inversePatch: [],
+          assetId: a,
+          url: `/api/assets/${a}/file`,
+          source: first.source,
+          canEdit: true,
+          caption: "旧".repeat(160),
+          location: null,
+          isCover: false,
         },
-        journey.revision
-      )
-      journey = await getRecordingJourney(owner, journey.id)
+      ]
+      const snapshot = journeyFixture(owner.userId, randomUUID())
+      snapshot.events = [first, second]
+      await createJourney(owner, {
+        journey: snapshot,
+        operation: "fixture.caption",
+        idempotencyKey: randomUUID(),
+        patch: [],
+        inversePatch: [],
+      })
+      let journey = await getRecordingJourney(owner, snapshot.id)
       journey = (
         await write(journey, {
           name: "photos.set",
-          eventId: first.eventId!,
+          eventId: first.id,
           photos: [
             { assetId: b, caption: "新增" },
             { assetId: a, caption: "旧".repeat(160) },
@@ -326,7 +313,7 @@ describe.sequential(
       journey = (
         await write(journey, {
           name: "photo.update",
-          eventId: first.eventId!,
+          eventId: first.id,
           assetId: a,
           patch: { location: location("独立地点") },
         })
@@ -335,18 +322,18 @@ describe.sequential(
         await write(journey, {
           name: "photo.move",
           assetId: a,
-          fromEventId: first.eventId!,
-          toEventId: second.eventId!,
+          fromEventId: first.id,
+          toEventId: second.id,
           afterAssetId: null,
         })
       ).journey
-      expect(photo(journey, second.eventId!)).toMatchObject({
+      expect(photo(journey, second.id)).toMatchObject({
         caption: "旧".repeat(160),
         location: location("独立地点"),
       })
       const rejected = await post(journey, {
         name: "photo.update",
-        eventId: second.eventId!,
+        eventId: second.id,
         assetId: a,
         patch: { caption: "新".repeat(101) },
       })
@@ -355,12 +342,12 @@ describe.sequential(
       journey = (
         await write(journey, {
           name: "photo.update",
-          eventId: second.eventId!,
+          eventId: second.id,
           assetId: a,
           patch: { caption: "" },
         })
       ).journey
-      expect(photo(journey, second.eventId!)).toMatchObject({
+      expect(photo(journey, second.id)).toMatchObject({
         caption: "",
         location: location("独立地点"),
       })

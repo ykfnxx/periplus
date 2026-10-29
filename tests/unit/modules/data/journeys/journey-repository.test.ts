@@ -42,8 +42,11 @@ describe("canonical Journey snapshots in PostgreSQL", () => {
     const next = structuredClone(journey)
     next.revision++
     next.events.reverse()
-    next.events[0]!.body = "后补的一笔"
-    await commitJourney(context, journey.id, write(next), 1)
+    await commitJourney(context, journey.id, write(next), 1, {
+      name: "event.move",
+      eventId: next.events[0]!.id,
+      afterEventId: null,
+    })
     expect(
       (await getJourney(context, journey.id))!.events.map((event) => event.id)
     ).toEqual(next.events.map((event) => event.id))
@@ -57,7 +60,11 @@ describe("canonical Journey snapshots in PostgreSQL", () => {
     const first = await prisma.journeyRevision.findUniqueOrThrow({
       where: { journeyId_revision: { journeyId: journey.id, revision: 1 } },
     })
-    expect(JSON.parse(first.snapshotJson).events[0].body).toBe("")
+    expect(
+      JSON.parse(first.snapshotJson).events.map(
+        (event: { id: string }) => event.id
+      )
+    ).toEqual(journey.events.map((event) => event.id))
     await expect(
       prisma.journeyRevision.update({
         where: { id: first.id },
@@ -70,20 +77,31 @@ describe("canonical Journey snapshots in PostgreSQL", () => {
     await createJourney(context, write(journey))
     const next = { ...journey, revision: 2, title: "下一版" },
       request = write(next)
+    const command = {
+      name: "journey.update" as const,
+      patch: { title: next.title },
+    }
     const results = await Promise.all([
-      commitJourney(context, journey.id, request, 1),
-      commitJourney(context, journey.id, request, 1),
+      commitJourney(context, journey.id, request, 1, command),
+      commitJourney(context, journey.id, request, 1, command),
     ])
     expect(results.map((result) => result!.revision)).toEqual([2, 2])
     await expect(
-      commitJourney(context, journey.id, write({ ...next, title: "冲突" }), 1)
+      commitJourney(
+        context,
+        journey.id,
+        write({ ...next, title: "冲突" }),
+        1,
+        command
+      )
     ).rejects.toThrow("updated")
     await expect(
       commitJourney(
         context,
         journey.id,
         { ...request, patch: ["different"] },
-        1
+        1,
+        command
       )
     ).rejects.toThrow("payload")
     expect(
