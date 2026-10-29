@@ -28,9 +28,6 @@ export default function AIComposer({
   const isWorkspaceLocked = useWorkspaceStore(selectWorkspaceLocked)
   const agentRunStage = useWorkspaceStore((state) => state.agentRunStage)
   const canMutate = useWorkspaceStore(selectWorkspaceCanMutate)
-  const lightboxPhotoShare = useWorkspaceStore(
-    (state) => state.lightboxPhotoShare
-  )
   const canControlAgent = Boolean(
     document?.accessState === "OWNER" && document.session.status === "ACTIVE"
   )
@@ -42,7 +39,7 @@ export default function AIComposer({
         event.key !== "Escape" ||
         !isWorkspaceLocked ||
         !canControlAgent ||
-        lightboxPhotoShare
+        event.defaultPrevented
       ) {
         return
       }
@@ -67,7 +64,7 @@ export default function AIComposer({
         escTimerRef.current = null
       }
     }
-  }, [canControlAgent, isWorkspaceLocked, lightboxPhotoShare, sendAgentEvent])
+  }, [canControlAgent, isWorkspaceLocked, sendAgentEvent])
 
   const sendPrompt = () => {
     const prompt = composerInput.trim()

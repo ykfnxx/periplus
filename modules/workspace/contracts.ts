@@ -22,7 +22,6 @@ export interface MapCoordinate {
 
 export type MapIntent =
   | { type: "map.background-clicked" }
-  | { type: "map.location-picked"; coordinate: MapCoordinate }
   | {
       type: "map.event-selected"
       eventId: string
@@ -30,5 +29,4 @@ export type MapIntent =
     }
   | { type: "map.event-hovered"; eventId: string }
   | { type: "map.event-hover-cleared"; eventId: string }
-  | { type: "map.photo-selected"; photoId: string }
   | { type: "map.transit-selected"; eventId: string }

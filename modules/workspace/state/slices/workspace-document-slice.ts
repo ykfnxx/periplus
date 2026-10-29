@@ -1,9 +1,3 @@
-import {
-  deriveFlatJourneyLayout,
-  nearestEventInReplacementSegment,
-  projectFlatJourneyForWorkspace,
-  replacementSegmentId,
-} from "@/lib/journeys/flat-workspace-projection"
 import type { TargetWorkspaceDocument } from "@/modules/data-model/contracts"
 import type {
   WorkspaceDocumentSlice,
@@ -44,9 +38,8 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
     const state = get()
     if (
       !shouldAcceptWorkspaceDocument(state.workspaceDocument, workspaceDocument)
-    ) {
+    )
       return false
-    }
     set(workspaceDocumentPatch(state, workspaceDocument))
     return true
   },
@@ -54,13 +47,12 @@ export const createWorkspaceDocumentSlice: WorkspaceSlice<
     const state = get()
     if (
       !shouldAcceptWorkspaceDocument(state.workspaceDocument, workspaceDocument)
-    ) {
+    )
       return false
-    }
     set({
       ...workspaceDocumentPatch(state, workspaceDocument),
       journeyCommitPresentation: {
-        revision: workspaceDocument.session.flatJourney.revision,
+        revision: workspaceDocument.session.journey.revision,
         summary,
         changedEventIds,
       },
@@ -79,113 +71,40 @@ function workspaceDocumentPatch(
   state: WorkspaceState,
   workspaceDocument: TargetWorkspaceDocument | null
 ) {
-  const previousDocument = state.workspaceDocument
-  const previousFlat = previousDocument?.session.flatJourney
-  const nextFlat = workspaceDocument?.session.flatJourney
-  const workspaceChanged = Boolean(
-    previousDocument &&
-    workspaceDocument &&
-    previousDocument.session.id !== workspaceDocument.session.id
+  const previous = state.workspaceDocument
+  const next = workspaceDocument?.session.journey
+  const sameWorkspace = previous?.session.id === workspaceDocument?.session.id
+  const selectedSurvives = next?.events.some(
+    (event) => event.id === state.selectedEventId
   )
-  const topologyChanged =
-    topologyKey(previousDocument) !== topologyKey(workspaceDocument)
-
-  if (!workspaceDocument || !nextFlat || workspaceChanged || !previousFlat) {
-    return {
-      workspaceDocument,
-      journeyCommitPresentation: null,
-      viewLevel: "overview" as const,
-      activeSectionEventId: null,
-      hoveredEventId: null,
-      selectedTransitEventId: null,
-      selectedLocationEvent: null,
-      selectedLocationAnchor: null,
-      ...(workspaceDocument && topologyChanged
-        ? {
-            mapFocusRequest: {
-              requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
-              target: { type: "active-journey" as const, maxZoom: 12 },
-            },
-          }
-        : {}),
-    }
-  }
-
-  const replacementSectionId = replacementSegmentId(
-    previousFlat,
-    nextFlat,
-    state.activeSectionEventId
-  )
-  const nextGraph = projectFlatJourneyForWorkspace(
-    nextFlat,
-    workspaceDocument.session.ownerId
-  )
+  const previousIndex =
+    previous?.session.journey.events.findIndex(
+      (event) => event.id === state.selectedEventId
+    ) ?? -1
+  // A commit replaces the complete chain; keep identity or the nearest surviving
+  // chain position, without constructing city scopes or storing an event copy.
   const selectedEventId =
-    state.selectedLocationEvent?.id ?? state.selectedTransitEventId
-  const survivingSelected = selectedEventId
-    ? nextGraph.events.find((event) => event.id === selectedEventId)
-    : null
-  const nearestSelectedId =
-    !survivingSelected && selectedEventId && replacementSectionId
-      ? nearestEventInReplacementSegment(
-          previousFlat,
-          nextFlat,
-          selectedEventId,
-          replacementSectionId
-        )?.eventId
-      : null
-  const selectedEvent =
-    survivingSelected ??
-    nextGraph.events.find((event) => event.id === nearestSelectedId)
-  const selectedLocationEvent =
-    selectedEvent &&
-    (selectedEvent.type === "VISIT" ||
-      selectedEvent.type === "STAY" ||
-      selectedEvent.type === "MEAL" ||
-      selectedEvent.type === "ACTIVITY")
-      ? selectedEvent
-      : null
-  const selectedTransitEventId =
-    selectedEvent?.type === "TRANSIT" ? selectedEvent.id : null
-  const selectedSectionId = selectedEvent
-    ? (deriveFlatJourneyLayout(nextFlat).segmentByEventId.get(selectedEvent.id)
-        ?.id ?? null)
-    : null
-  const nextSectionId = selectedEventId
-    ? selectedSectionId
-    : replacementSectionId
-  const staysInSection = state.viewLevel === "section" && nextSectionId
-
+    !sameWorkspace || !next
+      ? null
+      : selectedSurvives
+        ? state.selectedEventId
+        : previousIndex >= 0
+          ? (next.events[Math.min(previousIndex, next.events.length - 1)]?.id ??
+            null)
+          : null
   return {
     workspaceDocument,
-    ...(topologyChanged
+    journeyCommitPresentation: null,
+    selectedEventId,
+    selectedEventAnchor: null,
+    hoveredEventId: null,
+    ...(!sameWorkspace && workspaceDocument
       ? {
           mapFocusRequest: {
             requestId: (state.mapFocusRequest?.requestId ?? 0) + 1,
-            target: {
-              type: "active-journey" as const,
-              maxZoom: staysInSection ? 15 : 12,
-            },
+            target: { type: "active-journey" as const, maxZoom: 12 },
           },
         }
       : {}),
-    viewLevel: staysInSection ? ("section" as const) : ("overview" as const),
-    activeSectionEventId: staysInSection ? nextSectionId : null,
-    hoveredEventId: null,
-    selectedTransitEventId,
-    selectedLocationEvent,
-    selectedLocationAnchor: null,
   }
-}
-
-function topologyKey(document: TargetWorkspaceDocument | null) {
-  const flatJourney = document?.session.flatJourney
-  if (!flatJourney) return ""
-  return `${flatJourney.journeyId}:${flatJourney.events
-    .map((event) =>
-      event.kind === "TRANSIT"
-        ? `${event.eventId}:TRANSIT:${event.detail.fromEventKey}:${event.detail.toEventKey}`
-        : `${event.eventId}:${event.kind}:${event.city.key}`
-    )
-    .join("|")}`
 }

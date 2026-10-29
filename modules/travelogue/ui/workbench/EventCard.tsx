@@ -10,8 +10,10 @@ import {
   Utensils,
   Activity,
 } from "lucide-react"
+import EventPlanning from "./EventPlanning"
+import { eventCalendarDate } from "@/lib/journeys/calendar"
 import { Button } from "@/components/kumo/components/button/button"
-import type { RecordingEvent } from "@/modules/data-model/contracts/recording"
+import type { JourneyEvent } from "@/modules/data-model/contracts"
 import PhotoStrip from "./PhotoStrip"
 import UserSource from "./UserSource"
 import ReceiptCard from "./ReceiptCard"
@@ -37,7 +39,7 @@ export default function EventCard({
   onEdit,
   onRead,
 }: {
-  entry: RecordingEvent
+  entry: JourneyEvent
   index: number
   selected: boolean
   canEdit: boolean
@@ -48,6 +50,7 @@ export default function EventCard({
   onEdit: () => void
   onRead: () => void
 }) {
+  const date = eventCalendarDate(entry)
   const reduced = useReducedMotion()
   const { ref, isDragging } = useSortable({
     id: entry.id,
@@ -122,7 +125,7 @@ export default function EventCard({
       {entry.source && (
         <div className="mt-2 flex items-center gap-2 text-xs text-journal-muted">
           <UserSource user={entry.source} />
-          {entry.date && <span>· {dateLabel(entry.date)}</span>}
+          {date && <span>· {dateLabel(date)}</span>}
         </div>
       )}
       {body && (
@@ -143,6 +146,7 @@ export default function EventCard({
       >
         展开详情
       </Button>
+      <EventPlanning event={entry} />
       {entry.receipts?.map((receipt) => (
         <ReceiptCard
           key={receipt.assetId}

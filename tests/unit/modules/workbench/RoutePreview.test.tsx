@@ -1,251 +1,149 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it } from "vitest"
-import { createSilkRoadJourney } from "@/lib/mock-journeys"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import RoutePreview from "@/modules/workbench/ui/RoutePreview"
-import RouteTimeline from "@/modules/workbench/ui/RouteTimeline"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
+import {
+  selectWorkspaceJourney,
+  selectSelectedWorkspaceEvent,
+} from "@/modules/workspace/state/selectors"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
-import { getJourneyScopeProjection } from "@/lib/journeys/projections"
+import {
+  planningJourney,
+  singleChainJourney,
+} from "@/tests/storybook/journey-fixtures"
+import { dispatchMapIntent } from "@/modules/workspace/ui/WorkspaceController"
 
-function workspaceDocument() {
-  return workspaceDocumentForStory(
-    createSilkRoadJourney({ id: "journey", ownerId: "owner" })
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+  }))
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
   )
-}
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  window.scrollTo = vi.fn()
+})
+afterEach(() => vi.unstubAllGlobals())
 
-describe("target Workspace route preview", () => {
-  beforeEach(() => {
-    useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
+beforeEach(() => {
+  useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+})
+
+describe("one Journey event chain", () => {
+  it("renders cross-city visits and an unlocated note in author order", () => {
+    useWorkspaceStore
+      .getState()
+      .applyWorkspaceDocument(workspaceDocumentForStory(singleChainJourney))
+    const { container } = render(<RoutePreview />)
+    expect(
+      Array.from(container.querySelectorAll("[data-record-id]")).map((node) =>
+        node.getAttribute("data-record-id")
+      )
+    ).toEqual(singleChainJourney.events.map((event) => event.id))
+    expect(screen.getByRole("heading", { name: "路上的随记" })).toBeVisible()
+    expect(
+      screen.queryByRole("button", { name: /进入城市/ })
+    ).not.toBeInTheDocument()
   })
 
-  it("derives the overview duration across CITY event chains", () => {
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())
-    })
+  it("date navigation scrolls without filtering, reordering or clearing selection", () => {
+    useWorkspaceStore
+      .getState()
+      .applyWorkspaceDocument(workspaceDocumentForStory(singleChainJourney))
+    useWorkspaceStore.getState().selectEvent("hangzhou-breakfast")
+    const { container } = render(<RoutePreview />)
+    const viewport = document.createElement("div")
+    viewport.dataset.overlayScrollViewport = ""
+    const scrollTo = vi.fn()
+    viewport.scrollTo = scrollTo
+    container.parentNode!.insertBefore(viewport, container)
+    viewport.appendChild(container)
+    fireEvent.click(screen.getByRole("tab", { name: "跳转到10月20日" }))
+    expect(scrollTo).toHaveBeenCalled()
+    expect(container.querySelectorAll("[data-record-id]")).toHaveLength(5)
+    expect(useWorkspaceStore.getState().selectedEventId).toBe(
+      "hangzhou-breakfast"
+    )
+  })
 
+  it("map selection uses the original event identity across cities", () => {
+    const doc = workspaceDocumentForStory(singleChainJourney)
+    useWorkspaceStore.getState().applyWorkspaceDocument(doc)
     render(<RoutePreview />)
-
-    expect(screen.getByRole("heading", { name: "丝绸之路" })).toHaveTextContent(
-      "丝绸之路 · 10 天"
+    act(() =>
+      dispatchMapIntent({
+        type: "map.event-selected",
+        eventId: "hangzhou-return",
+      })
     )
-    expect(screen.getByText(/0\/9.*含城市内/)).toBeVisible()
-
-    fireEvent.click(screen.getByRole("tab", { name: "兰州" }))
-    expect(screen.getByText(/4 项安排/)).toBeVisible()
-    expect(screen.getByText(/0\/1 段真实路线/)).toBeVisible()
+    expect(useWorkspaceStore.getState().selectedEventId).toBe("hangzhou-return")
+    expect(screen.getByRole("article", { name: "回到杭州" })).toHaveAttribute(
+      "aria-current",
+      "true"
+    )
+    expect(selectWorkspaceJourney(useWorkspaceStore.getState())).toBe(
+      doc.session.journey
+    )
   })
 
-  it("labels location cards by domain type without numeric circles", () => {
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())
-    })
-
+  it("shows planning, hotel and receipt fields on the same event cards", async () => {
+    useWorkspaceStore
+      .getState()
+      .applyWorkspaceDocument(workspaceDocumentForStory(planningJourney))
     render(<RoutePreview />)
-
-    fireEvent.click(screen.getByRole("button", { name: "查看城市 西安" }))
-
-    for (const title of ["西安城墙", "大雁塔", "回民街"]) {
-      const card = screen.getByRole("button", { name: `选择事件 ${title}` })
-      expect(within(card).getByText("景点")).toBeVisible()
-      expect(card).not.toHaveTextContent(/^\d+$/)
-    }
-  })
-
-  it("uses authoritative location ordinals for overview marker palettes", () => {
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(workspaceDocument())
-    })
-
-    render(<RoutePreview />)
-
-    const lanzhouCard = screen.getByRole("button", {
-      name: "查看城市 兰州",
-    })
-    expect(within(lanzhouCard).getByText("城市")).toBeVisible()
-    expect(lanzhouCard.querySelector(".bg-marker-mint")).not.toBeNull()
-    expect(lanzhouCard.querySelector(".bg-marker-yellow")).toBeNull()
-  })
-
-  it("does not leak server ordinals into cards or Transit endpoint labels", () => {
-    const document = workspaceDocument()
-    const items = getJourneyScopeProjection(
-      document.session.headGraph,
-      "section",
-      "section-xian"
-    ).items.map((item) => ({
-      ...item,
-      resolved: {
-        ...item.resolved,
-        ...(item.resolved.locationOrdinal
-          ? { locationOrdinal: item.resolved.locationOrdinal + 6 }
-          : {}),
-        ...(item.resolved.fromLocationOrdinal
-          ? { fromLocationOrdinal: item.resolved.fromLocationOrdinal + 6 }
-          : {}),
-        ...(item.resolved.toLocationOrdinal
-          ? { toLocationOrdinal: item.resolved.toLocationOrdinal + 6 }
-          : {}),
-      },
-    }))
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(document)
-    })
-
-    render(<RouteTimeline items={items} />)
-
-    expect(
-      screen.getByRole("button", { name: "选择事件 西安城墙" })
-    ).not.toHaveTextContent("7")
-    expect(
-      screen.getByRole("button", { name: "选择事件 大雁塔" })
-    ).not.toHaveTextContent("8")
-    const transit = screen.getByRole("button", { name: "交通事件 出租车" })
-    expect(transit).toHaveTextContent(/西安城墙.*大雁塔/)
-    expect(transit).not.toHaveTextContent("7 → 8")
-  })
-
-  it("renders distinct layouts for visit, meal, activity, and stay events", () => {
-    const document = workspaceDocument()
-    const sourceItems = getJourneyScopeProjection(
-      document.session.headGraph,
-      "section",
-      "section-xian"
-    ).items.filter(
-      (item) =>
-        item.event.type === "VISIT" ||
-        item.event.type === "MEAL" ||
-        item.event.type === "ACTIVITY" ||
-        item.event.type === "STAY"
+    expect(screen.getByText("示例高铁路线")).toBeVisible()
+    expect(screen.getByText(/480.00 CNY/)).toBeVisible()
+    expect(screen.getByText("西湖茶馆")).toBeVisible()
+    fireEvent.click(
+      screen.getByRole("button", { name: "展开在上海住一晚的详情" })
     )
-    const [visit, mealSource, activitySource] = sourceItems
-    if (!visit || !mealSource || !activitySource) {
-      throw new Error("location fixtures are missing")
-    }
-    if (
-      visit.event.type !== "VISIT" ||
-      mealSource.event.type !== "VISIT" ||
-      activitySource.event.type !== "VISIT"
-    ) {
-      throw new Error("unexpected fixture event type")
-    }
-    const meal = {
-      ...mealSource,
-      event: {
-        ...mealSource.event,
-        id: "meal-layout",
-        title: "午餐",
-        type: "MEAL" as const,
-        detail: { ...mealSource.event.detail, cuisine: "陕西菜" },
-      },
-    }
-    const activity = {
-      ...activitySource,
-      event: {
-        ...activitySource.event,
-        id: "activity-layout",
-        title: "城墙骑行",
-        type: "ACTIVITY" as const,
-        detail: {
-          ...activitySource.event.detail,
-          bookingReference: "BOOK-01",
-        },
-      },
-    }
-    const stay = {
-      ...visit,
-      event: {
-        ...visit.event,
-        id: "stay-layout",
-        title: "西安酒店",
-        type: "STAY" as const,
-        detail: { ...visit.event.detail, checkInNote: "前台办理入住" },
-      },
-    }
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(document)
-    })
-
-    render(<RouteTimeline items={[visit, meal, activity, stay]} />)
-
-    expect(screen.getByText("景点")).toBeVisible()
-    expect(screen.getByText("陕西菜")).toBeVisible()
-    expect(screen.getByText("活动")).toBeVisible()
-    expect(screen.getByText("预约凭证 · BOOK-01")).toBeVisible()
-    expect(screen.getByText("住宿")).toBeVisible()
-    expect(screen.getByText("入住")).toBeVisible()
-    expect(screen.getByText("离店")).toBeVisible()
+    await waitFor(() => expect(screen.getByText("15:00 后入住")).toBeVisible())
   })
 
-  it("shows the visit gallery when the event has a provider cover", () => {
-    const document = workspaceDocument()
-    const visit = getJourneyScopeProjection(
-      document.session.headGraph,
-      "section",
-      "section-xian"
-    ).items.find((item) => item.event.type === "VISIT")
-    if (!visit || visit.event.type !== "VISIT") {
-      throw new Error("visit fixture is missing")
-    }
-    const eventWithCover = {
-      ...visit.event,
-      detail: {
-        ...visit.event.detail,
-        providerCoverImage: {
-          provider: "amap" as const,
-          url: "https://images.example/visit.jpg",
-          fetchedAt: "2026-08-08T00:00:00.000Z",
-        },
-      },
-    }
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(document)
-    })
-
-    render(<RouteTimeline items={[{ ...visit, event: eventWithCover }]} />)
-
-    const card = screen.getByRole("button", {
-      name: `选择事件 ${eventWithCover.title}`,
-    })
-    const board = card.parentElement?.querySelector("[data-photo-board]")
-    expect(board).not.toBeNull()
-    const photoItems = board?.querySelectorAll("[data-photo-item]") ?? []
-    expect(photoItems).toHaveLength(1)
-    expect(board).toHaveAttribute("data-active-index", "0")
-    expect(screen.getByAltText(eventWithCover.title)).toHaveAttribute(
-      "src",
-      "https://images.example/visit.jpg"
-    )
+  it("commit retains selection and refreshes it from the incoming snapshot", () => {
+    const before = workspaceDocumentForStory(singleChainJourney)
+    useWorkspaceStore.getState().applyWorkspaceDocument(before)
+    useWorkspaceStore.getState().selectEvent("hangzhou-return")
+    const after = structuredClone(before)
+    after.session.headWorkspaceRevision = 2
+    after.session.journey.revision = 2
+    after.session.journey.events.find(
+      (event) => event.id === "hangzhou-return"
+    )!.body = "更新后的正文"
+    useWorkspaceStore
+      .getState()
+      .applyJourneyCommit(after, "补充正文", ["hangzhou-return"])
     expect(
-      screen.queryByRole("button", { name: /上一张图片|下一张图片/ })
-    ).not.toBeInTheDocument()
+      selectSelectedWorkspaceEvent(useWorkspaceStore.getState())?.body
+    ).toBe("更新后的正文")
+    expect(selectWorkspaceJourney(useWorkspaceStore.getState())).toBe(
+      after.session.journey
+    )
   })
 
-  it("does not reserve gallery space when visit and stay image sources are absent", () => {
-    const document = workspaceDocument()
-    const items = getJourneyScopeProjection(
-      document.session.headGraph,
-      "section",
-      "section-xian"
-    ).items.filter(
-      (item) => item.event.type === "VISIT" || item.event.type === "STAY"
+  it("removed selection falls to the nearest chain position; stale snapshots cannot undo it", () => {
+    const before = workspaceDocumentForStory(singleChainJourney)
+    useWorkspaceStore.getState().applyWorkspaceDocument(before)
+    useWorkspaceStore.getState().selectEvent("train-to-shanghai")
+    const after = structuredClone(before)
+    after.session.headWorkspaceRevision = 2
+    after.session.journey.revision = 2
+    after.session.journey.events.splice(1, 1)
+    useWorkspaceStore.getState().applyWorkspaceDocument(after)
+    expect(useWorkspaceStore.getState().selectedEventId).toBe("shanghai-walk")
+    expect(useWorkspaceStore.getState().applyWorkspaceDocument(before)).toBe(
+      false
     )
-    act(() => {
-      useWorkspaceStore.getState().applyWorkspaceDocument(document)
-    })
-
-    render(<RouteTimeline items={items} />)
-
-    expect(
-      globalThis.document.querySelector("[data-photo-board]")
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByTestId("provider-image-fallback-SIGHT")
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByTestId("provider-image-fallback-HOTEL")
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole("button", { name: /上一张图片|下一张图片/ })
-    ).not.toBeInTheDocument()
+    expect(useWorkspaceStore.getState().selectedEventId).toBe("shanghai-walk")
   })
 })

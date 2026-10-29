@@ -5,10 +5,10 @@ import { operationId } from "../data/operation-id"
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import type {
-  RecordingJourneyCreate,
-  RecordingMapPhoto,
-  RecordingJourneySummary,
-} from "@/modules/data-model/contracts/recording"
+  JourneyCreate,
+  MapPhoto,
+  JourneySummary,
+} from "@/modules/data-model/contracts"
 import { recordingApi } from "../data/client"
 import JourneyLibrary from "./JourneyLibrary"
 import { journeyHref } from "../data/navigation"
@@ -19,12 +19,12 @@ export default function JourneyLibraryPage({
   developerMode?: boolean
 }) {
   const router = useRouter()
-  const [journeys, setJourneys] = useState<RecordingJourneySummary[]>([])
-  const [photos, setPhotos] = useState<RecordingMapPhoto[]>([])
+  const [journeys, setJourneys] = useState<JourneySummary[]>([])
+  const [photos, setPhotos] = useState<MapPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
-  const pendingCreate = useRef<RecordingJourneyCreate | null>(null)
+  const pendingCreate = useRef<JourneyCreate | null>(null)
   useEffect(() => {
     let disposed = false
     recordingApi

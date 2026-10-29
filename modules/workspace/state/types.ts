@@ -1,11 +1,8 @@
 import type { StateCreator } from "zustand"
-import type { JourneyViewLevel } from "@/lib/journeys/projections"
 import type {
-  TargetJourneyEvent,
   TargetWorkspaceMessage,
   TargetWorkspaceDocument,
 } from "@/modules/data-model/contracts"
-import type { PhotoShare } from "@/types/photo"
 import type {
   MapFocusRequest,
   MapFocusTarget,
@@ -13,36 +10,16 @@ import type {
 } from "@/modules/workspace/contracts"
 
 export type MapType = "standard" | "satellite" | "terrain"
-export type LocationSelectionMode = "none" | "point"
 export type ActiveMapPanel = "none" | "settings"
 export type ChatMessageRole = "user" | "assistant"
 export type WorkbenchTab = "preview" | "chat"
 export type MobileSheetSnap = "collapsed" | "half" | "expanded"
 export type AgentSender = (type: string, payload?: unknown) => void
-export type AnchorType = "event" | "photo"
 export type AgentRunStage =
   | "UNDERSTANDING"
   | "VERIFYING_PLACES"
   | "CHECKING_ROUTE"
   | "COMMITTING"
-
-export interface ScatteredAnchor {
-  id: string
-  type: AnchorType
-  originalPixel: { x: number; y: number }
-  scatterOffset: { x: number; y: number }
-}
-
-export interface AnchorClusterState {
-  isScattered: boolean
-  scatterCenter: { x: number; y: number } | null
-  scatteredAnchors: ScatteredAnchor[]
-}
-
-export interface PointSelectionDraft {
-  lat: number
-  lng: number
-}
 
 export interface ChatMessage {
   id: string
@@ -103,29 +80,13 @@ export interface AgentSlice {
 }
 
 export interface WorkspaceUiSlice {
-  viewLevel: JourneyViewLevel
-  activeSectionEventId: string | null
-  enterSectionView: (sectionEventId: string) => void
-  returnToParentScope: () => void
-  returnToOverview: () => void
   hoveredEventId: string | null
   setHoveredEventId: (eventId: string | null) => void
   mapViewportInsets: ViewportInsets
   setMapViewportInsets: (insets: ViewportInsets) => void
-  selectedTransitEventId: string | null
-  setSelectedTransitEventId: (eventId: string | null) => void
-  selectedLocationEvent: Extract<
-    TargetJourneyEvent,
-    { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
-  > | null
-  selectedLocationAnchor: MapAnchor | null
-  setSelectedLocationEvent: (
-    event: Extract<
-      TargetJourneyEvent,
-      { type: "VISIT" | "STAY" | "MEAL" | "ACTIVITY" }
-    > | null,
-    anchor?: MapAnchor
-  ) => void
+  selectedEventId: string | null
+  selectedEventAnchor: MapAnchor | null
+  selectEvent: (eventId: string | null, anchor?: MapAnchor) => void
   activeMapPanel: ActiveMapPanel
   setActiveMapPanel: (panel: ActiveMapPanel) => void
   workbenchTab: WorkbenchTab
@@ -136,39 +97,12 @@ export interface WorkspaceUiSlice {
   setComposerInput: (input: string) => void
 }
 
-export interface PhotoSlice {
-  pointSelectionDraft: PointSelectionDraft | null
-  setPointSelectionDraft: (draft: PointSelectionDraft | null) => void
-  locationSelectionMode: LocationSelectionMode
-  startPointLocationSelection: () => void
-  clearLocationSelection: () => void
-  photoShares: PhotoShare[]
-  setPhotoShares: (photos: PhotoShare[]) => void
-  addPhotoShare: (photo: PhotoShare) => void
-  upsertPhotoShare: (photo: PhotoShare) => void
-  removePhotoShare: (id: string) => void
-  selectedPhotoShare: PhotoShare | null
-  selectedPhotoAnchor: MapAnchor | null
-  setSelectedPhotoShare: (photo: PhotoShare | null, anchor?: MapAnchor) => void
-  lightboxPhotoShare: PhotoShare | null
-  setLightboxPhotoShare: (photo: PhotoShare | null) => void
-  isSelectingLocation: boolean
-  anchorCluster: AnchorClusterState
-  setAnchorCluster: (cluster: AnchorClusterState) => void
-  expandCluster: (
-    center: { x: number; y: number },
-    anchors: ScatteredAnchor[]
-  ) => void
-  collapseCluster: () => void
-}
-
 export interface WorkspaceState
   extends
     MapRuntimeSlice,
     WorkspaceDocumentSlice,
     AgentSlice,
-    WorkspaceUiSlice,
-    PhotoSlice {}
+    WorkspaceUiSlice {}
 
 export type WorkspaceSlice<TSlice> = StateCreator<
   WorkspaceState,

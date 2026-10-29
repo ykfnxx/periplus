@@ -1,11 +1,11 @@
 import { operationId } from "../data/operation-id"
 import { createStore } from "zustand/vanilla"
 import type {
-  RecordingCommand,
-  RecordingJourney,
-  RecordingMutation,
-  RecordingMutationResult,
-} from "@/modules/data-model/contracts/recording"
+  JourneyCommand,
+  JourneySnapshot,
+  JourneyMutation,
+  JourneyMutationResult,
+} from "@/modules/data-model/contracts"
 import {
   recordingApi,
   RecordingApiError,
@@ -23,11 +23,11 @@ export interface RecordUpload {
 
 type PendingUpload = RecordUpload & { file: File; assetId?: string }
 type CommandInput =
-  | RecordingCommand
-  | ((journey: RecordingJourney) => RecordingCommand)
+  | JourneyCommand
+  | ((journey: JourneySnapshot) => JourneyCommand)
 
 interface RecordingState {
-  journey: RecordingJourney | null
+  journey: JourneySnapshot | null
   loading: boolean
   saving: number
   error: string | null
@@ -37,7 +37,7 @@ interface RecordingState {
   mutate: (
     command: CommandInput,
     idempotencyKey?: string
-  ) => Promise<RecordingMutationResult>
+  ) => Promise<JourneyMutationResult>
   addFiles: (eventId: string, files: File[]) => void
   retryUpload: (id: string) => void
   discardUpload: (id: string) => void
@@ -56,7 +56,7 @@ export function createRecordingStore(
 ) {
   let writes: Promise<unknown> = Promise.resolve()
   let uploads: Promise<unknown> = Promise.resolve()
-  let unconfirmed: RecordingMutation | null = null
+  let unconfirmed: JourneyMutation | null = null
   let disposed = false
 
   const store = createStore<RecordingState>((set, get) => ({

@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { expect, waitFor } from "storybook/test"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { dispatchMapIntent } from "@/modules/workspace/ui/WorkspaceController"
-import { silkRoadJourneyWithPlans } from "@/tests/storybook/route-fixtures"
+import { singleChainJourney } from "@/tests/storybook/journey-fixtures"
 import {
   withWorkspaceState,
   workspaceDocumentForStory,
@@ -37,7 +37,7 @@ const meta = {
   },
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourneyWithPlans),
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney),
     }),
   ],
   render: () => <RealMapStory />,

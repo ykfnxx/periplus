@@ -178,7 +178,7 @@ export default function AgentSync() {
             if (commitPresentationTimer !== null) {
               window.clearTimeout(commitPresentationTimer)
             }
-            const revision = commit.document.session.flatJourney.revision
+            const revision = commit.document.session.journey.revision
             commitPresentationTimer = window.setTimeout(() => {
               clearJourneyCommitPresentation(revision)
               commitPresentationTimer = null

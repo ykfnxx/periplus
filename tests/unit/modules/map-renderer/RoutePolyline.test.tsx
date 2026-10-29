@@ -1,166 +1,56 @@
 import { act, render } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createSilkRoadJourney } from "@/lib/mock-journeys"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import RoutePolyline from "@/modules/map-renderer/ui/RoutePolyline"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import { workspaceDocumentForStory } from "@/tests/storybook/workspace-story"
-
-interface PolylineConfig {
-  path: Array<{ lng: number; lat: number }>
-  strokeColor: string
-}
-
-const polylineConfigs: PolylineConfig[] = []
-
-class MockLngLat {
-  constructor(
-    public lng: number,
-    public lat: number
-  ) {}
-}
-
-class MockPolyline {
-  constructor(config: PolylineConfig) {
-    polylineConfigs.push(config)
+import { planningJourney } from "@/tests/storybook/journey-fixtures"
+const configs: { path: [number, number][] }[] = []
+class Polyline {
+  constructor(config: { path: [number, number][] }) {
+    configs.push(config)
   }
-
   on() {}
 }
-
-class MockMarker {
-  constructor() {}
-}
-
-function routeDocument(selectedPlanId: "plan-current" | "plan-next") {
-  const document = workspaceDocumentForStory(
-    createSilkRoadJourney({ id: "journey", ownerId: "owner" })
-  )
-  document.session.headWorkspaceRevision =
-    selectedPlanId === "plan-current" ? 1 : 2
-  const transit = document.session.headGraph.events.find(
-    (event) => event.id === "transit-xian-lanzhou"
-  )
-  if (transit?.type !== "TRANSIT") throw new Error("transit fixture missing")
-  transit.detail.activePlanningRunId = "run-ready"
-  transit.detail.selectedPlanId = selectedPlanId
-  transit.detail.routeState = "READY"
-  document.session.headGraph.transitPlanningRuns = [
-    ...document.session.headGraph.transitPlanningRuns.filter(
-      (run) => run.transitEventId !== transit.id
-    ),
-    {
-      id: "run-ready",
-      transitEventId: transit.id,
-      requestFingerprint: "fingerprint",
-      provider: "mock",
-      status: "READY",
-      calculatedAt: "2026-08-01T00:00:00.000Z",
-      plans: [
-        {
-          id: "plan-current",
-          planningRunId: "run-ready",
-          transitEventId: transit.id,
-          provider: "mock",
-          rank: 0,
-          label: "当前",
-          strategy: "recommended",
-          distanceMeters: 1_000,
-          durationSeconds: 600,
-          trafficBasis: "TYPICAL",
-          calculatedAt: "2026-08-01T00:00:00.000Z",
-          segments: [
-            {
-              id: "segment-current",
-              order: 0,
-              mode: "DRIVE",
-              coordinateSystem: "GCJ02",
-              geometryKind: "ROAD_NETWORK",
-              positions: [
-                [108.9, 34.3],
-                [109.1, 34.5],
-              ],
-            },
-          ],
-        },
-        {
-          id: "plan-next",
-          planningRunId: "run-ready",
-          transitEventId: transit.id,
-          provider: "mock",
-          rank: 1,
-          label: "备选",
-          strategy: "fastest",
-          distanceMeters: 900,
-          durationSeconds: 500,
-          trafficBasis: "TYPICAL",
-          calculatedAt: "2026-08-01T00:00:00.000Z",
-          segments: [
-            {
-              id: "segment-next",
-              order: 0,
-              mode: "DRIVE",
-              coordinateSystem: "GCJ02",
-              geometryKind: "ROAD_NETWORK",
-              positions: [
-                [118.8, 31.2],
-                [119.2, 31.6],
-              ],
-            },
-          ],
-        },
-      ],
-    },
-  ]
-  return document
-}
-
-describe("authoritative TransitPlan map synchronization", () => {
-  beforeEach(() => {
-    polylineConfigs.length = 0
-    useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
-    vi.stubGlobal("AMap", {
-      LngLat: MockLngLat,
-      Polyline: MockPolyline,
-      Marker: MockMarker,
-    })
+beforeEach(() => {
+  configs.length = 0
+  useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true)
+  vi.stubGlobal("AMap", { Polyline })
+})
+afterEach(() => vi.unstubAllGlobals())
+it("updates the selected route geometry only from the authoritative Journey revision", () => {
+  const map = { add: vi.fn(), remove: vi.fn() }
+  const before = workspaceDocumentForStory(structuredClone(planningJourney))
+  useWorkspaceStore.getState().setMap(map as unknown as AMap.Map)
+  useWorkspaceStore.getState().applyWorkspaceDocument(before)
+  render(<RoutePolyline />)
+  expect(configs[0].path[0]).toEqual([120.149, 30.243])
+  const after = structuredClone(before)
+  after.session.headWorkspaceRevision = 2
+  after.session.journey.revision = 2
+  after.session.journey.events[1].transit!.route!.plans[0].segments[0].positions =
+    [
+      [118.8, 31.2],
+      [119.2, 31.6],
+    ]
+  act(() => {
+    useWorkspaceStore.getState().applyWorkspaceDocument(after)
   })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it("repaints geometry only after the authoritative document selects a plan", () => {
-    const map = { add: vi.fn(), remove: vi.fn() }
-    act(() => {
-      useWorkspaceStore.getState().setMap(map as unknown as AMap.Map)
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(routeDocument("plan-current"))
-    })
-    render(<RoutePolyline />)
-
-    expect(
-      polylineConfigs.some(
-        (config) =>
-          config.path[0]?.lng === 108.9 && config.path[0]?.lat === 34.3
-      )
-    ).toBe(true)
-    const beforeAuthoritativeUpdate = polylineConfigs.length
-
-    act(() => {
-      useWorkspaceStore
-        .getState()
-        .applyWorkspaceDocument(routeDocument("plan-next"))
-    })
-
-    expect(map.remove).toHaveBeenCalled()
-    expect(
-      polylineConfigs
-        .slice(beforeAuthoritativeUpdate)
-        .some(
-          (config) =>
-            config.path[0]?.lng === 118.8 && config.path[0]?.lat === 31.2
-        )
-    ).toBe(true)
-  })
+  expect(map.remove).toHaveBeenCalled()
+  expect(configs.at(-1)!.path[0]).toEqual([118.8, 31.2])
+})
+it("does not invent a connector when the event has no current route", () => {
+  const journey = structuredClone(planningJourney)
+  journey.events[1].transit = {
+    ...journey.events[1].transit!,
+    routeState: "EMPTY",
+    route: undefined,
+  }
+  useWorkspaceStore
+    .getState()
+    .setMap({ add: vi.fn(), remove: vi.fn() } as unknown as AMap.Map)
+  useWorkspaceStore
+    .getState()
+    .applyWorkspaceDocument(workspaceDocumentForStory(journey))
+  render(<RoutePolyline />)
+  expect(configs).toHaveLength(0)
 })

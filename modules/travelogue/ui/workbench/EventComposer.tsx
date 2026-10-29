@@ -3,10 +3,7 @@ import { useEffect, useRef } from "react"
 import { CalendarDays, ChevronRight, MapPin, Plus, X } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { InputArea } from "@/components/kumo/components/input/input-area"
-import type {
-  RecordingEventContent,
-  RecordingPhoto,
-} from "@/modules/data-model/contracts/recording"
+import type { EventContent, EventPhoto } from "@/modules/data-model/contracts"
 import { dateLabel } from "../display"
 import type { RecordUpload } from "../../state/recording-store"
 
@@ -34,12 +31,12 @@ export default function EventComposer({
   onPickLocation,
   onManagePhotos,
 }: {
-  draft: RecordingEventContent
+  draft: EventContent
   files: File[]
-  photos: RecordingPhoto[]
+  photos: EventPhoto[]
   uploads: RecordUpload[]
   busy: boolean
-  onChange: (draft: RecordingEventContent) => void
+  onChange: (draft: EventContent) => void
   onFiles: (files: File[]) => void
   onPickLocation: () => void
   onManagePhotos?: () => void

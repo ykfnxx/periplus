@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { expect, fn, userEvent, within } from "storybook/test"
-import { silkRoadJourney } from "@/lib/mock-journeys"
+import { singleChainJourney } from "@/tests/storybook/journey-fixtures"
 import {
   withWorkspaceState,
   workspaceDocumentForStory,
@@ -27,7 +27,7 @@ const sendReadyEvent = fn()
 export const Ready: Story = {
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourney),
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney),
       sendAgentEvent: sendReadyEvent,
     }),
   ],
@@ -50,7 +50,7 @@ const sendLockedEvent = fn()
 export const Running: Story = {
   decorators: [
     withWorkspaceState({
-      workspaceDocument: workspaceDocumentForStory(silkRoadJourney, {
+      workspaceDocument: workspaceDocumentForStory(singleChainJourney, {
         locked: true,
       }),
       agentRunStage: "CHECKING_ROUTE",
@@ -68,7 +68,7 @@ export const Running: Story = {
   },
 }
 
-const archivedDocument = workspaceDocumentForStory(silkRoadJourney)
+const archivedDocument = workspaceDocumentForStory(singleChainJourney)
 archivedDocument.session.status = "ARCHIVED"
 
 export const ArchivedReadOnly: Story = {

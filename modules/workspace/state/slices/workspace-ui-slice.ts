@@ -1,56 +1,12 @@
 import type {
-  AnchorClusterState,
   WorkspaceSlice,
   WorkspaceUiSlice,
 } from "@/modules/workspace/state/types"
 import { WORKBENCH_VIEWPORT_INSETS } from "@/modules/workspace/viewport"
 
-function emptyAnchorCluster(): AnchorClusterState {
-  return {
-    isScattered: false,
-    scatterCenter: null,
-    scatteredAnchors: [],
-  }
-}
-
 export const createWorkspaceUiSlice: WorkspaceSlice<WorkspaceUiSlice> = (
   set
 ) => ({
-  viewLevel: "overview",
-  activeSectionEventId: null,
-  enterSectionView: (activeSectionEventId) =>
-    set({
-      viewLevel: "section",
-      activeSectionEventId,
-      hoveredEventId: null,
-      selectedTransitEventId: null,
-      selectedLocationEvent: null,
-      selectedLocationAnchor: null,
-      selectedPhotoShare: null,
-      selectedPhotoAnchor: null,
-      anchorCluster: emptyAnchorCluster(),
-    }),
-  returnToParentScope: () => {
-    set({
-      viewLevel: "overview",
-      activeSectionEventId: null,
-      hoveredEventId: null,
-      selectedTransitEventId: null,
-      selectedLocationEvent: null,
-      selectedLocationAnchor: null,
-      anchorCluster: emptyAnchorCluster(),
-    })
-  },
-  returnToOverview: () =>
-    set({
-      viewLevel: "overview",
-      activeSectionEventId: null,
-      hoveredEventId: null,
-      selectedTransitEventId: null,
-      selectedLocationEvent: null,
-      selectedLocationAnchor: null,
-      anchorCluster: emptyAnchorCluster(),
-    }),
   hoveredEventId: null,
   setHoveredEventId: (hoveredEventId) => set({ hoveredEventId }),
   mapViewportInsets: WORKBENCH_VIEWPORT_INSETS,
@@ -64,18 +20,12 @@ export const createWorkspaceUiSlice: WorkspaceSlice<WorkspaceUiSlice> = (
         ? {}
         : { mapViewportInsets }
     }),
-  selectedTransitEventId: null,
-  setSelectedTransitEventId: (selectedTransitEventId) =>
-    set({ selectedTransitEventId }),
-  selectedLocationEvent: null,
-  selectedLocationAnchor: null,
-  setSelectedLocationEvent: (selectedLocationEvent, anchor) =>
+  selectedEventId: null,
+  selectedEventAnchor: null,
+  selectEvent: (selectedEventId, anchor) =>
     set({
-      selectedLocationEvent,
-      selectedLocationAnchor: anchor ?? null,
-      ...(selectedLocationEvent
-        ? { selectedPhotoShare: null, selectedPhotoAnchor: null }
-        : {}),
+      selectedEventId,
+      selectedEventAnchor: anchor ?? null,
     }),
   activeMapPanel: "none",
   setActiveMapPanel: (activeMapPanel) => set({ activeMapPanel }),

@@ -1,18 +1,18 @@
 import { operationId } from "../data/operation-id"
 import type {
-  RecordingJourney,
-  RecordingEvent,
-} from "@/modules/data-model/contracts/recording"
+  JourneySnapshot,
+  JourneyEvent,
+} from "@/modules/data-model/contracts"
 import type {
   Contributor,
-  RecordingReceipt,
+  Receipt,
 } from "@/modules/data-model/contracts/receipts"
 import type { JourneyInvitation } from "@/modules/data-model/contracts/collaboration"
 import type { RecordingApi } from "../data/client"
 import { RecordingApiError } from "../data/client"
-import lake from "./story-assets/lake.jpg"
-import walk from "./story-assets/walk.jpg"
-import tea from "./story-assets/tea.jpg"
+const lake = new URL("./story-assets/lake.jpg", import.meta.url).href
+const walk = new URL("./story-assets/walk.jpg", import.meta.url).href
+const tea = new URL("./story-assets/tea.jpg", import.meta.url).href
 
 const receiptImage = new URL("./story-assets/receipt.svg", import.meta.url).href
 export const storyOwner: Contributor = {
@@ -25,7 +25,7 @@ export const storyFriend: Contributor = {
   name: "阿宁",
   image: null,
 }
-export const storyReceipt: RecordingReceipt = {
+export const storyReceipt: Receipt = {
   id: "receipt-tea",
   assetId: "receipt-image",
   url: receiptImage,
@@ -38,7 +38,7 @@ export const storyReceipt: RecordingReceipt = {
   canEdit: true,
 }
 const now = "2026-10-19T12:00:00Z"
-const eventBase: RecordingEvent = {
+const eventBase: JourneyEvent = {
   id: "lake",
   source: storyOwner,
   canEdit: true,
@@ -60,7 +60,7 @@ const eventBase: RecordingEvent = {
       assetId: "lake-photo",
       source: storyOwner,
       canEdit: true,
-      url: lake.src,
+      url: lake,
       caption: "风慢慢停下来，湖面变成了温柔的金色。",
       isCover: true,
       location: null,
@@ -69,7 +69,7 @@ const eventBase: RecordingEvent = {
       assetId: "walk-photo",
       source: storyFriend,
       canEdit: true,
-      url: walk.src,
+      url: walk,
       caption: "",
       location: null,
       isCover: false,
@@ -78,7 +78,7 @@ const eventBase: RecordingEvent = {
       assetId: "tea-photo",
       source: storyOwner,
       canEdit: true,
-      url: tea.src,
+      url: tea,
       caption: "",
       location: null,
       isCover: false,
@@ -87,8 +87,9 @@ const eventBase: RecordingEvent = {
   createdAt: now,
   updatedAt: now,
 }
-export const storyJourney: RecordingJourney = {
+export const storyJourney: JourneySnapshot = {
   id: "hangzhou",
+  ownerId: storyOwner.userId,
   role: "OWNER",
   revision: 1,
   title: "杭州慢游",
@@ -122,7 +123,7 @@ export const storyJourney: RecordingJourney = {
           assetId: "tea-2",
           source: storyOwner,
           canEdit: true,
-          url: tea.src,
+          url: tea,
           caption: "",
           location: null,
           isCover: false,
@@ -170,7 +171,7 @@ export function createStoryRecordingApi(
   })
   const responses = new Map<
     string,
-    { journey: RecordingJourney; eventId?: string; replayed: boolean }
+    { journey: JourneySnapshot; eventId?: string; replayed: boolean }
   >()
   const assets = new Map<string, string>()
   const viewer = initialJourney.role === "MEMBER" ? storyFriend : storyOwner
@@ -302,7 +303,7 @@ export function createStoryRecordingApi(
         Object.assign(journey, command.patch)
       else if (command.name === "event.add") {
         eventId = operationId()
-        const entry: RecordingEvent = {
+        const entry: JourneyEvent = {
           id: eventId,
           source: viewer,
           canEdit: true,
@@ -329,6 +330,11 @@ export function createStoryRecordingApi(
           createdAt: now,
           updatedAt: now,
           ...command.content,
+          planning: command.content.planning ?? undefined,
+          hotel: command.content.hotel ?? undefined,
+          transit: command.content.transit ?? undefined,
+          cuisine: command.content.cuisine ?? undefined,
+          bookingReference: command.content.bookingReference ?? undefined,
         }
         journey.events.splice(
           command.afterEventId === null
@@ -458,7 +464,7 @@ export function createStoryRecordingApi(
   }
 }
 
-export const sharedJourney: RecordingJourney = {
+export const sharedJourney: JourneySnapshot = {
   ...storyJourney,
   role: "MEMBER",
   events: storyJourney.events.map((event, index) => ({

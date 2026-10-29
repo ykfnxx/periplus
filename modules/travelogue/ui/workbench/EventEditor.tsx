@@ -5,13 +5,14 @@ import { useStore } from "zustand"
 import { ChevronLeft, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type {
-  RecordingEventContent,
-  RecordingLocation,
-} from "@/modules/data-model/contracts/recording"
+  EventContent,
+  EventLocation,
+} from "@/modules/data-model/contracts"
 import type { RecordingStore } from "../../state/recording-store"
 import type { EventWindowRequest } from "../../state/workbench-store"
 import { operationId } from "../../data/operation-id"
 import EventComposer from "./EventComposer"
+import { eventContent, eventContentPatch } from "../event-content"
 import PhotoPanel from "./PhotoPanel"
 import EventActions from "./EventActions"
 import { Modal, useConfirmation } from "./Modal"
@@ -28,22 +29,17 @@ export default function EventEditor({
   onClose: () => void
   onSaved: (id: string) => void
   onPickLocation: (
-    location: RecordingLocation | null
-  ) => Promise<RecordingLocation | null | undefined>
+    location: EventLocation | null
+  ) => Promise<EventLocation | null | undefined>
 }) {
   const { journey, uploads, saving } = useStore(store)
   const [eventId, setEventId] = useState(request.eventId)
   const entry = journey?.events.find((event) => event.id === eventId)
-  const [draft, setDraft] = useState<RecordingEventContent>(() => ({
-    title: entry?.title || "",
-    body: entry?.body || "",
-    category: entry?.category || null,
-    date: entry?.date || null,
-    time: entry?.time || null,
-    timeZone: entry?.timeZone || null,
-    location: entry?.location || request.location || null,
+  const [draft, setDraft] = useState<EventContent>(() => ({
+    ...eventContent(entry),
+    location: entry?.location ?? request.location ?? null,
   }))
-  const [saved, setSaved] = useState(JSON.stringify(draft))
+  const [saved, setSaved] = useState(draft)
   const [files, setFiles] = useState<File[]>([])
   const [view, setView] = useState<"edit" | "photos" | "actions">("edit")
   const [viewDirty, setViewDirty] = useState(false)
@@ -56,7 +52,10 @@ export default function EventEditor({
   const mounted = useRef(true)
   const { ask, confirmation } = useConfirmation()
   const pending = uploads.filter((upload) => upload.eventId === eventId)
-  const dirty = JSON.stringify(draft) !== saved || files.length > 0 || viewDirty
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(saved) ||
+    files.length > 0 ||
+    viewDirty
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -106,34 +105,41 @@ export default function EventEditor({
     setBusy(true)
     setError(null)
     try {
-      const result = await store.getState().mutate(
-        eventId
-          ? { name: "event.update", eventId, patch: draft }
-          : {
-              name: "event.add",
-              afterEventId: request.afterEventId,
-              content: draft,
-            },
-        eventId ? undefined : saveKey
-      )
+      const changes = eventContentPatch(draft, saved)
+      const result =
+        eventId && Object.keys(changes).length === 0
+          ? { journey: store.getState().journey!, eventId }
+          : await store.getState().mutate(
+              eventId
+                ? { name: "event.update", eventId, patch: changes }
+                : {
+                    name: "event.add",
+                    afterEventId: request.afterEventId,
+                    content: draft,
+                  },
+              eventId ? undefined : saveKey
+            )
       const id = eventId || result.eventId!
-      // 重试可能命中已落库的旧请求；仍将当前完整输入应用到同一个事件。
+      // A retried add may replay an earlier result; apply only the fields the
+      // author edited, preserving unrelated content and planning details.
       const persisted = result.journey.events.find((event) => event.id === id)
       if (
         persisted &&
-        Object.entries(draft).some(
+        Object.entries(eventId ? changes : draft).some(
           ([key, value]) =>
-            JSON.stringify(persisted[key as keyof RecordingEventContent]) !==
+            JSON.stringify(persisted[key as keyof EventContent]) !==
             JSON.stringify(value)
         )
       )
-        await store
-          .getState()
-          .mutate({ name: "event.update", eventId: id, patch: draft })
+        await store.getState().mutate({
+          name: "event.update",
+          eventId: id,
+          patch: eventId ? changes : draft,
+        })
       setEventId(id)
       if (files.length) store.getState().addFiles(id, files)
       setFiles([])
-      setSaved(JSON.stringify(draft))
+      setSaved(draft)
       setStatus("已保存")
       onSaved(id)
     } catch (cause) {
@@ -215,7 +221,20 @@ export default function EventEditor({
                 </div>
               </header>
               <div className="mx-6 md:mx-9">
-                <RevisionReload store={store} onReload={() => setError(null)} />
+                <RevisionReload
+                  store={store}
+                  onReload={() => {
+                    const current = store
+                      .getState()
+                      .journey?.events.find((event) => event.id === eventId)
+                    if (current) {
+                      const fresh = eventContent(current)
+                      setDraft({ ...fresh, ...eventContentPatch(draft, saved) })
+                      setSaved(fresh)
+                    }
+                    setError(null)
+                  }}
+                />
               </div>
               {error && (
                 <p

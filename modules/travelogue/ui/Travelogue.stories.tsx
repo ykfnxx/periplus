@@ -2,9 +2,10 @@ import { operationId } from "../data/operation-id"
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { useEffect, useState } from "react"
 import type {
-  RecordingJourney,
-  RecordingJourneySummary,
-} from "@/modules/data-model/contracts/recording"
+  JourneySnapshot,
+  JourneySummary,
+} from "@/modules/data-model/contracts"
+import { planningJourney } from "@/tests/storybook/journey-fixtures"
 import LandingGate from "@/modules/auth/ui/LandingGate"
 import JourneyLibrary from "./JourneyLibrary"
 import RecordingEditor from "./RecordingEditor"
@@ -25,7 +26,7 @@ const meta = {
 } satisfies Meta
 export default meta
 type Story = StoryObj<typeof meta>
-const base: RecordingJourneySummary = {
+const base: JourneySummary = {
   ...storyJourney,
   coverUrl: lake.src,
   eventCount: 4,
@@ -121,7 +122,7 @@ function EditorStory({
   canEdit?: boolean
   longContent?: boolean
   onBack?: () => void
-  initialJourney?: RecordingJourney
+  initialJourney?: JourneySnapshot
   failures?: {
     upload?: boolean
     extraction?: boolean | "always"
@@ -158,7 +159,6 @@ function EditorStory({
           : !canEdit
             ? {
                 ...initialJourney,
-                role: undefined,
                 events: initialJourney.events.map((event) => ({
                   ...event,
                   canEdit: false,
@@ -185,6 +185,7 @@ function EditorStory({
   return (
     <RecordingEditor
       store={store}
+      readOnly={!canEdit}
       onBack={onBack}
       journeys={library}
       onOpenJourney={() => {}}
@@ -203,7 +204,7 @@ export const ReadOnly: Story = { render: () => <EditorStory canEdit={false} /> }
 
 export const LongContent: Story = { render: () => <EditorStory longContent /> }
 
-const photoMapJourney: RecordingJourney = {
+const photoMapJourney: JourneySnapshot = {
   ...storyJourney,
   events: [
     {
@@ -332,4 +333,8 @@ export const ReceiptEditConflict: Story = {
       }}
     />
   ),
+}
+
+export const UnifiedPlanning: Story = {
+  render: () => <EditorStory initialJourney={planningJourney} />,
 }

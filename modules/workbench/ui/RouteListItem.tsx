@@ -1,22 +1,21 @@
-import { locationCount } from "@/lib/journeys/summary"
-import type { TargetJourneyGraphSnapshot } from "@/modules/data-model/contracts"
+import type { JourneySnapshot } from "@/modules/data-model/contracts"
 
 interface RouteListItemProps {
-  journey: TargetJourneyGraphSnapshot
-  onSelect: (journey: TargetJourneyGraphSnapshot) => void
+  journey: JourneySnapshot
+  onSelect: (journey: JourneySnapshot) => void
 }
 
 export default function RouteListItem({
   journey,
   onSelect,
 }: RouteListItemProps) {
-  const count = locationCount(journey.events)
+  const count = journey.events.length
   return (
     <button
       type="button"
       onClick={() => onSelect(journey)}
       className="w-full rounded-lg border border-ink-15 bg-white/70 p-3 text-left transition hover:border-russet hover:shadow-periplus-soft"
-      aria-label={`${journey.title}，${count} 个地点`}
+      aria-label={`${journey.title}，${count} 段经历`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

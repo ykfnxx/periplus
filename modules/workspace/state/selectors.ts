@@ -3,13 +3,17 @@
 import { useWorkspaceStore } from "./workspace-store"
 import type { WorkspaceState } from "./types"
 import { workspaceCanMutate } from "./slices/workspace-document-slice"
-import { projectFlatJourneyForWorkspace } from "@/lib/journeys/flat-workspace-projection"
 
-export function selectWorkspaceJourneyView(state: WorkspaceState) {
-  const session = state.workspaceDocument?.session
-  return session
-    ? projectFlatJourneyForWorkspace(session.flatJourney, session.ownerId)
-    : null
+export function selectWorkspaceJourney(state: WorkspaceState) {
+  return state.workspaceDocument?.session.journey ?? null
+}
+
+export function selectSelectedWorkspaceEvent(state: WorkspaceState) {
+  return (
+    selectWorkspaceJourney(state)?.events.find(
+      (event) => event.id === state.selectedEventId
+    ) ?? null
+  )
 }
 
 export function selectWorkspaceLocked(state: WorkspaceState) {

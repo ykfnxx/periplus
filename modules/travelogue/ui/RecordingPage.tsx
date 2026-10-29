@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { createRecordingStore } from "../state/recording-store"
 import RecordingEditor from "./RecordingEditor"
 import { recordingApi } from "../data/client"
-import type { RecordingJourneySummary } from "@/modules/data-model/contracts/recording"
+import type { JourneySummary } from "@/modules/data-model/contracts"
 import { journeyHref, type JourneyOpenRequest } from "../data/navigation"
 
 export default function RecordingPage({
@@ -19,7 +19,7 @@ export default function RecordingPage({
   const query = useSearchParams()
   const [directoryError, setDirectoryError] = useState<string | null>(null)
   const [reloadDirectory, setReloadDirectory] = useState(0)
-  const [journeys, setJourneys] = useState<RecordingJourneySummary[]>([])
+  const [journeys, setJourneys] = useState<JourneySummary[]>([])
   const [initialRequest] = useState<JourneyOpenRequest>(() => {
     const lat = Number(query.get("lat")),
       lng = Number(query.get("lng"))

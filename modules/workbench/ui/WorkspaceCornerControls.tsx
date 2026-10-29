@@ -1,9 +1,10 @@
 "use client"
 
+import Link from "next/link"
 import { useState, type ReactNode } from "react"
 import { LocateFixed, Menu, Minus, Plus, Settings, Star } from "lucide-react"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
-import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
+import { selectWorkspaceJourney } from "@/modules/workspace/state/selectors"
 import type { ActiveMapPanel } from "@/modules/workspace/state/types"
 import WorkspaceSettingsPanel from "./WorkspaceSettingsPanel"
 
@@ -16,7 +17,7 @@ const controls: Array<{
 export default function WorkspaceCornerControls() {
   const [menuOpen, setMenuOpen] = useState(false)
   const map = useWorkspaceStore((state) => state.map)
-  const graph = useWorkspaceStore(selectWorkspaceJourneyView)
+  const journey = useWorkspaceStore(selectWorkspaceJourney)
   const activeMapPanel = useWorkspaceStore((state) => state.activeMapPanel)
   const setActiveMapPanel = useWorkspaceStore(
     (state) => state.setActiveMapPanel
@@ -54,7 +55,7 @@ export default function WorkspaceCornerControls() {
         </MapControlButton>
         <MapControlButton
           label="定位当前行程"
-          disabled={!graph}
+          disabled={!journey}
           onClick={() =>
             requestMapFocus({ type: "active-journey", maxZoom: 15 })
           }
@@ -65,13 +66,13 @@ export default function WorkspaceCornerControls() {
 
       {menuOpen ? (
         <div className="pointer-events-auto absolute top-5 right-[72px] flex gap-2 rounded-xl border border-ink-15 bg-soft-white p-2 shadow-periplus-soft">
-          <a
+          <Link
             href="/journeys"
             className="flex h-10 items-center gap-2 rounded-lg bg-cream px-3 text-[11px] font-black text-teak transition hover:bg-ink hover:text-soft-white"
           >
             <Star className="h-4 w-4" aria-hidden="true" />
             我的旅程
-          </a>
+          </Link>
           {controls.map((control) => {
             const Icon = control.icon
             return (

@@ -1,56 +1,29 @@
 "use client"
 
 import { useCallback } from "react"
-import { getJourneyScopeProjection } from "@/lib/journeys/projections"
 import type { MapIntent } from "@/modules/workspace/contracts"
-import { selectWorkspaceJourneyView } from "@/modules/workspace/state/selectors"
-import { workspaceCanMutate } from "@/modules/workspace/state/slices/workspace-document-slice"
+import { selectWorkspaceJourney } from "@/modules/workspace/state/selectors"
 import { useWorkspaceStore } from "@/modules/workspace/state/workspace-store"
 import AgentSync from "@/modules/workbench/ui/AgentSync"
-import PhotoSync from "./PhotoSync"
 
 export function dispatchMapIntent(intent: MapIntent) {
   const state = useWorkspaceStore.getState()
-
   if (intent.type === "map.background-clicked") {
     state.setActiveMapPanel("none")
     state.setHoveredEventId(null)
-    state.setSelectedTransitEventId(null)
-    state.setSelectedLocationEvent(null)
-    state.setSelectedPhotoShare(null)
-    state.collapseCluster()
+    state.selectEvent(null)
     return
   }
-
-  if (intent.type === "map.location-picked") {
-    if (!workspaceCanMutate(state.workspaceDocument)) {
-      state.clearLocationSelection()
-      return
-    }
-    const { lat, lng } = intent.coordinate
-    if (state.locationSelectionMode === "point") {
-      state.setPointSelectionDraft({ lat, lng })
-      state.clearLocationSelection()
-      return
-    }
-    return
-  }
-
   if (
     intent.type === "map.event-selected" ||
+    intent.type === "map.transit-selected" ||
     intent.type === "map.event-hovered" ||
     intent.type === "map.event-hover-cleared"
   ) {
-    const view = getJourneyScopeProjection(
-      selectWorkspaceJourneyView(state),
-      state.viewLevel,
-      state.activeSectionEventId
-    )
-    const event = view.locations.find(
+    const event = selectWorkspaceJourney(state)?.events.find(
       (candidate) => candidate.id === intent.eventId
     )
     if (!event) return
-
     if (intent.type === "map.event-hover-cleared") {
       if (state.hoveredEventId === event.id) state.setHoveredEventId(null)
       return
@@ -59,46 +32,13 @@ export function dispatchMapIntent(intent: MapIntent) {
       state.setHoveredEventId(event.id)
       return
     }
-    if (event.type === "SECTION") {
-      state.setWorkbenchTab("preview")
-      state.enterSectionView(event.id)
-      state.requestMapFocus({ type: "active-journey", maxZoom: 15 })
-      return
-    }
-    if (state.selectedLocationEvent?.id === event.id) {
-      state.setSelectedLocationEvent(null)
-      return
-    }
     state.setWorkbenchTab("preview")
-    state.setSelectedTransitEventId(null)
-    state.setSelectedLocationEvent(event, intent.anchor)
-    state.requestMapFocus({ type: "event", eventId: event.id, zoom: 15 })
-    return
-  }
-
-  if (intent.type === "map.photo-selected") {
-    const photo = state.photoShares.find(
-      (candidate) => candidate.id === intent.photoId
+    state.selectEvent(event.id, "anchor" in intent ? intent.anchor : undefined)
+    state.requestMapFocus(
+      event.category === "TRANSIT"
+        ? { type: "transit", eventId: event.id, maxZoom: 14 }
+        : { type: "event", eventId: event.id, zoom: 15 }
     )
-    if (!photo) return
-    state.setSelectedLocationEvent(null)
-    state.setLightboxPhotoShare(photo)
-    return
-  }
-
-  if (intent.type === "map.transit-selected") {
-    state.setWorkbenchTab("preview")
-    state.setSelectedLocationEvent(null)
-    const nextEventId =
-      state.selectedTransitEventId === intent.eventId ? null : intent.eventId
-    state.setSelectedTransitEventId(nextEventId)
-    if (nextEventId) {
-      state.requestMapFocus({
-        type: "transit",
-        eventId: nextEventId,
-        maxZoom: 14,
-      })
-    }
   }
 }
 
@@ -111,10 +51,5 @@ export function useWorkspaceController() {
 }
 
 export default function WorkspaceController() {
-  return (
-    <>
-      <AgentSync />
-      <PhotoSync />
-    </>
-  )
+  return <AgentSync />
 }
