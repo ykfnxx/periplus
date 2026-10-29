@@ -1,34 +1,26 @@
 "use client"
 import { useSortable } from "@dnd-kit/react/sortable"
 import { motion, useReducedMotion } from "motion/react"
-import {
-  BedDouble,
-  MapPin,
-  NotebookPen,
-  Pencil,
-  TrainFront,
-  Utensils,
-  Activity,
-} from "lucide-react"
-import EventPlanning from "./EventPlanning"
+import { ChevronRight, MapPin, Pencil } from "lucide-react"
 import { eventCalendarDate } from "@/lib/journeys/calendar"
 import { Button } from "@/components/kumo/components/button/button"
 import type { JourneyEvent } from "@/modules/data-model/contracts"
-import PhotoStrip from "./PhotoStrip"
 import UserSource from "./UserSource"
 import ReceiptCard from "./ReceiptCard"
+import EventCover from "./EventCover"
+import TransitEventCard from "./TransitEventCard"
 import { dateLabel } from "../display"
 import { receiptTotal } from "../receipt-display"
-const icons = {
-  VISIT: MapPin,
-  MEAL: Utensils,
-  STAY: BedDouble,
-  ACTIVITY: Activity,
-  TRANSIT: TrainFront,
-}
+import {
+  eventCardTimes,
+  eventCardTitle,
+  eventCategoryLabels,
+  eventCity,
+} from "../event-card-display"
 
 export default function EventCard({
   entry,
+  eventsById,
   index,
   selected,
   canEdit,
@@ -40,6 +32,7 @@ export default function EventCard({
   onRead,
 }: {
   entry: JourneyEvent
+  eventsById: ReadonlyMap<string, JourneyEvent>
   index: number
   selected: boolean
   canEdit: boolean
@@ -62,25 +55,31 @@ export default function EventCard({
       idle: false,
     },
   })
-  const labels = {
-    VISIT: "游览",
-    MEAL: "用餐",
-    STAY: "住宿",
-    ACTIVITY: "活动",
-    TRANSIT: "交通",
-  }
-  const title =
-    entry.title ||
-    entry.location?.name ||
-    (entry.category ? labels[entry.category] : "随记")
-  const Icon = entry.category ? icons[entry.category] : NotebookPen
+  const title = eventCardTitle(entry)
+  const city = eventCity(entry)
   const body = entry.body.trim()
-  const preview = Array.from(body).slice(0, 120).join("")
+  const transit = entry.category === "TRANSIT"
+  const origin = entry.transit && eventsById.get(entry.transit.fromEventId)
+  const destination = entry.transit && eventsById.get(entry.transit.toEventId)
+  const preview = Array.from(
+    body || (transit ? entry.transit?.notes || "" : "")
+  )
+    .slice(0, 120)
+    .join("")
+  const times = eventCardTimes(entry)
+  const hasCover =
+    !transit &&
+    Boolean(
+      entry.photos.length ||
+      entry.hotel?.coverImageUrl ||
+      entry.planning?.coverImageUrl
+    )
   return (
     <motion.article
       ref={canMove ? ref : undefined}
       id={`record-${entry.id}`}
       data-record-id={entry.id}
+      data-event-category={entry.category || "NOTE"}
       tabIndex={0}
       aria-label={title}
       aria-current={selected ? "true" : undefined}
@@ -99,66 +98,102 @@ export default function EventCard({
         }
       }}
       animate={{ opacity: isDragging ? 0.7 : 1 }}
-      className={`journal-card relative scroll-mt-3 outline-offset-4 ${canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+      className={`journal-card ${transit ? "journal-card-transit" : ""} relative scroll-mt-3 outline-offset-4 ${canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
     >
-      <header className="flex items-start gap-3">
-        <Icon
-          size={20}
-          strokeWidth={1.6}
-          className="mt-0.5 shrink-0 text-journal-accent"
-        />
-        <h2 className="min-w-0 flex-1 break-words">{title}</h2>
-        {canEdit && (
+      {hasCover && <EventCover event={entry} title={title} onOpen={onExpand} />}
+      <div
+        className={`journal-card-content ${hasCover ? "journal-card-content-cover" : ""}`}
+      >
+        {!transit && city && (
+          <div className="journal-card-city">
+            <MapPin size={14} strokeWidth={1.8} aria-hidden="true" />
+            <span>{city}</span>
+          </div>
+        )}
+        <header
+          className={`journal-card-heading flex items-start gap-2 ${transit && origin && destination ? "journal-transit-actions" : ""}`}
+        >
+          <h2
+            className={`min-w-0 flex-1 break-words ${transit && origin && destination ? "sr-only" : ""}`}
+          >
+            {title}
+          </h2>
+          {canEdit && (
+            <Button
+              variant="ghost"
+              shape="square"
+              size="sm"
+              className="journal-event-edit shrink-0"
+              aria-label={`编辑${title}`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={onEdit}
+            >
+              <Pencil size={15} />
+            </Button>
+          )}
           <Button
             variant="ghost"
             shape="square"
             size="sm"
-            className="journal-event-edit shrink-0"
-            aria-label={`编辑${title}`}
+            className="journal-card-read shrink-0"
+            aria-label={`展开${title}的详情`}
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={onEdit}
+            onClick={onRead}
           >
-            <Pencil size={16} />
+            <ChevronRight size={16} />
           </Button>
-        )}
-      </header>
-      {entry.source && (
-        <div className="mt-2 flex items-center gap-2 text-xs text-journal-muted">
+        </header>
+        <div className="journal-card-meta flex flex-wrap items-center gap-x-2 gap-y-1">
           <UserSource user={entry.source} />
           {date && <span>· {dateLabel(date)}</span>}
+          {!transit && times.range && (
+            <span className="font-mono">{times.range}</span>
+          )}
         </div>
-      )}
-      {body && (
-        <>
-          <p className="line-clamp-3 break-words">
-            {preview}
-            {body.length > preview.length ? "…" : ""}
-          </p>
-        </>
-      )}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-1 px-0! text-journal-muted!"
-        aria-label={`展开${title}的详情`}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={onRead}
-      >
-        展开详情
-      </Button>
-      <EventPlanning event={entry} />
-      {entry.receipts?.map((receipt) => (
-        <ReceiptCard
-          key={receipt.assetId}
-          merchant={receipt.merchant || ""}
-          date={receipt.date ? dateLabel(receipt.date) : ""}
-          total={receiptTotal(receipt)}
-          onOpen={() => onReceipt(receipt.assetId)}
-        />
-      ))}
-      {entry.photos.length > 0 && (
-        <PhotoStrip photos={entry.photos} title={title} onOpen={onExpand} />
-      )}
+        {transit && (
+          <TransitEventCard
+            event={entry}
+            origin={origin}
+            destination={destination}
+          />
+        )}
+        <div
+          className={
+            transit && (preview || entry.receipts.length)
+              ? "journal-transit-footer"
+              : undefined
+          }
+        >
+          {preview && (
+            <p className={transit ? "line-clamp-1" : "line-clamp-3"}>
+              {preview}
+              {body.length > preview.length ? "…" : ""}
+            </p>
+          )}
+          {entry.receipts.map((receipt) => (
+            <ReceiptCard
+              key={receipt.assetId}
+              compact
+              merchant={receipt.merchant || ""}
+              date={receipt.date ? dateLabel(receipt.date) : ""}
+              total={
+                receipt.currency === "CNY" && receipt.total !== null
+                  ? `¥${receipt.total}`
+                  : receiptTotal(receipt)
+              }
+              onOpen={() => onReceipt(receipt.assetId)}
+            />
+          ))}
+        </div>
+        {!transit && (entry.category || entry.cuisine) && (
+          <div className="journal-card-tags">
+            {entry.category && (
+              <span>{eventCategoryLabels[entry.category]}</span>
+            )}
+            {entry.cuisine && <span>{entry.cuisine}</span>}
+          </div>
+        )}
+      </div>
     </motion.article>
   )
 }

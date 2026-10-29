@@ -1,3 +1,4 @@
+import { paperCardJourney } from "@/tests/storybook/paper-card-fixture"
 import { operationId } from "../data/operation-id"
 import type { Meta, StoryObj } from "@storybook/nextjs-vite"
 import { useEffect, useState } from "react"
@@ -344,4 +345,13 @@ export const EventDetails: Story = {
 
 export const SingleChain: Story = {
   render: () => <EditorStory initialJourney={singleChainJourney} />,
+}
+
+export const PaperCards: Story = {
+  render: () => <EditorStory initialJourney={paperCardJourney} />,
+}
+export const PaperCardsReadOnly: Story = {
+  render: () => (
+    <EditorStory initialJourney={paperCardJourney} canEdit={false} />
+  ),
 }

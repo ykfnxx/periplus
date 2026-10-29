@@ -137,12 +137,14 @@ export default function JourneyLibrary({
       </div>
       <Button
         variant="ghost"
+        aria-label="添加记录"
+        title="添加记录"
+        shape="square"
         className="journal-atlas-add absolute top-5 right-5 z-20 gap-2! bg-white!"
         disabled={loading || !!error}
         onClick={() => add()}
       >
         <Plus size={18} />
-        记一笔
       </Button>
       <MapControls
         canFit={mapPhotos.length > 0}
