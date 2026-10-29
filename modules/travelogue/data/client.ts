@@ -28,23 +28,21 @@ export class RecordingApiError extends Error {
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init })
+  if (response.ok) return response.json()
   const body = await response.json().catch(() => null)
-  if (!response.ok) {
-    throw new RecordingApiError(
-      (
-        {
-          OCR_UNAVAILABLE: "账单识别暂时不可用，请稍后重试。",
-          OCR_FAILED: "未能识别这张账单，可重试或换一张清晰图片。",
-          STORAGE_UNAVAILABLE: "图片暂时无法保存，请重试。",
-        } as Record<string, string>
-      )[body?.code] ||
-        body?.error ||
-        "请求失败，请重试。",
-      response.status,
-      body?.code
-    )
-  }
-  return body as T
+  throw new RecordingApiError(
+    (
+      {
+        OCR_UNAVAILABLE: "账单识别暂时不可用，请稍后重试。",
+        OCR_FAILED: "未能识别这张账单，可重试或换一张清晰图片。",
+        STORAGE_UNAVAILABLE: "图片暂时无法保存，请重试。",
+      } as Record<string, string>
+    )[body?.code] ||
+      body?.error ||
+      "请求失败，请重试。",
+    response.status,
+    body?.code
+  )
 }
 
 export const recordingApi = {
