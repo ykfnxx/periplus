@@ -2,19 +2,19 @@
 import RevisionReload from "./RevisionReload"
 import { useEffect, useRef, useState } from "react"
 import { useStore } from "zustand"
-import { ChevronLeft, MoreHorizontal } from "lucide-react"
+import { ChevronLeft } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
-import type {
-  EventContent,
-  EventLocation,
-} from "@/modules/data-model/contracts"
+import type { EventLocation } from "@/modules/data-model/contracts"
 import type { RecordingStore } from "../../state/recording-store"
 import type { EventWindowRequest } from "../../state/workbench-store"
 import { operationId } from "../../data/operation-id"
 import EventComposer from "./EventComposer"
-import { eventContent, eventContentPatch } from "../event-content"
+import {
+  eventContent,
+  eventContentPatch,
+  type EventDraft,
+} from "../event-content"
 import PhotoPanel from "./PhotoPanel"
-import EventActions from "./EventActions"
 import { Modal, useConfirmation } from "./Modal"
 
 export default function EventEditor({
@@ -35,13 +35,13 @@ export default function EventEditor({
   const { journey, uploads, saving } = useStore(store)
   const [eventId, setEventId] = useState(request.eventId)
   const entry = journey?.events.find((event) => event.id === eventId)
-  const [draft, setDraft] = useState<EventContent>(() => ({
+  const [draft, setDraft] = useState<EventDraft>(() => ({
     ...eventContent(entry),
     location: entry?.location ?? request.location ?? null,
   }))
   const [saved, setSaved] = useState(draft)
   const [files, setFiles] = useState<File[]>([])
-  const [view, setView] = useState<"edit" | "photos" | "actions">("edit")
+  const [view, setView] = useState<"edit" | "photos">("edit")
   const [viewDirty, setViewDirty] = useState(false)
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -96,9 +96,33 @@ export default function EventEditor({
       !draft.body.trim() &&
       !draft.title.trim() &&
       !files.length &&
-      !draft.location
+      !draft.location &&
+      !(
+        draft.category === "TRANSIT" &&
+        draft.transit?.fromName?.trim() &&
+        draft.transit?.toName?.trim()
+      )
     ) {
       setError("写下一句话，选几张照片，或在地图上选个地点。")
+      return
+    }
+    if (!draft.date) {
+      setError("请选择事件日期。")
+      return
+    }
+    if (
+      draft.category === "TRANSIT" &&
+      (!draft.transit?.fromName?.trim() || !draft.transit?.toName?.trim())
+    ) {
+      setError("请填写出发地和目的地。")
+      return
+    }
+    if (
+      draft.planning.startAt &&
+      draft.planning.endAt &&
+      Date.parse(draft.planning.endAt) < Date.parse(draft.planning.startAt)
+    ) {
+      setError("结束时间不能早于开始时间，请确认到达日期。")
       return
     }
     saveLock.current = true
@@ -123,13 +147,22 @@ export default function EventEditor({
       // A retried add may replay an earlier result; apply only the fields the
       // author edited, preserving unrelated content and planning details.
       const persisted = result.journey.events.find((event) => event.id === id)
+      const persistedDraft = persisted && eventContent(persisted)
       if (
-        persisted &&
-        Object.entries(eventId ? changes : draft).some(
-          ([key, value]) =>
-            JSON.stringify(persisted[key as keyof EventContent]) !==
-            JSON.stringify(value)
-        )
+        persistedDraft &&
+        Object.entries(eventId ? changes : draft).some(([key, value]) => {
+          const stored = persistedDraft[key as keyof EventDraft]
+          return value &&
+            typeof value === "object" &&
+            (key === "planning" || key === "transit")
+            ? Object.entries(value).some(
+                ([field, next]) =>
+                  JSON.stringify(
+                    (stored as Record<string, unknown> | null)?.[field]
+                  ) !== JSON.stringify(next)
+              )
+            : JSON.stringify(stored) !== JSON.stringify(value)
+        })
       )
         await store.getState().mutate({
           name: "event.update",
@@ -195,20 +228,6 @@ export default function EventEditor({
                   {view === "edit" ? "取消" : "返回"}
                 </Button>
                 <div className="flex items-center gap-2">
-                  {entry &&
-                    view === "edit" &&
-                    (journey?.role === "OWNER" || entry.canRemove === true) && (
-                      <Button
-                        variant="ghost"
-                        shape="circle"
-                        size="sm"
-                        aria-label="整理记录"
-                        disabled={busy}
-                        onClick={() => setView("actions")}
-                      >
-                        <MoreHorizontal size={18} />
-                      </Button>
-                    )}
                   {view === "edit" && (
                     <Button
                       variant="primary"
@@ -229,10 +248,20 @@ export default function EventEditor({
                       .journey?.events.find((event) => event.id === eventId)
                     if (current) {
                       const fresh = eventContent(current)
-                      setDraft((current) => ({
-                        ...fresh,
-                        ...eventContentPatch(current, saved),
-                      }))
+                      setDraft((current) => {
+                        const patch = eventContentPatch(current, saved)
+                        return {
+                          ...fresh,
+                          ...patch,
+                          planning: { ...fresh.planning, ...patch.planning },
+                          transit:
+                            patch.transit === undefined
+                              ? fresh.transit
+                              : patch.transit === null
+                                ? null
+                                : { ...fresh.transit, ...patch.transit },
+                        }
+                      })
                       setSaved(fresh)
                     }
                     setError(null)
@@ -281,15 +310,6 @@ export default function EventEditor({
                     eventId={entry.id}
                     onDirtyChange={setViewDirty}
                     onClose={() => void switchView("edit")}
-                  />
-                </div>
-              ) : entry ? (
-                <div className="px-6 pb-6 md:px-9">
-                  <EventActions
-                    store={store}
-                    eventId={entry.id}
-                    onMoved={() => setView("edit")}
-                    onRemoved={onClose}
                   />
                 </div>
               ) : (

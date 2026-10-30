@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronRight, ReceiptText } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 
 export default function ReceiptCard({
   merchant,
@@ -33,21 +33,21 @@ export default function ReceiptCard({
       }
     >
       {compact ? (
-        <ReceiptText size={16} aria-hidden="true" />
+        <span className="journal-card-cost-label">花费</span>
       ) : (
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">
             {merchant || "账单"}
           </span>
-          <span className="mt-1 block text-xs text-journal-muted">
-            {date || "日期待补"}
-          </span>
+          <span className="mt-1 block text-xs text-journal-muted">{date}</span>
         </span>
       )}
       <span className="max-w-[60%] shrink-0 text-right text-lg font-semibold break-words tabular-nums">
         {total || "金额待补"}
       </span>
-      <ChevronRight size={15} className="shrink-0 text-journal-muted" />
+      {!compact && (
+        <ChevronRight size={15} className="shrink-0 text-journal-muted" />
+      )}
     </button>
   )
 }

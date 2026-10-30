@@ -108,13 +108,13 @@ describe.sequential(
       const first = await write(await create(), {
         name: "event.add",
         afterEventId: null,
-        content: { location: location("湖边") },
+        content: { date: "2026-10-29", location: location("湖边") },
       })
       const firstId = first.eventId!
       const second = await write(first.journey, {
         name: "event.add",
         afterEventId: firstId,
-        content: { location: location("茶馆", 30.26) },
+        content: { date: "2026-10-29", location: location("茶馆", 30.26) },
       })
       const secondId = second.eventId!
       let journey = (
@@ -213,7 +213,7 @@ describe.sequential(
       const another = await write(await create(), {
         name: "event.add",
         afterEventId: null,
-        content: {},
+        content: { date: "2026-10-29" },
       })
       const separate = (
         await write(another.journey, {
@@ -358,7 +358,7 @@ describe.sequential(
       const first = await write(await create(), {
         name: "event.add",
         afterEventId: null,
-        content: {},
+        content: { date: "2026-10-29" },
       })
       const eventId = first.eventId!
       let journey = (

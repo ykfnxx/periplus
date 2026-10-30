@@ -11,6 +11,7 @@ import {
 import { useStore } from "zustand"
 import dynamic from "next/dynamic"
 import { DragDropProvider, PointerSensor, KeyboardSensor } from "@dnd-kit/react"
+import { PointerActivationConstraints } from "@dnd-kit/dom"
 import { isSortable } from "@dnd-kit/react/sortable"
 import { ArrowLeft, Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
@@ -19,7 +20,6 @@ import type {
   JourneyEvent,
   EventLocation,
 } from "@/modules/data-model/contracts"
-import { eventCalendarDate } from "@/lib/journeys/calendar"
 import MapPickBar from "./workbench/MapPickBar"
 import type { RecordingStore } from "../state/recording-store"
 import { createWorkbenchStore } from "../state/workbench-store"
@@ -49,8 +49,12 @@ const RecordMap = dynamic(() => import("./RecordMap"), { ssr: false })
 
 const cardSensors = [
   PointerSensor.configure({
+    activationConstraints: [
+      new PointerActivationConstraints.Distance({ value: 8 }),
+    ],
     preventActivation(event, source) {
       return (
+        event.pointerType === "touch" ||
         (event.target instanceof Element &&
           !!event.target.closest("[data-photo-strip]")) ||
         !!PointerSensor.defaults.preventActivation?.(event, source)
@@ -146,29 +150,16 @@ export default function RecordingEditor({
   const list = useRef<HTMLDivElement>(null)
   const days = useMemo(
     () =>
-      Array.from(
-        new Set(
-          journey?.events.map(
-            (event) => eventCalendarDate(event) || "undated"
-          ) || []
-        )
-      ).map((key) => ({
-        key,
-        first: journey!.events.find(
-          (event) => (eventCalendarDate(event) || "undated") === key
-        )!.id,
-      })),
+      Array.from(new Set(journey?.events.map((event) => event.date) || [])).map(
+        (key) => ({
+          key,
+          first: journey!.events.find((event) => event.date === key)!.id,
+        })
+      ),
     [journey]
   )
   const ordinals = useMemo(
     () => new Map(journey?.events.map((event, i) => [event.id, i + 1])),
-    [journey?.events]
-  )
-  const eventsById = useMemo(
-    () =>
-      new Map<string, JourneyEvent>(
-        journey?.events.map((event) => [event.id, event])
-      ),
     [journey?.events]
   )
   const points = useMemo<RecordMapPoint[]>(
@@ -283,6 +274,28 @@ export default function RecordingEditor({
       return
     action()
   }
+  async function removeEvent(entry: JourneyEvent) {
+    if (!canEdit || !entry.canRemove) return
+    if (
+      !(await ask(
+        "删除这段记录？关联的照片与账单会从记录中移除，原素材保留。",
+        { title: "删除记录？", confirmLabel: "删除", cancelLabel: "取消" }
+      ))
+    )
+      return
+    if (
+      store.getState().uploads.some((upload) => upload.eventId === entry.id)
+    ) {
+      store.setState({ error: "请先完成或取消这段记录的待上传照片。" })
+      return
+    }
+    try {
+      await store.getState().mutate({ name: "event.remove", eventId: entry.id })
+      if (ui.getState().selected === entry.id) ui.setState({ selected: null })
+    } catch {
+      /* The store displays the mutation error in the list. */
+    }
+  }
   function updateDay() {
     const root = list.current
     if (!root) return
@@ -296,7 +309,7 @@ export default function RecordingEditor({
     const entry = journey?.events.find(
       (event) => event.id === first?.dataset.recordId
     )
-    if (entry) ui.setState({ activeDay: eventCalendarDate(entry) || "undated" })
+    if (entry) ui.setState({ activeDay: entry.date })
   }
   return (
     <main
@@ -454,7 +467,7 @@ export default function RecordingEditor({
                       ?.scrollIntoView({ block: "start", behavior: "smooth" })
                   }}
                 >
-                  {day.key === "undated" ? "日期待补" : dateLabel(day.key)}
+                  {dateLabel(day.key)}
                 </Button>
               ))}
             </nav>
@@ -526,10 +539,10 @@ export default function RecordingEditor({
                   <EventCard
                     key={entry.id}
                     entry={entry}
-                    eventsById={eventsById}
                     index={index}
                     selected={selected === entry.id}
                     canEdit={canEdit && entry.canEdit === true}
+                    canRemove={canEdit && entry.canRemove === true}
                     canMove={isOwner}
                     onReceipt={(assetId) =>
                       ui.setState({
@@ -539,7 +552,11 @@ export default function RecordingEditor({
                     onSelect={() => select(entry.id)}
                     onExpand={(photoIndex) => expand(entry.id, photoIndex)}
                     onEdit={() => openEditor(entry.id)}
-                    onRead={() => ui.setState({ detailsId: entry.id })}
+                    onRemove={() => void removeEvent(entry)}
+                    onRead={() => {
+                      if (entry.category !== "TRANSIT")
+                        ui.setState({ detailsId: entry.id })
+                    }}
                   />
                 ))}
               </DragDropProvider>
@@ -572,7 +589,7 @@ export default function RecordingEditor({
           onRemove={() => finishPick(null)}
         />
       )}
-      {details && (
+      {details && details.category !== "TRANSIT" && (
         <EventDetails
           key={details.id}
           entry={details}
@@ -591,14 +608,6 @@ export default function RecordingEditor({
           onAddReceipt={
             canEdit
               ? () => ui.setState({ receiptImport: { eventId: details.id } })
-              : undefined
-          }
-          onEdit={
-            canEdit && details.canEdit === true
-              ? () => {
-                  ui.setState({ detailsId: null })
-                  openEditor(details.id)
-                }
               : undefined
           }
         />
@@ -697,7 +706,8 @@ export default function RecordingEditor({
                       store.getState().journey!.events.at(-1)?.id || null,
                     content: {
                       title: fields.merchant || "账单",
-                      date: fields.date,
+                      date:
+                        fields.date || new Date().toLocaleDateString("en-CA"),
                     },
                     receipt,
                   },

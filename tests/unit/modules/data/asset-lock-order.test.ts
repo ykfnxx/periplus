@@ -39,7 +39,11 @@ async function journey() {
   return mutateRecordingJourney(owner, created.journey.id, {
     expectedRevision: 1,
     idempotencyKey: randomUUID(),
-    command: { name: "event.add", afterEventId: null, content: {} },
+    command: {
+      name: "event.add",
+      afterEventId: null,
+      content: { date: "2026-10-29" },
+    },
   })
 }
 describe("ordered asset locks on the one Journey write path", () => {

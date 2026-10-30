@@ -72,7 +72,7 @@ export default function ReceiptDetails({
                       {receipt.merchant || "账单"}
                     </h3>
                     <p className="mt-2 text-sm text-journal-muted">
-                      {receipt.date ? dateLabel(receipt.date) : "日期待补"}
+                      {receipt.date ? dateLabel(receipt.date) : ""}
                     </p>
                   </div>
                   <span className="max-w-[60%] shrink-0 text-right text-xl font-semibold break-words tabular-nums">

@@ -20,10 +20,13 @@ export const periplusColors = {
   coral: "#a84643",
   routeBlue: "#5fb7ff",
   journalPaper: "#faf6ee",
-  journalPaperLine: "#e6d8c6",
-  journalPaperSoft: "#f3eadb",
+  journalPaperLine: "#d6d3d1",
+  journalPaperSoft: "#ebe8e3",
   journalPaperMuted: "#756b5c",
   journalAmber: "#a45a12",
+  journalTag: "#fef3c7",
+  journalTagLine: "#fcd34d",
+  journalTagInk: "#78350f",
 } as const
 
 export interface TransportEdgeStyle {

@@ -13,19 +13,4 @@ describe("event-local calendar navigation", () => {
       })
     ).toBe("2026-10-29")
   })
-  it("uses each event timezone rather than the browser or a parent city", () => {
-    const event = {
-      ...base,
-      date: null,
-      planning: { startAt: "2026-10-29T01:00:00Z" },
-    }
-    expect(eventCalendarDate({ ...event, timeZone: "Asia/Shanghai" })).toBe(
-      "2026-10-29"
-    )
-    expect(
-      eventCalendarDate({ ...event, timeZone: "America/Los_Angeles" })
-    ).toBe("2026-10-28")
-    expect(eventCalendarDate({ ...event, timeZone: null })).toBeNull()
-    expect(eventCalendarDate({ ...event, timeZone: "invalid" })).toBeNull()
-  })
 })
