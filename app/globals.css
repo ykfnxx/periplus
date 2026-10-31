@@ -183,6 +183,15 @@ body {
 .journal-dialog {
   color: var(--color-journal-ink);
 }
+.journal-workbench ::selection,
+.journal-dialog ::selection {
+  background: var(--color-journal-tag);
+  color: var(--color-journal-tag-ink);
+}
+.journal-dialog input,
+.journal-dialog textarea {
+  caret-color: var(--color-journal-amber);
+}
 .journal-panel {
   border: 0;
   border-radius: 16px;
@@ -197,9 +206,9 @@ body {
 .journal-dates {
   padding: 14px 16px 12px;
 }
-.journal-write {
-  width: 36px;
-  height: 36px;
+.journal-heading > [data-kumo-component="Button"] {
+  width: 40px;
+  height: 40px;
   padding: 0;
 }
 .journal-dates nav {
@@ -207,8 +216,8 @@ body {
   padding: 0;
 }
 .journal-dates nav button {
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 36px;
+  padding: 0 12px;
   font-size: 13px;
   border: 0;
   box-shadow: none;
@@ -262,7 +271,7 @@ body {
   }
 }
 .journal-list > div {
-  gap: 16px;
+  gap: 20px;
 }
 .journal-workbench .journal-panel {
   background: var(--color-journal-paper-glass);
@@ -287,6 +296,10 @@ body {
 }
 .journal-card[aria-current="true"] {
   border-color: var(--color-journal-amber);
+}
+.journal-card:focus-visible {
+  outline: 2px solid var(--color-journal-amber);
+  outline-offset: 3px;
 }
 .journal-card-content {
   position: relative;
@@ -327,6 +340,8 @@ body {
   font-size: 22px;
   line-height: 30px;
   font-weight: 900;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 .journal-card h2 button {
   cursor: pointer;
@@ -340,12 +355,14 @@ body {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 .journal-card p {
   margin-top: 12px;
   overflow-wrap: anywhere;
-  font-size: 13.5px;
-  line-height: 22px;
+  text-wrap: pretty;
+  font-size: 14px;
+  line-height: 23px;
   color: var(--color-journal-ink);
 }
 .journal-card-cost {
@@ -354,28 +371,38 @@ body {
   justify-content: space-between;
   gap: 9px;
   width: 100%;
-  margin-top: 14px;
-  padding: 8px 11px;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 9px 12px;
   border: 1px solid var(--color-journal-paper-line);
   border-radius: 10px;
   background: var(--color-journal-paper-soft);
-  color: var(--color-journal-amber);
+  color: var(--color-journal-tag-ink);
   cursor: pointer;
 }
 .journal-card-cost > span:last-child {
   flex: 1;
   max-width: none;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .journal-card-cost-label {
-  color: var(--color-journal-paper-muted);
+  color: var(--color-walnut);
   font-size: 12px;
 }
-.journal-card-cost:focus-visible {
+.journal-card-cost:focus-visible,
+.journal-card h2 button:focus-visible {
   outline: 2px solid var(--color-journal-amber);
   outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .journal-card-cost:hover {
+    border-color: var(--color-journal-amber);
+  }
+  .journal-card h2 button:hover {
+    color: var(--color-journal-amber);
+  }
 }
 .journal-card-tags {
   display: flex;
@@ -402,7 +429,7 @@ body {
 .journal-card-source {
   margin-top: 10px;
   color: var(--color-journal-paper-muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 16px;
 }
 .journal-card-horizontal {
@@ -410,14 +437,14 @@ body {
   border-radius: 20px;
 }
 .journal-card-horizontal .journal-card-cover {
-  flex: 0 0 30%;
-  width: 30%;
+  flex: 0 0 32%;
+  width: 32%;
   height: auto;
   min-height: 100%;
 }
 .journal-card-horizontal .journal-card-content {
   flex: 1;
-  padding: 14px;
+  padding: 16px;
 }
 .journal-card-horizontal h2 {
   font-size: 18px;
@@ -426,12 +453,12 @@ body {
 .journal-card-horizontal p {
   -webkit-line-clamp: 2;
   margin-top: 8px;
-  font-size: 12px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 22px;
 }
 .journal-card-horizontal .journal-card-time {
   margin-top: 0;
-  font-size: 10px;
+  font-size: 11px;
 }
 .journal-card-horizontal .journal-card-cost {
   margin-top: 10px;
@@ -459,6 +486,7 @@ body {
   font-weight: 600;
   line-height: 20px;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 .journal-transit-place {
   font-family: var(--font-editorial);
@@ -470,7 +498,7 @@ body {
 .journal-transit-axis {
   text-align: center;
   color: var(--color-journal-paper-muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 16px;
 }
 .journal-transit-mode {
@@ -506,7 +534,7 @@ body {
   justify-content: space-between;
   gap: 8px;
   color: var(--color-journal-amber);
-  font-size: 11px;
+  font-size: 12px;
 }
 .journal-transit-simple strong {
   font-family: var(--font-editorial);
@@ -525,11 +553,12 @@ body {
   flex: 1;
   min-width: 80px;
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 18px;
 }
 .journal-transit-footer .journal-card-cost {
   width: auto;
+  min-height: 36px;
   margin: 0;
   padding: 2px 0;
   border: 0;
@@ -537,12 +566,12 @@ body {
   background: transparent;
 }
 .journal-transit-footer .journal-card-cost > span:last-child {
-  font-size: 11px;
+  font-size: 12px;
 }
 .journal-card-transit .journal-card-source {
   margin-top: 4px;
   text-align: right;
-  font-size: 9px;
+  font-size: 12px;
 }
 .journal-library .journal-map-controls {
   top: auto;
@@ -645,10 +674,17 @@ body {
     padding: 0 12px 8px;
   }
   .journal-sheet .journal-heading {
-    min-height: 36px;
+    min-height: 44px;
+  }
+  .journal-heading > [data-kumo-component="Button"] {
+    width: 44px;
+    height: 44px;
   }
   .journal-sheet .journal-dates nav {
     margin-top: 6px;
+  }
+  .journal-dates nav button {
+    min-height: 40px;
   }
   .journal-card-cover {
     height: 190px;
@@ -656,7 +692,7 @@ body {
   .journal-card-content {
     padding: 14px;
   }
-  .journal-card h2 {
+  .journal-card-portrait h2 {
     font-size: 21px;
     line-height: 28px;
   }
