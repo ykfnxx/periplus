@@ -57,14 +57,32 @@ export function eventCardTimes(event: JourneyEvent) {
   const startDate = event.date || start?.date
   // Keep an overnight arrival visibly on its own date rather than implying the
   // train/flight arrived before it departed. Never derive an arrival from ETA.
-  const arrival = end
-    ? `${startDate && end.date !== startDate ? `${Number(end.date.slice(5, 7))}月${Number(end.date.slice(8))}日 ` : ""}${end.time}`
-    : null
+  const arrivalDate =
+    end && startDate && end.date !== startDate
+      ? `${Number(end.date.slice(5, 7))}月${Number(end.date.slice(8))}日`
+      : null
+  const arrival = end?.time || null
+  const arrivalLabel = [arrivalDate, arrival].filter(Boolean).join(" ")
   return {
     departure,
     arrival,
-    range: [departure, arrival].filter(Boolean).join("–"),
+    arrivalDate,
+    range: departure
+      ? [departure, arrivalLabel].filter(Boolean).join("–")
+      : arrivalLabel
+        ? `至 ${arrivalLabel}`
+        : "",
   }
+}
+
+export function hasAdditionalEventTimes(event: JourneyEvent) {
+  const planned = instantClock(event.planning?.startAt, event.timeZone)
+  return Boolean(
+    event.actualStartAt ||
+    (planned &&
+      (planned.date !== event.date ||
+        planned.time !== eventCardTimes(event).departure))
+  )
 }
 
 export function eventTransitDisplay(event: JourneyEvent) {

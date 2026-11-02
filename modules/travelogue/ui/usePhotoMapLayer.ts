@@ -110,6 +110,11 @@ export default function usePhotoMapLayer(
         Math.max(...ys) - Math.min(...ys)
       )
       const size = map!.getSize()
+      // A short exposed map uses compact markers instead of clipped photos.
+      if (size.getHeight() - insets.top - insets.bottom < 160) {
+        setPhotoMode(false)
+        return
+      }
       const available = Math.max(
         120,
         Math.min(
@@ -179,7 +184,12 @@ export default function usePhotoMapLayer(
                       })
                   ),
                   false,
-                  [top + 130, bottom + 24, left + 72, right + 72],
+                  [
+                    top + (photoMode ? 130 : 30),
+                    bottom + 24,
+                    left + 72,
+                    right + 72,
+                  ],
                   19
                 )
               } else latest.current.onOpen?.(members.map((photo) => photo.id))
