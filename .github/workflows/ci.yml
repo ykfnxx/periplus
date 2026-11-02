@@ -47,6 +47,15 @@ jobs:
       - name: Build deployment image
         run: |
           docker build --build-arg "PERIPLUS_RELEASE_SHA=$CI_IMAGE_SHA" --build-arg NEXT_PUBLIC_AMAP_KEY -t "periplus:$CI_IMAGE_SHA" .
+      - name: Reject missing production authentication configuration
+        run: |
+          set +e
+          timeout 20s docker run --rm --name periplus-ci-missing-auth --network none --env DATABASE_URL=postgresql://periplus:periplus@127.0.0.1:5432/periplus --env BETTER_AUTH_SECRET= "periplus:$CI_IMAGE_SHA" > missing-auth.log 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          test "$status" -ne 124
+          grep -q "BETTER_AUTH_SECRET is required in production" missing-auth.log
       - name: Start the same image used for deployment
         run: |
           docker run -d --name periplus-ci --network host --env-file .env.local -v /app/uploads "periplus:$CI_IMAGE_SHA"
@@ -82,7 +91,7 @@ jobs:
           retention-days: 3
       - name: Stop isolated image
         if: always()
-        run: docker rm -fv periplus-ci 2>/dev/null || true
+        run: docker rm -fv periplus-ci periplus-ci-missing-auth 2>/dev/null || true
 
   publish:
     name: Publish beta image
