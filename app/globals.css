@@ -1005,6 +1005,29 @@ body {
   background: var(--color-journal-paper-muted);
   opacity: 0.4;
 }
+.journal-curtain-resize {
+  position: absolute;
+  z-index: 30;
+  top: 8px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  color: var(--color-journal-paper-muted);
+}
+.journal-workbench:has(.journal-mobile-curtain[data-reading="true"])
+  :is(.journal-timeline-heading, .journal-view-switch, .journal-map-controls) {
+  visibility: hidden;
+}
+.journal-mobile-curtain[data-reading="true"] .journal-curtain-dial {
+  height: calc(168px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.journal-mobile-curtain[data-reading="true"] .journal-curtain-handle {
+  top: env(safe-area-inset-top, 0px);
+}
+.journal-mobile-curtain[data-reading="true"] .journal-curtain-resize {
+  top: calc(8px + env(safe-area-inset-top, 0px));
+}
 /* Only the dial transmits the fixed map. The opaque body naturally covers the
    map's native attribution as it reaches the screen bottom. */
 .journal-curtain-body {
@@ -1015,6 +1038,9 @@ body {
   background: var(--color-journal-paper);
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   pointer-events: auto;
+}
+.journal-mobile-curtain[data-fullscreen="false"] .journal-curtain-body {
+  touch-action: none;
 }
 .journal-curtain-body .journal-curtain-detail {
   position: relative;
