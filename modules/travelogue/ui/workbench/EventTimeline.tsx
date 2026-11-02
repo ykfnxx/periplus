@@ -261,6 +261,7 @@ function TimelineItem({
   const [menuOpen, setMenuOpen] = useState(false)
   const hold = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pointer = useRef({ x: 0, y: 0 })
+  const moved = useRef(false)
   const cancelHold = () => {
     if (hold.current) clearTimeout(hold.current)
     hold.current = null
@@ -278,7 +279,15 @@ function TimelineItem({
     <ContextMenu.Root
       disabled={!canEdit && !canRemove}
       open={menuOpen}
-      onOpenChange={setMenuOpen}
+      onOpenChange={(open, details) => {
+        // Touchmove can arrive after the long-press delay on a slow swipe;
+        // pointer movement already tells us this is a drag, not a hold.
+        if (open && moved.current && details.event.type.startsWith("touch")) {
+          details.cancel()
+          return
+        }
+        setMenuOpen(open)
+      }}
     >
       <ContextMenu.Trigger
         render={
@@ -323,13 +332,14 @@ function TimelineItem({
           if (event.pointerType === "mouse") onHover()
         }}
         onPointerDownCapture={(event) => {
+          moved.current = false
+          pointer.current = { x: event.clientX, y: event.clientY }
           if (
             event.pointerType !== "mouse" ||
             event.button !== 0 ||
             (!canEdit && !canRemove)
           )
             return
-          pointer.current = { x: event.clientX, y: event.clientY }
           const target = event.currentTarget
           hold.current = setTimeout(
             () =>
@@ -347,8 +357,10 @@ function TimelineItem({
           if (
             Math.abs(event.clientX - pointer.current.x) > 10 ||
             Math.abs(event.clientY - pointer.current.y) > 10
-          )
+          ) {
+            moved.current = true
             cancelHold()
+          }
         }}
         onPointerUp={cancelHold}
         onPointerCancel={cancelHold}

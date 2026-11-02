@@ -62,6 +62,7 @@ export default function ResizableMapPanel({
         : Math.round(height * 0.8)
   return (
     <motion.section
+      initial={false}
       aria-label="旅程面板"
       className={`journal-panel journal-sheet absolute inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden bg-soft-white shadow-periplus ${sheet === "full" ? "pt-[env(safe-area-inset-top)]" : ""}`}
       animate={{ height: sheetHeight, y: 0 }}

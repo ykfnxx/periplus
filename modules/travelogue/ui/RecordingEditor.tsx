@@ -26,6 +26,10 @@ import { createWorkbenchStore } from "../state/workbench-store"
 import ResizableMapPanel from "./workbench/ResizableMapPanel"
 import EventCard from "./workbench/EventCard"
 import EventTimeline from "./workbench/EventTimeline"
+import MobileTimelineCurtain, {
+  collapsedCurtainHeight,
+  expandedCurtainHeight,
+} from "./workbench/MobileTimelineCurtain"
 import EventEditor from "./workbench/EventEditor"
 import EventDetails from "./workbench/EventDetails"
 import JourneyMenu from "./workbench/JourneyMenu"
@@ -210,8 +214,12 @@ export default function RecordingEditor({
         ? {
             left: desktop && hasDetails ? 468 : 24,
             right: 64,
-            top: !desktop && hasDetails ? Math.round(height * 0.5) : 96,
-            bottom: desktop ? 210 : 180,
+            top: 96,
+            bottom: desktop
+              ? 210
+              : (hasDetails
+                  ? expandedCurtainHeight(height)
+                  : collapsedCurtainHeight) + 16,
           }
         : desktop
           ? {
@@ -360,6 +368,33 @@ export default function RecordingEditor({
         ?.focus({ preventScroll: true })
     )
   }
+  const detailContent = (entry: JourneyEvent, embedded = false) => (
+    <EventDetails
+      key={entry.id}
+      entry={entry}
+      panel={timeline}
+      embedded={embedded}
+      onClose={
+        timeline ? closeTimelineDetails : () => ui.setState({ detailsId: null })
+      }
+      onReceipt={(assetId) =>
+        ui.setState({ receiptDetails: { eventId: entry.id, assetId } })
+      }
+      onAddPhotos={
+        canEdit
+          ? () => {
+              setPhotoDirty(false)
+              ui.setState({ photoPanelId: entry.id })
+            }
+          : undefined
+      }
+      onAddReceipt={
+        canEdit
+          ? () => ui.setState({ receiptImport: { eventId: entry.id } })
+          : undefined
+      }
+    />
+  )
   const heading = (
     <div className="journal-heading flex min-w-0 items-center gap-1">
       <Button
@@ -413,6 +448,23 @@ export default function RecordingEditor({
       )}
     </div>
   )
+  const rail = (
+    <EventTimeline
+      events={journey?.events || []}
+      selectedId={selectedEntry?.id || null}
+      compact={!desktop}
+      canEdit={canEdit}
+      loading={loading}
+      onSelect={(id) => select(id)}
+      onOpen={(event) =>
+        ui.setState({
+          detailsId: event.category === "TRANSIT" ? null : event.id,
+        })
+      }
+      onEdit={(event) => openEditor(event.id)}
+      onRemove={(event) => void removeEvent(event)}
+    />
+  )
   return (
     <main
       data-picking={!!picking}
@@ -421,13 +473,13 @@ export default function RecordingEditor({
       style={
         {
           "--journal-map-bottom":
-            !desktop && !picking ? `${timeline ? 172 : sheetHeight}px` : "0px",
+            !desktop && !picking && !timeline ? `${sheetHeight}px` : "0px",
           "--journal-map-left":
             desktop && !timeline ? `${panelWidth + 36}px` : "4px",
         } as CSSProperties
       }
     >
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 z-0">
         {mapPreview || (
           <RecordMap
             events={journey?.events}
@@ -522,21 +574,29 @@ export default function RecordingEditor({
                 </Button>
               </div>
             )}
-            <EventTimeline
-              events={journey?.events || []}
-              selectedId={selectedEntry?.id || null}
-              compact={!desktop}
-              canEdit={canEdit}
-              loading={loading}
-              onSelect={(id) => select(id)}
-              onOpen={(event) =>
-                ui.setState({
-                  detailsId: event.category === "TRANSIT" ? null : event.id,
-                })
-              }
-              onEdit={(event) => openEditor(event.id)}
-              onRemove={(event) => void removeEvent(event)}
-            />
+            {desktop ? (
+              rail
+            ) : (
+              <MobileTimelineCurtain
+                open={hasDetails}
+                canOpen={Boolean(
+                  selectedEntry && selectedEntry.category !== "TRANSIT"
+                )}
+                viewportHeight={height}
+                onOpen={() => {
+                  if (selectedEntry && selectedEntry.category !== "TRANSIT") {
+                    select(selectedEntry.id)
+                    ui.setState({ detailsId: selectedEntry.id })
+                  }
+                }}
+                onClose={closeTimelineDetails}
+                timeline={rail}
+              >
+                {selectedEntry && selectedEntry.category !== "TRANSIT"
+                  ? detailContent(selectedEntry, true)
+                  : null}
+              </MobileTimelineCurtain>
+            )}
           </>
         ) : (
           <ResizableMapPanel
@@ -693,34 +753,11 @@ export default function RecordingEditor({
           onRemove={() => finishPick(null)}
         />
       )}
-      {details && details.category !== "TRANSIT" && !picking && (
-        <EventDetails
-          key={details.id}
-          entry={details}
-          panel={timeline}
-          onClose={
-            timeline
-              ? closeTimelineDetails
-              : () => ui.setState({ detailsId: null })
-          }
-          onReceipt={(assetId) =>
-            ui.setState({ receiptDetails: { eventId: details.id, assetId } })
-          }
-          onAddPhotos={
-            canEdit
-              ? () => {
-                  setPhotoDirty(false)
-                  ui.setState({ photoPanelId: details.id })
-                }
-              : undefined
-          }
-          onAddReceipt={
-            canEdit
-              ? () => ui.setState({ receiptImport: { eventId: details.id } })
-              : undefined
-          }
-        />
-      )}
+      {details &&
+        details.category !== "TRANSIT" &&
+        !picking &&
+        (desktop || !timeline) &&
+        detailContent(details)}
       {dialog && canEdit && (
         <EventEditor
           store={store}

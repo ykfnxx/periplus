@@ -24,9 +24,11 @@ export default function EventDetails({
   onAddPhotos,
   onAddReceipt,
   panel = false,
+  embedded = false,
 }: {
   entry: JourneyEvent
   panel?: boolean
+  embedded?: boolean
   onClose: () => void
   onReceipt: (assetId: string) => void
   onAddPhotos?: () => void
@@ -35,11 +37,11 @@ export default function EventDetails({
   const [photoIndex, setPhotoIndex] = useState<number | null>(null)
   const panelRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (panel)
+    if (panel && !embedded)
       panelRef.current
         ?.querySelector<HTMLButtonElement>('[aria-label="关闭详情"]')
         ?.focus({ preventScroll: true })
-  }, [panel])
+  }, [panel, embedded])
   const title = eventTitle(entry)
   const date = eventCalendarDate(entry)
   const content = (close: () => void) => (
@@ -54,15 +56,17 @@ export default function EventDetails({
           {title}
         </h2>
 
-        <Button
-          variant="ghost"
-          shape="square"
-          aria-label="关闭详情"
-          className="shrink-0"
-          onClick={close}
-        >
-          <X size={20} />
-        </Button>
+        {!embedded && (
+          <Button
+            variant="ghost"
+            shape="square"
+            aria-label="关闭详情"
+            className="shrink-0"
+            onClick={close}
+          >
+            <X size={20} />
+          </Button>
+        )}
       </header>
       <div className="px-6 pb-8 md:px-9">
         {!panel && entry.source && (
@@ -153,7 +157,11 @@ export default function EventDetails({
     return (
       <section
         ref={panelRef}
-        className="journal-event-details journal-timeline-detail"
+        className={
+          embedded
+            ? "journal-event-details journal-timeline-detail journal-curtain-detail"
+            : "journal-event-details journal-timeline-detail"
+        }
         aria-label={`${title}的详情`}
         onKeyDown={(event) => {
           // Portalled photo/bill dialogs own Escape; only dismiss from this panel.

@@ -932,9 +932,9 @@ body {
     padding-left: 18px;
   }
   .journal-workbench[data-view="timeline"] .journal-map-controls {
-    top: auto;
+    top: calc(env(safe-area-inset-top, 0px) + 132px);
     right: 12px;
-    bottom: 182px;
+    bottom: auto;
   }
   .journal-workbench[data-view="list"] .journal-map-controls {
     top: 72px;
@@ -947,6 +947,88 @@ body {
     left: 12px;
     max-width: calc(100% - 24px);
   }
+}
+
+.journal-mobile-curtain {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: none;
+}
+.journal-curtain-dial {
+  position: relative;
+  height: 168px;
+  flex-shrink: 0;
+  touch-action: none;
+  pointer-events: auto;
+}
+.journal-mobile-curtain .journal-timeline {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  height: 168px;
+  transform: none;
+}
+.journal-mobile-curtain .journal-timeline-glass {
+  inset: 0;
+  border-radius: 50% 50% 0 0 / 24% 24% 0 0;
+  mask-image: none;
+}
+.journal-mobile-curtain .journal-timeline-track {
+  top: 24px;
+}
+.journal-mobile-curtain .journal-timeline-ruler {
+  bottom: 28px;
+}
+.journal-mobile-curtain .journal-timeline-date {
+  bottom: 16px;
+}
+.journal-curtain-handle {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: calc(50% - 24px);
+  width: 48px;
+  height: 24px;
+  padding: 0;
+}
+.journal-curtain-handle span {
+  width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-journal-paper-muted);
+  opacity: 0.4;
+}
+/* Only the dial transmits the fixed map. The opaque body naturally covers the
+   map's native attribution as it reaches the screen bottom. */
+.journal-curtain-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-journal-paper);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  pointer-events: auto;
+}
+.journal-curtain-body .journal-curtain-detail {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  border-radius: 0;
+  background: var(--color-journal-paper);
+  box-shadow: none;
+}
+.journal-curtain-detail .journal-card-cover {
+  padding: 0;
 }
 @media (max-width: 767px) {
   .journal-dates {
