@@ -14,7 +14,7 @@ import ReceiptCard from "./ReceiptCard"
 import EventCover from "./EventCover"
 import TransitEventCard from "./TransitEventCard"
 import { dateLabel } from "../display"
-import { receiptTotal } from "../receipt-display"
+import { receiptCardTotal } from "../receipt-display"
 import {
   eventCardTimes,
   eventCardTitle,
@@ -182,7 +182,7 @@ export default function EventCard({
                   <span className="journal-card-time">{times.range}</span>
                 )}
               </div>
-              <h2>
+              <h2 className="journal-event-title">
                 <button
                   type="button"
                   className="text-left focus-visible:outline-2 focus-visible:outline-russet"
@@ -224,14 +224,9 @@ export default function EventCard({
             {entry.receipts.map((receipt) => (
               <ReceiptCard
                 key={receipt.assetId}
-                compact
                 merchant={receipt.merchant || ""}
                 date={receipt.date ? dateLabel(receipt.date) : ""}
-                total={
-                  receipt.currency === "CNY" && receipt.total !== null
-                    ? `¥${receipt.total}`
-                    : receiptTotal(receipt)
-                }
+                total={receiptCardTotal(receipt)}
                 onOpen={() => onReceipt(receipt.assetId)}
               />
             ))}

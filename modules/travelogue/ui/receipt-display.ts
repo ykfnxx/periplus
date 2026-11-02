@@ -50,3 +50,11 @@ export function receiptTotal(
     ? "金额待补"
     : `${fields.currency ? `${fields.currency} ` : ""}${fields.total}`
 }
+
+export function receiptCardTotal(
+  fields: Pick<ReceiptFields, "total" | "currency">
+) {
+  return fields.currency === "CNY" && fields.total !== null
+    ? `¥${fields.total}`
+    : receiptTotal(fields)
+}

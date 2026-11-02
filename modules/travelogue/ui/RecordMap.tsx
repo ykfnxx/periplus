@@ -295,6 +295,8 @@ export default function RecordMap({
     .map((point) => `${point.eventId}:${point.lng}:${point.lat}`)
     .join("|")
   const { left, right, top, bottom } = insets
+  const photoPadding =
+    map && map.getSize().getHeight() - top - bottom < 160 ? 30 : 130
   useEffect(() => {
     if (!map || picking || restoredViewport.current) return
     const { points, events, photos, selectedEventId } = latest.current
@@ -328,7 +330,11 @@ export default function RecordMap({
       framed.current = true
       const point = selected || selectedPhoto?.coordinate || all[0]
       map.setZoomAndCenter(14, [point.lng, point.lat])
-      map.panBy((left - right) / 2, (top - bottom) / 2)
+      // Paper photos extend upward from their coordinate, as in batch fitting.
+      map.panBy(
+        (left - right) / 2,
+        (top + (selectedPhoto ? photoPadding : 0) - bottom) / 2
+      )
     } else if (all.length) {
       framed.current = true
       map.setFitView(
@@ -336,12 +342,17 @@ export default function RecordMap({
           (point) => new AMap.Marker({ position: [point.lng, point.lat] })
         ),
         false,
-        [top + (photos.length ? 130 : 0), bottom + 24, left + 72, right + 72],
+        [
+          top + (photos.length ? photoPadding : 0),
+          bottom + 24,
+          left + 72,
+          right + 72,
+        ],
         14
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, positionKey, focusId, left, right, top, bottom])
+  }, [map, positionKey, focusId, left, right, top, bottom, photoPadding])
   useEffect(() => {
     if (!map || !request) return
     if (request.type === "zoom-in") map.zoomIn()
@@ -361,7 +372,7 @@ export default function RecordMap({
           ),
           false,
           [
-            top + (latest.current.photos.length ? 130 : 0),
+            top + (latest.current.photos.length ? photoPadding : 0),
             bottom + 24,
             left + 72,
             right + 72,
@@ -369,7 +380,7 @@ export default function RecordMap({
           14
         )
     }
-  }, [map, request, top, right, bottom, left])
+  }, [map, request, top, right, bottom, left, photoPadding])
   return (
     <div
       data-map-picking={picking}

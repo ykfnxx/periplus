@@ -3,7 +3,7 @@ import type { JourneyEvent } from "@/modules/data-model/contracts"
 import { eventCardTimes, eventTransitDisplay } from "../event-card-display"
 
 export default function TransitEventCard({ event }: { event: JourneyEvent }) {
-  const { departure, arrival } = eventCardTimes(event)
+  const { departure, arrival, arrivalDate } = eventCardTimes(event)
   const { mode, duration, distance, line } = eventTransitDisplay(event)
   // Endpoint names belong to the transit itself, independent of chain order.
   if (!event.transit)
@@ -21,11 +21,16 @@ export default function TransitEventCard({ event }: { event: JourneyEvent }) {
   const to = event.transit.toName
   return (
     <div className="journal-transit-route" aria-label={`${from}到${to}`}>
-      <div className="min-w-0">
-        {departure && <div className="journal-transit-time">{departure}</div>}
-        <div className="journal-transit-place" title={from}>
-          {from}
+      {departure && (
+        <div className="journal-transit-time journal-transit-departure">
+          {departure}
         </div>
+      )}
+      <div
+        className="journal-transit-place journal-transit-origin"
+        title={from}
+      >
+        {from}
       </div>
       <div className="journal-transit-axis min-w-0">
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
@@ -45,11 +50,19 @@ export default function TransitEventCard({ event }: { event: JourneyEvent }) {
           </div>
         )}
       </div>
-      <div className="min-w-0 text-right">
-        {arrival && <div className="journal-transit-time">{arrival}</div>}
-        <div className="journal-transit-place" title={to}>
-          {to}
+      {arrivalDate && (
+        <div className="journal-transit-arrival-date">{arrivalDate}</div>
+      )}
+      {arrival && (
+        <div className="journal-transit-time journal-transit-arrival">
+          {arrival}
         </div>
+      )}
+      <div
+        className="journal-transit-place journal-transit-destination"
+        title={to}
+      >
+        {to}
       </div>
     </div>
   )

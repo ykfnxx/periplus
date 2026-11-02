@@ -12,14 +12,13 @@ import type {
 } from "@/modules/data-model/contracts"
 import EventWeather, { WeatherAttribution } from "./EventWeather"
 import { dateLabel, eventTitle } from "../display"
-import { eventCategoryLabels } from "../event-card-display"
+import { eventCardTimes, eventCategoryLabels } from "../event-card-display"
 import { photoItems } from "../photo-items"
 import { Modal } from "./Modal"
-import PhotoStrip from "./PhotoStrip"
 import PhotoViewer from "./PhotoViewer"
 import UserSource from "./UserSource"
 import ReceiptCard from "./ReceiptCard"
-import { receiptTotal } from "../receipt-display"
+import { receiptCardTotal } from "../receipt-display"
 
 export default function EventDetails({
   entry,
@@ -51,15 +50,17 @@ export default function EventDetails({
   const title = eventTitle(entry)
   const date = eventCalendarDate(entry)
   const stamp = entry.category === "TRANSIT" ? null : weather
+  const times = eventCardTimes(entry)
   const content = (close: () => void) => (
     <>
-      {panel && (
-        <EventCover event={entry} title={title} onOpen={setPhotoIndex} />
-      )}
-      <header
-        className={`z-10 flex min-h-16 items-center gap-3 px-6 py-3 md:px-9 ${panel ? "journal-timeline-detail-heading" : "sticky top-0 bg-white"}`}
-      >
-        <h2 className="min-w-0 flex-1 text-lg font-semibold break-words">
+      <EventCover
+        event={entry}
+        title={title}
+        onOpen={setPhotoIndex}
+        showCount
+      />
+      <header className="journal-event-heading sticky top-0 z-10 flex min-h-16 items-center gap-3 px-6 py-3 md:px-9">
+        <h2 className="journal-event-title min-w-0 flex-1 break-words">
           {title}
         </h2>
 
@@ -76,17 +77,15 @@ export default function EventDetails({
         )}
       </header>
       <div className="px-6 pb-8 md:px-9">
-        {!panel && entry.source && (
-          <div className="mb-4">
-            <UserSource user={entry.source} className="text-journal-muted" />
-          </div>
-        )}
         {(date || entry.location) && (
-          <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-journal-muted">
+          <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 text-sm leading-5 text-journal-muted">
             {date && (
-              <span className="flex items-center gap-2">
-                <CalendarDays size={16} />
-                {dateLabel(date!)}
+              <span className="flex min-w-0 items-start gap-2">
+                <CalendarDays size={16} className="mt-0.5 shrink-0" />
+                <span className="min-w-0 break-words">
+                  {dateLabel(date!)}
+                  {times.range && ` · ${times.range}`}
+                </span>
               </span>
             )}
             <EventWeather weather={stamp} />
@@ -103,38 +102,22 @@ export default function EventDetails({
             {entry.body}
           </p>
         )}
-        <EventPlanning event={entry} expanded />
+        <EventPlanning event={entry} />
         {entry.receipts?.map((receipt) => (
           <ReceiptCard
             key={receipt.assetId}
-            compact={panel}
             merchant={receipt.merchant || ""}
             date={receipt.date ? dateLabel(receipt.date) : ""}
-            total={
-              panel && receipt.currency === "CNY" && receipt.total !== null
-                ? `¥${receipt.total}`
-                : receiptTotal(receipt)
-            }
+            total={receiptCardTotal(receipt)}
             onOpen={() => onReceipt(receipt.assetId)}
           />
         ))}
-        {!panel && entry.photos.length > 0 && (
-          <PhotoStrip
-            photos={entry.photos}
-            title={title}
-            onOpen={setPhotoIndex}
-          />
-        )}
-        {panel && (
-          <>
-            <div className="journal-card-tags">
-              <span>{eventCategoryLabels[entry.category]}</span>
-            </div>
-            <div className="mt-3">
-              <UserSource user={entry.source} className="text-journal-muted" />
-            </div>
-          </>
-        )}
+        <div className="journal-card-tags">
+          <span>{eventCategoryLabels[entry.category]}</span>
+        </div>
+        <div className="mt-3">
+          <UserSource user={entry.source} className="text-journal-muted" />
+        </div>
         <WeatherAttribution weather={stamp} />
         {(onAddPhotos || onAddReceipt) && (
           <div className="mt-5 flex flex-wrap gap-2">
