@@ -78,12 +78,7 @@ export function assertJourneyTransition(
     )
       continue
     const next = after.events.find((item) => item.id === event.id)
-    if (
-      !next ||
-      next.executionStatus !== event.executionStatus ||
-      next.actualStartAt !== event.actualStartAt ||
-      next.actualEndAt !== event.actualEndAt
-    )
+    if (!next || next.executionStatus !== event.executionStatus)
       throw new JourneyInputError(
         "Confirmed execution facts cannot be removed or undone"
       )

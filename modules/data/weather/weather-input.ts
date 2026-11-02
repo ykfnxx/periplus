@@ -31,7 +31,7 @@ export function localWeatherTime(instant: number, timeZone: string) {
 function eventInstant(event: JourneyEvent) {
   if (!event.time || !event.timeZone) return null
   const local = `${event.date}T${event.time}`
-  const saved = event.planning?.startAt
+  const saved = event.startAt
   // An explicit instant disambiguates a repeated local hour at a DST transition.
   if (saved && localWeatherTime(Date.parse(saved), event.timeZone) === local)
     return Date.parse(saved)
@@ -82,7 +82,7 @@ export function eventWeatherInput(event: JourneyEvent): WeatherInput | null {
         date: event.date,
         time: event.time,
         timeZone: event.timeZone,
-        startAt: event.planning?.startAt ?? null,
+        startAt: event.startAt ?? null,
       })
     )
     .digest("hex")

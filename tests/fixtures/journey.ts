@@ -62,11 +62,9 @@ export function transitJourneyFixture(
         coordinateSystem: "GCJ02" as const,
       },
     },
-    planning: {
-      startAt: "2026-10-29T01:00:00.000Z",
-      endAt: "2026-10-29T02:00:00.000Z",
-      provider: "amap",
-    },
+    startAt: "2026-10-29T01:00:00.000Z",
+    endAt: "2026-10-29T02:00:00.000Z",
+    planning: { provider: "amap" },
   }
   const end = {
     ...eventFixture(`${id}-end`, ownerId),
@@ -81,20 +79,16 @@ export function transitJourneyFixture(
         coordinateSystem: "GCJ02" as const,
       },
     },
-    planning: {
-      startAt: "2026-10-29T02:10:00.000Z",
-      endAt: "2026-10-29T03:00:00.000Z",
-      provider: "amap",
-    },
+    startAt: "2026-10-29T02:10:00.000Z",
+    endAt: "2026-10-29T03:00:00.000Z",
+    planning: { provider: "amap" },
   }
   const transit: JourneyEvent = {
     ...eventFixture(`${id}-transit`, ownerId),
     title: "步行",
     category: "TRANSIT",
-    planning: {
-      startAt: "2026-10-29T02:00:00.000Z",
-      endAt: "2026-10-29T02:10:00.000Z",
-    },
+    startAt: "2026-10-29T02:00:00.000Z",
+    endAt: "2026-10-29T02:10:00.000Z",
     transit: {
       fromName: "西湖",
       toName: "湖边茶室",

@@ -84,7 +84,7 @@ describe("event weather input and archive matching", () => {
     ]) {
       const repeated = {
         ...event("2025-11-02", "01:30"),
-        planning: { startAt },
+        startAt,
       }
       expect(eventWeatherInput(repeated)!.instant).toBe(Date.parse(startAt))
     }
