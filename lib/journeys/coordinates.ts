@@ -65,6 +65,12 @@ export function wgs84ToGcj02(lng: number, lat: number): [number, number] {
   return [lng + lngOffset, lat + latOffset]
 }
 
+export function gcj02ToWgs84(lng: number, lat: number): [number, number] {
+  const [shiftedLng, shiftedLat] = wgs84ToGcj02(lng, lat)
+  // Invert the local offset; its metre-scale error is below weather grid precision.
+  return [2 * lng - shiftedLng, 2 * lat - shiftedLat]
+}
+
 function outsideChina(lng: number, lat: number) {
   return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
 }

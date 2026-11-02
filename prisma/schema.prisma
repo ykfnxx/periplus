@@ -163,6 +163,7 @@ model Journey {
   assetLinks  EventAssetLink[]    @relation("JourneyAssetLinks")
   members     JourneyMember[]
   invitations JourneyInvitation[]
+  weather     EventWeather[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -409,4 +410,17 @@ model JourneyInvitation {
   createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([journeyId, createdAt])
+}
+
+// Current derived weather belongs to stable Journey identity, not rebuilt event indexes.
+model EventWeather {
+  journeyId  String
+  eventId    String
+  inputKey   String
+  queryJson  String
+  resultJson String
+  fetchedAt  DateTime
+  journey    Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@id([journeyId, eventId])
 }

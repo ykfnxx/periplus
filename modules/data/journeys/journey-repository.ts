@@ -13,6 +13,7 @@ import {
   type JourneyCommand,
 } from "@/modules/data-model/contracts"
 import { prisma } from "@/modules/data/db/prisma"
+import { invalidateEventWeather } from "@/modules/data/weather/weather-repository"
 import { lockAssetRows } from "@/modules/data/assets/asset-repository"
 import {
   journeyReadScope,
@@ -297,6 +298,7 @@ async function writeRevision(
         updatedAt: new Date(journey.updatedAt),
       },
     })
+  if (before) await invalidateEventWeather(tx, journey)
   await persistIndex(tx, journey)
   return journey
 }

@@ -45,6 +45,20 @@ export const periplusServerConfig = {
       return url
     },
   },
+  weather: {
+    get archiveUrl() {
+      return envString(
+        "PERIPLUS_WEATHER_ARCHIVE_URL",
+        "https://archive-api.open-meteo.com/v1/archive"
+      )
+    },
+    get apiKey() {
+      return envString("PERIPLUS_WEATHER_API_KEY")
+    },
+    get timeoutMs() {
+      return envNumber("PERIPLUS_WEATHER_TIMEOUT_MS", 10000)
+    },
+  },
   ocr: {
     get url() {
       return envString("PERIPLUS_OCR_URL", "http://127.0.0.1:8106/ocr")
