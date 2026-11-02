@@ -233,6 +233,7 @@ describe("receipt recovery", () => {
       await store.getState().load()
       render(
         <RecordingEditor
+          userId="friend"
           store={store}
           onBack={() => {}}
           mapPreview={<div>地图</div>}
@@ -305,6 +306,7 @@ describe("event draft conflict recovery", () => {
     await store.getState().load()
     render(
       <RecordingEditor
+        userId="friend"
         store={store}
         onBack={() => {}}
         mapPreview={<div>地图</div>}
@@ -365,6 +367,7 @@ describe("event draft conflict recovery", () => {
     const onSaved = vi.fn()
     render(
       <EventEditor
+        userId="friend"
         store={store}
         request={{ eventId: "event", afterEventId: null }}
         onClose={() => {}}
@@ -416,6 +419,7 @@ describe("read-only unified Journey", () => {
     await store.getState().load()
     render(
       <RecordingEditor
+        userId="friend"
         store={store}
         readOnly
         onBack={() => {}}

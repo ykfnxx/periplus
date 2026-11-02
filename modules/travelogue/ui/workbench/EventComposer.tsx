@@ -36,6 +36,7 @@ export default function EventComposer({
   onFiles,
   onPickLocation,
   onManagePhotos,
+  canPickLocation = true,
 }: {
   draft: EventDraft
   files: File[]
@@ -46,6 +47,7 @@ export default function EventComposer({
   onFiles: (files: File[]) => void
   onPickLocation: () => void
   onManagePhotos?: () => void
+  canPickLocation?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
   const zone =
@@ -284,7 +286,7 @@ export default function EventComposer({
       />
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !canPickLocation}
         onClick={onPickLocation}
         className="flex min-h-14 w-full items-center gap-3 border-t border-ink-10 text-left text-sm text-walnut focus-visible:outline-2 focus-visible:outline-russet"
       >

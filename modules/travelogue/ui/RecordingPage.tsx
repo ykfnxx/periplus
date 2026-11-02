@@ -9,9 +9,11 @@ import type { JourneySummary } from "@/modules/data-model/contracts"
 import { journeyHref, type JourneyOpenRequest } from "../data/navigation"
 
 export default function RecordingPage({
+  userId,
   journeyId,
   developerMode = false,
 }: {
+  userId: string
   journeyId: string
   developerMode?: boolean
 }) {
@@ -71,6 +73,7 @@ export default function RecordingPage({
   }, [reloadDirectory])
   return (
     <RecordingEditor
+      userId={userId}
       journeys={journeys}
       directoryError={directoryError}
       onRetryDirectory={() => setReloadDirectory((value) => value + 1)}

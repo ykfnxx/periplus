@@ -31,6 +31,7 @@ import MobileTimelineCurtain, {
   expandedCurtainHeight,
 } from "./workbench/MobileTimelineCurtain"
 import EventEditor from "./workbench/EventEditor"
+import DraftEntry from "../drafts/DraftEntry"
 import EventDetails from "./workbench/EventDetails"
 import JourneyMenu from "./workbench/JourneyMenu"
 import type { JourneyOpenRequest } from "../data/navigation"
@@ -75,6 +76,7 @@ const cardSensors = [
 ]
 
 export default function RecordingEditor({
+  userId,
   store,
   onBack,
   mapPreview,
@@ -87,6 +89,7 @@ export default function RecordingEditor({
   directoryError,
   onRetryDirectory,
 }: {
+  userId: string
   store: RecordingStore
   onBack: () => void
   mapPreview?: ReactNode
@@ -426,6 +429,7 @@ export default function RecordingEditor({
           </h1>
         )}
       </div>
+      <DraftEntry userId={userId} journeys={journeys} />
       {canEdit && (
         <Button
           variant="primary"
@@ -763,6 +767,7 @@ export default function RecordingEditor({
         detailContent(details)}
       {dialog && canEdit && (
         <EventEditor
+          userId={userId}
           store={store}
           request={dialog}
           onPickLocation={pickLocation}
