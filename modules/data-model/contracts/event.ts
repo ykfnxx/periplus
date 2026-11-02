@@ -56,6 +56,9 @@ export const eventContentSchema = z
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
       .nullable(),
     timeZone: z.string().trim().min(1).max(100).nullable(),
+    // These instants resolve this same local event time, not another schedule.
+    startAt: instant.optional(),
+    endAt: instant.optional(),
     location: eventLocationSchema.nullable(),
   })
   .strict()
@@ -75,8 +78,6 @@ export const eventPhotoSchema = z
 
 export const eventPlanningSchema = z
   .object({
-    startAt: instant.optional(),
-    endAt: instant.optional(),
     durationMinutes: z.number().nonnegative().optional(),
     placeId: id.optional(),
     provider: z.string().min(1).optional(),
@@ -148,23 +149,48 @@ export const journeyEventSchema = eventContentSchema
     cuisine: z.string().optional(),
     bookingReference: z.string().optional(),
     executionStatus: z.enum(TARGET_EVENT_EXECUTION_STATUSES).optional(),
-    actualStartAt: instant.optional(),
-    actualEndAt: instant.optional(),
     createdAt: instant,
     updatedAt: instant,
   })
   .strict()
   .superRefine((event, ctx) => {
+    let validTimeZone = true
     if (event.timeZone !== null) {
       try {
         new Intl.DateTimeFormat("en", { timeZone: event.timeZone })
       } catch {
+        validTimeZone = false
         ctx.addIssue({
           code: "custom",
           path: ["timeZone"],
           message: "Invalid recording time zone",
         })
       }
+    }
+
+    if (event.startAt && validTimeZone) {
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: event.timeZone ?? "UTC",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        })
+          .formatToParts(new Date(event.startAt))
+          .map((part) => [part.type, part.value])
+      )
+      if (
+        `${parts.year}-${parts.month}-${parts.day}` !== event.date ||
+        (event.time !== null && `${parts.hour}:${parts.minute}` !== event.time)
+      )
+        ctx.addIssue({
+          code: "custom",
+          path: ["startAt"],
+          message: "Event start must match its local date and time",
+        })
     }
 
     if (event.hotel && event.category !== "STAY")
@@ -186,15 +212,15 @@ export const journeyEventSchema = eventContentSchema
         message:
           "A transit event requires its endpoint names and transport mode",
       })
-    for (const [start, end] of [
-      [event.planning?.startAt, event.planning?.endAt],
-      [event.actualStartAt, event.actualEndAt],
-    ])
-      if (start && end && Date.parse(end) < Date.parse(start))
-        ctx.addIssue({
-          code: "custom",
-          message: "Event end cannot precede its start",
-        })
+    if (
+      event.startAt &&
+      event.endAt &&
+      Date.parse(event.endAt) < Date.parse(event.startAt)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Event end cannot precede its start",
+      })
     if (
       new Set(event.photos.map((photo) => photo.assetId)).size !==
       event.photos.length
