@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { ArrowLeft, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
-import { recordingApi, RecordingApiError } from "../data/client"
+import { loadDraftContext } from "./context"
 import { operationId } from "../data/operation-id"
 import { journeyHref } from "../data/navigation"
 import { eventContent } from "../ui/event-content"
@@ -24,24 +24,11 @@ export default function Draftbox() {
   useEffect(() => {
     let disposed = false
     async function load() {
-      let saved = await draftStorage.context()
-      try {
-        const account = await recordingApi.account()
-        const journeys = await recordingApi.list()
-        saved = {
-          userId: account.userId,
-          journeys: journeys.map(({ id, title }) => ({ id, title })),
-        }
-        await draftStorage.remember(saved)
-      } catch (cause) {
-        if (cause instanceof RecordingApiError && cause.status !== 401)
-          throw cause
-      }
-      if (!saved)
-        throw new Error("请先联网登录并打开一次游记，再使用本机草稿。")
-      const items = await draftStorage.list(saved.userId)
+      const result = await loadDraftContext()
+      const items = await draftStorage.list(result.context.userId)
       if (!disposed) {
-        setContext(saved)
+        setContext(result.context)
+        setError(result.error)
         setDrafts(items)
         const requested = new URLSearchParams(window.location.search).get(
           "draft"

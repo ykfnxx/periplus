@@ -139,7 +139,10 @@ export default function JourneyLibrary({
         />
       </div>
       <div className="absolute top-5 right-16 z-20 rounded-lg bg-white">
-        <DraftEntry userId={userId} journeys={journeys} />
+        <DraftEntry
+          userId={userId}
+          journeys={loading || error ? undefined : journeys}
+        />
       </div>
       <Button
         variant="ghost"

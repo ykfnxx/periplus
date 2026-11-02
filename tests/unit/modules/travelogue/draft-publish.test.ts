@@ -206,6 +206,42 @@ describe("durable draft submission", () => {
     expect(saved).toBeUndefined()
   })
 
+  it("finishes the confirmed event after a rejected photo is replaced, retaining uploaded assets", async () => {
+    saved!.eventId = journey.events[0].id
+    saved!.photos = [
+      {
+        id: "uploaded",
+        file: new File(["good"], "good.png"),
+        assetId: "asset-good",
+      },
+      { id: "rejected", file: new File(["large"], "large.png") },
+    ]
+    api.upload.mockRejectedValueOnce(
+      new RecordingApiError("File exceeds limit", 400, "INVALID_INPUT")
+    )
+    await expect(
+      publishDraft("local-draft", "writer", api, storage)
+    ).rejects.toThrow("File exceeds limit")
+    saved!.photos = [
+      saved!.photos[0],
+      { id: "replacement", file: new File(["small"], "small.png") },
+    ]
+    await publishDraft("local-draft", "writer", api, storage)
+    expect(api.upload.mock.calls.map((call) => call[1])).toEqual([
+      "rejected",
+      "replacement",
+    ])
+    expect(api.command).toHaveBeenCalledTimes(1)
+    expect(api.command.mock.calls[0][1].command).toMatchObject({
+      name: "photos.set",
+      eventId: journey.events[0].id,
+      photos: [
+        { assetId: "asset-good", caption: "" },
+        { assetId: "asset-1", caption: "" },
+      ],
+    })
+  })
+
   it("clears an acknowledged completion without issuing another mutation", async () => {
     saved!.eventId = "saved-event"
     saved!.complete = true

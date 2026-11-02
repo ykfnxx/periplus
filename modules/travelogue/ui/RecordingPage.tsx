@@ -20,6 +20,7 @@ export default function RecordingPage({
   const router = useRouter()
   const query = useSearchParams()
   const [directoryError, setDirectoryError] = useState<string | null>(null)
+  const [directoryLoading, setDirectoryLoading] = useState(true)
   const [reloadDirectory, setReloadDirectory] = useState(0)
   const [journeys, setJourneys] = useState<JourneySummary[]>([])
   const [initialRequest] = useState<JourneyOpenRequest>(() => {
@@ -53,6 +54,7 @@ export default function RecordingPage({
   }, [store])
   useEffect(() => {
     let disposed = false
+    setDirectoryLoading(true)
     recordingApi
       .list()
       .then((items) => {
@@ -67,6 +69,9 @@ export default function RecordingPage({
             cause instanceof Error ? cause.message : "目录打开失败"
           )
       })
+      .finally(() => {
+        if (!disposed) setDirectoryLoading(false)
+      })
     return () => {
       disposed = true
     }
@@ -76,6 +81,7 @@ export default function RecordingPage({
       userId={userId}
       journeys={journeys}
       directoryError={directoryError}
+      directoryLoading={directoryLoading}
       onRetryDirectory={() => setReloadDirectory((value) => value + 1)}
       initialRequest={initialRequest}
       onRequestHandled={() =>

@@ -32,6 +32,7 @@ export default function EventComposer({
   photos,
   uploads,
   busy,
+  filesBusy = busy,
   onChange,
   onFiles,
   onPickLocation,
@@ -43,6 +44,7 @@ export default function EventComposer({
   photos: EventPhoto[]
   uploads: RecordUpload[]
   busy: boolean
+  filesBusy?: boolean
   onChange: (draft: EventDraft) => void
   onFiles: (files: File[]) => void
   onPickLocation: () => void
@@ -254,7 +256,7 @@ export default function EventComposer({
                 variant="secondary"
                 shape="circle"
                 size="xs"
-                disabled={busy}
+                disabled={filesBusy}
                 className="absolute top-1 right-1"
                 onClick={() => onFiles(files.filter((_, i) => i !== index))}
               >
@@ -266,7 +268,7 @@ export default function EventComposer({
       )}
       <Button
         variant="ghost"
-        disabled={busy}
+        disabled={filesBusy}
         onClick={() => input.current?.click()}
         className="mt-3 mb-4 gap-2! px-0! text-journal-muted!"
       >
@@ -279,6 +281,7 @@ export default function EventComposer({
         accept="image/*"
         multiple
         hidden
+        disabled={filesBusy}
         onChange={(event) => {
           onFiles([...files, ...Array.from(event.target.files || [])])
           event.target.value = ""
