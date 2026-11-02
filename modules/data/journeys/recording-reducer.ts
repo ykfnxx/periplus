@@ -47,16 +47,14 @@ export function blankEvent(
 }
 export function applyEventPatch(event: JourneyEvent, patch: EventInput) {
   const previousLocation = JSON.stringify(event.location)
+  const clockChanged = (["date", "time", "timeZone"] as const).some(
+    (field) => patch[field] !== undefined && patch[field] !== event[field]
+  )
   const category =
     patch.category === undefined ? event.category : patch.category
   for (const [field, value] of Object.entries(patch)) {
     if (field === "planning" && value !== null) {
-      const { startAt, endAt, ...fields } = patch.planning!
-      event.planning = { ...event.planning, ...fields }
-      if (startAt === null) delete event.planning.startAt
-      else if (startAt !== undefined) event.planning.startAt = startAt
-      if (endAt === null) delete event.planning.endAt
-      else if (endAt !== undefined) event.planning.endAt = endAt
+      event.planning = { ...event.planning, ...patch.planning }
       continue
     }
     if (field === "hotel" && value !== null) {
@@ -84,13 +82,22 @@ export function applyEventPatch(event: JourneyEvent, patch: EventInput) {
     }
     if (
       value === null &&
-      ["planning", "hotel", "transit", "cuisine", "bookingReference"].includes(
-        field
-      )
+      [
+        "startAt",
+        "endAt",
+        "planning",
+        "hotel",
+        "transit",
+        "cuisine",
+        "bookingReference",
+      ].includes(field)
     )
       delete (event as unknown as Record<string, unknown>)[field]
     else (event as unknown as Record<string, unknown>)[field] = value
   }
+  // A resolved instant belongs to this local clock. An edit without a newly
+  // resolved start must not retain the previous clock's instant.
+  if (clockChanged && patch.startAt === undefined) delete event.startAt
   if (JSON.stringify(event.location) !== previousLocation) {
     if (event.planning)
       for (const field of [

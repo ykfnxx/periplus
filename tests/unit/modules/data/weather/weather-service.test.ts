@@ -322,7 +322,7 @@ describe.sequential("independent event weather and PostgreSQL races", () => {
       journey = await write(journey, {
         name: "event.update",
         eventId,
-        patch: { planning: { startAt } },
+        patch: { startAt },
       })
       expect(
         (await getJourneyWeather(owner, journey.id)).events[0].weather
@@ -331,7 +331,7 @@ describe.sequential("independent event weather and PostgreSQL races", () => {
     journey = await write(journey, {
       name: "event.update",
       eventId,
-      patch: { planning: { startAt: null } },
+      patch: { startAt: null },
     })
     expect(
       await prisma.eventWeather.count({ where: { journeyId: journey.id } })
