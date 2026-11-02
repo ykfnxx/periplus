@@ -1004,7 +1004,8 @@ body {
   z-index: 24;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Moving dial items must not scroll the curtain when they receive focus. */
+  overflow: clip;
   pointer-events: none;
 }
 .journal-curtain-dial {
