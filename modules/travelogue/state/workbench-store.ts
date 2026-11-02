@@ -9,6 +9,7 @@ export const createWorkbenchStore = () =>
   createStore(() => ({
     picking: null as { location: EventLocation | null } | null,
     selected: null as string | null,
+    view: "list" as "list" | "timeline",
     focusId: 0,
     activeDay: null as string | null,
     dialog: null as EventWindowRequest | null,

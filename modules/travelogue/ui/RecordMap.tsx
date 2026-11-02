@@ -75,6 +75,7 @@ export default function RecordMap({
   focusId?: number
 }) {
   const restoredViewport = useRef(initialViewport)
+  const framed = useRef(false)
   const viewportListener = useRef(onViewport)
   useEffect(() => {
     viewportListener.current = onViewport
@@ -312,6 +313,7 @@ export default function RecordMap({
       (photo) => photo.eventId === selectedEventId
     )
     if (routeBounds.length) {
+      framed.current = true
       map.setFitView(
         routeBounds.map((position) => new AMap.Marker({ position })),
         false,
@@ -320,13 +322,15 @@ export default function RecordMap({
       )
       return
     }
-    if (selectedEventId && !selected && !selectedPhoto) return
+    if (selectedEventId && !selected && !selectedPhoto && framed.current) return
     // 将定位点放进浮窗外的可见地图区域；列表滚动、正文修订不触发重新定位。
     if (selected || selectedPhoto || all.length === 1) {
+      framed.current = true
       const point = selected || selectedPhoto?.coordinate || all[0]
       map.setZoomAndCenter(14, [point.lng, point.lat])
       map.panBy((left - right) / 2, (top - bottom) / 2)
-    } else if (all.length)
+    } else if (all.length) {
+      framed.current = true
       map.setFitView(
         all.map(
           (point) => new AMap.Marker({ position: [point.lng, point.lat] })
@@ -335,6 +339,7 @@ export default function RecordMap({
         [top + (photos.length ? 130 : 0), bottom + 24, left + 72, right + 72],
         14
       )
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, positionKey, focusId, left, right, top, bottom])
   useEffect(() => {

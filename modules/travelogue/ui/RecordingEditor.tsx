@@ -13,7 +13,7 @@ import dynamic from "next/dynamic"
 import { DragDropProvider, PointerSensor, KeyboardSensor } from "@dnd-kit/react"
 import { PointerActivationConstraints } from "@dnd-kit/dom"
 import { isSortable } from "@dnd-kit/react/sortable"
-import { ArrowLeft, Plus } from "lucide-react"
+import { ArrowLeft, Plus, List, ChartNoAxesColumn } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type {
   JourneySummary,
@@ -25,6 +25,11 @@ import type { RecordingStore } from "../state/recording-store"
 import { createWorkbenchStore } from "../state/workbench-store"
 import ResizableMapPanel from "./workbench/ResizableMapPanel"
 import EventCard from "./workbench/EventCard"
+import EventTimeline from "./workbench/EventTimeline"
+import MobileTimelineCurtain, {
+  collapsedCurtainHeight,
+  expandedCurtainHeight,
+} from "./workbench/MobileTimelineCurtain"
 import EventEditor from "./workbench/EventEditor"
 import EventDetails from "./workbench/EventDetails"
 import JourneyMenu from "./workbench/JourneyMenu"
@@ -102,6 +107,7 @@ export default function RecordingEditor({
   const {
     picking,
     selected,
+    view,
     focusId,
     activeDay,
     dialog,
@@ -116,7 +122,11 @@ export default function RecordingEditor({
     photoViewer,
   } = useStore(ui)
   const { desktop, height, width } = useRecordingViewport()
+  const timeline = view === "timeline"
+  const selectedEntry =
+    journey?.events.find((entry) => entry.id === selected) || journey?.events[0]
   const details = journey?.events.find((entry) => entry.id === detailsId)
+  const hasDetails = Boolean(details)
   const receiptEvent = journey?.events.find(
     (entry) => entry.id === receiptDetails?.eventId
   )
@@ -200,15 +210,26 @@ export default function RecordingEditor({
         : Math.round(height * 0.8)
   const insets = useMemo(
     () =>
-      desktop
+      timeline
         ? {
-            left: Math.min(width * 0.65, panelWidth + 36),
+            left: desktop && hasDetails ? 468 : 24,
             right: 64,
-            top: 40,
-            bottom: 28,
+            top: 96,
+            bottom: desktop
+              ? 210
+              : (hasDetails
+                  ? expandedCurtainHeight(height)
+                  : collapsedCurtainHeight) + 16,
           }
-        : { left: 24, right: 60, top: 68, bottom: sheetHeight + 16 },
-    [desktop, panelWidth, sheetHeight, width]
+        : desktop
+          ? {
+              left: Math.min(width * 0.65, panelWidth + 36),
+              right: 64,
+              top: 40,
+              bottom: 28,
+            }
+          : { left: 24, right: 60, top: 68, bottom: sheetHeight + 16 },
+    [timeline, desktop, hasDetails, height, panelWidth, sheetHeight, width]
   )
   useEffect(() => {
     if (!saving && !uploads.length) return
@@ -222,7 +243,15 @@ export default function RecordingEditor({
       focusId: current.focusId + (fromMap ? 0 : 1),
       sheet: fromMap && current.sheet === "small" ? "half" : current.sheet,
     }))
-    if (fromMap)
+    if (timeline && detailsId)
+      ui.setState({
+        detailsId:
+          journey?.events.find((event) => event.id === id)?.category ===
+          "TRANSIT"
+            ? null
+            : id,
+      })
+    if (fromMap && !timeline)
       document
         .getElementById(`record-${id}`)
         ?.scrollIntoView({ block: "nearest", behavior: "smooth" })
@@ -291,7 +320,17 @@ export default function RecordingEditor({
     }
     try {
       await store.getState().mutate({ name: "event.remove", eventId: entry.id })
-      if (ui.getState().selected === entry.id) ui.setState({ selected: null })
+      if (ui.getState().selected === entry.id) {
+        ui.setState({ selected: null, detailsId: null })
+        if (timeline)
+          requestAnimationFrame(() =>
+            document
+              .querySelector<HTMLButtonElement>(
+                ".journal-timeline-item[aria-current]"
+              )
+              ?.focus({ preventScroll: true })
+          )
+      }
     } catch {
       /* The store displays the mutation error in the list. */
     }
@@ -311,19 +350,136 @@ export default function RecordingEditor({
     )
     if (entry) ui.setState({ activeDay: entry.date })
   }
+  function changeView(next: "list" | "timeline") {
+    if (next === view) return
+    ui.setState({ view: next, detailsId: null })
+    if (next === "list" && selected)
+      requestAnimationFrame(() =>
+        document
+          .getElementById(`record-${selected}`)
+          ?.scrollIntoView({ block: "center" })
+      )
+  }
+  function closeTimelineDetails() {
+    ui.setState({ detailsId: null })
+    requestAnimationFrame(() =>
+      document
+        .getElementById(`timeline-${ui.getState().selected}`)
+        ?.focus({ preventScroll: true })
+    )
+  }
+  const detailContent = (entry: JourneyEvent, embedded = false) => (
+    <EventDetails
+      key={entry.id}
+      entry={entry}
+      panel={timeline}
+      embedded={embedded}
+      onClose={
+        timeline ? closeTimelineDetails : () => ui.setState({ detailsId: null })
+      }
+      onReceipt={(assetId) =>
+        ui.setState({ receiptDetails: { eventId: entry.id, assetId } })
+      }
+      onAddPhotos={
+        canEdit
+          ? () => {
+              setPhotoDirty(false)
+              ui.setState({ photoPanelId: entry.id })
+            }
+          : undefined
+      }
+      onAddReceipt={
+        canEdit
+          ? () => ui.setState({ receiptImport: { eventId: entry.id } })
+          : undefined
+      }
+    />
+  )
+  const heading = (
+    <div className="journal-heading flex min-w-0 items-center gap-1">
+      <Button
+        variant="ghost"
+        shape="square"
+        className="shrink-0 text-journal-muted!"
+        aria-label="返回全部游记"
+        onClick={() => void leave(onBack)}
+      >
+        <ArrowLeft size={16} />
+      </Button>
+      <div className="min-w-0 flex-1">
+        {onOpenJourney ? (
+          <JourneyMenu
+            error={directoryError}
+            onRetry={onRetryDirectory}
+            title={journey?.title || "游记"}
+            journeys={journeys}
+            open={directory}
+            onOpenChange={setDirectory}
+            onOpen={(id) => void leave(() => onOpenJourney(id))}
+            onCreate={() => void leave(onBack)}
+          />
+        ) : (
+          <h1 className="truncate text-lg font-semibold">
+            {journey?.title || "游记"}
+          </h1>
+        )}
+      </div>
+      {canEdit && (
+        <Button
+          variant="primary"
+          shape="square"
+          className="journal-write shrink-0"
+          title="添加记录"
+          disabled={!journey || loading}
+          aria-label="添加记录"
+          onClick={() => openEditor(null, journey?.events.at(-1)?.id || null)}
+        >
+          <Plus size={16} />
+        </Button>
+      )}
+      {canEdit && journey && (
+        <RecordingMenu
+          onReceipt={() => ui.setState({ receiptImport: { eventId: null } })}
+          onMembers={() => ui.setState({ members: true })}
+          onSettings={
+            isOwner ? () => ui.setState({ metadata: true }) : undefined
+          }
+        />
+      )}
+    </div>
+  )
+  const rail = (
+    <EventTimeline
+      events={journey?.events || []}
+      selectedId={selectedEntry?.id || null}
+      compact={!desktop}
+      canEdit={canEdit}
+      loading={loading}
+      onSelect={(id) => select(id)}
+      onOpen={(event) =>
+        ui.setState({
+          detailsId: event.category === "TRANSIT" ? null : event.id,
+        })
+      }
+      onEdit={(event) => openEditor(event.id)}
+      onRemove={(event) => void removeEvent(event)}
+    />
+  )
   return (
     <main
       data-picking={!!picking}
+      data-view={view}
       className="journal-workbench fixed inset-0 isolate overflow-hidden bg-cream text-ink"
       style={
         {
           "--journal-map-bottom":
-            !desktop && !picking ? `${sheetHeight}px` : "0px",
-          "--journal-map-left": desktop ? `${panelWidth + 36}px` : "4px",
+            !desktop && !picking && !timeline ? `${sheetHeight}px` : "0px",
+          "--journal-map-left":
+            desktop && !timeline ? `${panelWidth + 36}px` : "4px",
         } as CSSProperties
       }
     >
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 z-0">
         {mapPreview || (
           <RecordMap
             events={journey?.events}
@@ -332,7 +488,7 @@ export default function RecordingEditor({
             onOpenPhotos={(ids) =>
               ui.setState({ photoViewer: { ids, index: 0 } })
             }
-            selectedEventId={selected}
+            selectedEventId={timeline ? selectedEntry?.id : selected}
             onSelect={(id) => select(id, true)}
             insets={insets}
             request={mapRequest}
@@ -382,187 +538,195 @@ export default function RecordingEditor({
         className={picking ? "pointer-events-none hidden md:block" : ""}
       >
         {developerMode && <p className="sr-only">共用调试数据</p>}
-        <ResizableMapPanel
-          recording
-          width={420}
-          onWidth={(panelWidth) => ui.setState({ panelWidth })}
-          sheet={sheet}
-          onSheet={(sheet) => ui.setState({ sheet })}
+        <div
+          className="journal-view-switch"
+          role="group"
+          aria-label="游记展示方式"
         >
-          <header className="journal-dates shrink-0">
-            <div className="journal-heading flex min-w-0 items-center gap-1">
-              <Button
-                variant="ghost"
-                shape="square"
-                className="shrink-0 text-journal-muted!"
-                aria-label="返回全部游记"
-                onClick={() => void leave(onBack)}
-              >
-                <ArrowLeft size={16} />
-              </Button>
-              <div className="min-w-0 flex-1">
-                {onOpenJourney ? (
-                  <JourneyMenu
-                    error={directoryError}
-                    onRetry={onRetryDirectory}
-                    title={journey?.title || "游记"}
-                    journeys={journeys}
-                    open={directory}
-                    onOpenChange={setDirectory}
-                    onOpen={(id) => void leave(() => onOpenJourney(id))}
-                    onCreate={() => void leave(onBack)}
-                  />
-                ) : (
-                  <h1 className="truncate text-lg font-semibold">
-                    {journey?.title || "游记"}
-                  </h1>
-                )}
-              </div>
-              {canEdit && (
-                <Button
-                  variant="primary"
-                  shape="square"
-                  className="journal-write shrink-0"
-                  title="添加记录"
-                  disabled={!journey || loading}
-                  aria-label="添加记录"
-                  onClick={() =>
-                    openEditor(null, journey?.events.at(-1)?.id || null)
-                  }
-                >
-                  <Plus size={16} />
-                </Button>
-              )}
-              {canEdit && journey && (
-                <RecordingMenu
-                  onReceipt={() =>
-                    ui.setState({ receiptImport: { eventId: null } })
-                  }
-                  onMembers={() => ui.setState({ members: true })}
-                  onSettings={
-                    isOwner ? () => ui.setState({ metadata: true }) : undefined
-                  }
-                />
-              )}
-            </div>
-            <nav
-              aria-label="记录日期"
-              className="mt-3 flex gap-2 overflow-x-auto py-1"
-            >
-              {days.map((day) => (
-                <Button
-                  key={day.key}
-                  size="sm"
-                  variant={
-                    (activeDay || days[0]?.key) === day.key
-                      ? "primary"
-                      : "secondary"
-                  }
-                  className="shrink-0 rounded-lg"
-                  aria-pressed={(activeDay || days[0]?.key) === day.key}
-                  onClick={() => {
-                    ui.setState({ activeDay: day.key })
-                    document
-                      .getElementById(`record-${day.first}`)
-                      ?.scrollIntoView({ block: "start", behavior: "smooth" })
-                  }}
-                >
-                  {dateLabel(day.key)}
-                </Button>
-              ))}
-            </nav>
-          </header>
-          <div
-            ref={list}
-            onScroll={updateDay}
-            className="journal-list min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-9 md:px-10"
+          <Button
+            variant={timeline ? "ghost" : "primary"}
+            aria-pressed={!timeline}
+            onClick={() => changeView("list")}
           >
-            {error && (
-              <div role="alert" className="my-4 text-sm text-coral">
-                <p>{error}</p>
+            <List size={17} />
+            列表
+          </Button>
+          <Button
+            variant={timeline ? "primary" : "ghost"}
+            aria-pressed={timeline}
+            onClick={() => changeView("timeline")}
+          >
+            <ChartNoAxesColumn size={17} />
+            时间轴
+          </Button>
+        </div>
+        {timeline ? (
+          <>
+            <header className="journal-timeline-heading">{heading}</header>
+            {(error || conflict) && (
+              <div role="alert" className="journal-timeline-notice">
+                <p>{error || "旅程已有其他修改，请重新读取。"}</p>
                 <Button
                   variant="secondary"
-                  className="mt-2"
                   onClick={() => void store.getState().load()}
                 >
                   重新读取
                 </Button>
               </div>
             )}
-            {conflict && (
-              <p className="my-3 text-xs leading-5 text-walnut">
-                旅程已有其他修改。重新读取后再继续，未保存输入保留在编辑窗中。
-              </p>
-            )}
-            <div className="flex flex-col gap-7">
-              <DragDropProvider
-                sensors={cardSensors}
-                onDragEnd={(event) => {
-                  const source = event.operation.source
-                  if (
-                    event.canceled ||
-                    !isSortable(source) ||
-                    source.initialIndex === source.index ||
-                    !journey ||
-                    !isOwner
-                  )
-                    return
-                  const handle = source.handle || source.element
-                  const keyboard =
-                    event.operation.activatorEvent instanceof KeyboardEvent
-                  const remaining = journey.events.filter(
-                    (entry) => entry.id !== source.id
-                  )
-                  const afterEventId =
-                    source.index === 0
-                      ? null
-                      : remaining[source.index - 1]?.id || null
-                  void store
-                    .getState()
-                    .mutate({
-                      name: "event.move",
-                      eventId: String(source.id),
-                      afterEventId,
-                    })
-                    .catch(() => {})
-                    .finally(() => {
-                      if (keyboard)
-                        requestAnimationFrame(
-                          () =>
-                            handle instanceof HTMLElement &&
-                            handle.focus({ preventScroll: true })
-                        )
-                    })
+            {desktop ? (
+              rail
+            ) : (
+              <MobileTimelineCurtain
+                open={hasDetails}
+                canOpen={Boolean(
+                  selectedEntry && selectedEntry.category !== "TRANSIT"
+                )}
+                viewportHeight={height}
+                onOpen={() => {
+                  if (selectedEntry && selectedEntry.category !== "TRANSIT") {
+                    select(selectedEntry.id)
+                    ui.setState({ detailsId: selectedEntry.id })
+                  }
                 }}
+                onClose={closeTimelineDetails}
+                timeline={rail}
               >
-                {journey?.events.map((entry, index) => (
-                  <EventCard
-                    key={entry.id}
-                    entry={entry}
-                    index={index}
-                    selected={selected === entry.id}
-                    canEdit={canEdit && entry.canEdit === true}
-                    canRemove={canEdit && entry.canRemove === true}
-                    canMove={isOwner}
-                    onReceipt={(assetId) =>
-                      ui.setState({
-                        receiptDetails: { eventId: entry.id, assetId },
-                      })
+                {selectedEntry && selectedEntry.category !== "TRANSIT"
+                  ? detailContent(selectedEntry, true)
+                  : null}
+              </MobileTimelineCurtain>
+            )}
+          </>
+        ) : (
+          <ResizableMapPanel
+            recording
+            width={420}
+            onWidth={(panelWidth) => ui.setState({ panelWidth })}
+            sheet={sheet}
+            onSheet={(sheet) => ui.setState({ sheet })}
+          >
+            <header className="journal-dates shrink-0">
+              {heading}
+              <nav
+                aria-label="记录日期"
+                className="mt-3 flex gap-2 overflow-x-auto py-1"
+              >
+                {days.map((day) => (
+                  <Button
+                    key={day.key}
+                    size="sm"
+                    variant={
+                      (activeDay || days[0]?.key) === day.key
+                        ? "primary"
+                        : "secondary"
                     }
-                    onSelect={() => select(entry.id)}
-                    onExpand={(photoIndex) => expand(entry.id, photoIndex)}
-                    onEdit={() => openEditor(entry.id)}
-                    onRemove={() => void removeEvent(entry)}
-                    onRead={() => {
-                      if (entry.category !== "TRANSIT")
-                        ui.setState({ detailsId: entry.id })
+                    className="shrink-0 rounded-lg"
+                    aria-pressed={(activeDay || days[0]?.key) === day.key}
+                    onClick={() => {
+                      ui.setState({ activeDay: day.key })
+                      document
+                        .getElementById(`record-${day.first}`)
+                        ?.scrollIntoView({ block: "start", behavior: "smooth" })
                     }}
-                  />
+                  >
+                    {dateLabel(day.key)}
+                  </Button>
                 ))}
-              </DragDropProvider>
+              </nav>
+            </header>
+            <div
+              ref={list}
+              onScroll={updateDay}
+              className="journal-list min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-9 md:px-10"
+            >
+              {error && (
+                <div role="alert" className="my-4 text-sm text-coral">
+                  <p>{error}</p>
+                  <Button
+                    variant="secondary"
+                    className="mt-2"
+                    onClick={() => void store.getState().load()}
+                  >
+                    重新读取
+                  </Button>
+                </div>
+              )}
+              {conflict && (
+                <p className="my-3 text-xs leading-5 text-walnut">
+                  旅程已有其他修改。重新读取后再继续，未保存输入保留在编辑窗中。
+                </p>
+              )}
+              <div className="flex flex-col gap-7">
+                <DragDropProvider
+                  sensors={cardSensors}
+                  onDragEnd={(event) => {
+                    const source = event.operation.source
+                    if (
+                      event.canceled ||
+                      !isSortable(source) ||
+                      source.initialIndex === source.index ||
+                      !journey ||
+                      !isOwner
+                    )
+                      return
+                    const handle = source.handle || source.element
+                    const keyboard =
+                      event.operation.activatorEvent instanceof KeyboardEvent
+                    const remaining = journey.events.filter(
+                      (entry) => entry.id !== source.id
+                    )
+                    const afterEventId =
+                      source.index === 0
+                        ? null
+                        : remaining[source.index - 1]?.id || null
+                    void store
+                      .getState()
+                      .mutate({
+                        name: "event.move",
+                        eventId: String(source.id),
+                        afterEventId,
+                      })
+                      .catch(() => {})
+                      .finally(() => {
+                        if (keyboard)
+                          requestAnimationFrame(
+                            () =>
+                              handle instanceof HTMLElement &&
+                              handle.focus({ preventScroll: true })
+                          )
+                      })
+                  }}
+                >
+                  {journey?.events.map((entry, index) => (
+                    <EventCard
+                      key={entry.id}
+                      entry={entry}
+                      index={index}
+                      selected={selected === entry.id}
+                      canEdit={canEdit && entry.canEdit === true}
+                      canRemove={canEdit && entry.canRemove === true}
+                      canMove={isOwner}
+                      onReceipt={(assetId) =>
+                        ui.setState({
+                          receiptDetails: { eventId: entry.id, assetId },
+                        })
+                      }
+                      onSelect={() => select(entry.id)}
+                      onExpand={(photoIndex) => expand(entry.id, photoIndex)}
+                      onEdit={() => openEditor(entry.id)}
+                      onRemove={() => void removeEvent(entry)}
+                      onRead={() => {
+                        if (entry.category !== "TRANSIT")
+                          ui.setState({ detailsId: entry.id })
+                      }}
+                    />
+                  ))}
+                </DragDropProvider>
+              </div>
             </div>
-          </div>
-        </ResizableMapPanel>
+          </ResizableMapPanel>
+        )}
         {photoViewer && viewerPhotos.length > 0 && (
           <PhotoViewer
             photos={viewerPhotos}
@@ -589,29 +753,11 @@ export default function RecordingEditor({
           onRemove={() => finishPick(null)}
         />
       )}
-      {details && details.category !== "TRANSIT" && (
-        <EventDetails
-          key={details.id}
-          entry={details}
-          onClose={() => ui.setState({ detailsId: null })}
-          onReceipt={(assetId) =>
-            ui.setState({ receiptDetails: { eventId: details.id, assetId } })
-          }
-          onAddPhotos={
-            canEdit
-              ? () => {
-                  setPhotoDirty(false)
-                  ui.setState({ photoPanelId: details.id })
-                }
-              : undefined
-          }
-          onAddReceipt={
-            canEdit
-              ? () => ui.setState({ receiptImport: { eventId: details.id } })
-              : undefined
-          }
-        />
-      )}
+      {details &&
+        details.category !== "TRANSIT" &&
+        !picking &&
+        (desktop || !timeline) &&
+        detailContent(details)}
       {dialog && canEdit && (
         <EventEditor
           store={store}
@@ -619,7 +765,7 @@ export default function RecordingEditor({
           onPickLocation={pickLocation}
           onClose={() => ui.setState({ dialog: null })}
           onSaved={(id) => {
-            ui.setState({ selected: id })
+            select(id)
             requestAnimationFrame(() =>
               document
                 .getElementById(`record-${id}`)
@@ -738,7 +884,8 @@ export default function RecordingEditor({
           }}
           onClose={() => ui.setState({ receiptImport: null })}
           onSaved={(eventId) => {
-            ui.setState({ receiptImport: null, selected: eventId })
+            ui.setState({ receiptImport: null })
+            select(eventId)
             requestAnimationFrame(() =>
               document
                 .getElementById(`record-${eventId}`)
