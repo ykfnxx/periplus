@@ -22,10 +22,9 @@ export const eventCardJourney: JourneySnapshot = {
       date: "2026-10-18",
       time: "10:20",
       timeZone: "Asia/Shanghai",
-      planning: {
-        startAt: "2026-10-18T10:20:00+08:00",
-        endAt: "2026-10-18T11:00:00+08:00",
-      },
+      startAt: "2026-10-18T10:20:00+08:00",
+      endAt: "2026-10-18T11:00:00+08:00",
+      planning: undefined,
       transit: {
         fromName: "长桥",
         toName: "灵隐寺",

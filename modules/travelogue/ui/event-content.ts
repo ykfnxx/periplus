@@ -4,8 +4,9 @@ import type {
   JourneyEvent,
 } from "@/modules/data-model/contracts"
 
-export type EventDraft = EventContent & {
-  planning: { startAt: string | null; endAt: string | null }
+export type EventDraft = Omit<EventContent, "startAt" | "endAt"> & {
+  startAt: string | null
+  endAt: string | null
   transit: EventInput["transit"]
 }
 
@@ -20,10 +21,8 @@ export function eventContent(event?: JourneyEvent): EventDraft {
       ? event.timeZone
       : Intl.DateTimeFormat().resolvedOptions().timeZone,
     location: event?.location ?? null,
-    planning: {
-      startAt: event?.planning?.startAt ?? null,
-      endAt: event?.planning?.endAt ?? null,
-    },
+    startAt: event?.startAt ?? null,
+    endAt: event?.endAt ?? null,
     transit: event?.transit
       ? {
           fromName: event.transit.fromName,
@@ -41,9 +40,7 @@ export function eventContent(event?: JourneyEvent): EventDraft {
   }
 }
 
-type EventDraftPatch = Partial<Omit<EventDraft, "planning">> & {
-  planning?: Partial<EventDraft["planning"]>
-}
+type EventDraftPatch = Partial<EventDraft>
 
 export function eventContentPatch(
   draft: EventDraft,
@@ -55,7 +52,7 @@ export function eventContentPatch(
     if (JSON.stringify(value) === JSON.stringify(previous)) continue
     // Save only the edited nested fields so rereading a concurrent change does
     // not overwrite another author's time or transit facts.
-    if ((key === "planning" || key === "transit") && value && previous) {
+    if (key === "transit" && value && previous) {
       patch[key] = Object.fromEntries(
         Object.entries(value).filter(
           ([field, next]) =>

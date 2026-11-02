@@ -1,11 +1,9 @@
 import type { JourneyEvent } from "@/modules/data-model/contracts"
-import { eventInstantLabel } from "@/lib/journeys/calendar"
 import {
   formatTransitDistance,
   formatTransitDuration,
   transitModeLabel,
 } from "@/lib/journeys/display"
-import { hasAdditionalEventTimes } from "../event-card-display"
 
 export default function EventPlanning({ event }: { event: JourneyEvent }) {
   const plan =
@@ -59,33 +57,6 @@ export default function EventPlanning({ event }: { event: JourneyEvent }) {
               }[event.executionStatus]
             }
           </div>
-        )}
-        {hasAdditionalEventTimes(event) && (
-          <details className="journal-time-details">
-            <summary>
-              {event.actualStartAt ? "计划与实际时间" : "时间详情"}
-            </summary>
-            <div className="mt-2 space-y-1">
-              {event.planning?.startAt && (
-                <div>
-                  计划时间：
-                  {eventInstantLabel(event.planning.startAt, event.timeZone)}
-                  {event.planning.endAt
-                    ? ` — ${eventInstantLabel(event.planning.endAt, event.timeZone)}`
-                    : ""}
-                </div>
-              )}
-              {event.actualStartAt && (
-                <div>
-                  实际时间：
-                  {eventInstantLabel(event.actualStartAt, event.timeZone)}
-                  {event.actualEndAt
-                    ? ` — ${eventInstantLabel(event.actualEndAt, event.timeZone)}`
-                    : ""}
-                </div>
-              )}
-            </div>
-          </details>
         )}
         {plan && (
           <ol className="space-y-2" aria-label="交通路线明细">
