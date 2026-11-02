@@ -75,7 +75,13 @@ export default function MobileTimelineCurtain({
 
   const dragHandlers = {
     onPointerDownCapture(event: PointerEvent<HTMLDivElement>) {
-      if (event.button !== 0 || !canOpen) return
+      // Photo portals still reach React capture handlers, outside this DOM area.
+      if (
+        event.button !== 0 ||
+        !canOpen ||
+        !event.currentTarget.contains(event.target as Node)
+      )
+        return
       dragged.current = false
       pointer.current = {
         id: event.pointerId,
@@ -140,6 +146,7 @@ export default function MobileTimelineCurtain({
       setDragging(false)
     },
     onClickCapture(event: MouseEvent<HTMLDivElement>) {
+      if (!event.currentTarget.contains(event.target as Node)) return
       const dragClick = dragged.current && event.detail > 0
       dragged.current = false
       if (dragClick) {
