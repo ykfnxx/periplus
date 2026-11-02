@@ -126,7 +126,7 @@ describe("draft entry preparation", () => {
     rerender(<DraftEntry userId="A" journeys={a.journeys} />)
     await waitFor(() => expect(draftStorage.remember).toHaveBeenCalledWith(a))
     rerender(<DraftEntry userId="A" />)
-    await waitFor(() => expect(draftStorage.activate).toHaveBeenCalledTimes(3))
+    expect(draftStorage.activate).toHaveBeenCalledTimes(1)
     expect(draftStorage.remember).toHaveBeenCalledTimes(1)
   })
 
@@ -138,5 +138,21 @@ describe("draft entry preparation", () => {
         journeys: [],
       })
     )
+  })
+
+  it("does not reactivate an old page's account when its delayed directory arrives", async () => {
+    let active = ""
+    vi.mocked(draftStorage.activate).mockImplementation(async (userId) => {
+      active = userId
+      return "active-user"
+    })
+    const oldPage = render(<DraftEntry userId="A" />)
+    await waitFor(() => expect(active).toBe("A"))
+    render(<DraftEntry userId="B" journeys={b.journeys} />)
+    await waitFor(() => expect(active).toBe("B"))
+    oldPage.rerender(<DraftEntry userId="A" journeys={a.journeys} />)
+    await waitFor(() => expect(draftStorage.remember).toHaveBeenCalledWith(a))
+    expect(active).toBe("B")
+    expect(draftStorage.activate).toHaveBeenCalledTimes(2)
   })
 })

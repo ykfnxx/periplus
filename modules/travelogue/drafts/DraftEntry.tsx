@@ -17,14 +17,9 @@ export default function DraftEntry({
   useEffect(() => {
     let disposed = false
     Promise.all([draftStorage.activate(userId), draftStorage.list(userId)])
-      .then(async ([, drafts]) => {
+      .then(([, drafts]) => {
         if (disposed) return
         setCount(drafts.length)
-        if (journeys !== undefined)
-          await draftStorage.remember({
-            userId,
-            journeys: journeys.map(({ id, title }) => ({ id, title })),
-          })
       })
       .catch(() => {
         if (!disposed) setError(true)
@@ -48,6 +43,21 @@ export default function DraftEntry({
       disposed = true
       window.removeEventListener("focus", refresh)
       window.removeEventListener("drafts-changed", refresh)
+    }
+  }, [userId])
+  useEffect(() => {
+    if (journeys === undefined) return
+    let disposed = false
+    void draftStorage
+      .remember({
+        userId,
+        journeys: journeys.map(({ id, title }) => ({ id, title })),
+      })
+      .catch(() => {
+        if (!disposed) setError(true)
+      })
+    return () => {
+      disposed = true
     }
   }, [userId, journeys])
   return (
