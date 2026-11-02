@@ -1,5 +1,6 @@
 "use client"
 import { useMemo, useState } from "react"
+import DraftEntry from "../drafts/DraftEntry"
 import dynamic from "next/dynamic"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
@@ -23,6 +24,7 @@ const emptyPhotos: AtlasPhoto[] = []
 const atlasInsets = { left: 32, right: 76, top: 88, bottom: 32 }
 
 export default function JourneyLibrary({
+  userId,
   journeys,
   photos = emptyPhotos,
   loading,
@@ -33,6 +35,7 @@ export default function JourneyLibrary({
   onRetry,
   developerMode = false,
 }: {
+  userId: string
   journeys: JourneyLibraryItem[]
   photos?: AtlasPhoto[]
   loading: boolean
@@ -134,6 +137,9 @@ export default function JourneyLibrary({
               : undefined
           }
         />
+      </div>
+      <div className="absolute top-5 right-16 z-20 rounded-lg bg-white">
+        <DraftEntry userId={userId} journeys={journeys} />
       </div>
       <Button
         variant="ghost"

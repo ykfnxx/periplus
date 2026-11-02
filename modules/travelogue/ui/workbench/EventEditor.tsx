@@ -1,5 +1,7 @@
 "use client"
 import RevisionReload from "./RevisionReload"
+import DraftEditor from "../../drafts/DraftEditor"
+import type { LocalDraft } from "../../drafts/storage"
 import { useEffect, useRef, useState } from "react"
 import { useStore } from "zustand"
 import { ChevronLeft } from "lucide-react"
@@ -18,12 +20,14 @@ import PhotoPanel from "./PhotoPanel"
 import { Modal, useConfirmation } from "./Modal"
 
 export default function EventEditor({
+  userId,
   store,
   request,
   onClose,
   onSaved,
   onPickLocation,
 }: {
+  userId: string
   store: RecordingStore
   request: EventWindowRequest
   onClose: () => void
@@ -48,6 +52,14 @@ export default function EventEditor({
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState("")
   const [saveKey] = useState(operationId)
+  const [localDraft] = useState<LocalDraft>(() => ({
+    id: operationId(),
+    userId,
+    journey: { id: journey!.id, title: journey!.title },
+    content: draft,
+    photos: [],
+    updatedAt: new Date().toISOString(),
+  }))
   const saveLock = useRef(false)
   const mounted = useRef(true)
   const { ask, confirmation } = useConfirmation()
@@ -182,6 +194,24 @@ export default function EventEditor({
       setBusy(false)
     }
   }
+  if (!request.eventId)
+    return (
+      <DraftEditor
+        initial={localDraft}
+        journeys={[localDraft.journey]}
+        onClose={() => {
+          window.dispatchEvent(new Event("drafts-changed"))
+          onClose()
+        }}
+        onPickLocation={onPickLocation}
+        onSaved={async (_, id) => {
+          await store.getState().load()
+          window.dispatchEvent(new Event("drafts-changed"))
+          onSaved(id)
+          onClose()
+        }}
+      />
+    )
   return (
     <>
       {!picking && (

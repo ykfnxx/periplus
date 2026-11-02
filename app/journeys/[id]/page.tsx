@@ -13,6 +13,7 @@ export default async function JourneyPage({
   const { id } = await params
   return (
     <RecordingPage
+      userId={user.userId}
       key={id}
       journeyId={id}
       developerMode={periplusServerConfig.development.bypassLogin}

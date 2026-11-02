@@ -14,8 +14,10 @@ import JourneyLibrary from "./JourneyLibrary"
 import { journeyHref } from "../data/navigation"
 
 export default function JourneyLibraryPage({
+  userId,
   developerMode = false,
 }: {
+  userId: string
   developerMode?: boolean
 }) {
   const router = useRouter()
@@ -50,6 +52,7 @@ export default function JourneyLibraryPage({
   }, [reload])
   return (
     <JourneyLibrary
+      userId={userId}
       developerMode={developerMode}
       journeys={journeys}
       photos={photos}

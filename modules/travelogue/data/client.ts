@@ -47,6 +47,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const recordingApi = {
+  account: () => request<{ userId: string }>("/api/drafts/account"),
   atlas: () => request<JourneyAtlas>("/api/journeys/map"),
   list: () => request<JourneySummary[]>("/api/journeys"),
   get: (id: string) =>
