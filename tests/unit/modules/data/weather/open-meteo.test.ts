@@ -77,13 +77,17 @@ describe("event weather input and archive matching", () => {
     }
   )
   it("uses an explicit repeated-hour instant and leaves skipped hours unmatched", () => {
-    const repeated = {
-      ...event("2025-11-02", "01:30"),
-      planning: { startAt: "2025-11-02T09:30:00.000Z" },
+    expect(eventWeatherInput(event("2025-11-02", "01:30"))).toBeNull()
+    for (const startAt of [
+      "2025-11-02T08:30:00.000Z",
+      "2025-11-02T09:30:00.000Z",
+    ]) {
+      const repeated = {
+        ...event("2025-11-02", "01:30"),
+        planning: { startAt },
+      }
+      expect(eventWeatherInput(repeated)!.instant).toBe(Date.parse(startAt))
     }
-    expect(eventWeatherInput(repeated)!.instant).toBe(
-      Date.parse(repeated.planning.startAt)
-    )
     expect(eventWeatherInput(event("2025-03-09", "02:30"))).toBeNull()
     expect(eventWeatherInput({ ...event(), timeZone: null })).toBeNull()
     expect(eventWeatherInput({ ...event(), location: null })).toBeNull()

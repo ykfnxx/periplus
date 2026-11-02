@@ -297,6 +297,50 @@ describe.sequential("independent event weather and PostgreSQL races", () => {
       "30.25"
     )
   })
+  it("leaves a repeated hour empty until an explicit instant is given and clears it again", async () => {
+    let journey = await recorded()
+    const eventId = journey.events[0].id
+    journey = await write(journey, {
+      name: "event.update",
+      eventId,
+      patch: {
+        date: "2025-11-02",
+        time: "01:30",
+        timeZone: "America/Los_Angeles",
+      },
+    })
+    const fetch = vi.fn((url: URL) => Promise.resolve(archive(url)))
+    vi.stubGlobal("fetch", fetch)
+    expect(
+      (await getJourneyWeather(owner, journey.id)).events[0].weather
+    ).toBeNull()
+    expect(fetch).not.toHaveBeenCalled()
+    for (const [startAt, matchedAt] of [
+      ["2025-11-02T08:30:00.000Z", "2025-11-02T08:00:00.000Z"],
+      ["2025-11-02T09:30:00.000Z", "2025-11-02T09:00:00.000Z"],
+    ]) {
+      journey = await write(journey, {
+        name: "event.update",
+        eventId,
+        patch: { planning: { startAt } },
+      })
+      expect(
+        (await getJourneyWeather(owner, journey.id)).events[0].weather
+      ).toMatchObject({ precision: "HOURLY", matchedAt })
+    }
+    journey = await write(journey, {
+      name: "event.update",
+      eventId,
+      patch: { planning: { startAt: null } },
+    })
+    expect(
+      await prisma.eventWeather.count({ where: { journeyId: journey.id } })
+    ).toBe(0)
+    expect(
+      (await getJourneyWeather(owner, journey.id)).events[0].weather
+    ).toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
   it("does not couple provider failure to content saves or cache a false result", async () => {
     let journey = await recorded()
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")))

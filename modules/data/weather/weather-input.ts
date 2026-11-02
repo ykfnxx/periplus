@@ -40,10 +40,12 @@ function eventInstant(event: JourneyEvent) {
     timeZoneName: "longOffset",
   })
   const localEpoch = Date.parse(`${local}:00Z`)
-  let instant = new Date(localEpoch)
-  for (let pass = 0; pass < 2; pass++) {
+  const matches = new Set<number>()
+  // Inspect offsets on both sides of the local day. A clock rollback can make
+  // two real instants match; without an explicit startAt neither is justified.
+  for (const probe of [-86_400_000, 0, 86_400_000]) {
     const offset = formatter
-      .formatToParts(instant)
+      .formatToParts(localEpoch + probe)
       .find((part) => part.type === "timeZoneName")!
       .value.replace("GMT", "")
     // Historical IANA offsets can include seconds, which an ISO offset string
@@ -53,14 +55,13 @@ function eventInstant(event: JourneyEvent) {
       .split(":")
       .map(Number)
     const direction = offset.startsWith("-") ? -1 : 1
-    instant = new Date(
+    const instant =
       localEpoch - direction * (hours * 3600 + minutes * 60 + seconds) * 1000
-    )
+    if (localWeatherTime(instant, event.timeZone) === local)
+      matches.add(instant)
   }
-  // A skipped spring-forward time has no matching historical instant.
-  return localWeatherTime(instant.getTime(), event.timeZone) === local
-    ? instant.getTime()
-    : null
+  // Skipped hours have zero matches; repeated hours have more than one.
+  return matches.size === 1 ? [...matches][0] : null
 }
 
 export function eventWeatherInput(event: JourneyEvent): WeatherInput | null {
