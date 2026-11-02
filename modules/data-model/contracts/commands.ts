@@ -19,12 +19,10 @@ import {
 export const eventInputSchema = eventContentSchema
   .partial()
   .extend({
+    startAt: instant.nullable().optional(),
+    endAt: instant.nullable().optional(),
     planning: eventPlanningSchema
-      .pick({ startAt: true, endAt: true, durationMinutes: true })
-      .extend({
-        startAt: instant.nullable().optional(),
-        endAt: instant.nullable().optional(),
-      })
+      .pick({ durationMinutes: true })
       .nullable()
       .optional(),
     hotel: z
@@ -50,8 +48,6 @@ export const eventInputSchema = eventContentSchema
     cuisine: z.string().nullable().optional(),
     bookingReference: z.string().nullable().optional(),
     executionStatus: z.enum(TARGET_EVENT_EXECUTION_STATUSES).optional(),
-    actualStartAt: instant.optional(),
-    actualEndAt: instant.optional(),
   })
   .strict()
 const eventInput = eventInputSchema
