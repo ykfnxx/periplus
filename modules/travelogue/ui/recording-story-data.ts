@@ -201,6 +201,12 @@ export const storyJourney: JourneySnapshot = {
       body: "沿着湖边走进小巷。",
       category: "TRANSIT",
       time: "18:10",
+      transit: {
+        fromName: "西湖",
+        toName: "湖边小巷",
+        transportMode: "WALK",
+        routeState: "EMPTY",
+      },
       location: null,
       photos: [],
     },

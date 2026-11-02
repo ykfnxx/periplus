@@ -640,6 +640,314 @@ body {
   box-shadow: none;
   color: var(--color-journal-muted);
 }
+
+.journal-view-switch {
+  position: absolute;
+  top: 28px;
+  right: 24px;
+  z-index: 25;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 18px;
+  background: var(--color-journal-paper-glass);
+  box-shadow: var(--shadow-journal);
+}
+.journal-view-switch button {
+  gap: 8px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+.journal-view-switch button[aria-pressed="true"] {
+  background: var(--color-journal-ink);
+  color: var(--color-white);
+}
+.journal-timeline-heading {
+  position: absolute;
+  top: 28px;
+  left: 24px;
+  z-index: 25;
+  width: min(420px, calc(100% - 260px));
+  padding: 10px 12px;
+  border-radius: 24px;
+  background: var(--color-journal-paper-glass);
+  box-shadow: var(--shadow-journal);
+}
+.journal-timeline-heading .journal-heading {
+  min-height: 44px;
+}
+.journal-timeline-heading .journal-journey-trigger {
+  background: transparent;
+  font-family: var(--font-editorial);
+  font-weight: 700;
+}
+.journal-timeline {
+  position: absolute;
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: 50%;
+  z-index: 20;
+  width: min(810px, calc(100% - 120px));
+  height: 196px;
+  transform: translateX(-50%);
+}
+.journal-timeline-glass {
+  position: absolute;
+  inset: 76px -12px 0;
+  border-radius: 50% 50% 0 0 / 30% 30% 0 0;
+  background: color-mix(in srgb, var(--color-journal-paper) 30%, transparent);
+  backdrop-filter: blur(5px);
+  mask-image:
+    linear-gradient(to right, transparent, black 15% 85%, transparent),
+    linear-gradient(to bottom, black 65%, transparent);
+  mask-composite: intersect;
+  pointer-events: none;
+}
+.journal-timeline-track {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  width: 100%;
+  height: 122px;
+  margin-left: -50%;
+  touch-action: pan-y;
+  cursor: grab;
+  mask-image: linear-gradient(to right, transparent, black 8% 92%, transparent);
+}
+.journal-timeline-track:active {
+  cursor: grabbing;
+}
+.journal-timeline-item {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 50px);
+  display: grid;
+  place-items: center;
+  width: 100px;
+  height: 100px;
+  padding: 4px;
+  border: 1px solid var(--color-journal-paper-line);
+  border-radius: 12px;
+  background: var(--color-journal-paper);
+  color: var(--color-journal-amber);
+  box-shadow: var(--shadow-photo-paper);
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.journal-timeline-item img {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+  pointer-events: none;
+}
+.journal-timeline-item > svg {
+  width: 38px;
+  height: 38px;
+  pointer-events: none;
+}
+.journal-timeline-item[aria-current] {
+  border-color: var(--color-journal-amber);
+  outline: 2px solid var(--color-mustard);
+  outline-offset: 2px;
+}
+.journal-timeline-item:focus-visible {
+  outline: 2px solid var(--color-journal-amber);
+  outline-offset: 4px;
+}
+.journal-timeline-ruler {
+  position: absolute;
+  bottom: 18px;
+  left: 60px;
+  width: calc(100% - 120px);
+  height: 68px;
+  stroke: var(--color-journal-paper-muted);
+  stroke-width: 1.5;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.journal-timeline-date {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translateX(-50%);
+  color: var(--color-journal-paper-muted);
+  font-size: 13px;
+  line-height: 18px;
+  pointer-events: none;
+}
+.journal-timeline-time {
+  color: var(--color-journal-ink);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.journal-timeline-empty {
+  margin-top: 120px;
+  text-align: center;
+  color: var(--color-journal-muted);
+  font-size: 14px;
+}
+.journal-timeline-notice {
+  position: absolute;
+  top: 108px;
+  left: 24px;
+  z-index: 30;
+  max-width: 380px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--color-journal-paper-glass);
+  color: var(--color-coral);
+  box-shadow: var(--shadow-journal);
+}
+.journal-timeline-detail {
+  position: absolute;
+  top: 108px;
+  left: 24px;
+  z-index: 24;
+  width: 420px;
+  max-height: calc(100dvh - 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 22px;
+  background: var(--color-journal-paper-glass);
+  box-shadow: var(--shadow-journal);
+}
+.journal-timeline-detail .journal-card-cover {
+  height: 196px;
+  margin: 16px 16px 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.journal-timeline-detail-heading h2 {
+  font-family: var(--font-editorial);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 32px;
+}
+.journal-timeline-detail-heading > button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  border-radius: 50%;
+  background: var(--color-journal-paper-glass);
+}
+.journal-timeline-detail [data-photo-strip] {
+  margin-top: 20px;
+}
+.journal-timeline-detail ::selection {
+  background: var(--color-journal-tag);
+  color: var(--color-journal-tag-ink);
+}
+
+@media (max-width: 767px) {
+  .journal-view-switch {
+    top: calc(env(safe-area-inset-top, 0px) + 68px);
+    right: 12px;
+    padding: 4px;
+    border-radius: 14px;
+  }
+  .journal-view-switch button {
+    height: 34px;
+    gap: 5px;
+    padding: 0 9px;
+    font-size: 12px;
+  }
+  .journal-view-switch button svg {
+    width: 15px;
+    height: 15px;
+  }
+  .journal-timeline-heading {
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: 12px;
+    width: calc(100% - 24px);
+    padding: 4px;
+    border-radius: 14px;
+  }
+  .journal-timeline-heading .journal-heading {
+    min-height: 34px;
+    gap: 0;
+  }
+  .journal-timeline-heading .journal-heading > button,
+  .journal-timeline-heading .journal-heading > [data-slot] {
+    height: 32px;
+  }
+  .journal-timeline {
+    width: calc(100% - 12px);
+    height: 158px;
+  }
+  .journal-timeline-track {
+    top: 18px;
+    height: 100px;
+  }
+  .journal-timeline-item {
+    left: calc(50% - 36px);
+    width: 72px;
+    height: 72px;
+    padding: 3px;
+    border-radius: 10px;
+  }
+  .journal-timeline-item > svg {
+    width: 30px;
+    height: 30px;
+  }
+  .journal-timeline-ruler {
+    height: 48px;
+    bottom: 18px;
+    left: 8px;
+    width: calc(100% - 16px);
+  }
+  .journal-timeline-glass {
+    top: 64px;
+  }
+  .journal-timeline-date {
+    bottom: 6px;
+    font-size: 12px;
+  }
+  .journal-timeline-time {
+    font-size: 13px;
+  }
+  .journal-timeline-detail {
+    top: calc(env(safe-area-inset-top, 0px) + 124px);
+    left: 12px;
+    width: calc(100% - 76px);
+    max-height: calc(100dvh - 340px);
+    border-radius: 18px;
+  }
+  .journal-timeline-detail .journal-card-cover {
+    height: 148px;
+    margin: 12px 12px 0;
+  }
+  .journal-timeline-detail-heading h2 {
+    font-size: 22px;
+    line-height: 30px;
+  }
+  .journal-timeline-detail-heading,
+  .journal-timeline-detail > div {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+  .journal-workbench[data-view="timeline"] .journal-map-controls {
+    top: auto;
+    right: 12px;
+    bottom: 182px;
+  }
+  .journal-workbench[data-view="list"] .journal-map-controls {
+    top: 72px;
+  }
+  .journal-workbench[data-view="list"] .journal-view-switch {
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+  }
+  .journal-timeline-notice {
+    top: 108px;
+    left: 12px;
+    max-width: calc(100% - 24px);
+  }
+}
 @media (max-width: 767px) {
   .journal-dates {
     padding: 0 12px 8px;

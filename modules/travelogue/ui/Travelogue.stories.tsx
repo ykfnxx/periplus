@@ -367,3 +367,55 @@ export const FourTypesReadOnly: Story = {
     <EditorStory initialJourney={fourTypeJourney} canEdit={false} />
   ),
 }
+
+const timelineJourney: JourneySnapshot = {
+  ...fourTypeJourney,
+  events: [
+    {
+      ...fourTypeJourney.events[3],
+      id: "departure",
+      title: "出发去杭州",
+      date: "2026-10-17",
+      time: "20:30",
+    },
+    {
+      ...fourTypeJourney.events[3],
+      id: "arrival",
+      title: "抵达杭州",
+      time: "07:00",
+    },
+    {
+      ...fourTypeJourney.events[0],
+      id: "lakeside",
+      title: "沿湖散步",
+      time: "07:50",
+      photos: [storyJourney.events[0].photos[1]],
+    },
+    fourTypeJourney.events[0],
+    { ...fourTypeJourney.events[1], photos: [] },
+    { ...fourTypeJourney.events[2], photos: [] },
+    {
+      ...fourTypeJourney.events[0],
+      id: "evening",
+      title: "湖边的傍晚",
+      time: "18:20",
+      photos: [storyJourney.events[0].photos[2]],
+    },
+    fourTypeJourney.events[3],
+    {
+      ...paperCardJourney.events[3],
+      id: "morning-note",
+      title: "第二天的随记",
+      date: "2026-10-19",
+      photos: [],
+    },
+  ],
+}
+export const Timeline: Story = {
+  render: () => <EditorStory initialJourney={timelineJourney} />,
+}
+export const TimelineReadOnly: Story = {
+  render: () => (
+    <EditorStory initialJourney={timelineJourney} canEdit={false} />
+  ),
+}
