@@ -10,21 +10,21 @@ export default function DraftEntry({
   journeys,
 }: {
   userId: string
-  journeys: DraftJourney[]
+  journeys?: DraftJourney[]
 }) {
   const [count, setCount] = useState(0)
   const [error, setError] = useState(false)
   useEffect(() => {
     let disposed = false
-    Promise.all([
-      draftStorage.remember({
-        userId,
-        journeys: journeys.map(({ id, title }) => ({ id, title })),
-      }),
-      draftStorage.list(userId),
-    ])
-      .then(([, drafts]) => {
-        if (!disposed) setCount(drafts.length)
+    Promise.all([draftStorage.activate(userId), draftStorage.list(userId)])
+      .then(async ([, drafts]) => {
+        if (disposed) return
+        setCount(drafts.length)
+        if (journeys !== undefined)
+          await draftStorage.remember({
+            userId,
+            journeys: journeys.map(({ id, title }) => ({ id, title })),
+          })
       })
       .catch(() => {
         if (!disposed) setError(true)

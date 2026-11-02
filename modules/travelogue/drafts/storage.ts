@@ -63,10 +63,23 @@ export const draftStorage = {
       .filter((draft) => draft.userId === userId)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   },
-  context: () =>
-    transaction<DraftContext | undefined>("context", "readonly", (s) =>
-      s.get("active")
-    ),
+  context: async (userId?: string): Promise<DraftContext | undefined> => {
+    const account =
+      userId ??
+      (await transaction<string | undefined>("context", "readonly", (s) =>
+        s.get("active-user")
+      ))
+    if (!account) return undefined
+    return (
+      (await transaction<DraftContext | undefined>("context", "readonly", (s) =>
+        s.get(`user:${account}`)
+      )) ?? { userId: account, journeys: [] }
+    )
+  },
+  activate: (userId: string) =>
+    transaction("context", "readwrite", (s) => s.put(userId, "active-user")),
   remember: (context: DraftContext) =>
-    transaction("context", "readwrite", (s) => s.put(context, "active")),
+    transaction("context", "readwrite", (s) =>
+      s.put(context, `user:${context.userId}`)
+    ),
 }

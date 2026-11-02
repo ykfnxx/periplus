@@ -187,6 +187,7 @@ export default function DraftEditor({
                 photos={[]}
                 uploads={[]}
                 busy={busy || committed}
+                filesBusy={busy || Boolean(draft.pending)}
                 canPickLocation={Boolean(onPickLocation)}
                 onChange={(content) => update({ ...draft, content })}
                 onFiles={(files) =>

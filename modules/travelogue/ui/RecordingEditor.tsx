@@ -87,6 +87,7 @@ export default function RecordingEditor({
   initialRequest,
   onRequestHandled,
   directoryError,
+  directoryLoading = false,
   onRetryDirectory,
 }: {
   userId: string
@@ -98,6 +99,7 @@ export default function RecordingEditor({
   journeys?: JourneySummary[]
   onOpenJourney?: (id: string, request?: JourneyOpenRequest) => void
   directoryError?: string | null
+  directoryLoading?: boolean
   onRetryDirectory?: () => void
   onRequestHandled?: () => void
   initialRequest?: JourneyOpenRequest
@@ -429,7 +431,14 @@ export default function RecordingEditor({
           </h1>
         )}
       </div>
-      <DraftEntry userId={userId} journeys={journeys} />
+      <DraftEntry
+        userId={userId}
+        journeys={
+          directoryLoading || directoryError || !onOpenJourney
+            ? undefined
+            : journeys
+        }
+      />
       {canEdit && (
         <Button
           variant="primary"

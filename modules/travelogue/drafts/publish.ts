@@ -104,6 +104,7 @@ export function draftError(cause: unknown) {
 }
 
 export function draftInputError(draft: LocalDraft) {
+  if (draft.eventId || draft.pending) return null
   const { content } = draft
   if (
     !content.title.trim() &&
