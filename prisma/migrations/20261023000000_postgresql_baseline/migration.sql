@@ -553,3 +553,15 @@ BEGIN
 END;
 $$;
 CREATE TRIGGER "JourneyEvent_snapshot_index" BEFORE INSERT OR UPDATE ON "JourneyEvent" FOR EACH ROW EXECUTE FUNCTION periplus_event_index();
+
+-- One current external result per event; JourneyEvent is a rebuilt read index.
+CREATE TABLE "EventWeather" (
+    "journeyId" TEXT NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "inputKey" TEXT NOT NULL,
+    "queryJson" TEXT NOT NULL,
+    "resultJson" TEXT NOT NULL,
+    "fetchedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "EventWeather_pkey" PRIMARY KEY ("journeyId", "eventId"),
+    CONSTRAINT "EventWeather_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "Journey"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
