@@ -12,21 +12,21 @@ describe("dated event editing", () => {
     const baseline = eventContent(eventCardJourney.events[1])
     const draft = {
       ...baseline,
-      planning: { ...baseline.planning, endAt: null },
+      endAt: null,
     }
     expect(eventContentPatch(draft, baseline)).toEqual({
-      planning: { endAt: null },
+      endAt: null,
     })
     expect(
       eventContentPatch(
         {
           ...baseline,
-          planning: { ...baseline.planning, startAt: null },
+          startAt: null,
           time: null,
         },
         baseline
       )
-    ).toEqual({ time: null, planning: { startAt: null } })
+    ).toEqual({ time: null, startAt: null })
   })
   it("keeps the event's local date and time across ISO round trips", () => {
     const instant = eventTimeInstant("2026-10-19T01:00", "Asia/Shanghai")
@@ -51,8 +51,14 @@ describe("dated event editing", () => {
   )
   it("keeps cleared times empty when a saved event is reopened", () => {
     const original = eventCardJourney.events[1]
-    const draft = eventContent({ ...original, time: null, planning: undefined })
-    expect(draft.planning).toEqual({ startAt: null, endAt: null })
-    expect(eventLocalDateTime(draft.planning.endAt, draft.timeZone)).toBe("")
+    const draft = eventContent({
+      ...original,
+      time: null,
+      startAt: undefined,
+      endAt: undefined,
+    })
+    expect(draft.startAt).toBeNull()
+    expect(draft.endAt).toBeNull()
+    expect(eventLocalDateTime(draft.endAt, draft.timeZone)).toBe("")
   })
 })

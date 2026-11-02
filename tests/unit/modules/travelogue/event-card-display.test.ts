@@ -6,7 +6,6 @@ import {
   eventCardTimes,
   eventCity,
   eventTransitDisplay,
-  hasAdditionalEventTimes,
 } from "@/modules/travelogue/ui/event-card-display"
 
 const transit = eventCardJourney.events[1]
@@ -37,22 +36,14 @@ describe("event card facts", () => {
       eventCardTimes({
         ...transit,
         time: "23:20",
-        planning: {
-          startAt: "2026-10-18T23:20:00+08:00",
-          endAt: "2026-10-19T01:00:00+08:00",
-        },
+        startAt: "2026-10-18T23:20:00+08:00",
+        endAt: "2026-10-19T01:00:00+08:00",
       })
     ).toMatchObject({ arrival: "01:00", arrivalDate: "10月19日" })
   })
 
-  it("does not invent an arrival from route duration or mix planned end with an actual departure", () => {
-    expect(
-      eventCardTimes({ ...transit, planning: undefined }).arrival
-    ).toBeNull()
-    expect(
-      eventCardTimes({ ...transit, actualStartAt: "2026-10-18T10:35:00+08:00" })
-        .arrival
-    ).toBeNull()
+  it("does not invent an arrival from route duration", () => {
+    expect(eventCardTimes({ ...transit, endAt: undefined }).arrival).toBeNull()
   })
 
   it("labels instants without a timezone as UTC", () => {
@@ -99,46 +90,46 @@ it("keeps an end-only clock explicit and does not invent a departure", () => {
     eventCardTimes({
       ...transit,
       time: null,
-      planning: { endAt: "2026-10-18T11:00:00+08:00" },
+      startAt: undefined,
+      endAt: "2026-10-18T11:00:00+08:00",
     })
   ).toMatchObject({ departure: null, arrival: "11:00", range: "至 11:00" })
 })
 
-it("only discloses time details when they add planned or actual facts", () => {
-  expect(hasAdditionalEventTimes(transit)).toBe(false)
-  expect(
-    hasAdditionalEventTimes({
-      ...transit,
-      actualStartAt: "2026-10-18T10:35:00+08:00",
-    })
-  ).toBe(true)
-  expect(hasAdditionalEventTimes({ ...transit, time: "12:00" })).toBe(true)
-  expect(hasAdditionalEventTimes({ ...transit, date: "2026-10-19" })).toBe(true)
+it("uses the event's single interval for its clocks and duration", () => {
+  const event = {
+    ...transit,
+    time: "14:30",
+    startAt: "2026-10-18T14:30:00+08:00",
+    endAt: "2026-10-18T15:00:00+08:00",
+  }
+  expect(eventCardTimes(event)).toMatchObject({
+    departure: "14:30",
+    arrival: "15:00",
+    range: "14:30–15:00",
+  })
+  expect(eventTransitDisplay(event).duration).toBe("30 分钟")
 })
 
 it("calculates an overnight duration from the entered dates rather than provider ETA", () => {
   const event = {
     ...transit,
-    planning: {
-      startAt: "2026-10-18T23:20:00+08:00",
-      endAt: "2026-10-19T01:00:00+08:00",
-      durationMinutes: 2,
-    },
+    time: "23:20",
+    startAt: "2026-10-18T23:20:00+08:00",
+    endAt: "2026-10-19T01:00:00+08:00",
+    planning: { durationMinutes: 2 },
   }
   expect(eventTransitDisplay(event).duration).toBe("1 小时 40 分钟")
   expect(
     eventTransitDisplay({
       ...event,
-      planning: { startAt: event.planning.startAt, durationMinutes: 2 },
+      endAt: undefined,
     }).duration
   ).toBeNull()
   expect(
     eventTransitDisplay({
       ...event,
-      planning: {
-        startAt: event.planning.startAt,
-        endAt: event.planning.startAt,
-      },
+      endAt: event.startAt,
     }).duration
   ).toBe("0 分钟")
 })

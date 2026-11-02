@@ -118,9 +118,9 @@ export default function EventEditor({
       return
     }
     if (
-      draft.planning.startAt &&
-      draft.planning.endAt &&
-      Date.parse(draft.planning.endAt) < Date.parse(draft.planning.startAt)
+      draft.startAt &&
+      draft.endAt &&
+      Date.parse(draft.endAt) < Date.parse(draft.startAt)
     ) {
       setError("结束时间不能早于开始时间，请确认到达日期。")
       return
@@ -152,9 +152,7 @@ export default function EventEditor({
         persistedDraft &&
         Object.entries(eventId ? changes : draft).some(([key, value]) => {
           const stored = persistedDraft[key as keyof EventDraft]
-          return value &&
-            typeof value === "object" &&
-            (key === "planning" || key === "transit")
+          return value && typeof value === "object" && key === "transit"
             ? Object.entries(value).some(
                 ([field, next]) =>
                   JSON.stringify(
@@ -253,7 +251,6 @@ export default function EventEditor({
                         return {
                           ...fresh,
                           ...patch,
-                          planning: { ...fresh.planning, ...patch.planning },
                           transit:
                             patch.transit === undefined
                               ? fresh.transit
