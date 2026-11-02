@@ -79,7 +79,7 @@ export function buildTransitPlanRequest(
     destination,
     mode,
     transportMode: detail.transportMode,
-    departAt: event.planning?.startAt,
+    departAt: event.startAt,
     preference: detail.preference ?? "RECOMMENDED",
     alternatives: 3,
   }

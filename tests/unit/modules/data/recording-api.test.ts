@@ -830,12 +830,13 @@ describe.sequential("manual recording API and durable event identity", () => {
       const change: JourneyCommand = {
         name: "event.update",
         eventId: target.id,
-        patch: { planning: { [field]: null } },
+        patch: { [field]: null },
       }
       const cleared = await write(before, change, key)
-      const expected = { ...target.planning }
-      delete expected[field]
-      expect(cleared.journey.events[0]!.planning).toEqual(expected)
+      const other = field === "startAt" ? "endAt" : "startAt"
+      expect(cleared.journey.events[0]).not.toHaveProperty(field)
+      expect(cleared.journey.events[0]![other]).toBe(target[other])
+      expect(cleared.journey.events[0]!.planning).toEqual(target.planning)
       expect(cleared.journey.events[0]!.location).toEqual(target.location)
       expect(await reopen(initial.id)).toEqual(cleared.journey)
       const edited = await write(cleared.journey, {
@@ -855,8 +856,45 @@ describe.sequential("manual recording API and durable event identity", () => {
       })
       expect(removed.journey.events[0]).not.toHaveProperty("planning")
       expect(removed.journey.events[0]!.location).toEqual(target.location)
+      expect(removed.journey.events[0]![other]).toBe(target[other])
     }
   )
+
+  it("drops an old resolved start when the local clock changes and rejects conflicting replacements", async () => {
+    const added = await write(await newJourney(), {
+      name: "event.add",
+      afterEventId: null,
+      content: {
+        date: "2026-10-29",
+        time: "09:00",
+        timeZone: "Asia/Shanghai",
+        startAt: "2026-10-29T01:00:00.000Z",
+        endAt: "2026-10-29T02:00:00.000Z",
+      },
+    })
+    const edited = await write(added.journey, {
+      name: "event.update",
+      eventId: added.eventId!,
+      patch: { time: "09:30" },
+    })
+    expect(edited.journey.events[0]).not.toHaveProperty("startAt")
+    expect(edited.journey.events[0]!.endAt).toBe("2026-10-29T02:00:00.000Z")
+    expect(edited.journey.events[0]!.time).toBe("09:30")
+    const invalid = await command(
+      json({
+        expectedRevision: edited.journey.revision,
+        idempotencyKey: randomUUID(),
+        command: {
+          name: "event.update",
+          eventId: added.eventId!,
+          patch: { startAt: "2026-10-29T01:00:00.000Z" },
+        },
+      }),
+      params(added.journey.id)
+    )
+    expect(invalid.status).toBe(400)
+    expect(await reopen(added.journey.id)).toEqual(edited.journey)
+  })
 
   it("arbitrates simultaneous retries and competing writes with one durable head advance", async () => {
     const journey = await newJourney()

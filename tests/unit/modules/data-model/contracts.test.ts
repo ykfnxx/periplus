@@ -11,7 +11,7 @@ import {
   transitJourneyFixture,
 } from "@/tests/fixtures/journey"
 describe("one Journey event contract", () => {
-  it("retains dated manual records alongside planned events in array order", () => {
+  it("retains dated notes alongside timed events in array order", () => {
     const journey = transitJourneyFixture()
     journey.events.push(eventFixture("note"))
     const parsed = journeySnapshotSchema.parse(journey)
@@ -165,15 +165,49 @@ describe("one Journey event contract", () => {
           command: {
             name: "event.update",
             eventId: "a",
-            patch: { planning: { [field]: null } },
+            patch: { [field]: null },
           },
         }).success
       ).toBe(true)
       const journey = journeyFixture()
-      journey.events = [
-        { ...eventFixture("a"), planning: { [field]: null } } as never,
-      ]
+      journey.events = [{ ...eventFixture("a"), [field]: null } as never]
       expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
     }
   )
+  it("rejects alternative time sets and inconsistent representations of one start", () => {
+    const journey = journeyFixture()
+    const event = {
+      ...eventFixture("a"),
+      time: "09:00",
+      timeZone: "Asia/Shanghai",
+      startAt: "2026-10-29T01:00:00.000Z",
+      endAt: "2026-10-29T02:00:00.000Z",
+    }
+    journey.events = [event]
+    expect(journeySnapshotSchema.safeParse(journey).success).toBe(true)
+    for (const patch of [
+      { actualStartAt: event.startAt },
+      { actualEndAt: event.endAt },
+      { planning: { startAt: event.startAt } },
+      { planning: { endAt: event.endAt } },
+    ]) {
+      expect(
+        journeyMutationSchema.safeParse({
+          expectedRevision: 1,
+          idempotencyKey: "key",
+          command: { name: "event.update", eventId: event.id, patch },
+        }).success
+      ).toBe(false)
+      journey.events = [{ ...event, ...patch } as never]
+      expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
+    }
+    for (const patch of [
+      { date: "2026-10-30" },
+      { time: "09:05" },
+      { endAt: "2026-10-29T00:59:00.000Z" },
+    ]) {
+      journey.events = [{ ...event, ...patch }]
+      expect(journeySnapshotSchema.safeParse(journey).success).toBe(false)
+    }
+  })
 })
