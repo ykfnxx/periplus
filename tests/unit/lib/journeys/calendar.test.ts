@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { eventCalendarDate } from "@/lib/journeys/calendar"
-import { singleChainJourney } from "@/tests/storybook/journey-fixtures"
+import { eventFixture } from "@/tests/fixtures/journey"
 describe("event-local calendar navigation", () => {
-  const base = singleChainJourney.events[0]
+  const base = eventFixture("calendar-event")
   it("preserves date-only facts without inventing a time", () => {
     expect(
       eventCalendarDate({

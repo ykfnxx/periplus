@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { journeySnapshotSchema } from "@/modules/data-model/contracts"
-import { paperCardJourney } from "@/tests/storybook/paper-card-fixture"
+import { eventCardJourney } from "@/tests/fixtures/event-card"
 import {
   eventCardTitle,
   eventCardTimes,
@@ -8,16 +8,16 @@ import {
   eventTransitDisplay,
 } from "@/modules/travelogue/ui/event-card-display"
 
-const transit = paperCardJourney.events[1]
+const transit = eventCardJourney.events[1]
 
 describe("event card facts", () => {
   it("does not repeat an untitled note body as its heading", () => {
-    expect(eventCardTitle({ ...paperCardJourney.events[3], title: "" })).toBe(
+    expect(eventCardTitle({ ...eventCardJourney.events[3], title: "" })).toBe(
       "游览"
     )
   })
   it("shows only declared city information, never a detailed place or address", () => {
-    const event = paperCardJourney.events[0]
+    const event = eventCardJourney.events[0]
     expect(eventCity(event)).toBe("杭州")
     expect(
       eventCity({ ...event, location: { ...event.location!, city: undefined } })
@@ -83,10 +83,10 @@ describe("event card facts", () => {
     })
   })
 
-  it("keeps the rendered design fixture on the production journey contract", () => {
+  it("keeps event card inputs on the production journey contract", () => {
     expect(
       journeySnapshotSchema
-        .parse(paperCardJourney)
+        .parse(eventCardJourney)
         .events.map((event) => event.id)
     ).toEqual(["lake", "bus", "temple", "unlocated"])
   })
