@@ -6,7 +6,11 @@ import EventPlanning from "./EventPlanning"
 import EventCover from "./EventCover"
 import { eventCalendarDate } from "@/lib/journeys/calendar"
 import { Button } from "@/components/kumo/components/button/button"
-import type { JourneyEvent } from "@/modules/data-model/contracts"
+import type {
+  JourneyEvent,
+  EventWeather as Weather,
+} from "@/modules/data-model/contracts"
+import EventWeather, { WeatherAttribution } from "./EventWeather"
 import { dateLabel, eventTitle } from "../display"
 import { eventCategoryLabels } from "../event-card-display"
 import { photoItems } from "../photo-items"
@@ -19,6 +23,7 @@ import { receiptTotal } from "../receipt-display"
 
 export default function EventDetails({
   entry,
+  weather,
   onClose,
   onReceipt,
   onAddPhotos,
@@ -27,6 +32,7 @@ export default function EventDetails({
   embedded = false,
 }: {
   entry: JourneyEvent
+  weather?: Weather | null
   panel?: boolean
   embedded?: boolean
   onClose: () => void
@@ -44,6 +50,7 @@ export default function EventDetails({
   }, [panel, embedded])
   const title = eventTitle(entry)
   const date = eventCalendarDate(entry)
+  const stamp = entry.category === "TRANSIT" ? null : weather
   const content = (close: () => void) => (
     <>
       {panel && (
@@ -82,6 +89,7 @@ export default function EventDetails({
                 {dateLabel(date!)}
               </span>
             )}
+            <EventWeather weather={stamp} />
             {entry.location && (
               <span className="flex min-w-0 items-center gap-2">
                 <MapPin size={16} className="shrink-0" />
@@ -127,6 +135,7 @@ export default function EventDetails({
             </div>
           </>
         )}
+        <WeatherAttribution weather={stamp} />
         {(onAddPhotos || onAddReceipt) && (
           <div className="mt-5 flex flex-wrap gap-2">
             {onAddPhotos && (

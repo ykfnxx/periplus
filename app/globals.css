@@ -341,6 +341,44 @@ body {
   font-size: 12px;
   line-height: 18px;
 }
+.journal-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 6px;
+}
+.journal-card-meta .journal-card-time {
+  margin-top: 0;
+}
+.journal-weather {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-journal-paper-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+.journal-weather > svg {
+  flex-shrink: 0;
+}
+.journal-weather-source {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-journal-paper-muted);
+  font-size: 10px;
+  line-height: 16px;
+}
+.journal-weather-source a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.journal-weather-source a:focus-visible {
+  outline: 2px solid var(--color-journal-amber);
+  outline-offset: 2px;
+}
 .journal-card p {
   margin-top: 12px;
   overflow-wrap: anywhere;

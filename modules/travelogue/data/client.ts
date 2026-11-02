@@ -5,6 +5,7 @@ import type {
   JourneyCreate,
   JourneyMutation,
   JourneyMutationResult,
+  JourneyWeatherResult,
 } from "@/modules/data-model/contracts"
 import type { PhotoDto } from "@/types/photo"
 import type { ReceiptExtraction } from "@/modules/data-model/contracts/receipts"
@@ -50,6 +51,11 @@ export const recordingApi = {
   list: () => request<JourneySummary[]>("/api/journeys"),
   get: (id: string) =>
     request<JourneySnapshot>(`/api/journeys/${encodeURIComponent(id)}`),
+  weather: (id: string) =>
+    request<JourneyWeatherResult>(
+      `/api/journeys/${encodeURIComponent(id)}/weather`,
+      { method: "POST" }
+    ),
   create: (input: JourneyCreate) =>
     request<JourneyMutationResult>("/api/journeys", {
       method: "POST",

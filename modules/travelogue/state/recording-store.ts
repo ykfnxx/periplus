@@ -5,7 +5,9 @@ import type {
   JourneySnapshot,
   JourneyMutation,
   JourneyMutationResult,
+  EventWeather,
 } from "@/modules/data-model/contracts"
+import { weatherInput } from "./weather-input"
 import {
   recordingApi,
   RecordingApiError,
@@ -28,6 +30,7 @@ type CommandInput =
 
 interface RecordingState {
   journey: JourneySnapshot | null
+  weather: Record<string, EventWeather | null>
   loading: boolean
   saving: number
   error: string | null
@@ -61,6 +64,7 @@ export function createRecordingStore(
 
   const store = createStore<RecordingState>((set, get) => ({
     journey: null,
+    weather: {},
     loading: true,
     saving: 0,
     error: null,
@@ -79,7 +83,8 @@ export function createRecordingStore(
         const journey = await api.get(journeyId)
         if (!disposed) {
           unconfirmed = null
-          set({ journey, loading: false, conflict: false })
+          acceptJourney(journey)
+          set({ loading: false, conflict: false })
         }
       } catch (cause) {
         if (!disposed)
@@ -102,7 +107,7 @@ export function createRecordingStore(
             const previous = unconfirmed
             const result = await api.command(journeyId, previous)
             unconfirmed = null
-            set({ journey: result.journey, error: null })
+            acceptJourney(result.journey)
             if (previous.idempotencyKey === idempotencyKey) return result
           }
           const journey = get().journey
@@ -115,7 +120,7 @@ export function createRecordingStore(
           }
           const result = await api.command(journeyId, unconfirmed)
           unconfirmed = null
-          set({ journey: result.journey, error: null })
+          acceptJourney(result.journey)
           return result
         } catch (cause) {
           const conflict =
@@ -171,6 +176,44 @@ export function createRecordingStore(
       get().uploads.forEach((upload) => URL.revokeObjectURL(upload.preview))
     },
   }))
+
+  function acceptJourney(journey: JourneySnapshot) {
+    const previous = store.getState()
+    const oldEvents = new Map(
+      previous.journey?.events.map((event) => [event.id, event])
+    )
+    const weather = Object.fromEntries(
+      journey.events.flatMap((event) => {
+        const old = oldEvents.get(event.id)
+        return old && weatherInput(old) === weatherInput(event)
+          ? [[event.id, previous.weather[event.id] ?? null]]
+          : []
+      })
+    )
+    store.setState({ journey, weather, error: null })
+    void loadWeather(journey.id)
+  }
+
+  async function loadWeather(id: string) {
+    try {
+      const result = await api.weather(id)
+      const current = store.getState().journey
+      if (
+        disposed ||
+        !current ||
+        result.journeyId !== current.id ||
+        result.revision !== current.revision
+      )
+        return
+      store.setState({
+        weather: Object.fromEntries(
+          result.events.map((event) => [event.eventId, event.weather])
+        ),
+      })
+    } catch {
+      // Weather is optional derived data; its failure never changes save state.
+    }
+  }
 
   function queueUpload(id: string) {
     uploads = uploads.then(async () => {
