@@ -34,13 +34,13 @@ npm run db:seed
 
 Seed requires an empty database. Schema changes update the development baseline directly, without old-data compatibility or migration.
 
-Run the complete application only on the development server and connect Monitor before debugging. The Mac is limited to standalone Storybook and tests.
+Run the complete application only on the development server and connect Monitor before debugging. The Mac is limited to tests.
 
 ```bash
 npm run dev
 ```
 
-Next.js serves both the Web UI and product APIs on port 3001. Standalone Storybook uses port 6006.
+Next.js serves both the Web UI and product APIs on port 3001.
 
 ## Receipt recognition and collaboration
 
@@ -58,7 +58,6 @@ Users confirm recognition results and can fill missing fields manually. Invitati
 | ------------------------------ | -------------------------------- |
 | `npm run dev`                  | Start Next.js                    |
 | `npm run build` / `npm start`  | Build / run production Web       |
-| `npm run storybook`            | Standalone component development |
 | `npm run typecheck`            | TypeScript checks                |
 | `npm run test:unit -- --run`   | Unit tests                       |
 | `npm run places:import-mct-5a` | Import the place catalog         |
@@ -73,10 +72,10 @@ lib/                    Map, coordinate and place utilities
 ops/ocr/                Local PaddleOCR configuration
 prisma/                 Schema, development baseline and seed
 scripts/                Place catalog maintenance
-tests/                  Unit, Storybook and browser tests
+tests/                  Unit and browser tests
 ```
 
-Stack: Next.js 16, React 19, TypeScript, Tailwind CSS 4, Kumo, Zustand, Prisma, Better Auth, OpenDAL, Vitest, Storybook and Playwright.
+Stack: Next.js 16, React 19, TypeScript, Tailwind CSS 4, Kumo, Zustand, Prisma, Better Auth, OpenDAL, Vitest and Playwright.
 
 ## License
 

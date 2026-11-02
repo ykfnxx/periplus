@@ -5,11 +5,11 @@ import {
   eventLocalDateTime,
   eventTimeInstant,
 } from "@/modules/travelogue/ui/event-content"
-import { paperCardJourney } from "@/tests/storybook/paper-card-fixture"
+import { eventCardJourney } from "@/tests/fixtures/event-card"
 
 describe("dated event editing", () => {
   it("edits one time without resending the other time or provider facts", () => {
-    const baseline = eventContent(paperCardJourney.events[1])
+    const baseline = eventContent(eventCardJourney.events[1])
     const draft = {
       ...baseline,
       planning: { ...baseline.planning, endAt: null },
@@ -50,7 +50,7 @@ describe("dated event editing", () => {
     }
   )
   it("keeps cleared times empty when a saved event is reopened", () => {
-    const original = paperCardJourney.events[1]
+    const original = eventCardJourney.events[1]
     const draft = eventContent({ ...original, time: null, planning: undefined })
     expect(draft.planning).toEqual({ startAt: null, endAt: null })
     expect(eventLocalDateTime(draft.planning.endAt, draft.timeZone)).toBe("")

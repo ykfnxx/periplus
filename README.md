@@ -34,13 +34,13 @@ npm run db:seed
 
 Seed 只接受空数据库。Schema 变更直接更新开发基线，不提供旧数据兼容或迁移。
 
-完整应用只在开发服务器运行，调试前连接 Monitor。Mac 仅运行独立 Storybook 或测试。
+完整应用只在开发服务器运行，调试前连接 Monitor。Mac 仅运行测试。
 
 ```bash
 npm run dev
 ```
 
-Web 和产品 API 共用 Next.js，默认端口 3001。Storybook 默认端口 6006。
+Web 和产品 API 共用 Next.js，默认端口 3001。
 
 ## 账单识别与共写
 
@@ -58,7 +58,6 @@ Web 和产品 API 共用 Next.js，默认端口 3001。Storybook 默认端口 60
 | ------------------------------ | ---------------- |
 | `npm run dev`                  | 启动 Next.js     |
 | `npm run build` / `npm start`  | 构建／运行生产版 |
-| `npm run storybook`            | 独立组件开发     |
 | `npm run typecheck`            | TypeScript 检查  |
 | `npm run test:unit -- --run`   | 单元测试         |
 | `npm run places:import-mct-5a` | 导入地点目录     |
@@ -73,10 +72,10 @@ lib/                    地图、坐标和地点工具
 ops/ocr/                本地 PaddleOCR 配置
 prisma/                 Schema、开发基线和 Seed
 scripts/                地点目录维护
-tests/                 单元、Storybook 和浏览器测试
+tests/                 单元和浏览器测试
 ```
 
-技术栈：Next.js 16、React 19、TypeScript、Tailwind CSS 4、Kumo、Zustand、Prisma、Better Auth、OpenDAL、Vitest、Storybook 和 Playwright。
+技术栈：Next.js 16、React 19、TypeScript、Tailwind CSS 4、Kumo、Zustand、Prisma、Better Auth、OpenDAL、Vitest 和 Playwright。
 
 ## License
 
