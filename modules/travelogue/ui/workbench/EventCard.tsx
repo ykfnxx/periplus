@@ -3,8 +3,12 @@ import { useEffect, useRef, useState } from "react"
 import { ContextMenu } from "@base-ui/react/context-menu"
 import { useSortable } from "@dnd-kit/react/sortable"
 import { motion, useReducedMotion } from "motion/react"
-import { Clock3, Pencil, Trash2 } from "lucide-react"
-import type { JourneyEvent } from "@/modules/data-model/contracts"
+import { CalendarDays, Clock3, Pencil, Trash2 } from "lucide-react"
+import type {
+  JourneyEvent,
+  EventWeather as Weather,
+} from "@/modules/data-model/contracts"
+import EventWeather, { WeatherAttribution } from "./EventWeather"
 import UserSource from "./UserSource"
 import ReceiptCard from "./ReceiptCard"
 import EventCover from "./EventCover"
@@ -20,6 +24,7 @@ import {
 
 export default function EventCard({
   entry,
+  weather,
   index,
   selected,
   canEdit,
@@ -33,6 +38,7 @@ export default function EventCard({
   onRead,
 }: {
   entry: JourneyEvent
+  weather?: Weather | null
   index: number
   selected: boolean
   canEdit: boolean
@@ -67,6 +73,7 @@ export default function EventCard({
   const title = eventCardTitle(entry)
   const city = eventCity(entry)
   const transit = entry.category === "TRANSIT"
+  const stamp = transit ? null : weather
   const horizontal = entry.category === "MEAL" || entry.category === "STAY"
   const body = entry.body.trim() || (transit ? entry.transit?.notes || "" : "")
   const times = eventCardTimes(entry)
@@ -185,10 +192,19 @@ export default function EventCard({
                   {title}
                 </button>
               </h2>
-              {!horizontal && times.range && (
-                <div className="journal-card-time">
-                  <Clock3 size={14} aria-hidden="true" />
-                  {times.range}
+              {((!horizontal && times.range) || stamp) && (
+                <div className="journal-card-meta">
+                  <span className="journal-card-time">
+                    {stamp ? (
+                      <CalendarDays size={14} aria-hidden="true" />
+                    ) : (
+                      <Clock3 size={14} aria-hidden="true" />
+                    )}
+                    {stamp && dateLabel(entry.date)}
+                    {stamp && !horizontal && times.range && " · "}
+                    {!horizontal && times.range}
+                  </span>
+                  <EventWeather weather={stamp} />
                 </div>
               )}
             </>
@@ -228,9 +244,10 @@ export default function EventCard({
               {entry.cuisine && <span>{entry.cuisine}</span>}
             </div>
           )}
-          {entry.source && (
+          {(entry.source || stamp) && (
             <div className="journal-card-source">
-              <UserSource user={entry.source} />
+              {entry.source && <UserSource user={entry.source} />}
+              <WeatherAttribution weather={stamp} />
             </div>
           )}
         </div>

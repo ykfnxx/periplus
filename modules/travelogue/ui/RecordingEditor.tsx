@@ -99,7 +99,8 @@ export default function RecordingEditor({
   onRequestHandled?: () => void
   initialRequest?: JourneyOpenRequest
 }) {
-  const { journey, loading, error, conflict, saving, uploads } = useStore(store)
+  const { journey, weather, loading, error, conflict, saving, uploads } =
+    useStore(store)
   const canEdit =
     !readOnly && (journey?.role === "OWNER" || journey?.role === "MEMBER")
   const isOwner = !readOnly && journey?.role === "OWNER"
@@ -372,6 +373,7 @@ export default function RecordingEditor({
     <EventDetails
       key={entry.id}
       entry={entry}
+      weather={weather[entry.id]}
       panel={timeline}
       embedded={embedded}
       onClose={
@@ -702,6 +704,7 @@ export default function RecordingEditor({
                     <EventCard
                       key={entry.id}
                       entry={entry}
+                      weather={weather[entry.id]}
                       index={index}
                       selected={selected === entry.id}
                       canEdit={canEdit && entry.canEdit === true}
