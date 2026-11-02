@@ -9,10 +9,12 @@ export default function EventCover({
   event,
   title,
   onOpen,
+  showCount = false,
 }: {
   event: JourneyEvent
   title: string
   onOpen: (index: number) => void
+  showCount?: boolean
 }) {
   const coverIndex = Math.max(
     0,
@@ -53,6 +55,11 @@ export default function EventCover({
       )}
       {photo && photo.source.userId !== event.source.userId && (
         <UserSource user={photo.source} className="journal-card-cover-source" />
+      )}
+      {showCount && event.photos.length > 1 && (
+        <span className="journal-cover-count" aria-hidden="true">
+          {coverIndex + 1} / {event.photos.length}
+        </span>
       )}
     </div>
   )
