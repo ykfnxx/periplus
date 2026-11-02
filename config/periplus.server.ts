@@ -25,11 +25,16 @@ export const periplusServerConfig = {
   },
   app: {
     get baseUrl() {
-      return periplusPublicConfig.app.baseUrl
+      return envString("BETTER_AUTH_URL", periplusPublicConfig.app.baseUrl)
     },
   },
   auth: {
     get secret() {
+      if (
+        process.env.NODE_ENV === "production" &&
+        !envString("BETTER_AUTH_SECRET")
+      )
+        throw new Error("BETTER_AUTH_SECRET is required in production")
       return envString(
         "BETTER_AUTH_SECRET",
         "periplus-dev-secret-change-before-production-000000"

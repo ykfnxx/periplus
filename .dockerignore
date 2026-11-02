@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+.next
+.env*
+uploads
+public/uploads
+test-results
+playwright-report
+coverage
+*.tsbuildinfo
+docs
+.worktrees

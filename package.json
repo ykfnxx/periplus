@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest",
     "test:unit": "vitest --project=unit",
+    "test:e2e": "playwright test",
     "test:schema": "vitest --project=unit --run tests/unit/modules/data/schema-baseline.test.ts",
     "db:seed": "tsx prisma/seed.ts",
     "places:import-mct-5a": "tsx scripts/import-mct-5a.ts",

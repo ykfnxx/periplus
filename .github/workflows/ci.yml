@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: periplus
+          POSTGRES_PASSWORD: periplus
+          POSTGRES_DB: periplus
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U periplus"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI_IMAGE_SHA: ${{ github.sha }}
+      NEXT_PUBLIC_AMAP_KEY: ${{ github.event_name == 'push' && secrets.PERIPLUS_AMAP_JS_KEY || '' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.23.0
+          cache: npm
+      - run: node scripts/ci-env.mjs
+      - run: npm ci
+      - run: npx prisma generate && npx prisma migrate deploy
+      - run: npm run typecheck && npm run lint && npm run test:unit -- --run
+      - name: Build deployment image
+        run: |
+          docker build --build-arg "PERIPLUS_RELEASE_SHA=$CI_IMAGE_SHA" --build-arg NEXT_PUBLIC_AMAP_KEY -t "periplus:$CI_IMAGE_SHA" .
+      - name: Start the same image used for deployment
+        run: |
+          docker run -d --name periplus-ci --network host --env-file .env.local -v /app/uploads "periplus:$CI_IMAGE_SHA"
+      - run: npx playwright install --with-deps chromium
+      - name: Real-page content, files, collaboration and mobile checks
+        # Provider credentials are not required for PR checks; beta acceptance
+        # separately verifies the live map and OCR services.
+        env:
+          PLAYWRIGHT_EXTERNAL_SERVER: "true"
+        run: |
+          node -e 'const end=Date.now()+60000;async function wait(){try{if((await fetch("http://127.0.0.1:3001/api/health")).ok)return}catch{}if(Date.now()>end)throw Error("Image readiness failed");setTimeout(wait,500)}wait()'
+          npm run test:e2e
+      - name: Package verified image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir release
+          docker save "periplus:$CI_IMAGE_SHA" | gzip > release/image.tar.gz
+          (cd release && sha256sum image.tar.gz > SHA256SUMS)
+          node -e 'require("fs").writeFileSync("release/release.json",JSON.stringify({sha:process.env.CI_IMAGE_SHA,image:"periplus:"+process.env.CI_IMAGE_SHA,runId:process.env.GITHUB_RUN_ID}))'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: verified-image
+          path: release/
+          retention-days: 1
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: failure()
+        with:
+          name: browser-failure
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 3
+      - name: Stop isolated image
+        if: always()
+        run: docker rm -fv periplus-ci 2>/dev/null || true
+
+  publish:
+    name: Publish beta image
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: verified-image
+          path: release/
+      - name: Publish immutable beta build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "beta-$SOURCE_SHA" release/* --target "$SOURCE_SHA" --prerelease --title "Beta $SOURCE_SHA" --notes "Production image verified by CI run $GITHUB_RUN_ID."
