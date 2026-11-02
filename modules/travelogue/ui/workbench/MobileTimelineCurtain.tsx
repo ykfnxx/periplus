@@ -1,7 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { animate, motion, useMotionValue, useReducedMotion } from "motion/react"
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useReducedMotion,
+} from "motion/react"
 import { Button } from "@/components/kumo/components/button/button"
 
 export const collapsedCurtainHeight = 194
@@ -32,6 +38,7 @@ export default function MobileTimelineCurtain({
   const height = useMotionValue(open ? expandedHeight : collapsedCurtainHeight)
   const reduced = useReducedMotion()
   const [dragging, setDragging] = useState(false)
+  const [raised, setRaised] = useState(open)
   const dragged = useRef(false)
   const pointer = useRef<{
     id: number
@@ -40,6 +47,10 @@ export default function MobileTimelineCurtain({
     height: number
     axis: "x" | "y" | null
   } | null>(null)
+  // Keep the opaque body until the closing animation reaches its resting height.
+  useMotionValueEvent(height, "change", (value) => {
+    setRaised(value > collapsedCurtainHeight)
+  })
   useEffect(() => {
     if (dragging) return
     const animation = animate(
@@ -122,10 +133,13 @@ export default function MobileTimelineCurtain({
         }}
         onPointerCancel={() => {
           pointer.current = null
+          dragged.current = false
           setDragging(false)
         }}
         onClickCapture={(event) => {
-          if (dragged.current) {
+          const dragClick = dragged.current && event.detail > 0
+          dragged.current = false
+          if (dragClick) {
             event.preventDefault()
             event.stopPropagation()
           }
@@ -144,7 +158,7 @@ export default function MobileTimelineCurtain({
           </Button>
         )}
       </div>
-      {(open || dragging) && (
+      {(open || dragging || raised) && (
         <div className="journal-curtain-body">{children}</div>
       )}
     </motion.section>
