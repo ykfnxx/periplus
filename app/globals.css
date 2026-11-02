@@ -884,14 +884,6 @@ body {
 .journal-event-facts:empty {
   display: none;
 }
-.journal-time-details summary {
-  width: fit-content;
-  cursor: pointer;
-}
-.journal-time-details summary:focus-visible {
-  outline: 2px solid var(--color-journal-amber);
-  outline-offset: 3px;
-}
 .journal-event-details .journal-card-cover {
   height: 196px;
   margin: 16px 16px 0;

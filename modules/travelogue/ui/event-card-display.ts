@@ -45,14 +45,8 @@ function instantClock(value: string | undefined, timeZone: string | null) {
 }
 
 export function eventCardTimes(event: JourneyEvent) {
-  const start = instantClock(
-    event.actualStartAt ?? event.planning?.startAt,
-    event.timeZone
-  )
-  const end = instantClock(
-    event.actualStartAt ? event.actualEndAt : event.planning?.endAt,
-    event.timeZone
-  )
+  const start = instantClock(event.startAt, event.timeZone)
+  const end = instantClock(event.endAt, event.timeZone)
   const departure = event.time || start?.time || null
   const startDate = event.date || start?.date
   // Keep an overnight arrival visibly on its own date rather than implying the
@@ -75,16 +69,6 @@ export function eventCardTimes(event: JourneyEvent) {
   }
 }
 
-export function hasAdditionalEventTimes(event: JourneyEvent) {
-  const planned = instantClock(event.planning?.startAt, event.timeZone)
-  return Boolean(
-    event.actualStartAt ||
-    (planned &&
-      (planned.date !== event.date ||
-        planned.time !== eventCardTimes(event).departure))
-  )
-}
-
 export function eventTransitDisplay(event: JourneyEvent) {
   const plan =
     event.transit?.routeState === "READY"
@@ -104,10 +88,8 @@ export function eventTransitDisplay(event: JourneyEvent) {
   return {
     mode: mode ? modes[mode] : "交通",
     duration: (() => {
-      const start = event.actualStartAt ?? event.planning?.startAt
-      const end = event.actualStartAt
-        ? event.actualEndAt
-        : event.planning?.endAt
+      const start = event.startAt
+      const end = event.endAt
       if (!start || !end) return null
       const seconds = (Date.parse(end) - Date.parse(start)) / 1000
       return seconds === 0 ? "0 分钟" : formatTransitDuration(seconds)

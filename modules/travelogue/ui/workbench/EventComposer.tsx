@@ -50,21 +50,17 @@ export default function EventComposer({
   const input = useRef<HTMLInputElement>(null)
   const zone =
     draft.timeZone ||
-    (draft.planning.startAt || draft.planning.endAt
+    (draft.startAt || draft.endAt
       ? "UTC"
       : Intl.DateTimeFormat().resolvedOptions().timeZone)
-  const start = eventLocalDateTime(draft.planning.startAt, zone)
+  const start = eventLocalDateTime(draft.startAt, zone)
   function startTime(date: string, time: string) {
     onChange({
       ...draft,
       date,
       time: time || null,
       timeZone: zone,
-      planning: {
-        ...draft.planning,
-        startAt:
-          date && time ? eventTimeInstant(`${date}T${time}`, zone) : null,
-      },
+      startAt: date && time ? eventTimeInstant(`${date}T${time}`, zone) : null,
     })
   }
   return (
@@ -324,17 +320,14 @@ export default function EventComposer({
                 : "结束时间（选填）"
             }
             type="datetime-local"
-            value={eventLocalDateTime(draft.planning.endAt, zone)}
+            value={eventLocalDateTime(draft.endAt, zone)}
             disabled={busy}
             onChange={(e) =>
               onChange({
                 ...draft,
-                planning: {
-                  ...draft.planning,
-                  endAt: e.target.value
-                    ? eventTimeInstant(e.target.value, zone)
-                    : null,
-                },
+                endAt: e.target.value
+                  ? eventTimeInstant(e.target.value, zone)
+                  : null,
               })
             }
           />
