@@ -56,12 +56,9 @@ test("normal accounts save photos, reopen content and collaborate without sharin
       "base64"
     ),
   })
-  await form.getByRole("button", { name: "保存", exact: true }).click()
-  await expect(form.getByRole("status").last()).toHaveText("已保存")
-  await expect.poll(async () => (await read()).events[0]?.photos.length).toBe(1)
-  await expect(form.getByText("上传中…", { exact: true })).toHaveCount(0)
-  await form.getByRole("button", { name: "取消", exact: true }).click()
+  await form.getByRole("button", { name: "加入游记", exact: true }).click()
   await expect(form).toHaveCount(0)
+  await expect.poll(async () => (await read()).events[0]?.photos.length).toBe(1)
   const saved = await read()
   const event = saved.events[0]!
   expect(event.time).toBe("14:30")
