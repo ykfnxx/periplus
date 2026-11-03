@@ -62,6 +62,7 @@ export default function Draftbox() {
     <main className="journal-workbench min-h-dvh bg-journal-paper text-ink">
       <div className="mx-auto max-w-2xl px-5 py-6 sm:px-8 sm:py-10">
         <header className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Full navigation restores the online page from the offline shell. */}
           <a
             href="/journeys"
             aria-label="返回游记"
@@ -97,6 +98,7 @@ export default function Draftbox() {
         {error && (
           <p role="alert" className="mt-5 text-sm text-coral">
             {error}{" "}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Full navigation rechecks authentication outside the offline shell. */}
             <a href="/" className="underline">
               登录
             </a>

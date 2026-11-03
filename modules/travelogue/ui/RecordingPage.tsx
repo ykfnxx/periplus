@@ -54,7 +54,6 @@ export default function RecordingPage({
   }, [store])
   useEffect(() => {
     let disposed = false
-    setDirectoryLoading(true)
     recordingApi
       .list()
       .then((items) => {
@@ -82,7 +81,10 @@ export default function RecordingPage({
       journeys={journeys}
       directoryError={directoryError}
       directoryLoading={directoryLoading}
-      onRetryDirectory={() => setReloadDirectory((value) => value + 1)}
+      onRetryDirectory={() => {
+        setDirectoryLoading(true)
+        setReloadDirectory((value) => value + 1)
+      }}
       initialRequest={initialRequest}
       onRequestHandled={() =>
         router.replace(journeyHref(journeyId), { scroll: false })

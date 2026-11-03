@@ -175,6 +175,7 @@ export default function DraftEditor({
                 {error && (
                   <p role="alert" className="text-sm text-coral">
                     {error}{" "}
+                    {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Full navigation rechecks authentication outside the offline shell. */}
                     <a href="/" className="underline">
                       登录
                     </a>
