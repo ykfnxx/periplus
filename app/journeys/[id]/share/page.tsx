@@ -25,19 +25,11 @@ export default async function SharePage({
   const user = await getCurrentUser()
   if (!user) redirect("/")
   const { id } = await params
+  let initial
   try {
     const status = await getShareStatus(user, id)
     const preview = await getSharePreview(user, id, status.includeCosts)
-    const { event } = await searchParams
-    const returnHref = `/journeys/${encodeURIComponent(id)}${event ? `?event=${encodeURIComponent(event)}` : ""}`
-    return (
-      <ShareManager
-        journeyId={id}
-        initialStatus={status}
-        initialPreview={preview}
-        returnHref={returnHref}
-      />
-    )
+    initial = { status, preview }
   } catch (error) {
     if (
       error instanceof PermissionDeniedError ||
@@ -46,4 +38,14 @@ export default async function SharePage({
       notFound()
     throw error
   }
+  const { event } = await searchParams
+  const returnHref = `/journeys/${encodeURIComponent(id)}${event ? `?event=${encodeURIComponent(event)}` : ""}`
+  return (
+    <ShareManager
+      journeyId={id}
+      initialStatus={initial.status}
+      initialPreview={initial.preview}
+      returnHref={returnHref}
+    />
+  )
 }
