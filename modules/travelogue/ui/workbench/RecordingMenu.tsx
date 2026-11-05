@@ -1,7 +1,13 @@
 "use client"
 
 import { Popover } from "@base-ui/react/popover"
-import { Camera, MoreHorizontal, NotebookPen, Users } from "lucide-react"
+import {
+  Camera,
+  MoreHorizontal,
+  NotebookPen,
+  Users,
+  Share2,
+} from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/kumo/components/button/button"
 
@@ -9,17 +15,38 @@ export default function RecordingMenu({
   onReceipt,
   onMembers,
   onSettings,
+  onShare,
+  shareDisabled,
 }: {
   onReceipt: () => void
   onMembers: () => void
+  onShare?: () => void
+  shareDisabled?: boolean
   onSettings?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const items = [
-    { label: "拍账单", icon: Camera, action: onReceipt },
-    { label: "同行者", icon: Users, action: onMembers },
+    { label: "拍账单", icon: Camera, action: onReceipt, disabled: false },
+    { label: "同行者", icon: Users, action: onMembers, disabled: false },
+    ...(onShare
+      ? [
+          {
+            label: "分享旅程",
+            icon: Share2,
+            action: onShare,
+            disabled: shareDisabled,
+          },
+        ]
+      : []),
     ...(onSettings
-      ? [{ label: "旅程信息", icon: NotebookPen, action: onSettings }]
+      ? [
+          {
+            label: "旅程信息",
+            icon: NotebookPen,
+            action: onSettings,
+            disabled: false,
+          },
+        ]
       : []),
   ]
   return (
@@ -38,10 +65,11 @@ export default function RecordingMenu({
           className="z-30"
         >
           <Popover.Popup className="journal-directory flex w-44 flex-col gap-1 rounded-2xl bg-white p-2 shadow-journal outline-none">
-            {items.map(({ label, icon: Icon, action }) => (
+            {items.map(({ label, icon: Icon, action, disabled }) => (
               <Button
                 key={label}
                 variant="ghost"
+                disabled={disabled}
                 className="justify-start! gap-3!"
                 onClick={() => {
                   setOpen(false)

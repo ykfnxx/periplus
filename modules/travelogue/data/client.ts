@@ -6,6 +6,10 @@ import type {
   JourneyMutation,
   JourneyMutationResult,
   JourneyWeatherResult,
+  ShareStatus,
+  SharePreview,
+  ShareWrite,
+  ShareRevoke,
 } from "@/modules/data-model/contracts"
 import type { PhotoDto } from "@/types/photo"
 import type { ReceiptExtraction } from "@/modules/data-model/contracts/receipts"
@@ -47,6 +51,26 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const recordingApi = {
+  shareStatus: (id: string) =>
+    request<ShareStatus>(`/api/journeys/${encodeURIComponent(id)}/share`),
+  sharePreview: (id: string, includeCosts: boolean, signal?: AbortSignal) =>
+    request<SharePreview>(
+      `/api/journeys/${encodeURIComponent(id)}/share/preview?includeCosts=${includeCosts}`,
+      { signal }
+    ),
+  publishShare: (id: string, input: ShareWrite) =>
+    request<ShareStatus>(`/api/journeys/${encodeURIComponent(id)}/share`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  revokeShare: (id: string, input: ShareRevoke) =>
+    request<ShareStatus>(`/api/journeys/${encodeURIComponent(id)}/share`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+
   account: () => request<{ userId: string }>("/api/drafts/account"),
   atlas: () => request<JourneyAtlas>("/api/journeys/map"),
   list: () => request<JourneySummary[]>("/api/journeys"),
