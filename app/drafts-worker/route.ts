@@ -35,6 +35,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || event.request.method !== "GET") return;
+  if (url.pathname.startsWith("/s/")) return;
   if (event.request.mode === "navigate") {
     event.respondWith((async () => {
       try { return await fetch(event.request, { cache: "no-store" }); }

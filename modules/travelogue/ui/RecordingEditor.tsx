@@ -456,6 +456,16 @@ export default function RecordingEditor({
         <RecordingMenu
           onReceipt={() => ui.setState({ receiptImport: { eventId: null } })}
           onMembers={() => ui.setState({ members: true })}
+          shareDisabled={loading || saving > 0 || uploads.length > 0}
+          onShare={
+            isOwner
+              ? () => {
+                  window.location.assign(
+                    `/journeys/${encodeURIComponent(journey.id)}/share${selectedEntry ? `?event=${encodeURIComponent(selectedEntry.id)}` : ""}`
+                  )
+                }
+              : undefined
+          }
           onSettings={
             isOwner ? () => ui.setState({ metadata: true }) : undefined
           }

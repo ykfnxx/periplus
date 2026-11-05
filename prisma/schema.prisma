@@ -164,6 +164,7 @@ model Journey {
   members     JourneyMember[]
   invitations JourneyInvitation[]
   weather     EventWeather[]
+  share       JourneyShare?
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -226,8 +227,9 @@ model Asset {
   createdAt         DateTime        @default(now())
   deletedAt         DateTime?
 
-  owner      User             @relation("OwnedAssets", fields: [ownerId], references: [id], onDelete: Restrict)
-  eventLinks EventAssetLink[] @relation("AssetEventLinks")
+  owner      User                @relation("OwnedAssets", fields: [ownerId], references: [id], onDelete: Restrict)
+  eventLinks EventAssetLink[]    @relation("AssetEventLinks")
+  shareLinks JourneyShareAsset[]
 
   @@unique([ownerId, uploadId])
   @@index([ownerId, createdAt])
@@ -423,4 +425,31 @@ model EventWeather {
   journey    Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
 
   @@id([journeyId, eventId])
+}
+
+model JourneyShare {
+  id                    String              @id @default(uuid())
+  journeyId             String              @unique
+  token                 String              @unique
+  version               Int
+  sourceRevision        Int
+  includeCosts          Boolean
+  snapshotJson          String
+  publishedAt           DateTime
+  updatedAt             DateTime            @updatedAt
+  revokedAt             DateTime?
+  lastMutationId        String
+  lastMutationSignature String
+  journey               Journey             @relation(fields: [journeyId], references: [id], onDelete: Restrict)
+  assets                JourneyShareAsset[]
+}
+
+model JourneyShareAsset {
+  shareId String
+  assetId String
+  share   JourneyShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  asset   Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@id([shareId, assetId])
+  @@index([assetId])
 }
