@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { ContextMenu } from "@base-ui/react/context-menu"
 import { useSortable } from "@dnd-kit/react/sortable"
 import { motion, useReducedMotion } from "motion/react"
-import { Clock3, Pencil, Trash2, ReceiptText } from "lucide-react"
+import { Clock3, Pencil, Trash2, ReceiptText, GripVertical } from "lucide-react"
 import type {
   JourneyEvent,
   EventWeather as Weather,
@@ -23,6 +23,7 @@ export default function EventCard({
   canEdit,
   canRemove,
   canMove,
+  moveDisabled,
   onReceipt,
   onAddReceipt,
   onSelect,
@@ -38,6 +39,7 @@ export default function EventCard({
   canEdit: boolean
   canRemove: boolean
   canMove: boolean
+  moveDisabled: boolean
   onReceipt: (assetId: string) => void
   onAddReceipt?: () => void
   onSelect: () => void
@@ -55,17 +57,18 @@ export default function EventCard({
     hold.current = null
   }
   useEffect(() => cancelHold, [])
-  const { ref, isDragging } = useSortable({
+  const title = eventCardTitle(entry)
+  const { ref, handleRef, isDragging } = useSortable({
     id: entry.id,
     index,
-    disabled: !canMove,
+    disabled: !canMove || moveDisabled,
+    data: { title },
     transition: {
       duration: reduced ? 0 : 220,
       easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
       idle: false,
     },
   })
-  const title = eventCardTitle(entry)
   const transit = entry.category === "TRANSIT"
   const stamp = transit ? null : weather
   const horizontal = entry.category === "MEAL" || entry.category === "STAY"
@@ -89,6 +92,7 @@ export default function EventCard({
         ref={canMove ? ref : undefined}
         id={`record-${entry.id}`}
         data-record-id={entry.id}
+        data-dragging={isDragging || undefined}
         data-event-category={entry.category || "VISIT"}
         tabIndex={0}
         aria-label={title}
@@ -162,7 +166,7 @@ export default function EventCard({
             )
           }
         }}
-        className={`journal-card ${transit ? "journal-card-transit" : horizontal ? "journal-card-horizontal" : "journal-card-portrait"} relative scroll-mt-3 outline-offset-4 ${canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+        className={`journal-card ${transit ? "journal-card-transit" : horizontal ? "journal-card-horizontal" : "journal-card-portrait"} relative scroll-mt-3 outline-offset-4 ${canMove && !moveDisabled ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
       >
         {hasCover && (
           <EventCover event={entry} title={title} onOpen={onExpand} />
@@ -203,6 +207,21 @@ export default function EventCard({
           )}
           <div className="cards-footer">
             <UserSource user={entry.source} compact />
+            {canMove && (
+              <button
+                type="button"
+                ref={handleRef}
+                className="journal-card-sort"
+                disabled={moveDisabled}
+                aria-label={`拖动调整${title}的顺序`}
+                title="拖动调整顺序"
+                onPointerDown={(event) => event.stopPropagation()}
+                onTouchStart={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <GripVertical size={17} aria-hidden="true" />
+              </button>
+            )}
             <div className="cards-expenses">
               {entry.receipts.map((receipt) => (
                 <button
