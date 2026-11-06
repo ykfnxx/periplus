@@ -11,7 +11,13 @@ import {
 import { useStore } from "zustand"
 import dynamic from "next/dynamic"
 import { DragDropProvider, PointerSensor, KeyboardSensor } from "@dnd-kit/react"
-import { PointerActivationConstraints } from "@dnd-kit/dom"
+import {
+  Accessibility,
+  PointerActivationConstraints,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from "@dnd-kit/dom"
 import { isSortable } from "@dnd-kit/react/sortable"
 import { ArrowLeft, Plus, List, ChartNoAxesColumn } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
@@ -58,9 +64,11 @@ const cardSensors = [
     activationConstraints: [
       new PointerActivationConstraints.Distance({ value: 8 }),
     ],
+    activatorElements: (source) => [source.element],
     preventActivation(event, source) {
       return (
-        event.pointerType === "touch" ||
+        (event.pointerType === "touch" &&
+          !source.handle?.contains(event.target as Node)) ||
         (event.target instanceof Element &&
           !!event.target.closest("[data-photo-strip]")) ||
         !!PointerSensor.defaults.preventActivation?.(event, source)
@@ -74,6 +82,28 @@ const cardSensors = [
     },
   }),
 ]
+
+const cardAccessibility = Accessibility.configure({
+  screenReaderInstructions: {
+    draggable: "按空格提起事件，方向键调整顺序，再按空格放下；按 Escape 取消。",
+  },
+  announcements: {
+    dragstart: ({ operation: { source } }: DragStartEvent) =>
+      isSortable(source)
+        ? `已提起“${source.data.title}”，位于第${source.initialIndex + 1}项。`
+        : undefined,
+    dragover: ({ operation: { source, target } }: DragOverEvent) =>
+      isSortable(source) && isSortable(target) && source.id !== target.id
+        ? `正在将“${source.data.title}”移到“${target.data.title}”的位置。`
+        : undefined,
+    dragend: ({ operation: { source }, canceled }: DragEndEvent) =>
+      isSortable(source)
+        ? canceled
+          ? `已取消调整“${source.data.title}”的顺序。`
+          : `已放下“${source.data.title}”，位于第${source.index + 1}项。`
+        : undefined,
+  },
+})
 
 export default function RecordingEditor({
   userId,
@@ -142,6 +172,7 @@ export default function RecordingEditor({
   const photoEntry = journey?.events.find((entry) => entry.id === photoPanelId)
   const [photoDirty, setPhotoDirty] = useState(false)
   const [directory, setDirectory] = useState(false)
+  const [sortReset, setSortReset] = useState(0)
   const initialApplied = useRef(false)
   const { ask, confirmation } = useConfirmation()
   const [mapRequest, setMapRequest] = useState<RecordMapRequest | null>(null)
@@ -684,6 +715,8 @@ export default function RecordingEditor({
               )}
               <div className="flex flex-col gap-7">
                 <DragDropProvider
+                  key={sortReset}
+                  plugins={(defaults) => [...defaults, cardAccessibility]}
                   sensors={cardSensors}
                   onDragEnd={(event) => {
                     const source = event.operation.source
@@ -695,7 +728,6 @@ export default function RecordingEditor({
                       !isOwner
                     )
                       return
-                    const handle = source.handle || source.element
                     const keyboard =
                       event.operation.activatorEvent instanceof KeyboardEvent
                     const remaining = journey.events.filter(
@@ -712,13 +744,17 @@ export default function RecordingEditor({
                         eventId: String(source.id),
                         afterEventId,
                       })
-                      .catch(() => {})
+                      // Restore React's confirmed order after optimistic DOM sorting fails to save.
+                      .catch(() => setSortReset((value) => value + 1))
                       .finally(() => {
                         if (keyboard)
-                          requestAnimationFrame(
-                            () =>
-                              handle instanceof HTMLElement &&
-                              handle.focus({ preventScroll: true })
+                          requestAnimationFrame(() =>
+                            document
+                              .getElementById(`record-${source.id}`)
+                              ?.querySelector<HTMLButtonElement>(
+                                ".journal-card-sort"
+                              )
+                              ?.focus({ preventScroll: true })
                           )
                       })
                   }}
@@ -733,6 +769,7 @@ export default function RecordingEditor({
                       canEdit={canEdit && entry.canEdit === true}
                       canRemove={canEdit && entry.canRemove === true}
                       canMove={isOwner}
+                      moveDisabled={saving > 0 || conflict}
                       onAddReceipt={
                         canEdit && entry.canEdit === true
                           ? () =>
