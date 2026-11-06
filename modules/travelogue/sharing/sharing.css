@@ -950,3 +950,26 @@
   color: var(--color-soft-white) !important;
   box-shadow: none !important;
 }
+
+.share-management-header {
+  padding-block: 20px;
+}
+.share-management h1 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 650;
+}
+.share-settings h2 {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 650;
+}
+.share-settings p {
+  font-size: 14px;
+  line-height: 22px;
+}
+.share-settings input,
+.share-settings select {
+  font-size: 14px;
+  min-height: 44px;
+}

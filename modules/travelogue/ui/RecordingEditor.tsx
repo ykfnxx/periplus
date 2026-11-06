@@ -733,6 +733,14 @@ export default function RecordingEditor({
                       canEdit={canEdit && entry.canEdit === true}
                       canRemove={canEdit && entry.canRemove === true}
                       canMove={isOwner}
+                      onAddReceipt={
+                        canEdit && entry.canEdit === true
+                          ? () =>
+                              ui.setState({
+                                receiptImport: { eventId: entry.id },
+                              })
+                          : undefined
+                      }
                       onReceipt={(assetId) =>
                         ui.setState({
                           receiptDetails: { eventId: entry.id, assetId },

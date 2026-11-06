@@ -30,6 +30,7 @@ describe("event card facts", () => {
       departure: "10:20",
       arrival: "11:00",
       arrivalDate: null,
+      arrivalDays: 0,
       range: "10:20–11:00",
     })
     expect(
@@ -147,4 +148,28 @@ it("shows an explicitly entered zero distance and hides an absent distance", () 
       transit: { ...transit.transit!, distanceMeters: undefined },
     }).distance
   ).toBeNull()
+})
+
+it("counts transit day offsets by local calendar dates across month and DST boundaries", () => {
+  expect(
+    eventCardTimes({
+      ...transit,
+      date: "2025-11-01",
+      time: "23:30",
+      timeZone: "America/Los_Angeles",
+      startAt: "2025-11-02T06:30:00Z",
+      endAt: "2025-11-03T08:30:00Z",
+    }).arrivalDays
+  ).toBe(2)
+  expect(
+    eventCardTimes({
+      ...transit,
+      date: "2026-10-31",
+      time: "23:30",
+      timeZone: "Asia/Shanghai",
+      startAt: "2026-10-31T15:30:00Z",
+      endAt: "2026-10-31T17:30:00Z",
+    }).arrivalDays
+  ).toBe(1)
+  expect(eventCardTimes({ ...transit, endAt: undefined }).arrivalDays).toBe(0)
 })

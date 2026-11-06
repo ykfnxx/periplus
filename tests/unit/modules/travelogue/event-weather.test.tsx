@@ -1,4 +1,11 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type {
   EventWeather,
@@ -243,13 +250,16 @@ describe("independent event weather", () => {
 })
 
 describe("static weather presentation", () => {
-  it("shows zero and unknown conditions without inventing weather or adding controls", () => {
+  it("shows zero and unknown conditions without inventing weather; source details stay behind the weather trigger", () => {
     const { container, rerender } = render(
       <WeatherStamp weather={{ ...hourly, temperatureC: 0 }} />
     )
     expect(screen.getByText("约0°C")).toBeTruthy()
     expect(container.textContent).toContain("多云")
-    expect(container.querySelector("button, a")).toBeNull()
+    expect(
+      screen.getByRole("button", { name: "天气数据来源与许可" })
+    ).toBeTruthy()
+    expect(container.querySelector("a")).toBeNull()
     rerender(
       <WeatherStamp
         weather={{ ...hourly, weatherCode: 42, temperatureC: -12.4 }}
@@ -272,7 +282,10 @@ describe("static weather presentation", () => {
     )
     expect(container.textContent).toBe("当日-8–-2°C")
     expect(container.textContent).not.toContain("多云")
-    expect(container.querySelector("button, a")).toBeNull()
+    expect(
+      screen.getByRole("button", { name: "天气数据来源与许可" })
+    ).toBeTruthy()
+    expect(container.querySelector("a")).toBeNull()
   })
   it("omits absent weather and keeps provider attribution as separate source links", () => {
     const { container, rerender } = render(
@@ -290,4 +303,24 @@ describe("static weather presentation", () => {
       screen.getByRole("link", { name: "CC BY 4.0" }).getAttribute("href")
     ).toBe("https://open-meteo.com/en/licence")
   })
+})
+
+it("opens the weather source on focus while retaining the displayed weather", async () => {
+  render(<WeatherStamp weather={hourly} />)
+  act(() => screen.getByRole("button", { name: "天气数据来源与许可" }).focus())
+  expect(await screen.findByRole("link", { name: "Open-Meteo" })).toBeTruthy()
+  expect(screen.getByText("约22°C")).toBeTruthy()
+})
+
+it("returns keyboard focus to the weather trigger after closing its source links", async () => {
+  render(<WeatherStamp weather={hourly} />)
+  const trigger = screen.getByRole("button", { name: "天气数据来源与许可" })
+  fireEvent.click(trigger)
+  const link = await screen.findByRole("link", { name: "Open-Meteo" })
+  act(() => link.focus())
+  fireEvent.keyDown(link, { key: "Escape" })
+  await waitFor(() =>
+    expect(screen.queryByRole("link", { name: "Open-Meteo" })).toBeNull()
+  )
+  expect(trigger).toHaveFocus()
 })

@@ -1,3 +1,5 @@
+import ContextInfo from "./ContextInfo"
+
 import {
   Cloud,
   CloudDrizzle,
@@ -46,11 +48,7 @@ const conditions: Record<number, [string, LucideIcon]> = {
   99: ["强雷雨夹冰雹", CloudLightning],
 }
 
-export default function EventWeather({
-  weather,
-}: {
-  weather?: Weather | null
-}) {
+function WeatherValue({ weather }: { weather?: Weather | null }) {
   if (!weather) return null
   if (weather.precision === "DAILY")
     return (
@@ -71,6 +69,28 @@ export default function EventWeather({
         </span>
       </span>
     </span>
+  )
+}
+
+export default function EventWeather({
+  weather,
+}: {
+  weather?: Weather | null
+}) {
+  if (!weather) return null
+  return (
+    <ContextInfo
+      label="天气数据来源与许可"
+      className="cards-weather-trigger"
+      content={
+        <>
+          <div className="cards-info-title">天气数据</div>
+          <WeatherAttribution weather={weather} />
+        </>
+      }
+    >
+      <WeatherValue weather={weather} />
+    </ContextInfo>
   )
 }
 
