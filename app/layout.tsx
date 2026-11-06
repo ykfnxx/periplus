@@ -27,10 +27,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
-      <body
-        className={`${inter.variable} ${noto.variable} font-sans antialiased`}
-      >
+    <html
+      lang="zh-CN"
+      className={`${inter.variable} ${noto.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
