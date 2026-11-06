@@ -2157,3 +2157,45 @@ body {
     font-size: 10px;
   }
 }
+
+.journal-card-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  border-radius: 10px;
+  color: var(--color-journal-muted);
+  cursor: grab;
+  touch-action: none;
+}
+.journal-card-sort + .cards-expenses {
+  margin-left: 0;
+}
+.journal-card-sort:hover {
+  background: var(--color-journal-paper-soft);
+}
+.journal-card-sort:active {
+  cursor: grabbing;
+}
+.journal-card-sort:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: -2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .journal-card-sort {
+    opacity: 0;
+  }
+  .journal-card:hover .journal-card-sort,
+  .journal-card:focus-within .journal-card-sort,
+  .journal-card[data-dragging] .journal-card-sort {
+    opacity: 1;
+  }
+}
+
+.journal-card-sort:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
