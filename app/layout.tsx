@@ -1,6 +1,20 @@
 import type { Metadata } from "next"
+import localFont from "next/font/local"
 import { ThemeProvider } from "next-themes"
 import "./globals.css"
+
+const inter = localFont({
+  src: "./fonts/inter.woff2",
+  weight: "100 900",
+  variable: "--font-inter",
+  display: "swap",
+})
+const noto = localFont({
+  src: "./fonts/noto-sans-sc.woff2",
+  weight: "100 900",
+  variable: "--font-noto",
+  display: "swap",
+})
 
 export const metadata: Metadata = {
   title: "我的旅程",
@@ -13,7 +27,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html
+      lang="zh-CN"
+      className={`${inter.variable} ${noto.variable}`}
+      suppressHydrationWarning
+    >
       <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"

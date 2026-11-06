@@ -153,7 +153,10 @@ async function project(
               fromName: event.transit.fromName,
               toName: event.transit.toName,
               departure: times.departure,
-              arrival: [times.arrivalDate, times.arrival]
+              arrival: [
+                times.arrival,
+                times.arrivalDays > 0 ? `+${times.arrivalDays}天` : null,
+              ]
                 .filter(Boolean)
                 .join(" "),
               mode: display.mode,

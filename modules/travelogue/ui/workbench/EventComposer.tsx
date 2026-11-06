@@ -68,7 +68,7 @@ export default function EventComposer({
     })
   }
   return (
-    <div className="px-6 pb-8 md:px-9">
+    <div className="journal-composer-body px-6 pb-8 md:px-9">
       <fieldset className="mt-2 flex gap-2" disabled={busy}>
         <legend className="sr-only">事件类型</legend>
         {(

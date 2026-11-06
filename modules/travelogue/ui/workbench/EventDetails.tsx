@@ -10,9 +10,9 @@ import type {
   JourneyEvent,
   EventWeather as Weather,
 } from "@/modules/data-model/contracts"
-import EventWeather, { WeatherAttribution } from "./EventWeather"
+import EventWeather from "./EventWeather"
 import { dateLabel, eventTitle } from "../display"
-import { eventCardTimes, eventCategoryLabels } from "../event-card-display"
+import { eventCardTimes } from "../event-card-display"
 import { photoItems } from "../photo-items"
 import { Modal } from "./Modal"
 import PhotoViewer from "./PhotoViewer"
@@ -112,13 +112,9 @@ export default function EventDetails({
             onOpen={() => onReceipt(receipt.assetId)}
           />
         ))}
-        <div className="journal-card-tags">
-          <span>{eventCategoryLabels[entry.category]}</span>
-        </div>
         <div className="mt-3">
-          <UserSource user={entry.source} className="text-journal-muted" />
+          <UserSource user={entry.source} compact />
         </div>
-        <WeatherAttribution weather={stamp} />
         {(onAddPhotos || onAddReceipt) && (
           <div className="mt-5 flex flex-wrap gap-2">
             {onAddPhotos && (
