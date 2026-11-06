@@ -224,4 +224,6 @@ test("a failed order write restores the confirmed order and allows a retry", asy
   await expect
     .poll(() => visibleOrder(page))
     .toEqual([ids[0], ids[2], ids[1], ids[3]])
+  // Leave the production sign-up window clear for the following browser suites.
+  await page.waitForTimeout(11_000)
 })
