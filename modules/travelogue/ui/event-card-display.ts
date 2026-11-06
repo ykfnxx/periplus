@@ -55,12 +55,21 @@ export function eventCardTimes(event: JourneyEvent) {
     end && startDate && end.date !== startDate
       ? `${Number(end.date.slice(5, 7))}月${Number(end.date.slice(8))}日`
       : null
+  const arrivalDays =
+    end && startDate
+      ? Math.round(
+          (Date.parse(`${end.date}T00:00:00Z`) -
+            Date.parse(`${startDate}T00:00:00Z`)) /
+            86_400_000
+        )
+      : 0
   const arrival = end?.time || null
   const arrivalLabel = [arrivalDate, arrival].filter(Boolean).join(" ")
   return {
     departure,
     arrival,
     arrivalDate,
+    arrivalDays,
     range: departure
       ? [departure, arrivalLabel].filter(Boolean).join("–")
       : arrivalLabel

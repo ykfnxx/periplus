@@ -24,7 +24,7 @@ export default function LandingGate() {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={mode}
-            className="mt-8"
+            className="journal-entry-fields"
             initial={{ opacity: 0, y: reduced ? 0 : 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}

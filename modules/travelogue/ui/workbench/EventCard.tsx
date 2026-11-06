@@ -3,24 +3,17 @@ import { useEffect, useRef, useState } from "react"
 import { ContextMenu } from "@base-ui/react/context-menu"
 import { useSortable } from "@dnd-kit/react/sortable"
 import { motion, useReducedMotion } from "motion/react"
-import { CalendarDays, Clock3, Pencil, Trash2 } from "lucide-react"
+import { Clock3, Pencil, Trash2, ReceiptText } from "lucide-react"
 import type {
   JourneyEvent,
   EventWeather as Weather,
 } from "@/modules/data-model/contracts"
-import EventWeather, { WeatherAttribution } from "./EventWeather"
+import EventWeather from "./EventWeather"
 import UserSource from "./UserSource"
-import ReceiptCard from "./ReceiptCard"
 import EventCover from "./EventCover"
 import TransitEventCard from "./TransitEventCard"
-import { dateLabel } from "../display"
 import { receiptCardTotal } from "../receipt-display"
-import {
-  eventCardTimes,
-  eventCardTitle,
-  eventCategoryLabels,
-  eventCity,
-} from "../event-card-display"
+import { eventCardTimes, eventCardTitle } from "../event-card-display"
 
 export default function EventCard({
   entry,
@@ -31,6 +24,7 @@ export default function EventCard({
   canRemove,
   canMove,
   onReceipt,
+  onAddReceipt,
   onSelect,
   onExpand,
   onEdit,
@@ -45,6 +39,7 @@ export default function EventCard({
   canRemove: boolean
   canMove: boolean
   onReceipt: (assetId: string) => void
+  onAddReceipt?: () => void
   onSelect: () => void
   onExpand: (index?: number) => void
   onEdit: () => void
@@ -71,7 +66,6 @@ export default function EventCard({
     },
   })
   const title = eventCardTitle(entry)
-  const city = eventCity(entry)
   const transit = entry.category === "TRANSIT"
   const stamp = transit ? null : weather
   const horizontal = entry.category === "MEAL" || entry.category === "STAY"
@@ -101,9 +95,13 @@ export default function EventCard({
         aria-current={selected ? "true" : undefined}
         onPointerDownCapture={(event) => {
           if (
+            !event.currentTarget.contains(event.target as Node) ||
             event.pointerType !== "mouse" ||
             event.button !== 0 ||
-            (!canEdit && !canRemove)
+            (!canEdit && !canRemove) ||
+            (event.target as HTMLElement).closest(
+              "button, a, input, [role=dialog]"
+            )
           )
             return
           const target = event.currentTarget
@@ -136,9 +134,10 @@ export default function EventCard({
         }}
         onClick={(event) => {
           if (
+            event.currentTarget.contains(event.target as Node) &&
             !menuOpen &&
             !isDragging &&
-            !(event.target as HTMLElement).closest("button")
+            !(event.target as HTMLElement).closest("button, a, input")
           )
             onSelect()
         }}
@@ -176,12 +175,6 @@ export default function EventCard({
             </>
           ) : (
             <>
-              <div className="journal-card-topline">
-                {city && <div className="journal-card-city">{city}</div>}
-                {horizontal && times.range && (
-                  <span className="journal-card-time">{times.range}</span>
-                )}
-              </div>
               <h2 className="journal-event-title">
                 <button
                   type="button"
@@ -192,59 +185,52 @@ export default function EventCard({
                   {title}
                 </button>
               </h2>
-              {((!horizontal && times.range) || stamp) && (
+              {(times.range || stamp) && (
                 <div className="journal-card-meta">
-                  <span className="journal-card-time">
-                    {stamp ? (
-                      <CalendarDays size={14} aria-hidden="true" />
-                    ) : (
+                  {times.range && (
+                    <span className="journal-card-time">
                       <Clock3 size={14} aria-hidden="true" />
-                    )}
-                    {stamp && dateLabel(entry.date)}
-                    {stamp && !horizontal && times.range && " · "}
-                    {!horizontal && times.range}
-                  </span>
+                      {times.range}
+                    </span>
+                  )}
                   <EventWeather weather={stamp} />
                 </div>
               )}
             </>
           )}
-          <div
-            className={
-              transit && (body || entry.receipts.length)
-                ? "journal-transit-footer"
-                : undefined
-            }
-          >
-            {body && (
-              <p className={transit ? "line-clamp-1" : "line-clamp-3"}>
-                {body}
-              </p>
-            )}
-            {entry.receipts.map((receipt) => (
-              <ReceiptCard
-                key={receipt.assetId}
-                merchant={receipt.merchant || ""}
-                date={receipt.date ? dateLabel(receipt.date) : ""}
-                total={receiptCardTotal(receipt)}
-                onOpen={() => onReceipt(receipt.assetId)}
-              />
-            ))}
-          </div>
-          {!transit && (
-            <div className="journal-card-tags">
-              {entry.category && (
-                <span>{eventCategoryLabels[entry.category]}</span>
+          {body && (
+            <p className={transit ? "line-clamp-1" : "line-clamp-3"}>{body}</p>
+          )}
+          <div className="cards-footer">
+            <UserSource user={entry.source} compact />
+            <div className="cards-expenses">
+              {entry.receipts.map((receipt) => (
+                <button
+                  key={receipt.assetId}
+                  type="button"
+                  className="cards-expense-trigger"
+                  aria-label={`查看${receipt.merchant || "这条记录"}的账单详情`}
+                  onClick={() => onReceipt(receipt.assetId)}
+                >
+                  {receipt.total !== null ? (
+                    receiptCardTotal(receipt)
+                  ) : (
+                    <ReceiptText size={19} aria-hidden="true" />
+                  )}
+                </button>
+              ))}
+              {!entry.receipts.length && onAddReceipt && (
+                <button
+                  type="button"
+                  className="cards-expense-trigger"
+                  aria-label="加账单"
+                  onClick={onAddReceipt}
+                >
+                  <ReceiptText size={19} aria-hidden="true" />
+                </button>
               )}
-              {entry.cuisine && <span>{entry.cuisine}</span>}
             </div>
-          )}
-          {(entry.source || stamp) && (
-            <div className="journal-card-source">
-              {entry.source && <UserSource user={entry.source} />}
-              <WeatherAttribution weather={stamp} />
-            </div>
-          )}
+          </div>
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>

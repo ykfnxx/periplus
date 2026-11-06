@@ -59,7 +59,7 @@ export default function Draftbox() {
     setDrafts(await draftStorage.list(context!.userId))
   }
   return (
-    <main className="journal-workbench min-h-dvh bg-journal-paper text-ink">
+    <main className="journal-workbench journal-drafts min-h-dvh bg-journal-paper text-ink">
       <div className="mx-auto max-w-2xl px-5 py-6 sm:px-8 sm:py-10">
         <header className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Full navigation restores the online page from the offline shell. */}
