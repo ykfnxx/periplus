@@ -18,7 +18,25 @@ export function GET() {
 }
 export function POST(request: NextRequest) {
   return resourceResponse(async (context) => {
-    const formData = await request.formData()
+    let formData: FormData
+    try {
+      formData = await request.formData()
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error
+      console.error("Photo multipart parsing failed", {
+        contentType: request.headers.get("content-type"),
+        contentLength: request.headers.get("content-length"),
+        userAgent: request.headers.get("user-agent"),
+        reason: error.message,
+      })
+      return NextResponse.json(
+        {
+          error: "图片上传数据不完整或格式异常，请重新选择图片后重试。",
+          code: "INVALID_MULTIPART",
+        },
+        { status: 400 }
+      )
+    }
     const file = formData.get("file")
     const uploadId = formData.get("uploadId")
     if (!(file instanceof File)) throw new AssetInputError("请选择图片文件")

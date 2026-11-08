@@ -11,7 +11,7 @@ import type {
   ShareWrite,
   ShareRevoke,
 } from "@/modules/data-model/contracts"
-import type { PhotoDto } from "@/types/photo"
+import { PHOTO_MAX_BYTES, PHOTO_SIZE_ERROR, type PhotoDto } from "@/types/photo"
 import type { ReceiptExtraction } from "@/modules/data-model/contracts/receipts"
 import type {
   JourneyMembers,
@@ -44,7 +44,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       } as Record<string, string>
     )[body?.code] ||
       body?.error ||
-      "请求失败，请重试。",
+      (response.status === 413
+        ? "上传内容过大，请减少文件大小后重试。"
+        : "请求失败，请重试。"),
     response.status,
     body?.code
   )
@@ -96,7 +98,15 @@ export const recordingApi = {
         body: JSON.stringify(mutation),
       }
     ),
-  upload: (file: File, uploadId: string) => {
+  upload: async (file: File, uploadId: string) => {
+    if (file.size > PHOTO_MAX_BYTES)
+      throw new RecordingApiError(PHOTO_SIZE_ERROR, 413, "FILE_TOO_LARGE")
+    if (file.size === 0)
+      throw new RecordingApiError(
+        "图片文件为空，请重新选择。",
+        400,
+        "INVALID_INPUT"
+      )
     const body = new FormData()
     body.set("file", file)
     body.set("uploadId", uploadId)
