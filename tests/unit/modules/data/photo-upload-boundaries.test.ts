@@ -82,12 +82,16 @@ describe("photo upload boundaries", () => {
           Response.json({ error: PHOTO_SIZE_ERROR }, { status: 400 })
         )
         .mockResolvedValueOnce(new Response("too large", { status: 413 }))
+        .mockResolvedValueOnce(new Response("Bad gateway", { status: 502 }))
     )
     await expect(recordingApi.upload(file(1), "first")).rejects.toThrow(
       PHOTO_SIZE_ERROR
     )
     await expect(recordingApi.upload(file(1), "second")).rejects.toThrow(
       "上传内容过大"
+    )
+    await expect(recordingApi.upload(file(1), "third")).rejects.toThrow(
+      "HTTP 502"
     )
   })
 })
