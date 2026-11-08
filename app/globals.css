@@ -2199,3 +2199,13 @@ body {
   cursor: not-allowed;
   opacity: 0.45;
 }
+
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+      [type="file"]
+    ),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
