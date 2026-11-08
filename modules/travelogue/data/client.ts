@@ -46,7 +46,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       body?.error ||
       (response.status === 413
         ? "上传内容过大，请减少文件大小后重试。"
-        : "请求失败，请重试。"),
+        : response.status === 502
+          ? "服务连接中断（HTTP 502），请稍后重试。"
+          : "请求失败，请重试。"),
     response.status,
     body?.code
   )
