@@ -8,7 +8,8 @@ import {
   removeResource,
   uploadResource,
 } from "@/modules/data/assets/asset-service"
-import type { PhotoDto } from "@/types/photo"
+import { PHOTO_MAX_BYTES, PHOTO_SIZE_ERROR, type PhotoDto } from "@/types/photo"
+import { AssetInputError } from "@/modules/data/assets/asset-contract"
 
 export function photoDto(context: AuthContext, photo: AssetRecord): PhotoDto {
   return {
@@ -47,6 +48,16 @@ export async function uploadPhotoResource(
   coordinates: { lat?: number; lng?: number },
   signal?: AbortSignal
 ) {
+  if (file.size > PHOTO_MAX_BYTES) throw new AssetInputError(PHOTO_SIZE_ERROR)
+  if (file.size === 0) throw new AssetInputError("图片文件为空，请重新选择。")
+  if (
+    !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(
+      file.type.toLowerCase()
+    )
+  )
+    throw new AssetInputError(
+      "不支持此图片格式，请选择 JPEG、PNG、WebP 或 GIF 图片。"
+    )
   const result = await uploadResource(
     context,
     {
@@ -55,7 +66,7 @@ export async function uploadPhotoResource(
       mimeType: file.type,
       originalName: file.name || undefined,
       sizeBytes: file.size,
-      maxBytes: 5 * 1024 * 1024,
+      maxBytes: PHOTO_MAX_BYTES,
       requiredKind: "IMAGE",
       ...coordinates,
     },
