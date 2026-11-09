@@ -51,7 +51,7 @@ export default function useJourneyRoutes(
           source: sourceId,
           type: "line",
           paint: {
-            "line-color": periplusColors.routeBlue,
+            "line-color": periplusColors.mapRoute,
             "line-width": width,
             "line-opacity": selectedEventId && !selected ? 0.4 : 0.96,
             ...(dash
