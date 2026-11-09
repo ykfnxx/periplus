@@ -15,7 +15,7 @@ Periplus 是以地图和照片为入口的游记应用。每份旅程只有一�
 
 ## 环境与启动
 
-使用 Node.js 22、PostgreSQL 15+ 和私有 S3 兼容存储桶。地图需要高德 JS API Key；地点库导入、补全脚本使用高德 Web Service Key。
+使用 Node.js 22、PostgreSQL 15+ 和私有 S3 兼容存储桶。地图使用 MapLibre GL 与 OpenFreeMap，无需地图 API Key。
 
 ```bash
 npm ci

@@ -31,7 +31,6 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       CI_IMAGE_SHA: ${{ github.sha }}
-      NEXT_PUBLIC_AMAP_KEY: ${{ github.event_name == 'push' && secrets.PERIPLUS_AMAP_JS_KEY || '' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -46,7 +45,7 @@ jobs:
       - run: npm run typecheck && npm run lint && npm run test:unit -- --run
       - name: Build deployment image
         run: |
-          docker build --build-arg "PERIPLUS_RELEASE_SHA=$CI_IMAGE_SHA" --build-arg NEXT_PUBLIC_AMAP_KEY -t "periplus:$CI_IMAGE_SHA" .
+          docker build --build-arg "PERIPLUS_RELEASE_SHA=$CI_IMAGE_SHA" -t "periplus:$CI_IMAGE_SHA" .
       - name: Reject missing production authentication configuration
         run: |
           set +e

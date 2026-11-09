@@ -15,7 +15,7 @@ Periplus is a travel journal built around maps and photos. Each journey is one o
 
 ## Setup
 
-Use Node.js 22, PostgreSQL 15+, and a private S3-compatible bucket. Maps require an AMap JS API key. Place catalog import and enrichment scripts use an AMap Web Service key.
+Use Node.js 22, PostgreSQL 15+, and a private S3-compatible bucket. Maps use MapLibre GL and OpenFreeMap without an API key.
 
 ```bash
 npm ci

@@ -41,7 +41,7 @@ export default function RecordingPage({
             location: {
               name: "所选位置",
               address: null,
-              coordinates: { lat, lng, coordinateSystem: "GCJ02" as const },
+              coordinates: { lat, lng, coordinateSystem: "WGS84" as const },
             },
           }
         : {}),

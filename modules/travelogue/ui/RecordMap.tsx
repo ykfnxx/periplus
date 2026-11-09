@@ -8,7 +8,13 @@ import type {
 import { recordingCoordinateToMap } from "./display"
 import { Button } from "@/components/kumo/components/button/button"
 import { MapPin, Plus } from "lucide-react"
-import { loadAMap, PERIPLUS_AMAP_STYLE } from "@/lib/amap"
+import {
+  Map as LibreMap,
+  Marker,
+  ScaleControl,
+  AttributionControl,
+} from "maplibre-gl"
+import { MAP_STYLE, fitMapPoints } from "@/lib/map"
 import usePhotoMapLayer, { type MapPhoto } from "./usePhotoMapLayer"
 import type { MapViewport } from "../state/atlas-view-store"
 import useJourneyRoutes from "./useJourneyRoutes"
@@ -81,7 +87,7 @@ export default function RecordMap({
     viewportListener.current = onViewport
   }, [onViewport])
   const container = useRef<HTMLDivElement>(null)
-  const [map, setMap] = useState<AMap.Map | null>(null)
+  const [map, setMap] = useState<LibreMap | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<{
     lat: number
@@ -119,64 +125,73 @@ export default function RecordMap({
     onAddAtLocation,
   ])
   useEffect(() => {
-    let disposed = false
-    let instance: AMap.Map | null = null
-    loadAMap()
-      .then((sdk) => {
-        if (disposed || !container.current) return
-        instance = new sdk.Map(container.current, {
-          center: restoredViewport.current
-            ? [restoredViewport.current.lng, restoredViewport.current.lat]
-            : [104.5, 36.5],
-          zoom: restoredViewport.current?.zoom ?? 4,
-          viewMode: "2D",
-          mapStyle: PERIPLUS_AMAP_STYLE,
-          features: latest.current.onPick
-            ? ["bg", "road", "point"]
-            : ["bg", "road"],
-          animateEnable: false,
-        })
-        instance.addControl(new sdk.Scale())
-        instance.on("rightclick", (event) => {
-          if (!latest.current.onAddAtLocation) return
-          const pixel = instance!.lngLatToContainer(event.lnglat)
-          setContext({
-            lat: event.lnglat.getLat(),
-            lng: event.lnglat.getLng(),
-            x: Math.max(
-              12,
-              Math.min(pixel.getX(), container.current!.clientWidth - 192)
-            ),
-            y: Math.max(
-              12,
-              Math.min(pixel.getY(), container.current!.clientHeight - 64)
-            ),
-          })
-        })
-        instance.on("movestart", () => setContext(null))
-        instance.on("moveend", () => {
-          const center = instance!.getCenter()
-          viewportListener.current?.({
-            lat: center.getLat(),
-            lng: center.getLng(),
-            zoom: instance!.getZoom(),
-          })
-        })
-        instance.on("click", (event) => {
-          setContext(null)
-          latest.current.onPick?.({
-            lat: event.lnglat.getLat(),
-            lng: event.lnglat.getLng(),
-          })
-        })
-        setMap(instance)
+    if (!container.current) return
+    let instance: LibreMap | null = null
+    const resize = new ResizeObserver(() => instance?.resize())
+    try {
+      instance = new LibreMap({
+        container: container.current,
+        center: restoredViewport.current
+          ? [restoredViewport.current.lng, restoredViewport.current.lat]
+          : [104.5, 36.5],
+        zoom: restoredViewport.current?.zoom ?? 4,
+        style: MAP_STYLE,
+        attributionControl: false,
+        dragRotate: false,
+        pitchWithRotate: false,
       })
-      .catch(() => {
-        if (!disposed) setError("地图暂时无法显示，文字和照片仍可正常保存。")
+      const current = instance
+      current.addControl(
+        new AttributionControl({ compact: true }),
+        "bottom-left"
+      )
+      current.addControl(new ScaleControl(), "bottom-left")
+      current.on("error", () =>
+        setError("地图暂时无法显示，文字和照片仍可正常保存。")
+      )
+      current.on("idle", () => setError(null))
+      current.on("contextmenu", (event) => {
+        if (!latest.current.onAddAtLocation) return
+        setContext({
+          lat: event.lngLat.lat,
+          lng: event.lngLat.wrap().lng,
+          x: Math.max(
+            12,
+            Math.min(event.point.x, current.getContainer().clientWidth - 192)
+          ),
+          y: Math.max(
+            12,
+            Math.min(event.point.y, current.getContainer().clientHeight - 64)
+          ),
+        })
       })
+      current.on("movestart", () => setContext(null))
+      current.on("moveend", () => {
+        const center = current.getCenter()
+        viewportListener.current?.({
+          lat: center.lat,
+          lng: center.lng,
+          zoom: current.getZoom(),
+        })
+      })
+      current.on("click", (event) => {
+        setContext(null)
+        latest.current.onPick?.({
+          lat: event.lngLat.lat,
+          lng: event.lngLat.wrap().lng,
+        })
+      })
+      // Layers must be added only after the remote style has loaded.
+      current.on("load", () => setMap(current))
+      resize.observe(container.current)
+    } catch {
+      // WebGL initialization can fail before MapLibre emits an error event.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError("地图暂时无法显示，文字和照片仍可正常保存。")
+    }
     return () => {
-      disposed = true
-      instance?.destroy()
+      resize.disconnect()
+      instance?.remove()
     }
   }, [])
 
@@ -202,21 +217,19 @@ export default function RecordMap({
         button.style.background = periplusColors.russet
         button.textContent = String(point.ordinal || index + 1)
         button.setAttribute("aria-label", `地图地点：${point.title}`)
-        const marker = new AMap.Marker({
-          position: [point.lng, point.lat],
-          content: button,
-          anchor: "center",
-        })
-        marker.on("click", () => {
+        const marker = new Marker({ element: button, anchor: "center" })
+          .setLngLat([point.lng, point.lat])
+          .addTo(map)
+        button.onclick = (event) => {
+          event.stopPropagation()
           if (latest.current.onPick)
             latest.current.onPick({ lat: point.lat, lng: point.lng })
           else latest.current.onSelect?.(point.eventId)
-        })
+        }
         return marker
       })
-    map.add(markers)
     return () => {
-      map.remove(markers)
+      markers.forEach((marker) => marker.remove())
     }
   }, [map, points, selectedEventId, photoMode, photos])
   useEffect(() => {
@@ -237,26 +250,26 @@ export default function RecordMap({
       ? pickedLocation?.name || "所选位置"
       : "所选位置"
     content.append(label, dot)
-    const marker = new AMap.Marker({
-      position: [point.lng, point.lat],
-      content,
-      anchor: "bottom-center",
-      zIndex: 200,
-    })
-    map.add(marker)
+    content.style.zIndex = "200"
+    const marker = new Marker({ element: content, anchor: "bottom" })
+      .setLngLat([point.lng, point.lat])
+      .addTo(map)
     return () => {
-      map.remove(marker)
+      marker.remove()
     }
   }, [map, picking, pickedLocation, context])
   useEffect(() => {
     if (!map) return
-    map.setDefaultCursor(picking ? "crosshair" : "")
+    map.getCanvas().style.cursor = picking ? "crosshair" : ""
 
     // 只在进入选点时定位；之后平移、缩放和点击都保留当前镜头。
     const coordinate = pickedLocation?.coordinates
     if (picking && coordinate) {
       const point = recordingCoordinateToMap(coordinate)
-      map.setZoomAndCenter(Math.max(14, map.getZoom()), [point.lng, point.lat])
+      map.jumpTo({
+        zoom: Math.max(14, map.getZoom()),
+        center: [point.lng, point.lat],
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, picking])
@@ -296,7 +309,7 @@ export default function RecordMap({
     .join("|")
   const { left, right, top, bottom } = insets
   const photoPadding =
-    map && map.getSize().getHeight() - top - bottom < 160 ? 30 : 130
+    map && map.getContainer().clientHeight - top - bottom < 160 ? 30 : 130
   useEffect(() => {
     if (!map || picking || restoredViewport.current) return
     const { points, events, photos, selectedEventId } = latest.current
@@ -316,12 +329,18 @@ export default function RecordMap({
     )
     if (routeBounds.length) {
       framed.current = true
-      map.setFitView(
-        routeBounds.map((position) => new AMap.Marker({ position })),
-        false,
-        [top + 24, bottom + 24, left + 72, right + 72],
+      fitMapPoints(
+        map,
+        routeBounds.map(([lng, lat]) => ({ lng, lat })),
+        {
+          top: top + 24,
+          bottom: bottom + 24,
+          left: left + 72,
+          right: right + 72,
+        },
         14
       )
+
       return
     }
     if (selectedEventId && !selected && !selectedPhoto && framed.current) return
@@ -329,25 +348,26 @@ export default function RecordMap({
     if (selected || selectedPhoto || all.length === 1) {
       framed.current = true
       const point = selected || selectedPhoto?.coordinate || all[0]
-      map.setZoomAndCenter(14, [point.lng, point.lat])
-      // Paper photos extend upward from their coordinate, as in batch fitting.
-      map.panBy(
-        (left - right) / 2,
-        (top + (selectedPhoto ? photoPadding : 0) - bottom) / 2
-      )
+      map.easeTo({
+        center: [point.lng, point.lat],
+        zoom: 14,
+        duration: 0,
+        offset: [
+          (left - right) / 2,
+          (top + (selectedPhoto ? photoPadding : 0) - bottom) / 2,
+        ],
+      })
     } else if (all.length) {
       framed.current = true
-      map.setFitView(
-        all.map(
-          (point) => new AMap.Marker({ position: [point.lng, point.lat] })
-        ),
-        false,
-        [
-          top + (photos.length ? photoPadding : 0),
-          bottom + 24,
-          left + 72,
-          right + 72,
-        ],
+      fitMapPoints(
+        map,
+        all,
+        {
+          top: top + (photos.length ? photoPadding : 0),
+          bottom: bottom + 24,
+          left: left + 72,
+          right: right + 72,
+        },
         14
       )
     }
@@ -366,17 +386,15 @@ export default function RecordMap({
         ...latest.current.photos.map((photo) => photo.coordinate),
       ]
       if (all.length)
-        map.setFitView(
-          all.map(
-            (point) => new AMap.Marker({ position: [point.lng, point.lat] })
-          ),
-          false,
-          [
-            top + (latest.current.photos.length ? photoPadding : 0),
-            bottom + 24,
-            left + 72,
-            right + 72,
-          ],
+        fitMapPoints(
+          map,
+          all,
+          {
+            top: top + (latest.current.photos.length ? photoPadding : 0),
+            bottom: bottom + 24,
+            left: left + 72,
+            right: right + 72,
+          },
           14
         )
     }
@@ -424,7 +442,7 @@ export default function RecordMap({
                 coordinates: {
                   lat: context.lat,
                   lng: context.lng,
-                  coordinateSystem: "GCJ02",
+                  coordinateSystem: "WGS84",
                 },
               })
               setContext(null)

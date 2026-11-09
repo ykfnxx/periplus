@@ -99,10 +99,4 @@ export const periplusServerConfig = {
       return envString("PERIPLUS_STORAGE_SECRET_ACCESS_KEY")
     },
   },
-  amap: {
-    get webServiceKey() {
-      // JS API 与 Web 服务使用不同类型的 Key，不能互相回退。
-      return envString("PERIPLUS_AMAP_WEB_SERVICE_KEY")
-    },
-  },
 } as const

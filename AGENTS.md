@@ -24,15 +24,15 @@
 - 正确：
 
   ```typescript
-  // 高德地图使用 GCJ-02 坐标系，所有坐标直接按此存储
-  const path = points.map((p) => new AMap.LngLat(p.lng, p.lat))
+  // Convert recorded coordinates to WGS84 before rendering.
+  const path = points.map((p) => [p.lng, p.lat])
   ```
 
 - 错误（不要单独写注释文件或注释块）：
 
   ```typescript
   // 见 docs/coordinate-system.md 了解坐标系说明
-  const path = points.map((p) => new AMap.LngLat(p.lng, p.lat))
+  const path = points.map((p) => [p.lng, p.lat])
   ```
 
 - **禁止创建独立的注释/说明文档来阐述代码逻辑** — 代码本身 + 行内注释就是全部文档
@@ -44,7 +44,7 @@
 - 颜色/阴影一律使用 `app/globals.css` `@theme` 中注册的 token 类（如 `bg-ink`、`text-russet`、`border-ink-10`、`shadow-periplus`），禁止再写 `var(--periplus-*)` 或 `rgb(44_36_22_/N%)` 形式的 arbitrary value；地图 SDK 相关的 JS 色值常量在 `lib/ui/map-theme.ts`，与 CSS token 双改
 - 每个文件一个明确职责，保持小而聚焦
 - 使用 Zustand 进行客户端状态管理
-- 地图相关操作通过 `lib/amap.ts` 统一加载 AMap SDK
+- 地图使用 MapLibre GL 与 OpenFreeMap；`lib/map.ts` 管理底图与视野，显示坐标统一为 WGS84
 - **禁止使用 emoji**：代码、注释、UI 文案、提交信息、设计文档和 Agent 输出中都不得新增 emoji，除非用户明确要求处理既有 emoji 内容
 
 ---
@@ -78,7 +78,7 @@ npm run build       # 生产构建
 | 框架   | Next.js 16 (App Router) |
 | 语言   | TypeScript 5 (严格模式) |
 | 样式   | Tailwind CSS 4 + Kumo   |
-| 地图   | 高德地图 JS API 2.0     |
+| 地图   | MapLibre GL + OpenFreeMap     |
 | 数据库 | PostgreSQL / OpenDAL    |
 | ORM    | Prisma                  |
 | 状态   | Zustand                 |
@@ -101,7 +101,7 @@ npm run build       # 生产构建
 
 **注意**：
 
-- 申请 Key 后需在高德控制台白名单中添加 `localhost:3001`
+- OpenFreeMap 底图无需 API Key，保留地图署名
 - 新增配置项应先加入 `.env.example`，再通过 `config/periplus.ts` 或 `config/periplus.server.ts` 读取
 - 运行本地命令时不要再临时前缀 `DATABASE_URL=...`，配置应来自 `.env.local`
 

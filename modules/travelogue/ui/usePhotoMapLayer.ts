@@ -1,7 +1,8 @@
 "use client"
 import { useEffect, useMemo, useRef, useState } from "react"
 import Supercluster from "supercluster"
-import { loadAMap } from "@/lib/amap"
+import { Marker, type Map } from "maplibre-gl"
+import { fitMapPoints } from "@/lib/map"
 import type { PhotoItem } from "./photo-items"
 import type { RecordMapInsets } from "./RecordMap"
 
@@ -54,7 +55,7 @@ function paperButton(
 }
 
 export default function usePhotoMapLayer(
-  map: AMap.Map | null,
+  map: Map | null,
   photos: MapPhoto[],
   insets: RecordMapInsets,
   selectedEventId?: string | null,
@@ -62,13 +63,12 @@ export default function usePhotoMapLayer(
   interactive = true
 ) {
   const [photoMode, setPhotoMode] = useState(false)
-  // Keep source membership in one index. AMap's cluster render callback omits
-  // close points at lower zoom levels, even when its count includes them.
+  // Keep source membership and stable photo ordering in one index.
   const index = useMemo(
     () =>
       new Supercluster<{ photo: MapPhoto; order: number }>({
         radius: 96,
-        extent: 256,
+        extent: 512,
         maxZoom: 22,
       }).load(
         photos.map((photo, order) => ({
@@ -101,25 +101,25 @@ export default function usePhotoMapLayer(
         return
       }
       const pixels = photos.map((photo) =>
-        map!.lngLatToContainer([photo.coordinate.lng, photo.coordinate.lat])
+        map!.project([photo.coordinate.lng, photo.coordinate.lat])
       )
-      const xs = pixels.map((pixel) => pixel.getX())
-      const ys = pixels.map((pixel) => pixel.getY())
+      const xs = pixels.map((pixel) => pixel.x)
+      const ys = pixels.map((pixel) => pixel.y)
       const span = Math.hypot(
         Math.max(...xs) - Math.min(...xs),
         Math.max(...ys) - Math.min(...ys)
       )
-      const size = map!.getSize()
+      const size = map!.getContainer()
       // A short exposed map uses compact markers instead of clipped photos.
-      if (size.getHeight() - insets.top - insets.bottom < 160) {
+      if (size.clientHeight - insets.top - insets.bottom < 160) {
         setPhotoMode(false)
         return
       }
       const available = Math.max(
         120,
         Math.min(
-          size.getWidth() - insets.left - insets.right,
-          size.getHeight() - insets.top - insets.bottom
+          size.clientWidth - insets.left - insets.right,
+          size.clientHeight - insets.top - insets.bottom
         )
       )
       // Screen coverage rather than a fixed map zoom drives the switch. A
@@ -131,92 +131,75 @@ export default function usePhotoMapLayer(
       )
     }
     update()
-    for (const event of ["complete", "zoomend", "moveend", "resize"])
+    for (const event of ["zoomend", "moveend", "resize"] as const)
       map.on(event, update)
     return () => {
-      for (const event of ["complete", "zoomend", "moveend", "resize"])
+      for (const event of ["zoomend", "moveend", "resize"] as const)
         map.off(event, update)
     }
   }, [map, photos, insets])
   useEffect(() => {
     if (!map || !photos.length) return
-    let disposed = false
-    let markers: AMap.Marker[] = []
-    let render: (() => void) | undefined
-    void loadAMap().then((sdk) => {
-      if (disposed) return
-      render = () => {
-        const next = index
-          .getClusters([-180, -85, 180, 85], Math.floor(map.getZoom()))
-          .map((feature) => {
-            const members =
-              "cluster_id" in feature.properties
-                ? index
-                    .getLeaves(feature.properties.cluster_id, Infinity)
-                    .sort((a, b) => a.properties.order - b.properties.order)
-                    .map((point) => point.properties.photo)
-                : [feature.properties.photo]
-            const marker = new sdk.Marker({
-              position: feature.geometry.coordinates as [number, number],
-            })
-            const button = paperButton(
-              members,
-              latest.current.selectedEventId,
-              photoMode
+    let markers: Marker[] = []
+    const render = () => {
+      const next = index
+        .getClusters([-180, -85, 180, 85], Math.floor(map.getZoom()))
+        .map((feature) => {
+          const members =
+            "cluster_id" in feature.properties
+              ? index
+                  .getLeaves(feature.properties.cluster_id, Infinity)
+                  .sort((a, b) => a.properties.order - b.properties.order)
+                  .map((point) => point.properties.photo)
+              : [feature.properties.photo]
+          const button = paperButton(
+            members,
+            latest.current.selectedEventId,
+            photoMode
+          )
+          button.tabIndex = interactive ? 0 : -1
+          button.onclick = (event) => {
+            event.stopPropagation()
+            if (!latest.current.interactive) return
+            const first = members[0].coordinate
+            const samePlace = members.every(
+              (photo) =>
+                Math.abs(photo.coordinate.lng - first.lng) < 0.000001 &&
+                Math.abs(photo.coordinate.lat - first.lat) < 0.000001
             )
-            button.tabIndex = interactive ? 0 : -1
-            button.onclick = (event) => {
-              event.stopPropagation()
-              if (!latest.current.interactive) return
-              const first = members[0].coordinate
-              const samePlace = members.every(
-                (photo) =>
-                  Math.abs(photo.coordinate.lng - first.lng) < 0.000001 &&
-                  Math.abs(photo.coordinate.lat - first.lat) < 0.000001
+            if (members.length > 1 && !samePlace && map.getZoom() < 19) {
+              const { left, right, top, bottom } = latest.current.insets
+              fitMapPoints(
+                map,
+                members.map((photo) => photo.coordinate),
+                {
+                  top: top + (photoMode ? 130 : 30),
+                  bottom: bottom + 24,
+                  left: left + 72,
+                  right: right + 72,
+                },
+                19
               )
-              if (members.length > 1 && !samePlace && map.getZoom() < 19) {
-                const { left, right, top, bottom } = latest.current.insets
-                map.setFitView(
-                  members.map(
-                    (photo) =>
-                      new sdk.Marker({
-                        position: [photo.coordinate.lng, photo.coordinate.lat],
-                      })
-                  ),
-                  false,
-                  [
-                    top + (photoMode ? 130 : 30),
-                    bottom + 24,
-                    left + 72,
-                    right + 72,
-                  ],
-                  19
-                )
-              } else latest.current.onOpen?.(members.map((photo) => photo.id))
-            }
-            marker.setContent(button)
-            marker.setAnchor("bottom-center")
-            marker.setOffset(new sdk.Pixel(0, 0))
-            marker.setzIndex(
-              members.some(
-                (photo) => photo.eventId === latest.current.selectedEventId
-              )
-                ? 120
-                : 100
-            )
-            return marker
-          })
-        map.add(next)
-        map.remove(markers)
-        markers = next
-      }
-      render()
-      map.on("zoomend", render)
-    })
+            } else latest.current.onOpen?.(members.map((photo) => photo.id))
+          }
+          button.style.zIndex = members.some(
+            (photo) => photo.eventId === latest.current.selectedEventId
+          )
+            ? "120"
+            : "100"
+          const marker = new Marker({ element: button, anchor: "bottom" })
+            .setLngLat(feature.geometry.coordinates as [number, number])
+            .addTo(map)
+          return marker
+        })
+      markers.forEach((marker) => marker.remove())
+      markers = next
+    }
+    render()
+    map.on("zoomend", render)
     return () => {
-      disposed = true
-      if (render) map.off("zoomend", render)
-      map.remove(markers)
+      map.off("zoomend", render)
+      markers.forEach((marker) => marker.remove())
     }
   }, [map, photoMode, index, photos, selectedEventId, interactive])
   return photoMode
