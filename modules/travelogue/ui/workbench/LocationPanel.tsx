@@ -84,7 +84,7 @@ export default function LocationPanel({
                 ? {
                     lat: Number(lat),
                     lng: Number(lng),
-                    coordinateSystem: "GCJ02",
+                    coordinateSystem: "WGS84",
                   }
                 : null,
             }

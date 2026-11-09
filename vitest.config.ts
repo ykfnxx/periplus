@@ -32,7 +32,4 @@ export default defineConfig({
       "@": path.resolve(dirname, "./"),
     },
   },
-  optimizeDeps: {
-    include: ["@amap/amap-jsapi-loader"],
-  },
 })

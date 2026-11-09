@@ -7,7 +7,6 @@ FROM base AS build
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-ARG NEXT_PUBLIC_AMAP_KEY=""
 RUN node scripts/ci-env.mjs && npx prisma generate && npm run build && npm prune --omit=dev
 
 FROM base AS runtime

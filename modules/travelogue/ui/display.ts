@@ -1,4 +1,4 @@
-import { bd09ToGcj02, wgs84ToGcj02 } from "@/lib/journeys/coordinates"
+import { coordinateToWgs84 } from "@/lib/journeys/coordinates"
 import type {
   JourneyEvent,
   JourneySummary,
@@ -28,11 +28,6 @@ export function recordingCoordinateToMap(
   coordinates: NonNullable<NonNullable<JourneyEvent["location"]>["coordinates"]>
 ) {
   const { lng, lat, coordinateSystem } = coordinates
-  const pair =
-    coordinateSystem === "WGS84"
-      ? wgs84ToGcj02(lng, lat)
-      : coordinateSystem === "BD09"
-        ? bd09ToGcj02(lng, lat)
-        : [lng, lat]
+  const pair = coordinateToWgs84(lng, lat, coordinateSystem)
   return { lng: pair[0], lat: pair[1] }
 }

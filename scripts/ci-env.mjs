@@ -11,7 +11,6 @@ writeFileSync(
     BETTER_AUTH_URL: "http://127.0.0.1:3001",
     NEXT_PUBLIC_PERIPLUS_APP_URL: "http://localhost:3001",
     NEXT_PUBLIC_PERIPLUS_SHOW_MOCK_ACCOUNTS: "false",
-    NEXT_PUBLIC_AMAP_KEY: process.env.NEXT_PUBLIC_AMAP_KEY ?? "",
     PERIPLUS_DEVELOPER_MODE: "false",
     PERIPLUS_STORAGE_SCHEME: "fs",
     PERIPLUS_STORAGE_ROOT: "./uploads",

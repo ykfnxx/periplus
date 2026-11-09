@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import type { Map } from "maplibre-gl"
 import type { JourneyEvent } from "@/modules/data-model/contracts"
 import { segmentMapPath } from "@/lib/journeys/route-paths"
 import {
@@ -10,54 +11,115 @@ import {
 } from "@/lib/ui/map-theme"
 
 export default function useJourneyRoutes(
-  map: AMap.Map | null,
+  map: Map | null,
   events: readonly JourneyEvent[],
   selectedEventId: string | null | undefined,
   onSelect?: (eventId: string) => void
 ) {
   useEffect(() => {
     if (!map) return
-    const overlays: AMap.Polyline[] = []
-    for (const event of events) {
+    const cleanups: (() => void)[] = []
+    // Draw the selected event last so its route stays above other routes.
+    const ordered = [...events].sort(
+      (a, b) =>
+        Number(a.id === selectedEventId) - Number(b.id === selectedEventId)
+    )
+    for (const event of ordered) {
       if (event.transit?.routeState !== "READY") continue
       const plan = event.transit.route?.plans[0]
       if (!plan) continue
       const selected = event.id === selectedEventId
-      for (const segment of plan.segments) {
+      plan.segments.forEach((segment, index) => {
         const path = segmentMapPath(segment)
-        if (path.length < 2) continue
+        if (path.length < 2) return
+        const sourceId = `journey-route-${event.id}-${index}`
         const style = getRouteSegmentStyle(segment.mode)
-        const line = new AMap.Polyline({
-          path,
-          strokeColor: periplusColors.routeBlue,
-          strokeWeight: selected ? 9 : 7,
-          strokeOpacity: selectedEventId && !selected ? 0.4 : 0.96,
-          strokeStyle:
-            segment.geometryKind === "SCHEMATIC" ? "dashed" : style.strokeStyle,
-          strokeDasharray:
-            segment.geometryKind === "SCHEMATIC" ? [10, 8] : style.dasharray,
-          showDir: segment.geometryKind !== "SCHEMATIC",
-          zIndex: selected ? 120 : 95,
+        const width = selected ? 9 : 7
+        const dash =
+          segment.geometryKind === "SCHEMATIC" ? [10, 8] : style.dasharray
+        map.addSource(sourceId, {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: { type: "LineString", coordinates: path },
+          },
         })
-        line.on("click", () => onSelect?.(event.id))
-        overlays.push(line)
-        for (const traffic of segment.trafficSections ?? []) {
-          const path = segmentMapPath(segment, traffic.positions)
-          if (path.length < 2) continue
-          const line = new AMap.Polyline({
-            path,
-            strokeColor: trafficSectionColors[traffic.status],
-            strokeWeight: selected ? 9 : 7,
-            zIndex: selected ? 121 : 96,
+        const layers = [sourceId]
+        map.addLayer({
+          id: sourceId,
+          source: sourceId,
+          type: "line",
+          paint: {
+            "line-color": periplusColors.routeBlue,
+            "line-width": width,
+            "line-opacity": selectedEventId && !selected ? 0.4 : 0.96,
+            ...(dash
+              ? { "line-dasharray": dash.map((value) => value / width) }
+              : {}),
+          },
+        })
+        const trafficSources: string[] = []
+        for (const [trafficIndex, traffic] of (
+          segment.trafficSections ?? []
+        ).entries()) {
+          const positions = segmentMapPath(segment, traffic.positions)
+          if (positions.length < 2) continue
+          const id = `${sourceId}-traffic-${trafficIndex}`
+          trafficSources.push(id)
+          layers.push(id)
+          map.addSource(id, {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates: positions },
+            },
           })
-          line.on("click", () => onSelect?.(event.id))
-          overlays.push(line)
+          map.addLayer({
+            id,
+            source: id,
+            type: "line",
+            paint: {
+              "line-color": trafficSectionColors[traffic.status],
+              "line-width": width,
+            },
+          })
         }
-      }
+        if (segment.geometryKind !== "SCHEMATIC") {
+          const arrows = `${sourceId}-direction`
+          layers.push(arrows)
+          map.addLayer({
+            id: arrows,
+            source: sourceId,
+            type: "symbol",
+            layout: {
+              "symbol-placement": "line",
+              "symbol-spacing": 80,
+              "text-field": "›",
+              "text-font": ["Noto Sans Regular"],
+              "text-size": 20,
+              "text-keep-upright": false,
+              "text-allow-overlap": true,
+            },
+            paint: { "text-color": periplusColors.white },
+          })
+        }
+        const select = () => onSelect?.(event.id)
+        for (const layer of layers) map.on("click", layer, select)
+        cleanups.push(() => {
+          for (const layer of layers.reverse()) {
+            map.off("click", layer, select)
+            if (map.getLayer(layer)) map.removeLayer(layer)
+          }
+          for (const id of [...trafficSources, sourceId]) {
+            if (map.getSource(id)) map.removeSource(id)
+          }
+        })
+      })
     }
-    if (overlays.length) map.add(overlays)
     return () => {
-      if (overlays.length) map.remove(overlays)
+      cleanups.forEach((cleanup) => cleanup())
     }
   }, [map, events, selectedEventId, onSelect])
 }

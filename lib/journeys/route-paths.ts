@@ -1,5 +1,5 @@
 import type { JourneyEvent } from "@/modules/data-model/contracts"
-import { bd09ToGcj02, wgs84ToGcj02 } from "./coordinates"
+import { coordinateToWgs84 } from "./coordinates"
 
 type Segment = NonNullable<
   NonNullable<JourneyEvent["transit"]>["route"]
@@ -8,14 +8,9 @@ export function segmentMapPath(
   segment: Segment,
   positions = segment.positions
 ): [number, number][] {
-  if (segment.coordinateSystem === "LOCAL") return []
-  return positions.map(([lng, lat]) =>
-    segment.coordinateSystem === "WGS84"
-      ? wgs84ToGcj02(lng, lat)
-      : segment.coordinateSystem === "BD09"
-        ? bd09ToGcj02(lng, lat)
-        : [lng, lat]
-  )
+  const system = segment.coordinateSystem
+  if (system === "LOCAL") return []
+  return positions.map(([lng, lat]) => coordinateToWgs84(lng, lat, system))
 }
 
 export function eventRoutePositions(event: JourneyEvent): [number, number][] {

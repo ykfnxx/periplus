@@ -561,7 +561,7 @@ export default function RecordingEditor({
                           address: null,
                           coordinates: {
                             ...coordinate,
-                            coordinateSystem: "GCJ02",
+                            coordinateSystem: "WGS84",
                           },
                         },
                       },
