@@ -18,6 +18,8 @@ export const periplusColors = {
   teak: "#765f45",
   bluegray: "#4f6d79",
   coral: "#a84643",
+  mapMarker: "#984527",
+  mapRoute: "#246c75",
   routeBlue: "#5fb7ff",
   journalPaper: "#faf6ee",
   journalPaperLine: "#d6d3d1",

@@ -21,6 +21,8 @@
   --color-teak: #765f45;
   --color-bluegray: #4f6d79;
   --color-coral: #a84643;
+  --color-map-marker: #984527;
+  --color-map-route: #246c75;
   --color-route-blue: #5fb7ff;
   --color-route-blue-soft: #edf3f5;
   --color-route-blue-pending: #9dd8ff;
@@ -112,7 +114,7 @@ body {
 }
 
 .periplus-map-marker--selected {
-  border-color: var(--color-russet);
+  border-color: var(--color-map-marker);
   border-width: 3px;
   box-shadow: 0 10px 22px var(--color-ink-30);
   transform: scale(1.2);
@@ -1160,7 +1162,21 @@ body {
 }
 .journal-workbench .maplibregl-ctrl-attrib {
   max-width: 100%;
-  white-space: normal;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.journal-workbench
+  .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  opacity: 0.3;
+}
+.journal-workbench
+  .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show):is(
+    :hover,
+    :focus-within
+  ) {
+  opacity: 0.9;
 }
 
 .journal-entry h1 {
@@ -1323,7 +1339,7 @@ body {
   height: 34px;
   border: 2px solid var(--color-white);
   border-radius: 50%;
-  background: var(--color-journal-accent);
+  background: var(--color-map-marker);
   color: var(--color-white);
   box-shadow: var(--shadow-periplus-soft);
   font: 600 13px/30px var(--font-sans);

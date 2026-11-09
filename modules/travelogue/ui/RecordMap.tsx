@@ -14,6 +14,7 @@ import {
   ScaleControl,
   AttributionControl,
 } from "maplibre-gl"
+import { journalMapStyle } from "@/lib/ui/map-style"
 import { MAP_STYLE, fitMapPoints } from "@/lib/map"
 import usePhotoMapLayer, { type MapPhoto } from "./usePhotoMapLayer"
 import type { MapViewport } from "../state/atlas-view-store"
@@ -127,6 +128,7 @@ export default function RecordMap({
   useEffect(() => {
     if (!container.current) return
     let instance: LibreMap | null = null
+    let attributionTimer: ReturnType<typeof setTimeout> | undefined
     const resize = new ResizeObserver(() => instance?.resize())
     try {
       instance = new LibreMap({
@@ -136,6 +138,7 @@ export default function RecordMap({
           : [104.5, 36.5],
         zoom: restoredViewport.current?.zoom ?? 4,
         style: MAP_STYLE,
+        transformStyle: (_previous, next) => journalMapStyle(next),
         attributionControl: false,
         dragRotate: false,
         pitchWithRotate: false,
@@ -182,7 +185,15 @@ export default function RecordMap({
         })
       })
       // Layers must be added only after the remote style has loaded.
-      current.on("load", () => setMap(current))
+      current.on("load", () => {
+        setMap(current)
+        attributionTimer = setTimeout(() => {
+          current
+            .getContainer()
+            .querySelector(".maplibregl-ctrl-attrib")
+            ?.classList.remove("maplibregl-compact-show")
+        }, 5000)
+      })
       resize.observe(container.current)
     } catch {
       // WebGL initialization can fail before MapLibre emits an error event.
@@ -190,6 +201,7 @@ export default function RecordMap({
       setError("地图暂时无法显示，文字和照片仍可正常保存。")
     }
     return () => {
+      clearTimeout(attributionTimer)
       resize.disconnect()
       instance?.remove()
     }
@@ -214,7 +226,7 @@ export default function RecordMap({
         const button = document.createElement("button")
         button.type = "button"
         button.className = `periplus-map-marker periplus-map-marker--ordinal${point.eventId === selectedEventId ? " periplus-map-marker--selected" : ""}`
-        button.style.background = periplusColors.russet
+        button.style.background = periplusColors.mapMarker
         button.textContent = String(point.ordinal || index + 1)
         button.setAttribute("aria-label", `地图地点：${point.title}`)
         const marker = new Marker({ element: button, anchor: "center" })
