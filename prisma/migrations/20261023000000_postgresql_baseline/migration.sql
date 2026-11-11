@@ -843,3 +843,93 @@ ALTER TABLE "OauthConsent" ADD CONSTRAINT "OauthConsent_clientId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "OauthConsent" ADD CONSTRAINT "OauthConsent_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- CreateTable
+CREATE TABLE "PlanningProposal" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "journeyId" TEXT NOT NULL,
+    "requestId" TEXT NOT NULL,
+    "signature" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'OPEN',
+    "baseRevision" INTEGER NOT NULL,
+    "latestVersion" INTEGER NOT NULL DEFAULT 0,
+    "activeRunId" TEXT,
+    "latestRunId" TEXT NOT NULL,
+    "questionRunId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PlanningProposal_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PlanningRun" (
+    "id" TEXT NOT NULL,
+    "proposalId" TEXT NOT NULL,
+    "requestId" TEXT NOT NULL,
+    "signature" TEXT NOT NULL,
+    "inputJson" TEXT NOT NULL,
+    "parentVersion" INTEGER NOT NULL,
+    "targetRevision" INTEGER NOT NULL,
+    "mode" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'RUNNING',
+    "deadline" TIMESTAMP(3) NOT NULL,
+    "questionJson" TEXT,
+    "errorJson" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PlanningRun_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PlanningVersion" (
+    "proposalId" TEXT NOT NULL,
+    "version" INTEGER NOT NULL,
+    "baseRevision" INTEGER NOT NULL,
+    "operationsJson" TEXT NOT NULL,
+    "sourcesJson" TEXT NOT NULL,
+    "factsJson" TEXT NOT NULL,
+    "constraintsJson" TEXT NOT NULL,
+    "unverifiedJson" TEXT NOT NULL,
+    "snapshotJson" TEXT NOT NULL,
+    "previewJson" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PlanningVersion_pkey" PRIMARY KEY ("proposalId","version")
+);
+
+-- CreateTable
+CREATE TABLE "PlanningReceipt" (
+    "proposalId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "journeyId" TEXT NOT NULL,
+    "version" INTEGER NOT NULL,
+    "appliedRevision" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PlanningReceipt_pkey" PRIMARY KEY ("proposalId")
+);
+
+-- CreateIndex
+CREATE INDEX "PlanningProposal_journeyId_idx" ON "PlanningProposal"("journeyId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PlanningProposal_userId_journeyId_requestId_key" ON "PlanningProposal"("userId", "journeyId", "requestId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PlanningRun_proposalId_requestId_key" ON "PlanningRun"("proposalId", "requestId");
+
+-- AddForeignKey
+ALTER TABLE "PlanningProposal" ADD CONSTRAINT "PlanningProposal_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PlanningProposal" ADD CONSTRAINT "PlanningProposal_journeyId_fkey" FOREIGN KEY ("journeyId") REFERENCES "Journey"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PlanningRun" ADD CONSTRAINT "PlanningRun_proposalId_fkey" FOREIGN KEY ("proposalId") REFERENCES "PlanningProposal"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PlanningVersion" ADD CONSTRAINT "PlanningVersion_proposalId_fkey" FOREIGN KEY ("proposalId") REFERENCES "PlanningProposal"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PlanningReceipt" ADD CONSTRAINT "PlanningReceipt_proposalId_fkey" FOREIGN KEY ("proposalId") REFERENCES "PlanningProposal"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
