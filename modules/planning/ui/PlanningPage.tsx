@@ -11,6 +11,7 @@ import type { JourneySnapshot } from "@/modules/data-model/contracts"
 import { recordingApi } from "@/modules/travelogue/data/client"
 import { useConfirmation } from "@/modules/travelogue/ui/workbench/Modal"
 import { createPlanningStore, type PlanningStore } from "../client/store"
+import { planningErrorText } from "../client/api"
 import PlanningPreview from "./PlanningPreview"
 
 export type PlanningJourney = Pick<JourneySnapshot, "id" | "title"> & {
@@ -246,7 +247,9 @@ export function PlanningWorkbench({
                     : runLabels[proposal.run.status]}
                 </p>
                 {proposal.run.error && (
-                  <p className="mt-2 text-coral">{proposal.run.error.error}</p>
+                  <p className="mt-2 text-coral">
+                    {planningErrorText(proposal.run.error)}
+                  </p>
                 )}
               </div>
               {running && (
