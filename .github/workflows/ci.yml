@@ -58,7 +58,10 @@ jobs:
       - name: Start the same image used for deployment
         run: |
           docker run -d --name periplus-ci --network host --env-file .env.local -v /app/uploads "periplus:$CI_IMAGE_SHA"
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium from the official Ubuntu package source
+        run: |
+          sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
+          npx playwright install --with-deps chromium
       - name: Real-page content, files, collaboration and mobile checks
         # Provider credentials are not required for PR checks; beta acceptance
         # separately verifies the live map and OCR services.
