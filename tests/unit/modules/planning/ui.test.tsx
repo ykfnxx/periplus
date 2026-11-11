@@ -26,13 +26,11 @@ const receipt = {
 }
 function setup(initial = proposal(), initialId: string | null = "proposal") {
   const api = {
-    create: vi
-      .fn<PlanningApi["create"]>()
-      .mockResolvedValue({
-        proposalId: "proposal",
-        runId: "run",
-        parentVersion: 0,
-      }),
+    create: vi.fn<PlanningApi["create"]>().mockResolvedValue({
+      proposalId: "proposal",
+      runId: "run",
+      parentVersion: 0,
+    }),
     get: vi.fn<PlanningApi["get"]>().mockResolvedValue(initial),
     turn: vi.fn<PlanningApi["turn"]>().mockResolvedValue({ runId: "next-run" }),
     cancel: vi.fn<PlanningApi["cancel"]>().mockResolvedValue({}),
@@ -222,4 +220,19 @@ it("clears a submitted message once retry confirms the original request", async 
   fireEvent.click(retry)
   await waitFor(() => expect(screen.getByLabelText("旅行要求")).toHaveValue(""))
   expect(api.create.mock.calls[1]).toEqual(api.create.mock.calls[0])
+})
+
+it("explains a runtime failure without exposing server configuration details or losing the prior preview", async () => {
+  const failed = proposal()
+  failed.run = {
+    ...failed.run!,
+    status: "FAILED",
+    error: { code: "RUNTIME_UNAVAILABLE", error: "Missing DEEPSEEK_API_KEY" },
+  }
+  setup(failed)
+  await screen.findByText("规划服务暂时不可用，请稍后重试。")
+  expect(screen.queryByText("Missing DEEPSEEK_API_KEY")).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "应用第 2 版" })
+  ).toBeInTheDocument()
 })
