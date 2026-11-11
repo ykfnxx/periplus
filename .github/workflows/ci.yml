@@ -58,10 +58,6 @@ jobs:
       - name: Start the same image used for deployment
         run: |
           docker run -d --name periplus-ci --network host --env-file .env.local -v /app/uploads "periplus:$CI_IMAGE_SHA"
-      - name: Install Chromium from the official Ubuntu package source
-        run: |
-          sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
-          npx playwright install --with-deps chromium
       - name: Real-page content, files, collaboration and mobile checks
         # Provider credentials are not required for PR checks; beta acceptance
         # separately verifies the live map and OCR services.
@@ -69,7 +65,11 @@ jobs:
           PLAYWRIGHT_EXTERNAL_SERVER: "true"
         run: |
           node -e 'const end=Date.now()+60000;async function wait(){try{if((await fetch("http://127.0.0.1:3001/api/health")).ok)return}catch{}if(Date.now()>end)throw Error("Image readiness failed");setTimeout(wait,500)}wait()'
-          npm run test:e2e
+          playwright_version=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")
+          docker run --rm --init --network host --ipc=host \
+            -e PLAYWRIGHT_EXTERNAL_SERVER -e CI=true \
+            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            "mcr.microsoft.com/playwright:v$playwright_version-noble" npm run test:e2e
       - name: Package verified image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
