@@ -114,6 +114,7 @@ export interface PlanningRunView {
   error: PlanningApiError | null
   progress: string | null
 }
+// Place choices reuse candidateRef as choiceRef; stored labels remain neutral.
 export interface PlanningQuestion {
   runId: string
   message: string

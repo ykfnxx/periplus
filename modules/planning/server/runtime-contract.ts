@@ -62,6 +62,8 @@ export interface PlanningRunInput {
 // The adapter supplies the fact ledger, never the model. Display-only values and
 // livePlaces stay in memory; permitted facts are checked again before applying.
 export interface PlanningRuntimeResult {
+  // ISO deadline for the process-local candidate cache; never persisted.
+  livePlacesExpiresAt?: string
   output: PlanningTurnOutput
   displayOnlyValues: unknown[]
   permittedFacts: PlanningProviderFact[]
