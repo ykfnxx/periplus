@@ -8,6 +8,7 @@ import {
   Users,
   Share2,
   Plug,
+  MessageSquare,
 } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/kumo/components/button/button"
@@ -18,17 +19,29 @@ export default function RecordingMenu({
   onSettings,
   onShare,
   onAgents,
+  onPlan,
   shareDisabled,
 }: {
   onReceipt: () => void
   onMembers: () => void
   onAgents?: () => void
+  onPlan?: () => void
   onShare?: () => void
   shareDisabled?: boolean
   onSettings?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const items = [
+    ...(onPlan
+      ? [
+          {
+            label: "规划旅程",
+            icon: MessageSquare,
+            action: onPlan,
+            disabled: false,
+          },
+        ]
+      : []),
     { label: "拍账单", icon: Camera, action: onReceipt, disabled: false },
     { label: "同行者", icon: Users, action: onMembers, disabled: false },
     ...(onAgents

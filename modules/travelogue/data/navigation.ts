@@ -4,8 +4,10 @@ export type JourneyOpenRequest = {
   eventId?: string
   add?: boolean
   location?: EventLocation
+  planning?: boolean
 }
 export function journeyHref(id: string, request?: JourneyOpenRequest) {
+  if (request?.planning) return `/journeys/${encodeURIComponent(id)}/planning`
   const query = new URLSearchParams()
   if (request?.eventId) query.set("event", request.eventId)
   if (request?.add) query.set("add", "1")

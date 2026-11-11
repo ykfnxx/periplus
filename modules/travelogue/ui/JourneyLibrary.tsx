@@ -126,6 +126,7 @@ export default function JourneyLibrary({
           choosing={!!destination}
           onOpen={(id) => onOpen(id, destination || undefined)}
           onCreate={() => create(destination || undefined)}
+          onPlan={() => create({ planning: true })}
           onRename={(id) => {
             const journey = journeys.find((item) => item.id === id)!
             setFormError(null)
@@ -196,7 +197,13 @@ export default function JourneyLibrary({
       )}
       {form && (
         <Modal
-          title={form.id ? "旅程名称" : "新建旅程"}
+          title={
+            form.id
+              ? "旅程名称"
+              : form.request?.planning
+                ? "新建计划"
+                : "新建旅程"
+          }
           onClose={() => setForm(null)}
           beforeClose={() =>
             !saving &&
@@ -249,7 +256,11 @@ export default function JourneyLibrary({
                   取消
                 </Button>
                 <Button variant="primary" type="submit" loading={saving}>
-                  {form.id ? "保存" : "开始记录"}
+                  {form.id
+                    ? "保存"
+                    : form.request?.planning
+                      ? "开始规划"
+                      : "开始记录"}
                 </Button>
               </div>
             </form>
