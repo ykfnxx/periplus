@@ -11,6 +11,7 @@ export type LocalDraft = {
   content: EventDraft
   photos: DraftPhoto[]
   updatedAt: string
+  afterEventId?: string | null
   complete?: boolean
   eventId?: string
   pending?: JourneyMutation

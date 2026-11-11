@@ -50,13 +50,24 @@ export async function publishDraft(
   }
   if (!draft.eventId) {
     const journey = await api.get(draft.journey.id)
+    const afterEventId =
+      draft.afterEventId === undefined
+        ? (journey.events.at(-1)?.id ?? null)
+        : draft.afterEventId === null
+          ? null
+          : journey.events.some((event) => event.id === draft.afterEventId)
+            ? draft.afterEventId
+            : (journey.events.at(-1)?.id ?? null)
     draft.pending = {
       expectedRevision: journey.revision,
       idempotencyKey: operationId(),
       command: {
         name: "event.add",
-        afterEventId: journey.events.at(-1)?.id ?? null,
-        content: draft.content,
+        afterEventId,
+        content:
+          draft.content.category === "TRANSIT"
+            ? { ...draft.content, title: "" }
+            : draft.content,
       },
     }
     await persist()

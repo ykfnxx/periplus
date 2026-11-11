@@ -4,9 +4,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Camera, ImagePlus } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Select } from "@/components/kumo/components/select/select"
-import ReceiptForm, { type ReceiptFormValues } from "./ReceiptForm"
-import { Modal, useConfirmation } from "./Modal"
 import { operationId } from "../../data/operation-id"
+import { useConfirmation } from "./Modal"
+import ReceiptForm, { type ReceiptFormValues } from "./ReceiptForm"
 
 export type ReceiptReview = {
   assetId: string
@@ -55,11 +55,27 @@ export default function ReceiptImport({
   const [busy, setBusy] = useState<"recognizing" | "saving" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { ask, confirmation } = useConfirmation()
+
   useEffect(() => {
     return () => {
       if (preview) URL.revokeObjectURL(preview)
     }
   }, [preview])
+
+  async function attemptClose() {
+    if (busy) return
+    if (
+      file &&
+      !(await ask("这张账单尚未加入记录。", {
+        title: "放弃导入？",
+        cancelLabel: "继续核对",
+        confirmLabel: "放弃导入",
+      }))
+    )
+      return
+    onClose()
+  }
+
   async function choose(next: File | undefined) {
     if (!next) return
     if (
@@ -78,6 +94,7 @@ export default function ReceiptImport({
     setReview(null)
     setError(null)
   }
+
   async function recognizeImage() {
     if (!file || busy) return
     if (
@@ -114,6 +131,7 @@ export default function ReceiptImport({
       setBusy(null)
     }
   }
+
   async function submit() {
     if (!file || busy) return
     setError(null)
@@ -139,140 +157,143 @@ export default function ReceiptImport({
       setBusy(null)
     }
   }
+
+  const label = review ? "核对账单" : "拍账单"
+
   return (
     <>
-      <Modal
-        title={review ? "核对账单" : "拍账单"}
-        hideTitle
-        hideClose
-        onClose={onClose}
-        beforeClose={() =>
-          !busy &&
-          (!file ||
-            ask("这张账单尚未加入记录。", {
-              title: "放弃导入？",
-              cancelLabel: "继续核对",
-              confirmLabel: "放弃导入",
-            }))
-        }
-        className="journal-receipt-import w-[560px]! p-0! max-sm:top-0! max-sm:left-0! max-sm:h-dvh! max-sm:max-h-dvh! max-sm:w-screen! max-sm:max-w-none! max-sm:translate-none! max-sm:transform-none! max-sm:rounded-none! max-sm:pt-[env(safe-area-inset-top)]! max-sm:pb-[env(safe-area-inset-bottom)]!"
+      <section
+        className="journal-subpage journal-receipt-import"
+        aria-label={label}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.stopPropagation()
+            void attemptClose()
+          }
+        }}
       >
-        {(close) => (
-          <>
-            <header className="sticky top-0 z-10 flex min-h-16 items-center justify-between gap-3 bg-white px-6 py-3 md:px-9">
-              <Button variant="ghost" disabled={!!busy} onClick={close}>
-                取消
-              </Button>
-              <h2 className="text-base font-semibold">
-                {review ? "核对账单" : "拍账单"}
-              </h2>
-              <Button
-                variant="primary"
-                disabled={!file}
-                loading={!!busy}
-                onClick={() => void submit()}
-              >
-                {review ? "加入" : "识别"}
-              </Button>
-            </header>
-            <div className="space-y-6 px-6 pb-8 md:px-9">
-              {revisionNotice}
-              {error && (
-                <p role="alert" className="text-sm text-coral">
-                  {error}
-                </p>
-              )}
-              {busy && (
-                <p role="status" className="text-sm text-journal-muted">
-                  {busy === "recognizing" ? "正在识别账单…" : "正在加入记录…"}
-                </p>
-              )}
-              {preview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={preview}
-                  alt="账单原图"
-                  className={`mx-auto w-full rounded-xl object-contain ${review ? "max-h-48" : "max-h-[55dvh]"}`}
-                />
-              ) : (
-                <div className="flex min-h-60 items-center justify-center rounded-xl bg-journal-soft text-journal-muted">
-                  <Camera size={36} strokeWidth={1.3} />
-                </div>
-              )}
-              {review && (
-                <>
-                  <ReceiptForm
-                    value={review.values}
-                    disabled={!!busy}
-                    onChange={(values) => setReview({ ...review, values })}
-                  />
-                  <Select
-                    label="加入到"
-                    value={target}
-                    disabled={!!busy}
-                    items={[
-                      { value: "new", label: "新建记录" },
-                      ...events.map((event) => ({
-                        value: event.id,
-                        label: event.title,
-                      })),
-                    ]}
-                    onValueChange={(value) => value && setTarget(value)}
-                  />
-                  <Button
-                    variant="ghost"
-                    disabled={!!busy}
-                    onClick={() => void recognizeImage()}
-                  >
-                    重新识别
-                  </Button>
-                </>
-              )}
-              <div className="flex gap-3">
-                <Button
-                  variant="secondary"
-                  className="min-w-0 flex-1"
-                  disabled={!!busy}
-                  onClick={() => camera.current?.click()}
-                >
-                  <Camera size={17} />
-                  {file ? "重新拍摄" : "拍摄账单"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="min-w-0 flex-1"
-                  disabled={!!busy}
-                  onClick={() => library.current?.click()}
-                >
-                  <ImagePlus size={17} />
-                  从相册选择
-                </Button>
+        <header className="journal-subpage-header sticky top-0 z-10">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!!busy}
+            onClick={() => void attemptClose()}
+          >
+            取消
+          </Button>
+          <h2 className="truncate font-editorial text-lg font-bold">{label}</h2>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!file}
+            loading={!!busy}
+            onClick={() => void submit()}
+          >
+            {review ? "加入" : "识别"}
+          </Button>
+        </header>
+
+        <div className="journal-subpage-body">
+          <div className="space-y-5 rounded-3xl border border-journal-line bg-journal-card p-4 shadow-journal-card">
+            {revisionNotice}
+            {error && (
+              <p role="alert" className="text-sm text-coral">
+                {error}
+              </p>
+            )}
+            {busy && (
+              <p role="status" className="text-sm text-journal-muted">
+                {busy === "recognizing" ? "正在识别账单…" : "正在加入记录…"}
+              </p>
+            )}
+            {preview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={preview}
+                alt="账单原图"
+                className={`mx-auto w-full rounded-2xl border border-journal-line bg-journal-paper-soft object-contain ${
+                  review ? "max-h-48" : "max-h-[48dvh]"
+                }`}
+              />
+            ) : (
+              <div className="flex min-h-52 items-center justify-center rounded-2xl border border-dashed border-journal-line bg-journal-paper-soft text-journal-muted">
+                <Camera size={34} strokeWidth={1.4} />
               </div>
-              <input
-                ref={camera}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                hidden
-                onChange={(event) => {
-                  void choose(event.target.files?.[0])
-                  event.target.value = ""
-                }}
-              />
-              <input
-                ref={library}
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(event) => {
-                  void choose(event.target.files?.[0])
-                  event.target.value = ""
-                }}
-              />
+            )}
+            {review && (
+              <>
+                <ReceiptForm
+                  value={review.values}
+                  disabled={!!busy}
+                  onChange={(values) => setReview({ ...review, values })}
+                />
+                <Select
+                  label="加入到"
+                  value={target}
+                  disabled={!!busy}
+                  items={[
+                    { value: "new", label: "新建记录" },
+                    ...events.map((event) => ({
+                      value: event.id,
+                      label: event.title,
+                    })),
+                  ]}
+                  onValueChange={(value) => value && setTarget(value)}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!!busy}
+                  onClick={() => void recognizeImage()}
+                >
+                  重新识别
+                </Button>
+              </>
+            )}
+            <div className="flex gap-2.5">
+              <Button
+                variant="secondary"
+                className="min-w-0 flex-1"
+                disabled={!!busy}
+                onClick={() => camera.current?.click()}
+              >
+                <Camera size={16} />
+                {file ? "重新拍摄" : "拍摄账单"}
+              </Button>
+              <Button
+                variant="secondary"
+                className="min-w-0 flex-1"
+                disabled={!!busy}
+                onClick={() => library.current?.click()}
+              >
+                <ImagePlus size={16} />
+                从相册选择
+              </Button>
             </div>
-          </>
-        )}
-      </Modal>
+            <input
+              ref={camera}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              hidden
+              onChange={(event) => {
+                void choose(event.target.files?.[0])
+                event.target.value = ""
+              }}
+            />
+            <input
+              ref={library}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                void choose(event.target.files?.[0])
+                event.target.value = ""
+              }}
+            />
+          </div>
+        </div>
+      </section>
       {confirmation}
     </>
   )

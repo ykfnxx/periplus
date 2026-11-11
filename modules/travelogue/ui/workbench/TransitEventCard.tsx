@@ -4,21 +4,24 @@ import { eventCardTimes, eventTransitDisplay } from "../event-card-display"
 
 export default function TransitEventCard({ event }: { event: JourneyEvent }) {
   const { departure, arrival, arrivalDays } = eventCardTimes(event)
-  const { mode, duration, distance, line } = eventTransitDisplay(event)
-  // Endpoint names belong to the transit itself, independent of chain order.
-  if (!event.transit)
+  const { mode, duration, distance } = eventTransitDisplay(event)
+  if (!event.transit) {
     return (
-      <div className="journal-transit-simple">
-        <strong>{event.title || mode}</strong>
+      <div className="flex items-center justify-between gap-2 text-xs text-journal-transit-muted">
+        <strong className="font-editorial text-base text-journal-transit-ink">
+          {mode}
+        </strong>
         {[departure, duration].filter(Boolean).length > 0 && (
-          <span className="font-mono">
+          <span className="tabular-nums">
             {[departure, duration].filter(Boolean).join(" · ")}
           </span>
         )}
       </div>
     )
+  }
   const from = event.transit.fromName
   const to = event.transit.toName
+  const axisMeta = [duration, distance].filter(Boolean).join(" · ")
   return (
     <div className="journal-transit-route" aria-label={`${from}到${to}`}>
       <div className="journal-transit-endpoint">
@@ -28,22 +31,12 @@ export default function TransitEventCard({ event }: { event: JourneyEvent }) {
         </div>
       </div>
       <div className="journal-transit-axis min-w-0">
-        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
-          <span className="journal-transit-mode">{mode}</span>
-          {(duration || distance) && (
-            <span>{[duration, distance].filter(Boolean).join(" · ")}</span>
-          )}
-        </div>
+        {axisMeta && <div className="truncate">{axisMeta}</div>}
         <div className="journal-transit-line" aria-hidden="true">
           <span />
           <i />
-          <ArrowRight size={15} />
+          <ArrowRight size={14} />
         </div>
-        {line && (
-          <div className="truncate" title={line}>
-            {line}
-          </div>
-        )}
       </div>
       <div className="journal-transit-endpoint">
         {arrival && (

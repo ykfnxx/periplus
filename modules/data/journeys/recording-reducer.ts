@@ -72,11 +72,38 @@ export function applyEventPatch(event: JourneyEvent, patch: EventInput) {
     if (field === "transit" && value !== null) {
       if (category !== "TRANSIT")
         throw new JourneyInputError("Transit details require a transit event")
-      const { distanceMeters, ...fields } = patch.transit!
-      const transit = { routeState: "EMPTY", ...event.transit, ...fields }
+      const {
+        distanceMeters,
+        fromLocation,
+        toLocation,
+        line,
+        durationText,
+        ...fields
+      } = patch.transit!
+      const transit: Record<string, unknown> = {
+        routeState: "EMPTY",
+        ...event.transit,
+        ...fields,
+      }
       if (distanceMeters === null) delete transit.distanceMeters
       else if (distanceMeters !== undefined)
         transit.distanceMeters = distanceMeters
+      if (fromLocation === null) delete transit.fromLocation
+      else if (fromLocation !== undefined) transit.fromLocation = fromLocation
+      if (toLocation === null) delete transit.toLocation
+      else if (toLocation !== undefined) transit.toLocation = toLocation
+      if (line === null || line === "") delete transit.line
+      else if (line !== undefined) transit.line = line
+      if (durationText === null || durationText === "")
+        delete transit.durationText
+      else if (durationText !== undefined) transit.durationText = durationText
+      if (
+        (fromLocation !== undefined || toLocation !== undefined) &&
+        transit.route
+      ) {
+        transit.routeState = "ROUTE_STALE"
+        delete transit.route
+      }
       event.transit = eventTransitSchema.parse(transit)
       continue
     }

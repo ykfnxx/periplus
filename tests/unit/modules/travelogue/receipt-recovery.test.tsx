@@ -240,6 +240,9 @@ describe("receipt recovery", () => {
         />
       )
       fireEvent.click(
+        screen.getByRole("button", { name: "展开茶馆开销明细" })
+      )
+      fireEvent.click(
         screen.getByRole("button", { name: "查看茶馆的账单详情" })
       )
       const detail = within(screen.getByRole("dialog", { name: "账单详情" }))
@@ -432,6 +435,7 @@ describe("read-only unified Journey", () => {
     expect(
       screen.queryByRole("button", { name: "编辑喝茶" })
     ).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "展开茶馆开销明细" }))
     fireEvent.click(screen.getByRole("button", { name: "查看茶馆的账单详情" }))
     await screen.findByRole("dialog", { name: "账单详情" })
     expect(

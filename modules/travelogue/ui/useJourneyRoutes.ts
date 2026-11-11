@@ -3,7 +3,10 @@
 import { useEffect } from "react"
 import type { Map } from "maplibre-gl"
 import type { JourneyEvent } from "@/modules/data-model/contracts"
-import { segmentMapPath } from "@/lib/journeys/route-paths"
+import {
+  segmentMapPath,
+  standaloneTransitPath,
+} from "@/lib/journeys/route-paths"
 import {
   getRouteSegmentStyle,
   periplusColors,
@@ -25,10 +28,44 @@ export default function useJourneyRoutes(
         Number(a.id === selectedEventId) - Number(b.id === selectedEventId)
     )
     for (const event of ordered) {
-      if (event.transit?.routeState !== "READY") continue
+      const selected = event.id === selectedEventId
+      if (event.transit?.routeState !== "READY") {
+        const path = standaloneTransitPath(event)
+        if (path.length < 2) continue
+        const sourceId = `journey-route-${event.id}-standalone`
+        const width = selected ? 7 : 5
+        map.addSource(sourceId, {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: { type: "LineString", coordinates: path },
+          },
+        })
+        map.addLayer({
+          id: sourceId,
+          source: sourceId,
+          type: "line",
+          paint: {
+            "line-color": selected
+              ? periplusColors.journalTransitAccent
+              : periplusColors.mapRoute,
+            "line-width": width,
+            "line-opacity": selectedEventId && !selected ? 0.45 : 0.94,
+            "line-dasharray": [10 / width, 8 / width],
+          },
+        })
+        const select = () => onSelect?.(event.id)
+        map.on("click", sourceId, select)
+        cleanups.push(() => {
+          map.off("click", sourceId, select)
+          if (map.getLayer(sourceId)) map.removeLayer(sourceId)
+          if (map.getSource(sourceId)) map.removeSource(sourceId)
+        })
+        continue
+      }
       const plan = event.transit.route?.plans[0]
       if (!plan) continue
-      const selected = event.id === selectedEventId
       plan.segments.forEach((segment, index) => {
         const path = segmentMapPath(segment)
         if (path.length < 2) return

@@ -37,7 +37,8 @@ export interface RecordMapInsets {
 }
 export interface RecordMapRequest {
   id: number
-  type: "zoom-in" | "zoom-out" | "fit"
+  type: "zoom-in" | "zoom-out" | "fit" | "fit-date"
+  date?: string
 }
 const emptyPhotos: MapPhoto[] = []
 const emptyEvents: JourneyEvent[] = []
@@ -389,7 +390,34 @@ export default function RecordMap({
     if (!map || !request) return
     if (request.type === "zoom-in") map.zoomIn()
     else if (request.type === "zoom-out") map.zoomOut()
-    else {
+    else if (request.type === "fit-date") {
+      const dayEvents = latest.current.events.filter(
+        (event) => event.date === request.date
+      )
+      const dayIds = new Set(dayEvents.map((event) => event.id))
+      const dayPhotos = latest.current.photos.filter((photo) =>
+        dayIds.has(photo.eventId)
+      )
+      const dayPoints = [
+        ...latest.current.points.filter((point) => dayIds.has(point.eventId)),
+        ...dayEvents.flatMap((event) =>
+          eventRouteBounds(event).map(([lng, lat]) => ({ lng, lat }))
+        ),
+        ...dayPhotos.map((photo) => photo.coordinate),
+      ]
+      if (dayPoints.length)
+        fitMapPoints(
+          map,
+          dayPoints,
+          {
+            top: top + (dayPhotos.length ? photoPadding : 24),
+            bottom: bottom + 24,
+            left: left + 72,
+            right: right + 72,
+          },
+          14
+        )
+    } else {
       const all = [
         ...latest.current.points,
         ...latest.current.events.flatMap((event) =>

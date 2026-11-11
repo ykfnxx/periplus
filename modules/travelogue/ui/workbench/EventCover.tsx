@@ -2,7 +2,6 @@
 
 import type { JourneyEvent } from "@/modules/data-model/contracts"
 import { Button } from "@/components/kumo/components/button/button"
-import UserSource from "./UserSource"
 import { ProviderImage } from "./ProviderImage"
 
 export default function EventCover({
@@ -32,12 +31,15 @@ export default function EventCover({
           aria-label={`查看${title}的照片 ${coverIndex + 1}`}
           className="h-full! w-full! rounded-none! p-0!"
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => onOpen(coverIndex)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpen(coverIndex)
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={photo.url}
-            alt={photo.caption || title}
+            alt={title}
             loading="lazy"
             draggable={false}
             className="h-full w-full object-cover"
@@ -52,9 +54,6 @@ export default function EventCover({
           height={320}
           className="h-full w-full object-cover"
         />
-      )}
-      {photo && photo.source.userId !== event.source.userId && (
-        <UserSource user={photo.source} className="journal-card-cover-source" />
       )}
       {showCount && event.photos.length > 1 && (
         <span className="journal-cover-count" aria-hidden="true">

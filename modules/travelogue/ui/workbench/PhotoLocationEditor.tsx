@@ -1,4 +1,5 @@
 "use client"
+
 import { useEffect, useState } from "react"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
@@ -54,51 +55,49 @@ export default function PhotoLocationEditor({
     }
   }
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="flex min-w-0 items-center gap-2 text-walnut">
-          <MapPin size={16} className="shrink-0" />
-          <span className="truncate">{location?.name || "尚未设置位置"}</span>
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="flex min-w-0 items-center gap-1.5 text-journal-muted">
+          <MapPin size={14} className="shrink-0 text-journal-amber" />
+          <span className="truncate">{location?.name || "未添加地点"}</span>
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={saving}
-          onClick={() => {
-            if (open) void close()
-            else setOpen(true)
-          }}
-        >
-          修改位置
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {photo.location && !open && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={saving}
+              onClick={() => void save(null).catch(() => {})}
+            >
+              跟随记录
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={saving}
+            onClick={() => {
+              if (open) void close()
+              else setOpen(true)
+            }}
+          >
+            {open ? "收起" : "位置"}
+          </Button>
+        </div>
       </div>
-      <p className="text-xs text-walnut">
-        {photo.location ? "这张照片的独立位置" : "跟随所属记录地点"}
-      </p>
       {open && (
         <LocationPanel
           initialLocation={location}
           title="照片位置"
-          description="为这张照片单独设置位置；补充坐标后会显示在地图上。"
           removeLabel="改回跟随记录"
           onDirtyChange={setDirty}
           onClose={() => void close()}
           onSave={save}
         />
       )}
-      {photo.location && !open && (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={saving}
-          onClick={() => void save(null).catch(() => {})}
-        >
-          改回跟随记录
-        </Button>
-      )}
       {confirmation}
       {error && (
-        <p role="alert" className="text-sm text-coral">
+        <p role="alert" className="text-xs text-coral">
           {error}
         </p>
       )}

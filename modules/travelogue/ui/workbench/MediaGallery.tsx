@@ -1,12 +1,14 @@
 "use client"
 import { useEffect, useRef } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+
 export type GalleryPhoto = {
   id: string
   url: string
-  caption: string
+  caption?: string
   pending?: boolean
 }
+
 export default function MediaGallery({
   photos,
   index,
@@ -62,7 +64,7 @@ export default function MediaGallery({
         exit={{ opacity: 0 }}
         transition={{ duration: reduced ? 0 : 0.16 }}
         src={photo.url}
-        alt={photo.caption || `旅行照片 ${index + 1}`}
+        alt={`旅行照片 ${index + 1}`}
         draggable={false}
         className={`h-full w-full ${fit === "cover" ? "object-cover" : "object-contain"}`}
       />
@@ -123,7 +125,7 @@ export default function MediaGallery({
         )}
       </motion.div>
       <span aria-live="polite" className="sr-only">
-        {photo.caption || "旅行照片"}
+        {`第 ${index + 1} 张照片，共 ${photos.length} 张`}
       </span>
     </div>
   )
