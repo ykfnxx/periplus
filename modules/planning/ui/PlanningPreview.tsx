@@ -105,11 +105,18 @@ function EventFacts({ event }: { event: PlanningEventSummary }) {
   )
 }
 
-function Changes({ entries }: { entries: PlanningDiffEntry[] }) {
+function Changes({
+  entries,
+  events,
+}: {
+  entries: PlanningDiffEntry[]
+  events: PlanningEventSummary[]
+}) {
   return (
     <ol className="divide-y divide-journal-paper-line">
       {entries.map((entry, index) => {
         const impacts = entry.impacts
+        const position = events.findIndex((event) => event.id === entry.eventId)
         return (
           <li
             key={`${entry.eventId}:${entry.kind}:${index}`}
@@ -121,26 +128,38 @@ function Changes({ entries }: { entries: PlanningDiffEntry[] }) {
               {kinds[entry.kind]} ·{" "}
               {eventCardTitle((entry.after || entry.before)!)}
             </h3>
-            <div
-              className={`grid gap-4 ${entry.before && entry.after ? "sm:grid-cols-2" : ""}`}
-            >
-              {entry.before && (
-                <div className="min-w-0">
-                  <p className="mb-2 text-xs font-medium text-journal-muted">
-                    原内容
-                  </p>
-                  <EventFacts event={entry.before} />
-                </div>
-              )}
-              {entry.after && (
-                <div className="min-w-0">
-                  <p className="mb-2 text-xs font-medium text-journal-muted">
-                    应用后
-                  </p>
-                  <EventFacts event={entry.after} />
-                </div>
-              )}
-            </div>
+            {entry.kind === "moved" ? (
+              <div className="space-y-3">
+                <p className="text-sm leading-6">
+                  应用后第 {position + 1} 项
+                  {position > 0
+                    ? `，位于“${eventCardTitle(events[position - 1])}”之后`
+                    : "，位于行程开头"}
+                </p>
+                <EventFacts event={entry.after!} />
+              </div>
+            ) : (
+              <div
+                className={`grid gap-4 ${entry.before && entry.after ? "sm:grid-cols-2" : ""}`}
+              >
+                {entry.before && (
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-medium text-journal-muted">
+                      原内容
+                    </p>
+                    <EventFacts event={entry.before} />
+                  </div>
+                )}
+                {entry.after && (
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-medium text-journal-muted">
+                      应用后
+                    </p>
+                    <EventFacts event={entry.after} />
+                  </div>
+                )}
+              </div>
+            )}
             {(impacts.photos > 0 ||
               impacts.receipts > 0 ||
               impacts.hotelCleared ||
@@ -207,7 +226,7 @@ export default function PlanningPreview({ preview }: { preview: Preview }) {
         </section>
       )}
       {preview.committableDiff.length ? (
-        <Changes entries={preview.committableDiff} />
+        <Changes entries={preview.committableDiff} events={preview.events} />
       ) : (
         <p className="text-sm text-journal-muted">
           当前没有需要应用的事件变更。
@@ -220,7 +239,7 @@ export default function PlanningPreview({ preview }: { preview: Preview }) {
           </summary>
           <div className="pt-5">
             {preview.delta.length ? (
-              <Changes entries={preview.delta} />
+              <Changes entries={preview.delta} events={preview.events} />
             ) : (
               <p className="text-journal-muted">本轮未改变事件内容。</p>
             )}

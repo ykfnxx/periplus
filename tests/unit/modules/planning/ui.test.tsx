@@ -274,3 +274,41 @@ it("shows every supported transit fact needed to review the committed change", (
   expect(screen.getByText("公交 · 2.0 公里")).toBeInTheDocument()
   expect(screen.getByText("在东侧入口等车")).toBeInTheDocument()
 })
+
+it("names the actual new chain position for a moved event", () => {
+  const prior = { ...plannedEvent, id: "prior", title: "前一站" }
+  render(
+    <PlanningPreview
+      preview={{
+        ...preview,
+        events: [prior, plannedEvent],
+        committableDiff: [
+          {
+            ...preview.committableDiff[0],
+            kind: "moved",
+            before: plannedEvent,
+            after: plannedEvent,
+          },
+        ],
+      }}
+    />
+  )
+  expect(
+    screen.getByText("应用后第 2 项，位于“前一站”之后")
+  ).toBeInTheDocument()
+})
+
+it("does not repeat a generic run failure already explained by the run status", async () => {
+  const failed = proposal()
+  failed.run = {
+    ...failed.run!,
+    status: "FAILED",
+    error: { code: "RUN_FAILED", error: "Provider request failed" },
+  }
+  setup(failed)
+  await screen.findByText("本轮未完成，上一版预览保留。")
+  expect(
+    screen.queryByText("本轮规划未完成，上一版预览保留。")
+  ).not.toBeInTheDocument()
+  expect(screen.queryByText("Provider request failed")).not.toBeInTheDocument()
+})

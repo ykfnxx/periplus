@@ -171,6 +171,7 @@ describe("planning client authority", () => {
     api.get.mockRejectedValueOnce(new TypeError("offline"))
     await store.getState().load()
     expect(store.getState().readFailed).toBe(true)
+    expect(store.getState().error).toBe("网络连接中断，无法读取规划，请重试。")
     expect(store.getState().proposal?.preview).toEqual(preview)
     await store.getState().retry()
     expect(store.getState().readFailed).toBe(false)
@@ -198,5 +199,42 @@ it("confirms a lost apply response through GET without applying a different vers
   await store.getState().load()
   expect(store.getState().pending).toBeNull()
   expect(store.getState().receipt?.appliedRevision).toBe(13)
+  expect(api.apply).toHaveBeenCalledTimes(1)
+})
+
+it("keeps PREVIEW_REQUIRED binding across GET recovery until a different preview is published", async () => {
+  const { api, store } = setup()
+  await store.getState().load()
+  api.apply.mockRejectedValueOnce(
+    new PlanningRequestError("保存内容已变化", 422, "PREVIEW_REQUIRED")
+  )
+  await store.getState().apply(2)
+  expect(store.getState().needsRebase).toBe(true)
+  await store.getState().load()
+  expect(store.getState().needsRebase).toBe(true)
+  api.get.mockResolvedValue(
+    proposal({ latestVersion: 3, preview: { ...preview, version: 3 } })
+  )
+  await store.getState().load()
+  expect(store.getState().needsRebase).toBe(false)
+})
+
+it("accepts an already rebased newer preview read after a revision conflict, without auto-applying it", async () => {
+  const { api, store } = setup()
+  await store.getState().load()
+  api.apply.mockRejectedValueOnce(
+    new PlanningRequestError("旅程已更新", 409, "REVISION_CONFLICT")
+  )
+  api.get.mockResolvedValue(
+    proposal({
+      latestVersion: 3,
+      baseRevision: 13,
+      currentJourneyRevision: 13,
+      preview: { ...preview, version: 3, baseRevision: 13 },
+    })
+  )
+  await store.getState().apply(2)
+  expect(store.getState().needsRebase).toBe(false)
+  expect(store.getState().proposal?.latestVersion).toBe(3)
   expect(api.apply).toHaveBeenCalledTimes(1)
 })
