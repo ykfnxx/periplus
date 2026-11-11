@@ -27,7 +27,11 @@ export function eventContent(event?: JourneyEvent): EventDraft {
       ? {
           fromName: event.transit.fromName,
           toName: event.transit.toName,
+          fromLocation: event.transit.fromLocation ?? null,
+          toLocation: event.transit.toLocation ?? null,
           transportMode: event.transit.transportMode,
+          line: event.transit.line ?? null,
+          durationText: event.transit.durationText ?? null,
           distanceMeters: event.transit.distanceMeters ?? null,
           ...(event.transit.fromEventId
             ? { fromEventId: event.transit.fromEventId }

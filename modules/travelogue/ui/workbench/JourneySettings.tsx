@@ -1,13 +1,16 @@
 "use client"
-import RevisionReload from "./RevisionReload"
+
 import { useState } from "react"
+import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
 import { InputArea } from "@/components/kumo/components/input/input-area"
 import { Select } from "@/components/kumo/components/select/select"
 import type { JourneySnapshot } from "@/modules/data-model/contracts"
 import type { RecordingStore } from "../../state/recording-store"
-import { Modal, useConfirmation } from "./Modal"
+import { useConfirmation } from "./Modal"
+import RevisionReload from "./RevisionReload"
+
 export default function JourneySettings({
   journey,
   store,
@@ -27,21 +30,50 @@ export default function JourneySettings({
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { ask, confirmation } = useConfirmation()
+
+  async function attemptClose() {
+    if (saving) return
+    if (
+      !saved &&
+      JSON.stringify(draft) !== JSON.stringify(initial) &&
+      !(await ask("旅程信息尚未保存，放弃修改？"))
+    )
+      return
+    onClose()
+  }
+
   return (
     <>
-      <Modal
-        title="旅程信息"
-        onClose={onClose}
-        beforeClose={() =>
-          !saving &&
-          (saved ||
-            JSON.stringify(draft) === JSON.stringify(initial) ||
-            ask("旅程信息尚未保存，放弃修改？"))
-        }
+      <section
+        className="journal-subpage"
+        aria-label="旅程信息"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.stopPropagation()
+            void attemptClose()
+          }
+        }}
       >
-        {(close) => (
+        <header className="journal-subpage-header sticky top-0 z-10">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              shape="square"
+              aria-label="返回"
+              disabled={saving}
+              onClick={() => void attemptClose()}
+            >
+              <ArrowLeft size={16} />
+            </Button>
+            <h2 className="truncate font-editorial text-lg font-bold">
+              旅程信息
+            </h2>
+          </div>
+        </header>
+
+        <div className="journal-subpage-body">
           <form
-            className="space-y-4"
+            className="space-y-4 rounded-3xl border border-journal-line bg-journal-card p-5 shadow-journal-card"
             onSubmit={async (event) => {
               event.preventDefault()
               setSaving(true)
@@ -92,9 +124,6 @@ export default function JourneySettings({
                   setDraft({ ...draft, status: value as typeof draft.status })
               }}
             />
-            <p className="text-sm text-walnut">
-              结束旅行不影响继续补记，内容仅对本旅程成员可见。
-            </p>
             <RevisionReload store={store} />
             {error && (
               <p role="alert" className="text-sm text-coral">
@@ -106,8 +135,12 @@ export default function JourneySettings({
                 已保存
               </p>
             )}
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={close}>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="secondary"
+                disabled={saving}
+                onClick={() => void attemptClose()}
+              >
                 关闭
               </Button>
               <Button variant="primary" type="submit" loading={saving}>
@@ -115,8 +148,8 @@ export default function JourneySettings({
               </Button>
             </div>
           </form>
-        )}
-      </Modal>
+        </div>
+      </section>
       {confirmation}
     </>
   )

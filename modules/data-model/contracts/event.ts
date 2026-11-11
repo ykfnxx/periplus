@@ -106,9 +106,13 @@ export const eventTransitSchema = z
   .object({
     fromName: z.string().trim().min(1).max(300),
     toName: z.string().trim().min(1).max(300),
+    fromLocation: eventLocationSchema.nullable().optional(),
+    toLocation: eventLocationSchema.nullable().optional(),
     fromEventId: id.optional(),
     toEventId: id.optional(),
     transportMode: z.enum(TARGET_TRANSPORT_MODES),
+    line: z.string().trim().min(1).max(120).optional(),
+    durationText: z.string().trim().min(1).max(60).optional(),
     distanceMeters: z.number().finite().nonnegative().optional(),
     requestMode: z.enum(TARGET_TRANSIT_REQUEST_MODES).optional(),
     preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),

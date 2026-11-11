@@ -34,9 +34,13 @@ export const eventInputSchema = eventContentSchema
       .object({
         fromName: z.string().trim().min(1).max(300).optional(),
         toName: z.string().trim().min(1).max(300).optional(),
+        fromLocation: eventLocationSchema.nullable().optional(),
+        toLocation: eventLocationSchema.nullable().optional(),
         fromEventId: id.optional(),
         toEventId: id.optional(),
         transportMode: z.enum(TARGET_TRANSPORT_MODES).optional(),
+        line: z.string().trim().max(120).nullable().optional(),
+        durationText: z.string().trim().max(60).nullable().optional(),
         distanceMeters: z.number().finite().nonnegative().nullable().optional(),
         requestMode: z.enum(TARGET_TRANSIT_REQUEST_MODES).optional(),
         preference: z.enum(TARGET_TRANSIT_PREFERENCES).optional(),

@@ -1,10 +1,14 @@
-import type { EventLocation } from "@/modules/data-model/contracts"
+import type { EventContent, EventLocation } from "@/modules/data-model/contracts"
 import { createStore } from "zustand/vanilla"
+
 export type EventWindowRequest = {
   eventId: string | null
   afterEventId: string | null
+  date?: string
+  category?: EventContent["category"]
   location?: EventLocation
 }
+
 export const createWorkbenchStore = () =>
   createStore(() => ({
     picking: null as { location: EventLocation | null } | null,
@@ -20,6 +24,7 @@ export const createWorkbenchStore = () =>
     receiptImport: null as { eventId: string | null } | null,
     receiptDetails: null as { eventId: string; assetId: string } | null,
     photoPanelId: null as string | null,
-    sheet: "half" as "small" | "half" | "full",
-    panelWidth: 384,
+    sheetRatio: 0.65,
+    savedSheetRatio: null as number | null,
+    panelWidth: 428,
   }))

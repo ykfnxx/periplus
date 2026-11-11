@@ -6,7 +6,7 @@ import {
 
 export const eventCategoryLabels = {
   VISIT: "游览",
-  MEAL: "餐饮",
+  MEAL: "用餐",
   STAY: "住宿",
   TRANSIT: "交通",
 }
@@ -99,7 +99,7 @@ export function eventTransitDisplay(event: JourneyEvent) {
     duration: (() => {
       const start = event.startAt
       const end = event.endAt
-      if (!start || !end) return null
+      if (!start || !end) return event.transit?.durationText ?? null
       const seconds = (Date.parse(end) - Date.parse(start)) / 1000
       return seconds === 0 ? "0 分钟" : formatTransitDuration(seconds)
     })(),
@@ -111,6 +111,6 @@ export function eventTransitDisplay(event: JourneyEvent) {
       ? Array.from(
           new Set(plan.segments.flatMap((segment) => segment.lineName || []))
         ).join(" · ") || plan.label
-      : null,
+      : (event.transit?.line ?? null),
   }
 }

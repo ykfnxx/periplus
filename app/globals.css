@@ -4,8 +4,9 @@
 
 @theme {
   --font-sans: var(--font-inter), var(--font-noto), sans-serif;
-
-  --font-editorial: var(--font-sans);
+  --font-editorial:
+    "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", Georgia,
+    serif;
 
   /* 色板与 lib/ui/map-theme.ts 中的 JS 常量一一对应，改色需双改 */
   --color-cream: #f5e6d3;
@@ -13,8 +14,8 @@
   --color-white: #fff;
   --color-ink: #2c2416;
   --color-russet: #d97642;
-  --color-action: #a34b27;
-  --color-action-hover: #833b1e;
+  --color-action: #252018;
+  --color-action-hover: #3c3428;
   --color-mustard: #d4a574;
   --color-olive: #4a7c59;
   --color-walnut: #6b5d4f;
@@ -40,41 +41,63 @@
   --color-marker-turquoise: #0d9488;
 
   /* ink 标准 alpha 档：描边/底色用 5/10/15，更深的蒙层用 20/30/40/70 */
-  --color-ink-5: rgb(44 36 22 / 5%);
-  --color-ink-10: rgb(44 36 22 / 10%);
-  --color-ink-15: rgb(44 36 22 / 15%);
-  --color-ink-20: rgb(44 36 22 / 20%);
-  --color-ink-30: rgb(44 36 22 / 30%);
-  --color-ink-40: rgb(44 36 22 / 40%);
-  --color-ink-70: rgb(44 36 22 / 70%);
+  --color-ink-5: rgb(37 32 24 / 5%);
+  --color-ink-10: rgb(37 32 24 / 10%);
+  --color-ink-15: rgb(37 32 24 / 15%);
+  --color-ink-20: rgb(37 32 24 / 20%);
+  --color-ink-30: rgb(37 32 24 / 30%);
+  --color-ink-40: rgb(37 32 24 / 40%);
+  --color-ink-70: rgb(37 32 24 / 70%);
 
-  --color-journal-ink: #25292f;
-  --color-journal-muted: var(--color-journal-paper-muted);
-  --color-journal-line: #e9eaed;
-  --color-journal-soft: #f5f6f8;
-  --color-journal-selected: #f8f2ee;
-  --color-journal-accent: #bd6247;
-  --color-journal-glass: rgb(255 255 255 / 95%);
-  --color-journal-paper: #faf6ee;
-  --color-journal-paper-glass: rgb(250 246 238 / 96%);
-  --color-journal-paper-line: #d6d3d1;
-  --color-journal-paper-soft: #ebe8e3;
-  --color-journal-paper-muted: #756b5c;
+  /* 分层暖纸工作台色板 */
+  --color-journal-canvas: #f5f0e6;
+  --color-journal-canvas-recess: #ebe4d7;
+  --color-journal-canvas-line: #e6ddd0;
+  --color-journal-card: #fffefb;
+  --color-journal-chip: #f6f1e7;
+  --color-journal-paper: #fffefb;
+  --color-journal-paper-glass: rgb(245 240 230 / 95%);
+  --color-journal-paper-line: #eae2d3;
+  --color-journal-paper-soft: #faf6ee;
+  --color-journal-paper-muted: #6e6353;
+  --color-journal-ink: #252018;
+  --color-journal-muted: #6e6353;
+  --color-journal-line: #eae2d3;
+  --color-journal-soft: #ebe4d7;
+  --color-journal-selected: #faf6ee;
+  --color-journal-accent: #a45a12;
+  --color-journal-glass: rgb(255 254 251 / 95%);
   --color-journal-amber: #a45a12;
-  --color-journal-tag: #fef3c7;
-  --color-journal-tag-line: #fcd34d;
-  --color-journal-tag-ink: #78350f;
-  --shadow-journal-card: 0 2px 6px rgb(44 36 22 / 4%);
+  --color-journal-tag: #f6f1e7;
+  --color-journal-tag-line: #eae2d3;
+  --color-journal-tag-ink: #252018;
+
+  /* 浅蓝交通卡片独立色板 */
+  --color-journal-transit: #ecf4f9;
+  --color-journal-transit-line: #cfe0ec;
+  --color-journal-transit-chip: #f7fbfd;
+  --color-journal-transit-chip-line: #cde0ee;
+  --color-journal-transit-ink: #1e3240;
+  --color-journal-transit-muted: #587285;
+  --color-journal-transit-note: #3b5568;
+  --color-journal-transit-accent: #2e698e;
+  --color-journal-transit-selected: #3b7498;
+
+  /* 暗场观片台 */
+  --color-photo-stage: #141210;
+  --color-photo-line: rgb(255 255 255 / 20%);
+  --color-photo-overlay: rgb(20 18 16 / 68%);
+
+  --shadow-journal-card:
+    0 2px 8px rgb(37 32 24 / 4%), 0 1px 2px rgb(37 32 24 / 2%);
+  --shadow-journal-card-selected:
+    0 6px 18px rgb(164 90 18 / 11%), 0 1px 3px rgb(164 90 18 / 6%);
+  --shadow-journal-transit-selected:
+    0 6px 18px rgb(46 105 142 / 14%), 0 1px 3px rgb(46 105 142 / 8%);
   --shadow-photo-paper:
     0 3px 5px rgb(0 0 0 / 12%), 0 10px 20px rgb(0 0 0 / 18%);
   --shadow-journal:
-    0 12px 44px rgb(30 40 50 / 10%), 0 1px 4px rgb(30 40 50 / 4%);
-
-  /* Photo viewer uses a neutral dark stage, independent of the map palette. */
-  --color-photo-stage: #000;
-  --color-photo-line: rgb(255 255 255 / 20%);
-  --color-photo-overlay: rgb(0 0 0 / 60%);
-
+    0 12px 44px rgb(37 32 24 / 10%), 0 1px 4px rgb(37 32 24 / 4%);
   --shadow-periplus: 0 18px 42px var(--color-ink-15);
   --shadow-periplus-soft: 0 12px 24px var(--color-ink-15);
   --shadow-periplus-sheet: 0 -16px 40px var(--color-ink-15);
@@ -82,9 +105,59 @@
 
 body {
   min-height: 100dvh;
-  color: var(--color-ink);
-  background: var(--color-cream);
+  color: var(--color-journal-ink);
+  background: var(--color-journal-canvas);
   font-family: var(--font-sans);
+}
+
+:root,
+[data-theme="kumo"] {
+  --color-kumo-brand: var(--color-action);
+  --color-kumo-brand-hover: var(--color-action-hover);
+  --color-kumo-base: var(--color-journal-card);
+  --color-kumo-elevated: var(--color-journal-card);
+  --color-kumo-recessed: var(--color-journal-paper-soft);
+  --color-kumo-tint: var(--color-journal-paper-soft);
+  --color-kumo-line: var(--color-journal-line);
+  --color-kumo-hairline: var(--color-journal-line);
+  --color-kumo-focus: var(--color-journal-amber);
+  --text-color-kumo-default: var(--color-journal-ink);
+  --text-color-kumo-subtle: var(--color-journal-muted);
+  --text-color-kumo-strong: var(--color-journal-ink);
+  --text-color-kumo-brand: var(--color-journal-amber);
+  --text-color-kumo-danger: var(--color-coral);
+}
+
+[data-kumo-component="Button"] {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+/* 工作台全局隐藏滚动条，保留原生滚轮与触控惯性滚动 */
+*,
+.scrollbar-hidden {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar,
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-kumo-component],
+  [data-kumo-part] {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  .journal-workbench *,
+  .journal-dialog * {
+    scroll-behavior: auto;
+  }
 }
 
 .periplus-map-marker {
@@ -131,506 +204,1019 @@ body {
   width: 34px;
 }
 
-.scrollbar-hidden {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.scrollbar-hidden::-webkit-scrollbar {
-  display: none;
-}
-
-/* Shared neutral photography-journal palette for Kumo controls. */
-:root,
-[data-theme="kumo"] {
-  --color-kumo-brand: var(--color-journal-ink);
-  --color-kumo-brand-hover: var(--color-journal-muted);
-  --color-kumo-base: var(--color-white);
-  --color-kumo-elevated: var(--color-white);
-  --color-kumo-recessed: var(--color-journal-soft);
-  --color-kumo-tint: var(--color-journal-soft);
-  --color-kumo-line: var(--color-journal-line);
-  --color-kumo-hairline: var(--color-journal-line);
-  --color-kumo-focus: var(--color-journal-accent);
-  --text-color-kumo-default: var(--color-journal-ink);
-  --text-color-kumo-subtle: var(--color-journal-muted);
-  --text-color-kumo-strong: var(--color-journal-ink);
-  --text-color-kumo-brand: var(--color-journal-accent);
-  --text-color-kumo-danger: var(--color-coral);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-kumo-component],
-  [data-kumo-part] {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Menus and photo rails stay uncluttered; the journal list exposes its scroll position. */
-*:not(.journal-list) {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none;
-}
-*:not(.journal-list)::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-/* Photography leads; chrome uses one restrained, shared component language. */
 .journal-workbench,
 .journal-dialog {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 22px;
   color: var(--color-journal-ink);
 }
-.journal-panel {
-  border: 0;
-  border-radius: 16px;
-  background: var(--color-journal-glass);
-  box-shadow: var(--shadow-journal);
-  backdrop-filter: blur(20px);
+
+:where(.journal-workbench, .journal-dialog) :where(h1) {
+  font-family: var(--font-editorial);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 30px;
+  letter-spacing: -0.01em;
 }
+
+:where(.journal-workbench, .journal-dialog) :where(h2) {
+  font-family: var(--font-editorial);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 26px;
+  letter-spacing: -0.01em;
+}
+
+:where(.journal-workbench, .journal-dialog) :where(h3) {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.journal-panel,
+.journal-workbench .journal-panel {
+  border: 1px solid var(--color-journal-canvas-line);
+  border-radius: 22px;
+  background: var(--color-journal-canvas);
+  box-shadow: var(--shadow-journal);
+  backdrop-filter: none;
+}
+
+.journal-dialog {
+  border: 1px solid var(--color-journal-line);
+  border-radius: 20px;
+  background: var(--color-journal-card);
+  box-shadow: var(--shadow-journal);
+}
+
+.journal-dialog:not(.journal-composer):not(.journal-event-details):not(
+    .journal-photo-viewer
+  ) {
+  padding: 20px;
+}
+
+.journal-dialog > h2:not(.sr-only) {
+  margin-bottom: 16px;
+}
+
+.journal-dialog :where(label, legend) {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.journal-dialog
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.journal-dialog select {
+  min-height: 44px;
+  font: 400 14px/20px var(--font-sans);
+  caret-color: var(--color-action);
+}
+
+.journal-dialog button:focus-visible,
+.journal-workbench button:focus-visible {
+  outline-color: var(--color-journal-amber);
+}
+
 .journal-sheet {
-  border-radius: 16px 16px 0 0;
+  border-radius: 22px 22px 0 0;
+  border-bottom: 0;
   padding-bottom: env(safe-area-inset-bottom);
 }
+
 .journal-dates {
-  padding: 14px 16px 12px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--color-journal-canvas-line);
 }
+
 .journal-write {
   width: 36px;
   height: 36px;
   padding: 0;
 }
+
 .journal-dates nav {
-  gap: 8px;
-  padding: 0;
-}
-.journal-dates nav button {
-  min-height: 32px;
-  padding: 0 10px;
-  font-size: 13px;
-  border: 0;
-  box-shadow: none;
-}
-.journal-dates button[aria-pressed="false"] {
-  background: transparent;
-  color: var(--color-journal-muted);
-}
-.journal-dates button[aria-pressed="true"] {
-  background: var(--color-journal-soft);
-  color: var(--color-journal-ink);
-}
-.journal-journey-trigger {
-  min-height: 44px;
-  gap: 10px;
-  padding: 8px 16px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--color-journal-glass);
-  color: var(--color-journal-ink);
-  box-shadow: none;
-}
-.journal-dates .journal-journey-trigger {
-  min-width: 0;
-  min-height: 40px;
   gap: 6px;
   padding: 0;
-  font-size: 18px;
-  font-weight: 600;
-  background: transparent;
 }
-.journal-list {
-  padding: 0 16px 24px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-ink-20) transparent;
-}
-.journal-list::-webkit-scrollbar {
-  width: 6px;
-}
-.journal-list::-webkit-scrollbar-thumb {
+
+.journal-dates nav button {
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  border: 0;
   border-radius: 999px;
-  background: var(--color-ink-20);
+  box-shadow: none;
 }
-.journal-list::-webkit-scrollbar-track {
-  background: transparent;
+
+.journal-dates button[aria-pressed="false"] {
+  background: var(--color-journal-canvas-recess);
+  color: var(--color-journal-muted);
 }
-@supports selector(::-webkit-scrollbar) {
-  .journal-list {
-    scrollbar-width: auto;
-    scrollbar-color: auto;
-  }
+
+.journal-dates button[aria-pressed="false"]:hover {
+  color: var(--color-journal-ink);
 }
-.journal-list > div {
-  gap: 16px;
-}
-.journal-workbench .journal-panel {
-  background: var(--color-journal-paper-glass);
-}
-.journal-heading h1,
-.journal-dates .journal-journey-trigger {
-  font-family: var(--font-editorial);
-  font-weight: 700;
-}
+
+.journal-dates button[aria-pressed="true"],
 .journal-workbench .journal-dates button[aria-pressed="true"] {
   background: var(--color-journal-ink);
   color: var(--color-white);
 }
-.journal-card {
-  overflow: hidden;
-  padding: 0;
-  border: 1px solid var(--color-journal-paper-line);
-  border-radius: 24px;
-  background: var(--color-journal-paper);
-  box-shadow: var(--shadow-journal-card);
-  transition: border-color 160ms;
+
+.journal-journey-trigger {
+  min-height: 40px;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-journal-card);
+  color: var(--color-journal-ink);
+  box-shadow: none;
 }
-.journal-card-content {
-  position: relative;
+
+.journal-dates .journal-journey-trigger {
   min-width: 0;
-  padding: 18px 20px 20px;
+  min-height: 36px;
+  gap: 6px;
+  padding: 0;
+  font-family: var(--font-editorial);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 26px;
+  background: transparent;
 }
-.journal-card-cover {
+
+.journal-heading h1 {
+  font-family: var(--font-editorial);
+  font-weight: 700;
+}
+
+/* 连续事件流、居中对称日期分隔章与 8px -> 38px 悬停挤开插入槽 */
+.journal-list {
+  padding: 6px 14px 28px;
+}
+
+.journal-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.journal-date-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 20px;
+  padding: 0 4px;
+  user-select: none;
+}
+
+.journal-date-divider::before,
+.journal-date-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-journal-canvas-line);
+}
+
+.journal-date-divider span {
+  flex-shrink: 0;
+  font-family: var(--font-editorial);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 20px;
+  letter-spacing: 0.06em;
+  color: var(--color-journal-muted);
+}
+
+.journal-gap-slot {
   position: relative;
-  height: 208px;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 8px;
+  flex-shrink: 0;
+  transition: height 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.journal-card-cover-source {
+
+.journal-gap-slot::before {
+  content: "";
   position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 3px 7px;
-  border-radius: 8px;
-  background: var(--color-journal-paper-glass);
-  color: var(--color-journal-paper-muted);
+  left: 16px;
+  right: 16px;
+  height: 1px;
+  background: var(--color-journal-canvas-line);
+  opacity: 0;
+  transition: opacity 180ms ease;
   pointer-events: none;
 }
-.journal-card-topline {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  justify-content: space-between;
+
+.journal-gap-reveal {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transform: scale(0.88);
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+.journal-workbench:not([data-dragging-card="true"])
+  .journal-gap-slot:is(:hover, :focus-within) {
+  height: 38px;
+}
+
+.journal-workbench:not([data-dragging-card="true"])
+  .journal-gap-slot:is(:hover, :focus-within)::before {
+  opacity: 1;
+}
+
+.journal-workbench:not([data-dragging-card="true"])
+  .journal-gap-slot:is(:hover, :focus-within)
+  .journal-gap-reveal {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.journal-gap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--color-journal-line);
+  border-radius: 999px;
+  background: var(--color-journal-card);
+  color: var(--color-journal-ink);
+  box-shadow: var(--shadow-journal-card);
+  font: 500 12px/26px var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.journal-gap-btn:hover {
+  border-color: var(--color-journal-amber);
+  color: var(--color-journal-amber);
+}
+
+.journal-gap-btn--transit {
+  border-color: var(--color-journal-transit-line);
+  background: var(--color-journal-transit);
+  color: var(--color-journal-transit-accent);
+}
+
+.journal-gap-btn--transit:hover {
+  border-color: var(--color-journal-transit-selected);
+  color: var(--color-journal-transit-ink);
+}
+
+/* 三类事件卡片：棉白竖版图文卡、棉白左侧满出血横版卡、浅蓝无标题交通卡 */
+.journal-card {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--color-journal-line);
+  border-radius: 24px;
+  background: var(--color-journal-card);
+  box-shadow: var(--shadow-journal-card);
+  cursor: pointer;
+  isolation: isolate;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.journal-card + .journal-card {
+  margin-top: 8px;
+}
+
+.journal-card[aria-current="true"] {
+  border-color: var(--color-journal-amber);
+  box-shadow: var(--shadow-journal-card-selected);
+}
+
+.journal-card:focus-visible {
+  outline: 2px solid var(--color-journal-amber);
+  outline-offset: 3px;
+}
+
+.journal-card-cover {
+  position: relative;
+  flex: none;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  margin: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.journal-card:not(.journal-card-horizontal) .journal-card-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    var(--color-journal-card) 0%,
+    rgb(255 254 251 / 0%) 34%
+  );
+  pointer-events: none;
+}
+
+.journal-card-cover > button {
+  position: relative;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.journal-card-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.journal-card-cover > button:focus-visible {
+  outline: none !important;
+  box-shadow:
+    inset 0 0 0 3px var(--color-journal-card),
+    inset 0 0 0 5px var(--color-journal-amber) !important;
+}
+
 .journal-cover-count {
   position: absolute;
   right: 10px;
   bottom: 10px;
-  border-radius: 8px;
-  padding: 3px 7px;
-  background: var(--color-journal-paper-glass);
-  color: var(--color-journal-paper-muted);
+  z-index: 2;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgb(37 32 24 / 58%);
+  color: var(--color-white);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-.journal-card-city {
-  margin-bottom: 5px;
-  color: var(--color-journal-amber);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
+
+.journal-card-content {
+  position: relative;
+  min-width: 0;
+  padding: 14px 16px 14px;
 }
-.journal-event-title {
-  font-family: var(--font-editorial);
-  font-size: 22px;
-  line-height: 30px;
-  font-weight: 800;
-  text-wrap: balance;
+
+.journal-card:has(.journal-card-cover):not(.journal-card-horizontal)
+  .journal-card-content {
+  padding-top: 8px;
 }
-.journal-card h2 button {
-  cursor: pointer;
-}
-.journal-card-time {
+
+.journal-card-topline {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  color: var(--color-journal-paper-muted);
-  font-family: var(--font-mono);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.journal-card-city {
+  margin: 0;
+  color: var(--color-journal-amber);
   font-size: 12px;
   line-height: 18px;
+  font-weight: 600;
 }
+
+.journal-event-title {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: 19px;
+  line-height: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
+  color: var(--color-journal-ink);
+}
+
+.journal-event-title > button {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
 .journal-card-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-top: 6px;
+  gap: 6px 10px;
+  margin-bottom: 4px;
+  color: var(--color-journal-muted);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
-.journal-card-meta .journal-card-time {
-  margin-top: 0;
-}
+
+.journal-card-time,
 .journal-weather {
   display: inline-flex;
-  min-width: 0;
   align-items: center;
-  gap: 6px;
-  color: var(--color-journal-paper-muted);
-  font-size: 13px;
-  line-height: 20px;
+  gap: 5px;
+  color: var(--color-journal-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
+
 .journal-weather > svg {
   flex-shrink: 0;
 }
+
 .journal-weather-source {
   display: block;
-  margin-top: 6px;
-  color: var(--color-journal-paper-muted);
-  font-size: 10px;
-  line-height: 16px;
+  margin-top: 4px;
+  color: var(--color-journal-muted);
+  font-size: 12px;
+  line-height: 18px;
 }
+
 .journal-weather-source a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.journal-weather-source a:focus-visible {
-  outline: 2px solid var(--color-journal-amber);
-  outline-offset: 2px;
-}
-.journal-card p {
-  margin-top: 12px;
+
+.journal-card-body {
+  margin-top: 8px;
   overflow-wrap: anywhere;
   font-size: 13.5px;
-  line-height: 22px;
+  line-height: 21px;
   color: var(--color-journal-ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
-.journal-card-cost {
+
+/* 横版图文卡（用餐 MEAL / 住宿 STAY）：左侧封面上下左三边完全铺满并向右柔和渐隐 */
+.journal-card-horizontal {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 9px;
-  width: 100%;
-  margin-top: 14px;
-  padding: 8px 11px;
-  border: 1px solid var(--color-journal-paper-line);
-  border-radius: 10px;
-  background: var(--color-journal-paper-soft);
-  color: var(--color-journal-amber);
-  cursor: pointer;
+  align-items: stretch;
+  padding: 0;
+  border-radius: 24px;
 }
-.journal-card-cost > span:last-child {
+
+.journal-card-horizontal:not(:has(.journal-card-cover)) {
+  display: block;
+}
+
+.journal-card-horizontal .journal-card-cover {
+  flex: 0 0 140px;
+  width: 140px;
+  height: auto;
+  min-height: 132px;
+  aspect-ratio: auto;
+  align-self: stretch;
+  margin: 0;
+  border-radius: 0;
+}
+
+.journal-card-horizontal .journal-card-cover > button {
+  position: absolute;
+  inset: 0;
+}
+
+.journal-card-horizontal .journal-card-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to left,
+    var(--color-journal-card) 0%,
+    rgb(255 254 251 / 0%) 26%
+  );
+  pointer-events: none;
+}
+
+.journal-card-horizontal .journal-card-content {
   flex: 1;
-  max-width: none;
-  font-family: var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  padding: 13px 15px 12px;
+}
+
+.journal-card-horizontal .journal-event-title {
+  font-size: 17.5px;
+  line-height: 24px;
+}
+
+.journal-card-horizontal .journal-card-body {
+  -webkit-line-clamp: 2;
+  margin-top: 6px;
   font-size: 13px;
   line-height: 20px;
 }
-.journal-card-cost-label {
-  color: var(--color-journal-paper-muted);
+
+/* 卡片底栏：左分类胶囊 + 作者头像，右对齐紧凑无箭头开销胶囊 */
+.cards-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.journal-card-horizontal .cards-footer {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.journal-category-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--color-journal-chip);
+  color: var(--color-journal-muted);
   font-size: 12px;
+  font-weight: 500;
+  line-height: 24px;
+  white-space: nowrap;
 }
-.journal-card-cost:focus-visible {
-  outline: 2px solid var(--color-journal-amber);
-  outline-offset: 2px;
-}
-.journal-card-tags {
+
+.cards-expenses {
+  margin-left: auto;
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
   gap: 6px;
-  margin-top: 14px;
+  min-width: 0;
 }
-.journal-card-tags:empty {
-  display: none;
+
+.cards-expense-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--color-journal-line);
+  border-radius: 999px;
+  background: var(--color-journal-chip);
+  color: var(--color-journal-ink);
+  font: 600 12px/24px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
 }
-.journal-card-tags span,
-.journal-transit-mode {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  padding: 3px 8px;
-  border: 1px solid var(--color-journal-tag-line);
-  border-radius: 7px;
-  background: var(--color-journal-tag);
-  color: var(--color-journal-tag-ink);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
+
+.cards-expense-pill:hover {
+  border-color: var(--color-journal-amber);
 }
-.journal-card-source {
-  margin-top: 10px;
-  color: var(--color-journal-paper-muted);
-  font-size: 10px;
-  line-height: 16px;
+
+.cards-expense-pill[aria-expanded="true"] {
+  background: var(--color-journal-ink);
+  border-color: var(--color-journal-ink);
+  color: var(--color-white);
 }
-.journal-card-horizontal {
-  display: flex;
-  border-radius: 20px;
+
+.cards-expense-pill--transit {
+  background: var(--color-journal-transit-chip);
+  border-color: var(--color-journal-transit-chip-line);
+  color: var(--color-journal-transit-ink);
 }
-.journal-card-horizontal .journal-card-cover {
-  flex: 0 0 30%;
-  width: 30%;
-  height: auto;
-  min-height: 100%;
+
+.cards-expense-pill--transit:hover {
+  border-color: var(--color-journal-transit-accent);
 }
-.journal-card-horizontal .journal-card-content {
-  flex: 1;
-  padding: 14px;
+
+.cards-expense-pill--transit[aria-expanded="true"] {
+  background: var(--color-journal-transit-ink);
+  border-color: var(--color-journal-transit-ink);
+  color: var(--color-white);
 }
-.journal-card-horizontal h2 {
-  font-size: 18px;
-  line-height: 26px;
-}
-.journal-card-horizontal p {
-  -webkit-line-clamp: 2;
-  margin-top: 8px;
-  font-size: 12px;
-  line-height: 20px;
-}
-.journal-card-horizontal .journal-card-time {
-  margin-top: 0;
-  font-size: 10px;
-}
-.journal-card-horizontal .journal-card-cost {
-  margin-top: 10px;
-}
-.journal-card-horizontal .journal-card-tags {
-  margin-top: 10px;
-}
+
+/* 浅蓝交通卡片：无标题、右上角编辑/展开、三列起止路线、底栏同行左小记右开销 */
 .journal-card-transit {
-  border-radius: 16px;
+  border-radius: 22px;
+  border-color: var(--color-journal-transit-line);
+  background: var(--color-journal-transit);
 }
+
+.journal-card-transit[aria-current="true"] {
+  border-color: var(--color-journal-transit-selected);
+  box-shadow: var(--shadow-journal-transit-selected);
+}
+
 .journal-card-transit .journal-card-content {
-  padding: 14px 16px;
+  padding: 13px 15px;
 }
+
+.journal-transit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--color-journal-transit-chip-line);
+  border-radius: 999px;
+  background: var(--color-journal-transit-chip);
+  color: var(--color-journal-transit-accent);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
 .journal-transit-route {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(76px, 0.95fr) minmax(0, 1fr);
-  grid-template-areas:
-    ". axis date"
-    "departure axis arrival"
-    "origin axis destination";
-  align-items: start;
+  align-items: center;
   column-gap: 10px;
 }
-.journal-transit-departure {
-  grid-area: departure;
+
+.journal-transit-endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-.journal-transit-arrival {
-  grid-area: arrival;
+
+.journal-transit-endpoint:last-child {
   text-align: right;
 }
-.journal-transit-origin {
-  grid-area: origin;
-}
-.journal-transit-destination {
-  grid-area: destination;
-  text-align: right;
-}
-.journal-transit-arrival-date {
-  grid-area: date;
-  margin-bottom: 4px;
-  color: var(--color-journal-amber);
-  text-align: right;
-  font-size: 11px;
-  line-height: 16px;
-}
+
 .journal-transit-time {
-  margin-bottom: 4px;
-  color: var(--color-journal-amber);
-  font-family: var(--font-mono);
-  font-size: 14px;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--color-journal-transit-muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
   font-weight: 600;
-  line-height: 20px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+.journal-transit-endpoint:last-child .journal-transit-time {
+  justify-content: flex-end;
+}
+
+.cards-transit-day-offset {
+  font: 500 12px/16px var(--font-sans);
+  color: var(--color-journal-transit-accent);
+  white-space: nowrap;
+}
+
 .journal-transit-place {
   font-family: var(--font-editorial);
-  font-size: 17px;
-  font-weight: 900;
-  line-height: 24px;
+  font-size: 16.5px;
+  font-weight: 700;
+  line-height: 22px;
+  color: var(--color-journal-transit-ink);
   overflow-wrap: anywhere;
 }
+
 .journal-transit-axis {
-  grid-area: axis;
   align-self: center;
   text-align: center;
-  color: var(--color-journal-paper-muted);
-  font-size: 10px;
+  color: var(--color-journal-transit-accent);
+  font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
+  font-variant-numeric: tabular-nums;
 }
-.journal-transit-mode {
-  display: inline-block;
-  padding: 2px 5px;
-  border-radius: 5px;
-}
+
 .journal-transit-line {
   display: flex;
   align-items: center;
   gap: 5px;
-  margin: 7px 0;
-  color: var(--color-journal-amber);
+  margin: 5px 0 2px;
+  color: var(--color-journal-transit-accent);
 }
+
 .journal-transit-line span {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   flex-shrink: 0;
   border: 1.5px solid currentColor;
   border-radius: 50%;
 }
+
 .journal-transit-line i {
   flex: 1;
-  border-bottom: 1px dashed var(--color-journal-paper-muted);
+  border-bottom: 1.5px dashed var(--color-journal-transit-line);
 }
+
 .journal-transit-line svg {
   flex-shrink: 0;
 }
-.journal-transit-simple {
+
+.journal-transit-bottom {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--color-journal-transit-line);
+}
+
+.journal-transit-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-journal-transit-note);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+
+/* 作者与天气浮层触发器 */
+.cards-author-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-journal-muted);
+  cursor: pointer;
+}
+
+.cards-author-trigger > span,
+.cards-author-trigger > img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  object-fit: cover;
+  border-radius: 50%;
+  font: 500 12px/22px var(--font-sans);
+  background: var(--color-journal-chip);
+  color: var(--color-journal-ink);
+}
+
+.cards-author-trigger:hover {
+  background: var(--color-journal-paper-soft);
+}
+
+.cards-author-trigger:focus-visible,
+.cards-weather-trigger:focus-visible {
+  outline: 2px solid var(--color-journal-amber);
+  outline-offset: 2px;
+}
+
+.cards-weather-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: help;
+  text-align: left;
+}
+
+.cards-weather-trigger::after {
+  content: "";
+  position: absolute;
+  inset: -6px -3px;
+}
+
+.cards-weather-trigger:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 4px;
+}
+
+.cards-info-popover {
+  position: relative;
+  inset: auto;
+  margin: 0;
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--color-journal-line);
+  border-radius: 14px;
+  background: var(--color-journal-card);
+  color: var(--color-journal-ink);
+  font: 400 13px/1.6 var(--font-sans);
+}
+
+.cards-info-popover::backdrop {
+  background: transparent;
+}
+
+.cards-info-popover a {
+  color: var(--color-journal-ink);
+  text-underline-offset: 3px;
+}
+
+.cards-info-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.cards-author-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cards-author-card > span,
+.cards-author-card > img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  object-fit: cover;
+  font: 500 18px/40px var(--font-sans);
+  color: var(--color-journal-ink);
+  background: var(--color-journal-paper-soft);
+  border-radius: 50%;
+}
+
+.cards-author-card strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cards-weather-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cards-weather-info strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cards-info-popover .journal-weather-source {
+  font-size: 12px;
+  line-height: 18px;
+  margin: 0;
+}
+
+/* 拖拽排序把手（支持触控、键盘无障碍与鼠标整卡拖拽） */
+.journal-card-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--color-journal-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.journal-card-transit .journal-card-sort {
+  color: var(--color-journal-transit-muted);
+}
+
+.journal-card-sort:hover {
+  background: var(--color-journal-paper-soft);
+}
+
+.journal-card-transit .journal-card-sort:hover {
+  background: var(--color-journal-transit-chip);
+}
+
+.journal-card-sort:active {
+  cursor: grabbing;
+}
+
+.journal-card-sort:focus-visible {
+  outline: 2px solid var(--color-journal-amber);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .journal-card-sort {
+    opacity: 0;
+  }
+  .journal-card:hover .journal-card-sort,
+  .journal-card:focus-within .journal-card-sort,
+  .journal-card[data-dragging] .journal-card-sort {
+    opacity: 1;
+  }
+}
+
+.journal-card-sort:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* 左栏子页面与编辑器版式 */
+.journal-subpage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-journal-canvas);
+}
+
+.journal-subpage-header {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: var(--color-journal-amber);
-  font-size: 11px;
+  min-height: 54px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-journal-canvas-line);
+  background: var(--color-journal-canvas);
+  flex-shrink: 0;
 }
-.journal-transit-simple strong {
-  font-family: var(--font-editorial);
-  font-size: 18px;
-}
-.journal-transit-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--color-journal-paper-line);
-}
-.journal-transit-footer p {
+
+.journal-subpage-body {
   flex: 1;
-  min-width: 80px;
-  margin: 0;
-  font-size: 11px;
-  line-height: 18px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px 24px;
 }
-.journal-transit-footer .journal-card-cost {
-  width: auto;
-  margin: 0;
-  padding: 2px 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+
+.journal-composer > header,
+.journal-event-heading {
+  min-height: 54px;
+  height: auto;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-journal-canvas-line);
+  background: var(--color-journal-canvas);
 }
-.journal-transit-footer .journal-card-cost > span:last-child {
-  font-size: 11px;
+
+.journal-composer-body {
+  padding: 14px 16px 24px;
 }
-.journal-card-transit .journal-card-source {
-  margin-top: 4px;
-  text-align: right;
-  font-size: 9px;
+
+.journal-composer textarea {
+  font-size: 14px;
+  line-height: 24px;
 }
+
+.journal-event-details {
+  background: var(--color-journal-canvas);
+}
+
+/* 地图相纸聚类与暗房看图器 */
 .journal-library .journal-map-controls {
   top: auto;
   bottom: 24px;
 }
+
 .journal-atlas-selector .journal-journey-trigger,
 .journal-atlas-add {
   box-shadow: var(--shadow-periplus-soft);
 }
+
 .journal-directory {
   color: var(--color-journal-ink);
 }
+
 .journal-photo-nav {
   position: absolute;
   top: 50%;
@@ -641,43 +1227,28 @@ body {
   pointer-events: none;
   transition: opacity 150ms ease;
 }
+
 .journal-photo-stage:has(:focus-visible) .journal-photo-nav {
   opacity: 1;
   pointer-events: auto;
 }
+
 @media (hover: hover) and (pointer: fine) {
   .journal-photo-stage:hover .journal-photo-nav {
     opacity: 1;
     pointer-events: auto;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .journal-photo-nav {
-    transition: none;
-  }
-}
+
 .journal-add {
-  min-height: 48px;
+  min-height: 44px;
   justify-content: center;
   gap: 8px;
   border: 0;
-  border-radius: 12px;
-  font-size: 15px;
-}
-.journal-dialog {
-  background: var(--color-white);
-  border-color: var(--color-journal-line);
-  border-radius: 20px;
-  box-shadow: var(--shadow-journal);
-}
-.journal-dialog input,
-.journal-dialog textarea {
-  font-size: 15px;
-  line-height: 24px;
-}
-.journal-dialog [data-kumo-component="Button"] {
+  border-radius: 14px;
   font-size: 14px;
 }
+
 .journal-map-controls {
   top: auto;
   right: 24px;
@@ -688,12 +1259,14 @@ body {
   background: var(--color-journal-glass);
   box-shadow: var(--shadow-journal);
 }
+
 .journal-map-controls button {
   border-radius: 10px;
   box-shadow: none;
   color: var(--color-journal-muted);
 }
 
+/* 时间轴视图与移动端时间轴幕布 */
 .journal-view-switch {
   position: absolute;
   top: 28px;
@@ -706,15 +1279,18 @@ body {
   background: var(--color-journal-paper-glass);
   box-shadow: var(--shadow-journal);
 }
+
 .journal-view-switch button {
   gap: 8px;
   border-radius: 12px;
   font-size: 13px;
 }
+
 .journal-view-switch button[aria-pressed="true"] {
   background: var(--color-journal-ink);
   color: var(--color-white);
 }
+
 .journal-timeline-heading {
   position: absolute;
   top: 28px;
@@ -726,14 +1302,17 @@ body {
   background: var(--color-journal-paper-glass);
   box-shadow: var(--shadow-journal);
 }
+
 .journal-timeline-heading .journal-heading {
   min-height: 44px;
 }
+
 .journal-timeline-heading .journal-journey-trigger {
   background: transparent;
   font-family: var(--font-editorial);
   font-weight: 700;
 }
+
 .journal-timeline {
   position: absolute;
   bottom: env(safe-area-inset-bottom, 0px);
@@ -743,11 +1322,12 @@ body {
   height: 196px;
   transform: translateX(-50%);
 }
+
 .journal-timeline-glass {
   position: absolute;
   inset: 76px -12px 0;
   border-radius: 50% 50% 0 0 / 30% 30% 0 0;
-  background: color-mix(in srgb, var(--color-journal-paper) 30%, transparent);
+  background: color-mix(in srgb, var(--color-journal-canvas) 45%, transparent);
   backdrop-filter: blur(5px);
   mask-image:
     linear-gradient(to right, transparent, black 15% 85%, transparent),
@@ -755,6 +1335,7 @@ body {
   mask-composite: intersect;
   pointer-events: none;
 }
+
 .journal-timeline-track {
   position: absolute;
   top: 16px;
@@ -766,12 +1347,13 @@ body {
   cursor: grab;
   mask-image: linear-gradient(to right, transparent, black 8% 92%, transparent);
 }
+
 .journal-timeline-track:active {
   cursor: grabbing;
 }
+
 .journal-timeline-item {
   position: absolute;
-  /* Keep the item in place while leaving room inside the masked focus frame. */
   top: 8px;
   left: calc(50% - 50px);
   display: grid;
@@ -779,15 +1361,16 @@ body {
   width: 100px;
   height: 100px;
   padding: 4px;
-  border: 1px solid var(--color-journal-paper-line);
+  border: 1px solid var(--color-journal-line);
   border-radius: 12px;
-  background: var(--color-journal-paper);
+  background: var(--color-journal-card);
   color: var(--color-journal-amber);
   box-shadow: var(--shadow-photo-paper);
   cursor: pointer;
   user-select: none;
   -webkit-touch-callout: none;
 }
+
 .journal-timeline-item img {
   width: 100%;
   height: 100%;
@@ -795,31 +1378,36 @@ body {
   object-fit: cover;
   pointer-events: none;
 }
+
 .journal-timeline-item > svg {
   width: 38px;
   height: 38px;
   pointer-events: none;
 }
+
 .journal-timeline-item[aria-current] {
   border-color: var(--color-journal-amber);
   outline: 2px solid var(--color-mustard);
   outline-offset: 2px;
 }
+
 .journal-timeline-item:focus-visible {
   outline: 2px solid var(--color-journal-amber);
   outline-offset: 4px;
 }
+
 .journal-timeline-ruler {
   position: absolute;
   bottom: 18px;
   left: 60px;
   width: calc(100% - 120px);
   height: 68px;
-  stroke: var(--color-journal-paper-muted);
+  stroke: var(--color-journal-muted);
   stroke-width: 1.5;
   opacity: 0.6;
   pointer-events: none;
 }
+
 .journal-timeline-date {
   position: absolute;
   bottom: 10px;
@@ -829,23 +1417,26 @@ body {
   align-items: center;
   gap: 2px;
   transform: translateX(-50%);
-  color: var(--color-journal-paper-muted);
+  color: var(--color-journal-muted);
   font-size: 13px;
   line-height: 18px;
   pointer-events: none;
 }
+
 .journal-timeline-time {
   color: var(--color-journal-ink);
   font-size: 14px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
 .journal-timeline-empty {
   margin-top: 120px;
   text-align: center;
   color: var(--color-journal-muted);
   font-size: 14px;
 }
+
 .journal-timeline-notice {
   position: absolute;
   top: 108px;
@@ -858,6 +1449,7 @@ body {
   color: var(--color-coral);
   box-shadow: var(--shadow-journal);
 }
+
 .journal-timeline-detail {
   position: absolute;
   top: 108px;
@@ -867,32 +1459,419 @@ body {
   max-height: calc(100dvh - 320px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  border: 1px solid var(--color-journal-canvas-line);
   border-radius: 22px;
-  background: var(--color-journal-paper-glass);
+  background: var(--color-journal-canvas);
   box-shadow: var(--shadow-journal);
 }
-.journal-event-details,
-.journal-event-heading {
-  background: var(--color-journal-paper);
+
+.journal-mobile-curtain {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+  pointer-events: none;
 }
-.journal-event-facts {
+
+.journal-curtain-dial {
+  position: relative;
+  height: 168px;
+  flex-shrink: 0;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.journal-mobile-curtain .journal-timeline {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  height: 168px;
+  transform: none;
+}
+
+.journal-mobile-curtain .journal-timeline-glass {
+  inset: 0;
+  border-radius: 50% 50% 0 0 / 24% 24% 0 0;
+  mask-image: none;
+}
+
+.journal-mobile-curtain .journal-timeline-track {
+  top: 16px;
+}
+
+.journal-mobile-curtain .journal-timeline-ruler {
+  bottom: 28px;
+}
+
+.journal-mobile-curtain .journal-timeline-date {
+  bottom: 16px;
+}
+
+.journal-curtain-handle {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: calc(50% - 24px);
+  width: 48px;
+  height: 24px;
+  padding: 0;
+}
+
+.journal-curtain-handle span {
+  width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-journal-muted);
+  opacity: 0.4;
+}
+
+.journal-curtain-resize {
+  position: absolute;
+  z-index: 30;
+  top: 8px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  color: var(--color-journal-muted);
+}
+
+.journal-workbench:has(.journal-mobile-curtain[data-reading="true"])
+  :is(.journal-timeline-heading, .journal-view-switch, .journal-map-controls) {
+  visibility: hidden;
+}
+
+.journal-mobile-curtain[data-reading="true"] .journal-curtain-dial {
+  height: calc(168px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.journal-mobile-curtain[data-reading="true"] .journal-curtain-handle {
+  top: env(safe-area-inset-top, 0px);
+}
+
+.journal-mobile-curtain[data-reading="true"] .journal-curtain-resize {
+  top: calc(8px + env(safe-area-inset-top, 0px));
+}
+
+.journal-curtain-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-journal-canvas);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  pointer-events: auto;
+}
+
+.journal-mobile-curtain[data-fullscreen="false"] .journal-curtain-body {
+  touch-action: none;
+}
+
+.journal-curtain-body .journal-curtain-detail {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-journal-canvas);
+  box-shadow: none;
+}
+
+/* 保留地图版权控件在左栏阅读面板外侧 */
+.journal-workbench .maplibregl-ctrl-bottom-left {
+  left: var(--journal-map-left, 4px);
+  bottom: calc(var(--journal-map-bottom, 0px) + 4px);
+  max-width: calc(100% - var(--journal-map-left, 4px) - 80px);
+}
+
+.journal-workbench .maplibregl-ctrl-attrib {
+  max-width: 100%;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.journal-workbench
+  .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  opacity: 0.3;
+}
+
+.journal-workbench
+  .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show):is(
+    :hover,
+    :focus-within
+  ) {
+  opacity: 0.9;
+}
+
+.journal-entry section {
+  padding: 20px;
+  border-radius: 18px;
+}
+
+.journal-entry h1 {
+  font-family: var(--font-editorial);
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 700;
+}
+
+.journal-entry h1 + p,
+.journal-workbench > p {
+  color: var(--color-journal-muted);
+}
+
+.journal-workbench > p {
+  background: var(--color-journal-glass);
+}
+
+.journal-entry section > p {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.journal-entry-fields {
+  margin-top: 20px;
+}
+
+.journal-entry-fields > .grid > [data-kumo-component="Button"] {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+}
+
+.journal-drafts > div {
+  padding: 20px 16px;
+}
+
+.journal-drafts ul {
   margin-top: 16px;
 }
-.journal-event-facts:empty {
+
+.journal-drafts li {
+  padding-block: 12px;
+}
+
+.journal-drafts li span {
+  line-height: 20px;
+}
+
+.journal-drafts [role="status"] {
+  margin-top: 8px;
+}
+
+/* 地图拍立得相纸叠片锚定底边中心 */
+.journal-map-photo {
+  position: absolute;
+  display: block;
+  width: 132px;
+  height: 130px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.journal-photo-print {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  display: block;
+  width: 112px;
+  padding: 5px 5px 15px;
+  border-radius: 2px;
+  background: var(--color-white);
+  box-shadow: var(--shadow-photo-paper);
+  transition: transform 180ms ease;
+}
+
+.journal-photo-print img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.journal-photo-print--back-1 {
+  transform: translate(5px, 3px) rotate(6deg);
+}
+
+.journal-photo-print--back-2 {
+  transform: translate(-5px, 2px) rotate(-6deg);
+}
+
+.journal-photo-print--front {
+  transform: rotate(-2deg);
+}
+
+.journal-map-photo[aria-pressed="true"] .journal-photo-print--front {
+  outline: 2px solid var(--color-journal-amber);
+}
+
+.journal-map-photo:hover .journal-photo-print--front,
+.journal-map-photo:focus-visible .journal-photo-print--front {
+  transform: translateY(-3px);
+}
+
+.journal-map-photo:focus-visible {
+  outline: 2px solid var(--color-journal-amber);
+  outline-offset: 3px;
+}
+
+.journal-map-photo::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 60px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-white);
+  border-radius: 50%;
+  background: var(--color-journal-amber);
+  box-shadow: var(--shadow-periplus-soft);
+}
+
+.journal-photo-count {
+  position: absolute;
+  top: 0;
+  right: 3px;
+  display: grid;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-journal-ink);
+  color: var(--color-white);
+  font: 500 13px/1 var(--font-sans);
+}
+
+.journal-photo-viewer [data-gallery-media] {
+  padding-top: 56px;
+}
+
+.journal-photo-meta {
+  padding: 48px 32px 24px;
+  background: linear-gradient(to top, var(--color-photo-stage), transparent);
+  color: var(--color-white);
+}
+
+.journal-photo-location {
+  padding-bottom: 3px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.journal-map-photo--compact {
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--color-white);
+  border-radius: 50%;
+  background: var(--color-map-marker);
+  color: var(--color-white);
+  box-shadow: var(--shadow-periplus-soft);
+  font: 600 13px/30px var(--font-sans);
+  text-align: center;
+}
+
+.journal-map-photo--compact::after {
   display: none;
 }
-.journal-event-details .journal-card-cover {
-  height: 196px;
-  margin: 16px 16px 0;
-  border-radius: 12px;
-  overflow: hidden;
+
+.journal-picked-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
 }
-.journal-timeline-detail ::selection {
-  background: var(--color-journal-tag);
-  color: var(--color-journal-tag-ink);
+
+.journal-picked-pin-label {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--color-ink-10);
+  border-radius: 8px;
+  background: var(--color-journal-card);
+  padding: 7px 12px;
+  color: var(--color-journal-ink);
+  font-size: 13px;
+  box-shadow: var(--shadow-periplus-soft);
+}
+
+.journal-picked-pin-dot {
+  width: 22px;
+  height: 22px;
+  border: 4px solid var(--color-white);
+  border-radius: 50% 50% 50% 0;
+  background: var(--color-journal-amber);
+  box-shadow: var(--shadow-periplus-soft);
+  transform: rotate(-45deg);
+}
+
+[data-map-picking="true"] .journal-map-photo {
+  pointer-events: none;
 }
 
 @media (max-width: 767px) {
+  .journal-entry {
+    padding-inline: 16px;
+  }
+  .journal-dialog:not(.journal-composer):not(.journal-event-details):not(
+      .journal-photo-viewer
+    ) {
+    padding: 20px 16px;
+  }
+  .journal-dates {
+    padding: 4px 12px 8px;
+  }
+  .journal-sheet .journal-heading {
+    min-height: 36px;
+  }
+  .journal-sheet .journal-dates nav {
+    margin-top: 6px;
+  }
+  .journal-list {
+    padding: 4px 12px 22px;
+  }
+  .journal-card {
+    border-radius: 20px;
+  }
+  .journal-card-horizontal {
+    border-radius: 20px;
+  }
+  .journal-card-horizontal .journal-card-cover {
+    flex: 0 0 116px;
+    width: 116px;
+  }
+  .journal-card-horizontal .journal-event-title {
+    font-size: 16.5px;
+    line-height: 23px;
+  }
+  .journal-event-title {
+    font-size: 18px;
+    line-height: 25px;
+  }
+  .journal-transit-place {
+    font-size: 15px;
+    line-height: 20px;
+  }
+  .journal-transit-route {
+    column-gap: 7px;
+  }
+  .journal-transit-time {
+    font-size: 12.5px;
+  }
   .journal-view-switch {
     top: calc(env(safe-area-inset-top, 0px) + 68px);
     right: 12px;
@@ -966,14 +1945,10 @@ body {
     max-height: calc(100dvh - 340px);
     border-radius: 18px;
   }
-  .journal-event-details .journal-card-cover {
-    height: 148px;
-    margin: 12px 12px 0;
-  }
-  .journal-event-heading,
-  .journal-timeline-detail > div {
-    padding-right: 18px;
-    padding-left: 18px;
+  .journal-map-controls {
+    bottom: auto;
+    top: 24px;
+    right: 16px;
   }
   .journal-workbench[data-view="timeline"] .journal-map-controls {
     top: calc(env(safe-area-inset-top, 0px) + 132px);
@@ -986,161 +1961,34 @@ body {
   .journal-workbench[data-view="list"] .journal-view-switch {
     top: calc(env(safe-area-inset-top, 0px) + 12px);
   }
+  .journal-workbench[data-picking="true"] .journal-map-controls {
+    top: auto;
+    bottom: 24px;
+  }
   .journal-timeline-notice {
     top: 108px;
     left: 12px;
     max-width: calc(100% - 24px);
   }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+      [type="file"]
+    ),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
 }
 
-.journal-mobile-curtain {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 24;
-  display: flex;
-  flex-direction: column;
-  /* Moving dial items must not scroll the curtain when they receive focus. */
-  overflow: clip;
-  pointer-events: none;
-}
-.journal-curtain-dial {
-  position: relative;
-  height: 168px;
-  flex-shrink: 0;
-  touch-action: none;
-  pointer-events: auto;
-}
-.journal-mobile-curtain .journal-timeline {
-  position: relative;
-  bottom: auto;
-  left: auto;
-  width: 100%;
-  height: 168px;
-  transform: none;
-}
-.journal-mobile-curtain .journal-timeline-glass {
-  inset: 0;
-  border-radius: 50% 50% 0 0 / 24% 24% 0 0;
-  mask-image: none;
-}
-.journal-mobile-curtain .journal-timeline-track {
-  top: 16px;
-}
-.journal-mobile-curtain .journal-timeline-ruler {
-  bottom: 28px;
-}
-.journal-mobile-curtain .journal-timeline-date {
-  bottom: 16px;
-}
-.journal-curtain-handle {
-  position: absolute;
-  z-index: 30;
-  top: 0;
-  left: calc(50% - 24px);
-  width: 48px;
-  height: 24px;
-  padding: 0;
-}
-.journal-curtain-handle span {
-  width: 32px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--color-journal-paper-muted);
-  opacity: 0.4;
-}
-.journal-curtain-resize {
-  position: absolute;
-  z-index: 30;
-  top: 8px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
-  color: var(--color-journal-paper-muted);
-}
-.journal-workbench:has(.journal-mobile-curtain[data-reading="true"])
-  :is(.journal-timeline-heading, .journal-view-switch, .journal-map-controls) {
-  visibility: hidden;
-}
-.journal-mobile-curtain[data-reading="true"] .journal-curtain-dial {
-  height: calc(168px + env(safe-area-inset-top, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
-}
-.journal-mobile-curtain[data-reading="true"] .journal-curtain-handle {
-  top: env(safe-area-inset-top, 0px);
-}
-.journal-mobile-curtain[data-reading="true"] .journal-curtain-resize {
-  top: calc(8px + env(safe-area-inset-top, 0px));
-}
-/* Only the dial transmits the fixed map. The opaque body naturally covers the
-   map's native attribution as it reaches the screen bottom. */
-.journal-curtain-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--color-journal-paper);
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-  pointer-events: auto;
-}
-.journal-mobile-curtain[data-fullscreen="false"] .journal-curtain-body {
-  touch-action: none;
-}
-.journal-curtain-body .journal-curtain-detail {
-  position: relative;
-  top: auto;
-  left: auto;
-  width: 100%;
-  max-height: none;
-  overflow: visible;
-  border-radius: 0;
-  background: var(--color-journal-paper);
-  box-shadow: none;
-}
-.journal-curtain-detail .journal-card-cover {
-  padding: 0;
-}
-@media (max-width: 767px) {
-  .journal-dates {
-    padding: 0 12px 8px;
+@media (max-width: 340px) {
+  .journal-card-horizontal .journal-card-cover {
+    flex: 0 0 92px;
+    width: 92px;
   }
-  .journal-sheet .journal-heading {
-    min-height: 36px;
-  }
-  .journal-sheet .journal-dates nav {
-    margin-top: 6px;
-  }
-  .journal-card-cover {
-    height: 190px;
-  }
-  .journal-card-content {
-    padding: 14px;
-  }
-  .journal-event-title {
-    font-size: 21px;
-    line-height: 28px;
-  }
-  .journal-transit-place {
-    font-size: 15px;
-    line-height: 22px;
-  }
-  .journal-list {
-    padding-right: 12px;
-    padding-left: 12px;
-  }
-  .journal-transit-route {
-    column-gap: 7px;
-  }
-  .journal-transit-time {
-    font-size: 13px;
-  }
-  .journal-map-controls {
-    bottom: auto;
-    top: 24px;
-    right: 16px;
+  .journal-card-horizontal .journal-event-title {
+    font-size: 15.5px;
   }
 }
+
 @media (min-width: 768px) and (max-width: 1023px) {
   .journal-workbench[data-view="timeline"] .journal-map-controls {
     top: 108px;
@@ -1148,1075 +1996,13 @@ body {
     flex-direction: row;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
-  .journal-card {
+  .journal-card,
+  .journal-photo-nav,
+  .journal-photo-print,
+  .journal-gap-slot,
+  .journal-gap-reveal {
     transition: none;
-  }
-}
-
-/* Keep attribution and scale outside the reading panel. */
-.journal-workbench .maplibregl-ctrl-bottom-left {
-  left: var(--journal-map-left, 4px);
-  bottom: calc(var(--journal-map-bottom, 0px) + 4px);
-  max-width: calc(100% - var(--journal-map-left, 4px) - 80px);
-}
-.journal-workbench .maplibregl-ctrl-attrib {
-  max-width: 100%;
-  white-space: nowrap;
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.journal-workbench
-  .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
-  opacity: 0.3;
-}
-.journal-workbench
-  .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show):is(
-    :hover,
-    :focus-within
-  ) {
-  opacity: 0.9;
-}
-
-.journal-entry h1 {
-  font-size: 28px;
-  line-height: 38px;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-}
-.journal-entry h1 + p,
-.journal-workbench > p {
-  color: var(--color-journal-muted);
-}
-.journal-workbench > p {
-  background: var(--color-journal-glass);
-}
-
-/* Photo-paper markers are grounded at the bottom-center map coordinate. */
-.journal-map-photo {
-  position: absolute;
-  display: block;
-  width: 132px;
-  height: 130px;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.journal-photo-print {
-  position: absolute;
-  top: 6px;
-  left: 10px;
-  display: block;
-  width: 112px;
-  padding: 5px 5px 15px;
-  border-radius: 2px;
-  background: var(--color-white);
-  box-shadow: var(--shadow-photo-paper);
-  transition: transform 180ms ease;
-}
-.journal-photo-print img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
-}
-.journal-photo-print--back-1 {
-  transform: translate(5px, 3px) rotate(6deg);
-}
-.journal-photo-print--back-2 {
-  transform: translate(-5px, 2px) rotate(-6deg);
-}
-.journal-photo-print--front {
-  transform: rotate(-2deg);
-}
-.journal-map-photo[aria-pressed="true"] .journal-photo-print--front {
-  outline: 2px solid var(--color-journal-accent);
-}
-.journal-map-photo:hover .journal-photo-print--front,
-.journal-map-photo:focus-visible .journal-photo-print--front {
-  transform: translateY(-3px);
-}
-.journal-map-photo:focus-visible {
-  outline: 2px solid var(--color-journal-accent);
-  outline-offset: 3px;
-}
-.journal-map-photo::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 60px;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--color-white);
-  border-radius: 50%;
-  background: var(--color-journal-accent);
-  box-shadow: var(--shadow-periplus-soft);
-}
-.journal-photo-count {
-  position: absolute;
-  top: 0;
-  right: 3px;
-  display: grid;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 5px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--color-journal-ink);
-  color: var(--color-white);
-  font: 500 13px/1 var(--font-sans);
-}
-.journal-photo-viewer [data-gallery-media] {
-  padding-top: 56px;
-}
-.journal-photo-meta {
-  padding: 64px 32px 28px;
-  background: linear-gradient(to top, var(--color-photo-stage), transparent);
-  color: var(--color-white);
-}
-.journal-photo-caption {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  width: min(620px, 65%);
-  font-size: 18px;
-  font-weight: 400;
-  line-height: 28px;
-}
-.journal-photo-caption > span {
-  overflow-wrap: anywhere;
-}
-.journal-photo-caption[aria-expanded="true"] {
-  display: block;
-}
-.journal-photo-caption[aria-expanded="true"] svg {
-  display: inline-block;
-  vertical-align: middle;
-  margin-bottom: 0;
-}
-.journal-photo-caption svg {
-  margin-bottom: 6px;
-}
-.journal-photo-location {
-  padding-bottom: 3px;
-  font-size: 14px;
-  line-height: 22px;
-}
-@media (max-width: 639px) {
-  .journal-photo-meta {
-    gap: 10px;
-    padding: 48px 20px 24px;
-  }
-  .journal-photo-caption {
-    flex: 1;
-    width: auto;
-    font-size: 14px;
-    line-height: 22px;
-  }
-  .journal-photo-caption svg {
-    width: 12px;
-    margin-bottom: 5px;
-  }
-  .journal-photo-location {
-    max-width: 35%;
-    font-size: 12px;
-    line-height: 18px;
-  }
-  .journal-photo-location svg {
-    width: 14px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .journal-photo-print {
-    transition: none;
-  }
-}
-
-.journal-map-photo--compact {
-  width: 34px;
-  height: 34px;
-  border: 2px solid var(--color-white);
-  border-radius: 50%;
-  background: var(--color-map-marker);
-  color: var(--color-white);
-  box-shadow: var(--shadow-periplus-soft);
-  font: 600 13px/30px var(--font-sans);
-  text-align: center;
-}
-.journal-map-photo--compact::after {
-  display: none;
-}
-
-/* A selected coordinate is temporary; confirmation does not create an event. */
-.journal-picked-pin {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  pointer-events: none;
-}
-.journal-picked-pin-label {
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border: 1px solid var(--color-ink-10);
-  border-radius: 8px;
-  background: var(--color-white);
-  padding: 7px 12px;
-  color: var(--color-ink);
-  font-size: 13px;
-  box-shadow: var(--shadow-periplus-soft);
-}
-.journal-picked-pin-dot {
-  width: 22px;
-  height: 22px;
-  border: 4px solid var(--color-white);
-  border-radius: 50% 50% 50% 0;
-  background: var(--color-russet);
-  box-shadow: var(--shadow-periplus-soft);
-  transform: rotate(-45deg);
-}
-.journal-composer textarea {
-  font-size: 16px;
-  line-height: 28px;
-}
-/* While picking, photo overlays remain visible and let map clicks reach the SDK. */
-[data-map-picking="true"] .journal-map-photo {
-  pointer-events: none;
-}
-@media (max-width: 767px) {
-  .journal-workbench[data-picking="true"] .journal-map-controls {
-    top: auto;
-    bottom: 24px;
-  }
-}
-
-@media (min-width: 768px) {
-  .journal-workbench[data-picking="true"] #record-workbench {
-    top: 144px;
-  }
-  .journal-workbench[data-picking="true"] .journal-panel {
-    background: var(--color-white);
-  }
-  .journal-workbench[data-picking="true"] .journal-panel > * {
-    opacity: 0.5;
-  }
-}
-
-/* Approved shared typography, surfaces and event cards. */
-:root,
-[data-theme="kumo"] {
-  --color-kumo-brand: var(--color-action);
-  --color-kumo-brand-hover: var(--color-action-hover);
-  --color-kumo-base: var(--color-soft-white);
-  --color-kumo-elevated: var(--color-journal-paper);
-  --color-kumo-recessed: var(--color-journal-paper-soft);
-  --color-kumo-tint: var(--color-journal-paper-soft);
-  --color-kumo-line: var(--color-journal-paper-line);
-  --color-kumo-hairline: var(--color-journal-paper-line);
-  --color-kumo-focus: var(--color-action);
-  --text-color-kumo-default: var(--color-journal-ink);
-  --text-color-kumo-subtle: var(--color-journal-muted);
-}
-.journal-workbench,
-.journal-dialog {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--color-journal-ink);
-}
-:where(.journal-workbench, .journal-dialog) :where(h1) {
-  font-family: var(--font-sans);
-  font-size: 24px;
-  font-weight: 650;
-  line-height: 32px;
-  letter-spacing: -0.02em;
-}
-:where(.journal-workbench, .journal-dialog) :where(h2) {
-  font-family: var(--font-sans);
-  font-size: 20px;
-  font-weight: 650;
-  line-height: 28px;
-  letter-spacing: -0.02em;
-}
-:where(.journal-workbench, .journal-dialog) :where(h3) {
-  font-family: var(--font-sans);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-}
-.journal-panel,
-.journal-workbench .journal-panel,
-.journal-dialog {
-  border: 1px solid var(--color-journal-paper-line);
-  background: var(--color-journal-paper);
-  box-shadow: none;
-  backdrop-filter: none;
-}
-.journal-panel,
-.journal-dialog {
-  border-radius: 16px;
-}
-.journal-dialog:not(.journal-composer):not(.journal-event-details):not(
-    .journal-photo-viewer
-  ) {
-  padding: 20px;
-}
-.journal-dialog > h2:not(.sr-only) {
-  margin-bottom: 16px;
-}
-.journal-dialog :where(label, legend) {
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 500;
-}
-.journal-dialog
-  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-.journal-dialog select {
-  min-height: 44px;
-  font: 400 14px/20px var(--font-sans);
-  caret-color: var(--color-action);
-}
-[data-kumo-component="Button"] {
-  font-family: var(--font-sans);
-  font-weight: 500;
-  box-shadow: none;
-}
-.journal-entry section {
-  padding: 20px;
-  border-radius: 16px;
-}
-.journal-entry h1 {
-  font-size: 28px;
-  line-height: 36px;
-  font-weight: 650;
-}
-.journal-entry section > p {
-  margin-top: 8px;
-  font-size: 14px;
-  line-height: 22px;
-}
-.journal-entry-fields {
-  margin-top: 20px;
-}
-.journal-dates {
-  padding: 12px 12px 8px;
-}
-.journal-dates nav {
-  gap: 4px;
-}
-.journal-dates .journal-journey-trigger {
-  font-family: var(--font-sans);
-  font-weight: 600;
-  line-height: 26px;
-}
-.journal-list {
-  padding: 0 12px 16px;
-}
-.journal-list > div {
-  gap: 12px;
-}
-.journal-journey-trigger {
-  background: var(--color-journal-paper);
-}
-.journal-composer > header,
-.journal-event-heading {
-  min-height: 56px;
-  height: auto;
-  padding: 8px 16px;
-  background: var(--color-journal-paper);
-}
-.journal-composer-body {
-  padding: 0 16px 20px;
-}
-.journal-composer textarea {
-  font-size: 14px;
-  line-height: 24px;
-}
-.journal-composer-body > fieldset {
-  gap: 8px;
-  margin-top: 4px;
-}
-.journal-composer-body > .mt-5 {
-  margin-top: 16px;
-}
-.journal-event-details .journal-card-cover {
-  height: 196px;
-  aspect-ratio: auto;
-  width: auto;
-  margin: 0;
-  border-radius: 0;
-}
-.journal-event-details > div:not(.journal-card-cover) {
-  padding: 0 16px 16px;
-}
-.journal-event-details > div > p {
-  font-size: 14px;
-  line-height: 24px;
-}
-.journal-event-details .journal-event-heading {
-  position: relative;
-  padding-block: 12px;
-}
-.journal-event-details .journal-event-heading h2 {
-  font-size: 20px;
-  line-height: 26px;
-}
-.journal-event-details .journal-event-facts {
-  margin-top: 12px;
-}
-.journal-drafts > div {
-  padding: 20px 16px;
-}
-.journal-drafts ul {
-  margin-top: 16px;
-}
-.journal-drafts li {
-  padding-block: 12px;
-}
-.journal-drafts li span {
-  line-height: 20px;
-}
-.journal-drafts [role="status"] {
-  margin-top: 8px;
-}
-.journal-dialog button:focus-visible,
-.journal-workbench button:focus-visible {
-  outline-color: var(--color-action);
-}
-@media (max-width: 767px) {
-  .journal-entry {
-    padding-inline: 16px;
-  }
-  .journal-entry section {
-    padding: 20px;
-  }
-  .journal-dialog:not(.journal-composer):not(.journal-event-details):not(
-      .journal-photo-viewer
-    ) {
-    padding: 20px 16px;
-  }
-  .journal-event-heading {
-    padding-inline: 16px;
-  }
-  .journal-drafts > div {
-    padding: 16px 12px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .journal-workbench *,
-  .journal-dialog * {
-    scroll-behavior: auto;
-  }
-}
-.journal-entry-fields > .grid > [data-kumo-component="Button"] {
-  width: 100%;
-  min-height: 44px;
-  justify-content: center;
-}
-
-.journal-card {
-  position: relative;
-  background: var(--color-journal-paper);
-  border: 1px solid var(--color-journal-paper-line);
-  box-shadow: none;
-  border-radius: 20px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: border-color 0.16s;
-  isolation: isolate;
-}
-.journal-card:focus-visible {
-  outline: 2px solid var(--color-action);
-  outline-offset: 4px;
-}
-.journal-card-cover {
-  position: relative;
-  flex: none;
-  margin: 0;
-  border-radius: 0;
-  height: auto;
-  aspect-ratio: 4/3;
-  width: 100%;
-  overflow: hidden;
-}
-.journal-card-cover > button {
-  position: relative;
-  width: 100% !important;
-  height: 100% !important;
-  display: block;
-  box-shadow: none;
-}
-.journal-card-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.journal-card-cover > button:focus-visible {
-  outline: none !important;
-  box-shadow:
-    inset 0 0 0 4px var(--color-soft-white),
-    inset 0 0 0 6px var(--color-journal-ink) !important;
-}
-.journal-card-cover > button:focus-visible img {
-  outline: 2px solid var(--color-soft-white);
-  outline-offset: -8px;
-}
-
-.journal-card-content {
-  padding: 12px 12px 0;
-  min-width: 0;
-}
-.journal-card-city {
-  margin: 0;
-  color: var(--color-journal-muted);
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 500;
-}
-.journal-card-topline {
-  margin-bottom: 6px;
-  gap: 8px;
-}
-.journal-event-title {
-  font-family: var(--font-sans);
-  font-size: 20px;
-  line-height: 26px;
-  letter-spacing: -0.02em;
-  font-weight: 650;
-  text-wrap: pretty;
-  margin: 0;
-}
-.journal-event-title > button {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  line-height: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  width: 100%;
-  text-align: left;
-}
-.journal-card-meta {
-  margin: 8px 0;
-  gap: 6px 12px;
-  flex-wrap: wrap;
-}
-.journal-card-time,
-.journal-card-meta,
-.journal-weather {
-  font-size: 12px;
-  line-height: 18px;
-  font-variant-numeric: tabular-nums;
-}
-.journal-card-content p {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--color-journal-ink);
-  margin: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-.journal-card-source {
-  margin-top: 12px;
-  font-size: 11px;
-  line-height: 18px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--color-journal-muted);
-}
-.journal-weather-source {
-  font-size: 10px;
-  line-height: 16px;
-}
-.journal-card-source > span:first-child {
-  font-size: 11px;
-}
-.journal-card-horizontal {
-  display: grid;
-  grid-template-columns: 156px minmax(0, 1fr);
-  gap: 0;
-  padding: 0;
-  border-radius: 20px;
-  align-items: stretch;
-}
-.journal-card-horizontal .journal-card-cover {
-  width: 100%;
-  height: auto;
-  min-height: 0;
-  aspect-ratio: auto;
-  border-radius: 0;
-  margin: 0;
-  align-self: stretch;
-}
-.journal-card-horizontal .journal-card-cover > button {
-  position: absolute;
-  inset: 0;
-}
-.journal-card-horizontal .journal-card-content {
-  display: flex;
-  flex-direction: column;
-  padding: 12px 12px 4px;
-}
-.journal-card-horizontal .journal-event-title {
-  font-size: 18px;
-  line-height: 24px;
-  letter-spacing: -0.015em;
-}
-.journal-card-horizontal .journal-card-content p {
-  -webkit-line-clamp: 2;
-  font-size: 13px;
-  line-height: 20px;
-}
-.journal-card-horizontal .journal-card-meta {
-  margin: 8px 0;
-}
-.cards-footer {
-  grid-column: 1/-1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  padding: 0 12px 4px;
-  margin-top: 4px;
-}
-.journal-card-horizontal .cards-footer {
-  padding: 4px 0 0;
-  margin-top: auto;
-}
-.cards-expense-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  min-width: 44px;
-  max-width: 100%;
-  margin-left: auto;
-  padding: 6px 8px;
-  color: var(--color-journal-ink);
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  cursor: pointer;
-  font: 600 13px/20px var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-.cards-expense-trigger:hover {
-  background: var(--color-journal-paper-soft);
-}
-.cards-expense-trigger:focus-visible {
-  outline: 2px solid var(--color-action);
-  outline-offset: 2px;
-}
-.cards-expense-trigger svg {
-  width: 19px;
-  height: 19px;
-  stroke-width: 1.8;
-}
-.cards-expense-value {
-  min-width: 0;
-}
-.journal-card-transit .journal-card-content {
-  padding: 12px 12px 0;
-}
-.journal-card-transit .journal-transit-place {
-  font-family: var(--font-sans);
-  font-weight: 600;
-}
-.journal-transit-time {
-  font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-.journal-card-transit .journal-card-source {
-  justify-content: flex-start;
-  text-align: left;
-}
-.journal-card-transit .cards-footer {
-  padding-top: 0;
-  margin-top: 0;
-}
-.journal-transit-axis {
-  font-size: 11px;
-}
-.journal-transit-footer {
-  margin-top: 8px;
-}
-
-.cards-footer {
-  justify-content: flex-start;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 0;
-}
-.journal-card-transit .cards-footer {
-  margin-top: 0;
-}
-.cards-author-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--color-journal-muted);
-  cursor: pointer;
-}
-.cards-author-trigger > span,
-.cards-author-trigger > img {
-  width: 24px;
-  height: 24px;
-  object-fit: cover;
-  border-radius: 50%;
-  font: 500 12px/24px var(--font-sans);
-  background: var(--color-journal-paper-soft);
-  color: var(--color-journal-ink);
-}
-.cards-author-trigger:hover {
-  background: var(--color-journal-paper-soft);
-}
-.cards-author-trigger:focus-visible,
-.cards-weather-trigger:focus-visible {
-  outline: 2px solid var(--color-action);
-  outline-offset: 2px;
-}
-.cards-weather-trigger {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 4px;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: help;
-  text-align: left;
-}
-.cards-weather-trigger::after {
-  content: "";
-  position: absolute;
-  inset: -8px -3px;
-}
-.cards-weather-trigger:hover {
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 4px;
-}
-.cards-info-popover {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  width: 260px;
-  max-width: calc(100vw - 24px);
-  box-sizing: border-box;
-  padding: 16px;
-  border: 1px solid var(--color-journal-paper-line);
-  border-radius: 14px;
-  background: var(--color-journal-paper);
-  color: var(--color-journal-ink);
-  font: 400 13px/1.6 var(--font-sans);
-}
-.cards-info-popover::backdrop {
-  background: transparent;
-}
-.cards-info-popover a {
-  color: var(--color-journal-ink);
-  text-underline-offset: 3px;
-}
-.cards-info-popover a:focus-visible {
-  outline: 2px solid var(--color-action);
-  outline-offset: 3px;
-  border-radius: 2px;
-}
-.cards-author-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.cards-author-card > span,
-.cards-author-card > img {
-  width: 40px;
-  height: 40px;
-  flex: none;
-  object-fit: cover;
-  font: 500 18px/40px var(--font-sans);
-  color: var(--color-journal-ink);
-  background: var(--color-journal-paper-soft);
-  border-radius: 50%;
-}
-.cards-author-card strong {
-  font-size: 15px;
-  font-weight: 600;
-}
-.cards-weather-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.cards-weather-info strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-.cards-weather-info .journal-weather-source {
-  font: 400 13px/1.6 var(--font-sans);
-}
-.journal-card-horizontal .cards-author-trigger {
-  margin-left: -10px;
-}
-.journal-card-horizontal .cards-expense-trigger {
-  margin-right: -12.5px;
-}
-.journal-card-horizontal .cards-expense-value {
-  margin-right: -8px;
-}
-
-.journal-card-transit .journal-transit-route {
-  grid-template-areas: "departure axis arrival" "origin axis destination";
-  row-gap: 0;
-}
-.journal-card-transit .journal-transit-place {
-  font-size: 16px;
-  line-height: 22px;
-}
-.journal-card-transit .journal-transit-time {
-  font-size: 14px;
-  line-height: 20px;
-  margin-bottom: 2px;
-}
-.journal-transit-arrival {
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-end;
-  gap: 4px;
-}
-.cards-transit-day-offset {
-  font: 500 11px/16px var(--font-sans);
-  white-space: nowrap;
-}
-@media (max-width: 767px) {
-  .journal-card-transit .journal-transit-place {
-    font-size: 15px;
-    line-height: 20px;
-  }
-  .journal-card-transit .journal-transit-time {
-    font-size: 13px;
-  }
-  .cards-transit-day-offset {
-    font-size: 10px;
-  }
-}
-.journal-card-transit .journal-transit-route {
-  grid-template-areas: none;
-  align-items: center;
-}
-.journal-transit-route > .journal-transit-axis {
-  grid-area: auto;
-}
-.cards-transit-endpoint {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.cards-transit-endpoint .journal-transit-time {
-  margin: 0;
-}
-
-.journal-card:focus-visible {
-  outline: 2px solid var(--color-action);
-  outline-offset: 4px;
-}
-.journal-card:not(:has(.journal-card-cover)) {
-  display: block;
-}
-.journal-card:not(:has(.journal-card-cover)) .journal-card-content {
-  padding: 12px 12px 4px;
-}
-.journal-card-content > .cards-footer {
-  padding-inline: 0;
-}
-.journal-card-horizontal .cards-footer {
-  padding-bottom: 0;
-}
-.journal-card-time {
-  font-family: var(--font-sans);
-  margin-top: 0;
-}
-.journal-transit-endpoint {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.journal-transit-endpoint:last-child {
-  text-align: right;
-}
-.journal-transit-route {
-  grid-template-areas: none;
-  align-items: center;
-}
-.journal-transit-axis {
-  grid-area: auto;
-}
-.journal-transit-time {
-  font-family: var(--font-sans);
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-}
-.journal-transit-endpoint:last-child .journal-transit-time {
-  justify-content: flex-end;
-}
-.cards-expenses {
-  margin-left: auto;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0 4px;
-  min-width: 0;
-}
-.cards-expense-trigger {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.cards-info-popover {
-  position: relative;
-  inset: auto;
-  margin: 0;
-}
-.cards-info-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.cards-info-popover .journal-weather-source {
-  font-size: 13px;
-  line-height: 20px;
-  margin: 0;
-}
-.cards-author-trigger > span {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.cards-author-card > span {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.journal-card-horizontal .cards-expense-trigger {
-  margin-right: -8px;
-}
-@media (max-width: 767px) {
-  .journal-card {
-    border-radius: 18px;
-  }
-  .journal-card-horizontal {
-    grid-template-columns: 112px minmax(0, 1fr);
-  }
-  .journal-card-horizontal .journal-event-title {
-    font-size: 17px;
-    line-height: 24px;
-  }
-  .journal-card-horizontal .journal-card-content {
-    padding: 12px 12px 4px;
-  }
-  .journal-event-title {
-    font-size: 20px;
-    line-height: 26px;
-  }
-  .journal-card-cover {
-    height: auto;
-  }
-  .journal-card-content {
-    padding: 12px 12px 0;
-  }
-}
-@media (max-width: 340px) {
-  .journal-card-horizontal {
-    grid-template-columns: 88px minmax(0, 1fr);
-  }
-  .journal-card-horizontal .journal-event-title {
-    font-size: 16px;
-  }
-  .journal-card-horizontal .journal-card-meta,
-  .journal-card-horizontal .journal-card-time,
-  .journal-card-horizontal .journal-weather {
-    font-size: 11px;
-    line-height: 18px;
-  }
-  .journal-transit-axis {
-    font-size: 10px;
-  }
-}
-
-.journal-card-sort {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  margin-left: auto;
-  border-radius: 10px;
-  color: var(--color-journal-muted);
-  cursor: grab;
-  touch-action: none;
-}
-.journal-card-sort + .cards-expenses {
-  margin-left: 0;
-}
-.journal-card-sort:hover {
-  background: var(--color-journal-paper-soft);
-}
-.journal-card-sort:active {
-  cursor: grabbing;
-}
-.journal-card-sort:focus-visible {
-  outline: 2px solid var(--color-action);
-  outline-offset: -2px;
-}
-@media (hover: hover) and (pointer: fine) {
-  .journal-card-sort {
-    opacity: 0;
-  }
-  .journal-card:hover .journal-card-sort,
-  .journal-card:focus-within .journal-card-sort,
-  .journal-card[data-dragging] .journal-card-sort {
-    opacity: 1;
-  }
-}
-
-.journal-card-sort:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-@media (max-width: 767px) {
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
-      [type="file"]
-    ),
-  textarea,
-  select {
-    font-size: 16px !important;
   }
 }

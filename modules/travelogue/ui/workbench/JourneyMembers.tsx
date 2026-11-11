@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Copy, Link } from "lucide-react"
+import { ArrowLeft, Copy, Link } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
 import type {
@@ -10,7 +10,7 @@ import type {
   JourneyMember,
 } from "@/modules/data-model/contracts/collaboration"
 import type { RecordingStore } from "../../state/recording-store"
-import { Modal, useConfirmation } from "./Modal"
+import { useConfirmation } from "./Modal"
 import UserSource from "./UserSource"
 
 export default function JourneyMembers({
@@ -34,9 +34,11 @@ export default function JourneyMembers({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState("")
+  const [nowMs, setNowMs] = useState(0)
   const linkInput = useRef<HTMLInputElement>(null)
   const { ask, confirmation } = useConfirmation()
   const [reload, setReload] = useState(0)
+
   useEffect(() => {
     let disposed = false
     Promise.all([
@@ -47,6 +49,7 @@ export default function JourneyMembers({
         if (!disposed) {
           setMembers(result.members)
           setInvitations(links.invitations)
+          setNowMs(Date.now())
         }
       })
       .catch((cause) => {
@@ -62,6 +65,7 @@ export default function JourneyMembers({
       disposed = true
     }
   }, [api, journeyId, owner, reload])
+
   async function create() {
     setBusy(true)
     setError(null)
@@ -86,17 +90,41 @@ export default function JourneyMembers({
       setBusy(false)
     }
   }
+
   return (
     <>
-      <Modal
-        title="同行者"
-        onClose={onClose}
-        beforeClose={() => !busy}
-        className="journal-members w-[480px]! p-6!"
+      <section
+        className="journal-subpage journal-members"
+        aria-label="同行者"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented && !busy) {
+            event.stopPropagation()
+            onClose()
+          }
+        }}
       >
-        {() => (
-          <div className="space-y-5">
-            <h3 className="text-lg font-semibold break-words">{title}</h3>
+        <header className="journal-subpage-header sticky top-0 z-10">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              shape="square"
+              aria-label="返回"
+              disabled={busy}
+              onClick={() => !busy && onClose()}
+            >
+              <ArrowLeft size={16} />
+            </Button>
+            <h2 className="truncate font-editorial text-lg font-bold">
+              同行者
+            </h2>
+          </div>
+        </header>
+
+        <div className="journal-subpage-body">
+          <div className="space-y-5 rounded-3xl border border-journal-line bg-journal-card p-5 shadow-journal-card">
+            <h3 className="font-editorial text-lg font-bold break-words text-journal-ink">
+              {title}
+            </h3>
             {loading && (
               <p role="status" className="text-sm text-journal-muted">
                 正在读取同行者…
@@ -107,6 +135,7 @@ export default function JourneyMembers({
                 <p>{error}</p>
                 <Button
                   variant="ghost"
+                  size="sm"
                   disabled={busy}
                   onClick={() => {
                     setLoading(true)
@@ -119,7 +148,7 @@ export default function JourneyMembers({
               </div>
             )}
             {members && (
-              <ul className="space-y-4">
+              <ul className="space-y-3.5">
                 {members.map((member) => (
                   <li
                     key={member.user.userId}
@@ -130,7 +159,7 @@ export default function JourneyMembers({
                       user={member.user}
                       className="text-journal-ink"
                     />
-                    <span className="shrink-0 text-xs text-journal-muted">
+                    <span className="shrink-0 rounded-full bg-journal-chip px-2.5 py-0.5 text-xs text-journal-muted">
                       {member.role === "OWNER" ? "作者" : "同行者"}
                     </span>
                   </li>
@@ -162,20 +191,21 @@ export default function JourneyMembers({
                     {status}
                   </p>
                 )}
-                <ul className="space-y-3" aria-label="已发邀请">
+                <ul className="space-y-2.5" aria-label="已发邀请">
                   {invitations.map((invitation) => {
                     const expired =
-                      new Date(invitation.expiresAt).getTime() <= Date.now()
+                      nowMs > 0 &&
+                      new Date(invitation.expiresAt).getTime() <= nowMs
                     return (
                       <li
                         key={invitation.id}
-                        className="flex items-center gap-3 rounded-xl bg-journal-soft px-3 py-2"
+                        className="flex items-center gap-3 rounded-xl border border-journal-line bg-journal-paper-soft px-3 py-2"
                       >
                         <Link
-                          size={16}
+                          size={15}
                           className="shrink-0 text-journal-muted"
                         />
-                        <span className="min-w-0 flex-1 text-xs text-journal-muted">
+                        <span className="min-w-0 flex-1 text-xs text-journal-muted tabular-nums">
                           {invitation.revokedAt
                             ? "已撤销"
                             : expired
@@ -237,8 +267,8 @@ export default function JourneyMembers({
               </>
             )}
           </div>
-        )}
-      </Modal>
+        </div>
+      </section>
       {confirmation}
     </>
   )

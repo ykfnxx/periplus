@@ -1,19 +1,32 @@
 "use client"
+
 import { useEffect, useRef, useState } from "react"
 import { ContextMenu } from "@base-ui/react/context-menu"
 import { useSortable } from "@dnd-kit/react/sortable"
 import { motion, useReducedMotion } from "motion/react"
-import { Clock3, Pencil, Trash2, ReceiptText, GripVertical } from "lucide-react"
+import {
+  ArrowUpRight,
+  Clock3,
+  GripVertical,
+  MapPin,
+  Pencil,
+  Trash2,
+} from "lucide-react"
 import type {
   JourneyEvent,
   EventWeather as Weather,
 } from "@/modules/data-model/contracts"
-import EventWeather from "./EventWeather"
-import UserSource from "./UserSource"
+import {
+  eventCardTimes,
+  eventCardTitle,
+  eventCategoryLabels,
+  eventTransitDisplay,
+} from "../event-card-display"
 import EventCover from "./EventCover"
+import EventWeather from "./EventWeather"
+import { ExpensePills, InlineReceiptBreakdown } from "./ReceiptCard"
 import TransitEventCard from "./TransitEventCard"
-import { receiptCardTotal } from "../receipt-display"
-import { eventCardTimes, eventCardTitle } from "../event-card-display"
+import UserSource from "./UserSource"
 
 export default function EventCard({
   entry,
@@ -25,7 +38,6 @@ export default function EventCard({
   canMove,
   moveDisabled,
   onReceipt,
-  onAddReceipt,
   onSelect,
   onExpand,
   onEdit,
@@ -50,6 +62,7 @@ export default function EventCard({
 }) {
   const reduced = useReducedMotion()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [openReceiptId, setOpenReceiptId] = useState<string | null>(null)
   const hold = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pointer = useRef({ x: 0, y: 0 })
   function cancelHold() {
@@ -57,7 +70,15 @@ export default function EventCard({
     hold.current = null
   }
   useEffect(() => cancelHold, [])
-  const title = eventCardTitle(entry)
+
+  const transit = entry.category === "TRANSIT"
+  const transitInfo = transit ? eventTransitDisplay(entry) : null
+  const title = transit
+    ? entry.transit
+      ? `${entry.transit.fromName}到${entry.transit.toName}`
+      : "交通"
+    : eventCardTitle(entry)
+
   const { ref, handleRef, isDragging } = useSortable({
     id: entry.id,
     index,
@@ -65,11 +86,11 @@ export default function EventCard({
     data: { title },
     transition: {
       duration: reduced ? 0 : 220,
-      easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      easing: "cubic-bezier(0.22, 1, 0.36, 1)",
       idle: false,
     },
   })
-  const transit = entry.category === "TRANSIT"
+
   const stamp = transit ? null : weather
   const horizontal = entry.category === "MEAL" || entry.category === "STAY"
   const body = entry.body.trim() || (transit ? entry.transit?.notes || "" : "")
@@ -81,6 +102,27 @@ export default function EventCard({
       entry.hotel?.coverImageUrl ||
       entry.planning?.coverImageUrl
     )
+  const openReceipt =
+    entry.receipts.find((item) => item.assetId === openReceiptId) ?? null
+  const toggleReceipt = (assetId: string) =>
+    setOpenReceiptId((current) => (current === assetId ? null : assetId))
+
+  const sortHandle = canMove ? (
+    <button
+      type="button"
+      ref={handleRef}
+      className="journal-card-sort"
+      disabled={moveDisabled}
+      aria-label={`拖动调整${title}的顺序`}
+      title="拖动调整顺序"
+      onPointerDown={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <GripVertical size={15} aria-hidden="true" />
+    </button>
+  ) : null
+
   return (
     <ContextMenu.Root
       disabled={!canEdit && !canRemove}
@@ -88,7 +130,9 @@ export default function EventCard({
       onOpenChange={setMenuOpen}
     >
       <ContextMenu.Trigger
-        render={<motion.article animate={{ opacity: isDragging ? 0.7 : 1 }} />}
+        render={
+          <motion.article animate={{ opacity: isDragging ? 0.65 : 1 }} />
+        }
         ref={canMove ? ref : undefined}
         id={`record-${entry.id}`}
         data-record-id={entry.id}
@@ -174,82 +218,152 @@ export default function EventCard({
         <div className="journal-card-content">
           {transit ? (
             <>
-              <h2 className="sr-only">{title}</h2>
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+                <span className="journal-transit-badge">
+                  {[transitInfo?.mode, transitInfo?.line]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+                <div className="flex shrink-0 items-center gap-0.5 text-journal-transit-muted">
+                  {sortHandle}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      aria-label={`编辑${title}`}
+                      title="编辑"
+                      className="inline-flex size-7 items-center justify-center rounded-lg hover:bg-journal-transit-chip hover:text-journal-transit-ink"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onEdit()
+                      }}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`展开${title}的详情`}
+                    title="展开"
+                    className="inline-flex size-7 items-center justify-center rounded-lg hover:bg-journal-transit-chip hover:text-journal-transit-ink"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRead()
+                    }}
+                  >
+                    <ArrowUpRight size={15} />
+                  </button>
+                </div>
+              </div>
               <TransitEventCard event={entry} />
+              {(body || entry.receipts.length > 0) && (
+                <div className="journal-transit-bottom">
+                  {body && (
+                    <span className="journal-transit-note" title={body}>
+                      {body}
+                    </span>
+                  )}
+                  <ExpensePills
+                    receipts={entry.receipts}
+                    activeAssetId={openReceiptId}
+                    onToggle={toggleReceipt}
+                    variant="transit"
+                  />
+                </div>
+              )}
+              {openReceipt && (
+                <InlineReceiptBreakdown
+                  receipt={openReceipt}
+                  variant="transit"
+                  onOpenDetails={() => onReceipt(openReceipt.assetId)}
+                />
+              )}
             </>
           ) : (
             <>
-              <h2 className="journal-event-title">
-                <button
-                  type="button"
-                  className="text-left focus-visible:outline-2 focus-visible:outline-russet"
-                  aria-label={`展开${title}的详情`}
-                  onClick={onRead}
-                >
-                  {title}
-                </button>
-              </h2>
-              {(times.range || stamp) && (
+              {(entry.location || times.range || stamp) && (
                 <div className="journal-card-meta">
+                  {entry.location && (
+                    <span className="inline-flex min-w-0 items-center gap-1 font-medium text-journal-amber">
+                      <MapPin size={12} className="shrink-0" />
+                      <span className="truncate">{entry.location.name}</span>
+                    </span>
+                  )}
                   {times.range && (
                     <span className="journal-card-time">
-                      <Clock3 size={14} aria-hidden="true" />
+                      <Clock3 size={12} aria-hidden="true" />
                       {times.range}
                     </span>
                   )}
                   <EventWeather weather={stamp} />
                 </div>
               )}
+              <div className="journal-card-topline">
+                <h2 className="journal-event-title min-w-0 flex-1">
+                  <button
+                    type="button"
+                    aria-label={`展开${title}的详情`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRead()
+                    }}
+                  >
+                    {title}
+                  </button>
+                </h2>
+                <div className="flex shrink-0 items-center gap-0.5 text-journal-muted">
+                  {canEdit && (
+                    <button
+                      type="button"
+                      aria-label={`编辑${title}`}
+                      title="编辑"
+                      className="inline-flex size-7 items-center justify-center rounded-lg hover:bg-journal-paper-soft hover:text-journal-ink"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onEdit()
+                      }}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`查看${title}详情`}
+                    title="展开"
+                    className="inline-flex size-7 items-center justify-center rounded-lg hover:bg-journal-paper-soft hover:text-journal-ink"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRead()
+                    }}
+                  >
+                    <ArrowUpRight size={15} />
+                  </button>
+                </div>
+              </div>
+              {body && <p className="journal-card-body">{body}</p>}
+              <div className="cards-footer">
+                <span className="journal-category-chip">
+                  {eventCategoryLabels[entry.category]}
+                </span>
+                <UserSource user={entry.source} compact />
+                {sortHandle}
+                <ExpensePills
+                  receipts={entry.receipts}
+                  activeAssetId={openReceiptId}
+                  onToggle={toggleReceipt}
+                />
+              </div>
+              {openReceipt && (
+                <InlineReceiptBreakdown
+                  receipt={openReceipt}
+                  onOpenDetails={() => onReceipt(openReceipt.assetId)}
+                />
+              )}
             </>
           )}
-          {body && (
-            <p className={transit ? "line-clamp-1" : "line-clamp-3"}>{body}</p>
-          )}
-          <div className="cards-footer">
-            <UserSource user={entry.source} compact />
-            {canMove && (
-              <button
-                type="button"
-                ref={handleRef}
-                className="journal-card-sort"
-                disabled={moveDisabled}
-                aria-label={`拖动调整${title}的顺序`}
-                title="拖动调整顺序"
-                onPointerDown={(event) => event.stopPropagation()}
-                onTouchStart={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <GripVertical size={17} aria-hidden="true" />
-              </button>
-            )}
-            <div className="cards-expenses">
-              {entry.receipts.map((receipt) => (
-                <button
-                  key={receipt.assetId}
-                  type="button"
-                  className="cards-expense-trigger"
-                  aria-label={`查看${receipt.merchant || "这条记录"}的账单详情`}
-                  onClick={() => onReceipt(receipt.assetId)}
-                >
-                  {receipt.total !== null ? (
-                    receiptCardTotal(receipt)
-                  ) : (
-                    <ReceiptText size={19} aria-hidden="true" />
-                  )}
-                </button>
-              ))}
-              {!entry.receipts.length && onAddReceipt && (
-                <button
-                  type="button"
-                  className="cards-expense-trigger"
-                  aria-label="加账单"
-                  onClick={onAddReceipt}
-                >
-                  <ReceiptText size={19} aria-hidden="true" />
-                </button>
-              )}
-            </div>
-          </div>
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
@@ -258,22 +372,22 @@ export default function EventCard({
           collisionPadding={12}
           className="z-50"
         >
-          <ContextMenu.Popup className="min-w-36 rounded-xl border border-journal-paper-line bg-journal-paper p-1.5 text-sm shadow-journal outline-none">
+          <ContextMenu.Popup className="min-w-36 rounded-xl border border-journal-line bg-journal-card p-1.5 text-sm shadow-journal outline-none">
             {canEdit && (
               <ContextMenu.Item
-                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 outline-none data-highlighted:bg-journal-paper-soft"
+                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 outline-none data-highlighted:bg-journal-paper-soft"
                 onClick={onEdit}
               >
-                <Pencil size={16} />
+                <Pencil size={15} />
                 编辑
               </ContextMenu.Item>
             )}
             {canRemove && (
               <ContextMenu.Item
-                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-coral outline-none data-highlighted:bg-journal-paper-soft"
+                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-coral outline-none data-highlighted:bg-journal-paper-soft"
                 onClick={onRemove}
               >
-                <Trash2 size={16} />
+                <Trash2 size={15} />
                 删除
               </ContextMenu.Item>
             )}

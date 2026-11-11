@@ -1,4 +1,5 @@
 "use client"
+
 import { useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import { MapPin } from "lucide-react"
@@ -6,15 +7,16 @@ import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
 import type { EventContent } from "@/modules/data-model/contracts"
 import { recordingCoordinateToMap } from "../display"
+
 const RecordMap = dynamic(() => import("../RecordMap"), { ssr: false })
 type Location = NonNullable<EventContent["location"]>
+
 export default function LocationPanel({
   initialLocation,
   onSave,
   onClose,
   onDirtyChange,
   title = "记录地点",
-  description = "可以先记下名称。补充坐标后，这段经历会显示在旅程地图上。",
   removeLabel = "移除地点",
 }: {
   title?: string
@@ -103,26 +105,25 @@ export default function LocationPanel({
         event.preventDefault()
         void save()
       }}
-      className="space-y-4"
+      className="space-y-3 rounded-2xl border border-journal-line bg-journal-paper-soft p-3.5"
     >
-      <h3 className="text-xl font-black">{title}</h3>
+      <h4 className="text-sm font-semibold text-journal-ink">{title}</h4>
       <Input
         label="地点名称"
         value={name}
         onChange={(event) => setName(event.target.value)}
         placeholder="例如：西湖边的一家茶馆"
       />
-      <p className="text-sm leading-6 text-walnut">{description}</p>
       <Button
         variant="secondary"
         className="w-full"
         onClick={() => setShowMap(!showMap)}
       >
-        <MapPin size={17} />
+        <MapPin size={16} />
         {showMap ? "收起地图" : "在地图上选点"}
       </Button>
       {showMap && (
-        <div className="h-64">
+        <div className="h-52 overflow-hidden rounded-xl border border-journal-line">
           <RecordMap
             points={points}
             onPick={(coordinate) => {
@@ -132,7 +133,7 @@ export default function LocationPanel({
           />
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2.5">
         <Input
           label="纬度"
           type="number"
@@ -161,16 +162,22 @@ export default function LocationPanel({
         {initialLocation && (
           <Button
             variant="secondary-destructive"
+            size="sm"
             disabled={saving}
             onClick={() => void save(true)}
           >
             {removeLabel}
           </Button>
         )}
-        <Button variant="secondary" onClick={onClose} disabled={saving}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onClose}
+          disabled={saving}
+        >
           取消
         </Button>
-        <Button variant="primary" type="submit" loading={saving}>
+        <Button variant="primary" size="sm" type="submit" loading={saving}>
           保存地点
         </Button>
       </div>
