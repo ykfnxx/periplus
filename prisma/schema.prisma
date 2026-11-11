@@ -68,17 +68,21 @@ enum PlaceSourceQuality {
 }
 
 model User {
-  id            String    @id
-  name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
-  image         String?
-  role          String?   @default("user")
-  banned        Boolean?  @default(false)
-  banReason     String?
-  banExpires    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  oauthClient_userId       OauthClient[]       @relation("OauthClient_userId")
+  oauthRefreshToken_userId OauthRefreshToken[] @relation("OauthRefreshToken_userId")
+  oauthAccessToken_userId  OauthAccessToken[]  @relation("OauthAccessToken_userId")
+  oauthConsent_userId      OauthConsent[]      @relation("OauthConsent_userId")
+  id                       String              @id
+  name                     String
+  email                    String              @unique
+  emailVerified            Boolean             @default(false)
+  image                    String?
+  role                     String?             @default("user")
+  banned                   Boolean?            @default(false)
+  banReason                String?
+  banExpires               DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
 
   sessions           Session[]           @relation("UserSessions")
   accounts           Account[]           @relation("UserAccounts")
@@ -89,20 +93,23 @@ model User {
   journeyInvitations JourneyInvitation[]
   eventSources       JourneyEvent[]      @relation("EventSourceUser")
   journeyRevisions   JourneyRevision[]   @relation("JourneyUserActor")
+  agentGrants        AgentGrant[]
 
   @@map("user")
 }
 
 model Session {
-  id             String   @id
-  expiresAt      DateTime
-  token          String   @unique
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  ipAddress      String?
-  userAgent      String?
-  userId         String
-  impersonatedBy String?
+  oauthRefreshToken_sessionId OauthRefreshToken[] @relation("OauthRefreshToken_sessionId")
+  oauthAccessToken_sessionId  OauthAccessToken[]  @relation("OauthAccessToken_sessionId")
+  id                          String              @id
+  expiresAt                   DateTime
+  token                       String              @unique
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime            @updatedAt
+  ipAddress                   String?
+  userAgent                   String?
+  userId                      String
+  impersonatedBy              String?
 
   user User @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
 
@@ -165,6 +172,7 @@ model Journey {
   invitations JourneyInvitation[]
   weather     EventWeather[]
   share       JourneyShare?
+  agentGrants AgentGrant[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -181,12 +189,14 @@ model JourneyRevision {
   actorUserId      String
   idempotencyKey   String
   parentRevisionId String?
+  agentGrantId     String?
   createdAt        DateTime @default(now())
 
-  actorUser User             @relation("JourneyUserActor", fields: [actorUserId], references: [id], onDelete: Restrict)
-  journey   Journey          @relation("JourneyRevisions", fields: [journeyId], references: [id], onDelete: Restrict)
-  parent    JourneyRevision? @relation("JourneyRevisionLineage", fields: [journeyId, parentRevisionId], references: [journeyId, id], onDelete: Restrict)
-  child     JourneyRevision? @relation("JourneyRevisionLineage")
+  actorUser  User             @relation("JourneyUserActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  agentGrant AgentGrant?      @relation(fields: [agentGrantId], references: [id], onDelete: Restrict)
+  journey    Journey          @relation("JourneyRevisions", fields: [journeyId], references: [id], onDelete: Restrict)
+  parent     JourneyRevision? @relation("JourneyRevisionLineage", fields: [journeyId, parentRevisionId], references: [journeyId, id], onDelete: Restrict)
+  child      JourneyRevision? @relation("JourneyRevisionLineage")
 
   @@unique([journeyId, revision])
   @@unique([journeyId, id])
@@ -221,6 +231,7 @@ model Asset {
   checksum          String
   uploadId          String?
   uploadFingerprint String?
+  agentGrantId      String?
   capturedAt        DateTime?
   lat               Float?
   lng               Float?
@@ -230,6 +241,7 @@ model Asset {
   owner      User                @relation("OwnedAssets", fields: [ownerId], references: [id], onDelete: Restrict)
   eventLinks EventAssetLink[]    @relation("AssetEventLinks")
   shareLinks JourneyShareAsset[]
+  agentGrant AgentGrant?         @relation(fields: [agentGrantId], references: [id], onDelete: Restrict)
 
   @@unique([ownerId, uploadId])
   @@index([ownerId, createdAt])
@@ -452,4 +464,183 @@ model JourneyShareAsset {
 
   @@id([shareId, assetId])
   @@index([assetId])
+}
+
+model AgentGrant {
+  id               String            @id @default(uuid())
+  userId           String
+  clientId         String
+  journeyId        String
+  authorizationKey String            @unique
+  scopes           String[]
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  lastUsedAt       DateTime?
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  journey          Journey           @relation(fields: [journeyId], references: [id], onDelete: Restrict)
+  assets           Asset[]
+  revisions        JourneyRevision[]
+
+  @@index([journeyId, userId])
+  @@index([userId, clientId])
+}
+
+model OauthClient {
+  oauthClientResource_clientId     OauthClientResource[] @relation("OauthClientResource_clientId")
+  oauthRefreshToken_clientId       OauthRefreshToken[]   @relation("OauthRefreshToken_clientId")
+  oauthAccessToken_clientId        OauthAccessToken[]    @relation("OauthAccessToken_clientId")
+  oauthConsent_clientId            OauthConsent[]        @relation("OauthConsent_clientId")
+  id                               String                @id
+  clientId                         String                @unique
+  clientSecret                     String?
+  clientDiscoveryId                String?
+  disabled                         Boolean?              @default(false)
+  skipConsent                      Boolean?
+  enableEndSession                 Boolean?
+  subjectType                      String?
+  scopes                           String[]              @default([])
+  clientCredentialsScopes          String[]              @default([])
+  userId                           String?
+  userIdRelation                   User?                 @relation("OauthClient_userId", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt                        DateTime?             @default(now())
+  updatedAt                        DateTime?
+  name                             String?
+  uri                              String?
+  icon                             String?
+  contacts                         String[]              @default([])
+  tos                              String?
+  policy                           String?
+  softwareId                       String?
+  softwareVersion                  String?
+  softwareStatement                String?
+  redirectUris                     String[]              @default([])
+  postLogoutRedirectUris           String[]              @default([])
+  backchannelLogoutUri             String?
+  backchannelLogoutSessionRequired Boolean?
+  tokenEndpointAuthMethod          String?
+  applicationType                  String?
+  jwks                             String?
+  jwksUri                          String?
+  grantTypes                       String[]              @default([])
+  responseTypes                    String[]              @default([])
+  requirePKCE                      Boolean?
+  dpopBoundAccessTokens            Boolean?              @default(false)
+  referenceId                      String?
+  metadata                         Json?
+
+  @@index([userId])
+}
+
+model OauthResource {
+  oauthClientResource_resourceId OauthClientResource[] @relation("OauthClientResource_resourceId")
+  id                             String                @id
+  identifier                     String                @unique
+  name                           String
+  accessTokenTtl                 Int?
+  refreshTokenTtl                Int?
+  signingAlgorithm               String?
+  signingKeyId                   String?
+  allowedScopes                  String[]              @default([])
+  customClaims                   Json?
+  dpopBoundAccessTokensRequired  Boolean?              @default(false)
+  disabled                       Boolean?              @default(false)
+  createdAt                      DateTime?             @default(now())
+  updatedAt                      DateTime?
+  policyVersion                  Int?                  @default(1)
+  metadata                       Json?
+}
+
+model OauthClientResource {
+  id                 String        @id
+  clientId           String
+  clientIdRelation   OauthClient   @relation("OauthClientResource_clientId", fields: [clientId], references: [clientId], onDelete: Cascade)
+  resourceId         String
+  resourceIdRelation OauthResource @relation("OauthClientResource_resourceId", fields: [resourceId], references: [identifier], onDelete: Cascade)
+  metadata           Json?
+  createdAt          DateTime?     @default(now())
+
+  @@unique([clientId, resourceId])
+  @@index([clientId])
+  @@index([resourceId])
+}
+
+model OauthRefreshToken {
+  oauthAccessToken_refreshId OauthAccessToken[] @relation("OauthAccessToken_refreshId")
+  id                         String             @id
+  token                      String             @unique
+  clientId                   String
+  clientIdRelation           OauthClient        @relation("OauthRefreshToken_clientId", fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId                  String?
+  sessionIdRelation          Session?           @relation("OauthRefreshToken_sessionId", fields: [sessionId], references: [id], onDelete: SetNull)
+  userId                     String
+  userIdRelation             User               @relation("OauthRefreshToken_userId", fields: [userId], references: [id], onDelete: Cascade)
+  referenceId                String?
+  authorizationCodeId        String?
+  resources                  String[]           @default([])
+  requestedUserInfoClaims    String[]           @default([])
+  expiresAt                  DateTime
+  createdAt                  DateTime           @default(now())
+  revoked                    DateTime?
+  rotatedAt                  DateTime?
+  rotationReplayResponse     String?
+  rotationReplayExpiresAt    DateTime?
+  authTime                   DateTime?
+  confirmation               Json?
+  scopes                     String[]           @default([])
+
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([authorizationCodeId])
+}
+
+model OauthAccessToken {
+  id                      String             @id
+  token                   String             @unique
+  clientId                String
+  clientIdRelation        OauthClient        @relation("OauthAccessToken_clientId", fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId               String?
+  sessionIdRelation       Session?           @relation("OauthAccessToken_sessionId", fields: [sessionId], references: [id], onDelete: SetNull)
+  userId                  String?
+  userIdRelation          User?              @relation("OauthAccessToken_userId", fields: [userId], references: [id], onDelete: Cascade)
+  referenceId             String?
+  authorizationCodeId     String?
+  resources               String[]           @default([])
+  requestedUserInfoClaims String[]           @default([])
+  refreshId               String?
+  refreshIdRelation       OauthRefreshToken? @relation("OauthAccessToken_refreshId", fields: [refreshId], references: [id], onDelete: Cascade)
+  expiresAt               DateTime
+  createdAt               DateTime           @default(now())
+  revoked                 DateTime?
+  confirmation            Json?
+  scopes                  String[]           @default([])
+
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([authorizationCodeId])
+  @@index([refreshId])
+}
+
+model OauthConsent {
+  id                      String      @id
+  clientId                String
+  clientIdRelation        OauthClient @relation("OauthConsent_clientId", fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId                  String?
+  userIdRelation          User?       @relation("OauthConsent_userId", fields: [userId], references: [id], onDelete: Cascade)
+  referenceId             String?
+  resources               String[]    @default([])
+  requestedUserInfoClaims String[]    @default([])
+  scopes                  String[]    @default([])
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime
+
+  @@index([clientId])
+  @@index([userId])
+}
+
+model OauthClientAssertion {
+  id        String   @id
+  expiresAt DateTime
 }

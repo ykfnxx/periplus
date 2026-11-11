@@ -7,6 +7,7 @@ import {
   NotebookPen,
   Users,
   Share2,
+  Plug,
 } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/kumo/components/button/button"
@@ -16,10 +17,12 @@ export default function RecordingMenu({
   onMembers,
   onSettings,
   onShare,
+  onAgents,
   shareDisabled,
 }: {
   onReceipt: () => void
   onMembers: () => void
+  onAgents?: () => void
   onShare?: () => void
   shareDisabled?: boolean
   onSettings?: () => void
@@ -28,6 +31,9 @@ export default function RecordingMenu({
   const items = [
     { label: "拍账单", icon: Camera, action: onReceipt, disabled: false },
     { label: "同行者", icon: Users, action: onMembers, disabled: false },
+    ...(onAgents
+      ? [{ label: "Agent 接入", icon: Plug, action: onAgents, disabled: false }]
+      : []),
     ...(onShare
       ? [
           {

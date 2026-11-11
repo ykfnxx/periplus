@@ -112,6 +112,28 @@ export function applyEventPatch(event: JourneyEvent, patch: EventInput) {
   if (event.category !== "STAY") delete event.hotel
   if (event.category !== "TRANSIT") delete event.transit
 }
+function validateTransitReferences(
+  journey: JourneySnapshot,
+  event: JourneyEvent,
+  input: EventInput
+) {
+  if (!input.transit) return
+  for (const id of [input.transit.fromEventId, input.transit.toEventId]) {
+    if (
+      id !== undefined &&
+      (id === event.id || !journey.events.some((item) => item.id === id))
+    )
+      throw new JourneyInputError(
+        "Transit endpoints must exist in this Journey and differ from the transit event"
+      )
+  }
+  if (
+    (input.transit.fromEventId !== undefined ||
+      input.transit.toEventId !== undefined) &&
+    event.transit?.fromEventId === event.transit?.toEventId
+  )
+    throw new JourneyInputError("Transit endpoints must differ")
+}
 function invalidateChangedRoutes(journey: JourneySnapshot) {
   for (const [index, event] of journey.events.entries()) {
     if (!event.transit?.route) continue
@@ -154,6 +176,15 @@ export async function reduceJourneyCommand(
         (item) => item.assetId === assetId
       )
     )
+    if (
+      context.agentGrantId &&
+      asset &&
+      !before.events.some((event) =>
+        event.photos.some((photo) => photo.assetId === assetId)
+      ) &&
+      asset.agentGrantId !== context.agentGrantId
+    )
+      throw new JourneyInputError("Photo is outside this Agent authorization")
     if (
       !asset ||
       asset.deletedAt ||
@@ -199,6 +230,7 @@ export async function reduceJourneyCommand(
         command.content.date
       )
       applyEventPatch(event, command.content)
+      validateTransitReferences(journey, event, command.content)
       insert(event, command.afterEventId)
       eventId = event.id
       if (command.receipt) {
@@ -214,6 +246,7 @@ export async function reduceJourneyCommand(
     case "event.update": {
       const event = requireJourneyEvent(journey, command.eventId)
       applyEventPatch(event, command.patch)
+      validateTransitReferences(journey, event, command.patch)
       event.updatedAt = now
       eventId = event.id
       break
