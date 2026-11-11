@@ -138,8 +138,12 @@ export function createPlanningStore(
           readFailed: false,
           error: applied ? null : preserveError ? state.error : null,
           needsRebase:
-            proposal.baseRevision !== proposal.currentJourneyRevision &&
-            proposal.status === "OPEN",
+            proposal.status === "OPEN" &&
+            (proposal.baseRevision !== proposal.currentJourneyRevision ||
+              // A rejected commit remains blocked until a different preview is read.
+              (state.needsRebase &&
+                state.proposal?.latestVersion === proposal.latestVersion &&
+                state.proposal.baseRevision === proposal.baseRevision)),
         }
       })
     } catch (cause) {
@@ -147,7 +151,11 @@ export function createPlanningStore(
       store.setState({
         readFailed: true,
         error:
-          cause instanceof Error ? cause.message : "无法读取规划，请重试。",
+          cause instanceof TypeError
+            ? "网络连接中断，无法读取规划，请重试。"
+            : cause instanceof Error
+              ? cause.message
+              : "无法读取规划，请重试。",
         ...(cause instanceof PlanningRequestError && cause.status === 404
           ? { proposal: null }
           : {}),
@@ -204,8 +212,9 @@ export function createPlanningStore(
         if (cause.status === 409 || cause.code === "PREVIEW_REQUIRED")
           await load(true)
         if (
-          cause.code === "REVISION_CONFLICT" ||
-          cause.code === "PREVIEW_REQUIRED"
+          cause.code === "PREVIEW_REQUIRED" &&
+          action.kind === "apply" &&
+          store.getState().proposal?.latestVersion === action.version
         )
           store.setState({ needsRebase: true })
       } else {

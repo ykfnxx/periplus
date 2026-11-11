@@ -88,15 +88,27 @@ export function useConfirmation() {
     title: string
     cancelLabel: string
     confirmLabel: string
+    buttonClassName: string
   } | null>(null)
   const resolve = useRef<((answer: boolean) => void) | null>(null)
   function ask(
     message: string,
-    { title = "请确认", cancelLabel = "取消", confirmLabel = "继续" } = {}
+    {
+      title = "请确认",
+      cancelLabel = "取消",
+      confirmLabel = "继续",
+      buttonClassName = "",
+    } = {}
   ) {
     return new Promise<boolean>((done) => {
       resolve.current = done
-      setQuestion({ message, title, cancelLabel, confirmLabel })
+      setQuestion({
+        message,
+        title,
+        cancelLabel,
+        confirmLabel,
+        buttonClassName,
+      })
     })
   }
   const finish = (answer: boolean) => {
@@ -120,10 +132,18 @@ export function useConfirmation() {
           {question.message}
         </Dialog.Description>
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => finish(false)}>
+          <Button
+            variant="secondary"
+            className={question.buttonClassName}
+            onClick={() => finish(false)}
+          >
             {question.cancelLabel}
           </Button>
-          <Button variant="primary" onClick={() => finish(true)}>
+          <Button
+            variant="primary"
+            className={question.buttonClassName}
+            onClick={() => finish(true)}
+          >
             {question.confirmLabel}
           </Button>
         </div>

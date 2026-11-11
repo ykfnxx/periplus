@@ -165,6 +165,7 @@ export function PlanningWorkbench({
         `将下方已核对的第 ${version} 版变更一次性写入“${journey.title}”。`,
         {
           title: `应用第 ${version} 版？`,
+          buttonClassName: "min-h-11",
           confirmLabel: `确认应用第 ${version} 版`,
           cancelLabel: "继续核对",
         }
@@ -178,6 +179,7 @@ export function PlanningWorkbench({
     if (
       await ask("正式旅程保持原样，当前提案将结束。", {
         title: "放弃这份提案？",
+        buttonClassName: "min-h-11",
         confirmLabel: "放弃提案",
         cancelLabel: "继续规划",
       })
@@ -217,11 +219,13 @@ export function PlanningWorkbench({
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:gap-12 lg:py-10">
         <section aria-label="规划对话" className="min-w-0">
           <h2 className="mb-5 text-lg font-semibold">
-            {proposalId
-              ? "继续规划"
-              : journey.eventCount
-                ? "想怎样调整行程？"
-                : "想去哪里，哪天出发？"}
+            {closed
+              ? "本次规划"
+              : proposalId
+                ? "继续规划"
+                : journey.eventCount
+                  ? "想怎样调整行程？"
+                  : "想去哪里，哪天出发？"}
           </h2>
           {sent.length > 0 && (
             <ol
@@ -246,11 +250,12 @@ export function PlanningWorkbench({
                     ? proposal.run.progress || runLabels.RUNNING
                     : runLabels[proposal.run.status]}
                 </p>
-                {proposal.run.error && (
-                  <p className="mt-2 text-coral">
-                    {planningErrorText(proposal.run.error)}
-                  </p>
-                )}
+                {proposal.run.error &&
+                  proposal.run.error.code !== "RUN_FAILED" && (
+                    <p className="mt-2 text-coral">
+                      {planningErrorText(proposal.run.error)}
+                    </p>
+                  )}
               </div>
               {running && (
                 <Button
@@ -285,7 +290,14 @@ export function PlanningWorkbench({
           )}
           {needsRebase && !closed && (
             <div className="mb-5 space-y-3 text-sm leading-6">
-              <p>旅程已有其他修改，当前预览不能直接应用。</p>
+              {!error && (
+                <p>
+                  {proposal &&
+                  proposal.baseRevision !== proposal.currentJourneyRevision
+                    ? "旅程已有其他修改，当前预览不能直接应用。"
+                    : "待应用内容需要重新预演，当前预览不能直接应用。"}
+                </p>
+              )}
               {!answeringRebase && (
                 <Button
                   variant="secondary"
@@ -348,7 +360,7 @@ export function PlanningWorkbench({
             >
               <InputArea
                 label={question ? "答复当前问题" : "旅行要求"}
-                className="text-base! leading-7!"
+                className="text-base! leading-7! placeholder:text-journal-muted!"
                 placeholder={
                   question
                     ? "写下答复，或要求重新查询"
