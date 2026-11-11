@@ -15,6 +15,7 @@ export default function JourneyMenu({
   journeys,
   onOpen,
   onCreate,
+  onPlan,
   onRename,
   onPhotos,
   open,
@@ -27,6 +28,7 @@ export default function JourneyMenu({
   journeys: JourneySummary[]
   onOpen: (id: string) => void
   onCreate: () => void
+  onPlan?: () => void
   onRename?: (id: string) => void
   onPhotos?: () => void
   open: boolean
@@ -122,6 +124,19 @@ export default function JourneyMenu({
               ))}
             </div>
             <div className="mt-3 flex flex-col gap-1">
+              {onPlan && (
+                <Button
+                  variant="ghost"
+                  className="justify-start! gap-3!"
+                  onClick={() => {
+                    onOpenChange(false)
+                    onPlan()
+                  }}
+                >
+                  <Plus size={18} />
+                  新建计划
+                </Button>
+              )}
               {onPhotos && (
                 <Button
                   variant="ghost"

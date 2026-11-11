@@ -485,6 +485,13 @@ export default function RecordingEditor({
       )}
       {canEdit && journey && (
         <RecordingMenu
+          onPlan={() =>
+            void leave(() =>
+              window.location.assign(
+                `/journeys/${encodeURIComponent(journey.id)}/planning`
+              )
+            )
+          }
           onAgents={() =>
             window.location.assign(
               `/journeys/${encodeURIComponent(journey.id)}/agents`

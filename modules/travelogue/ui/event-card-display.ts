@@ -11,7 +11,9 @@ export const eventCategoryLabels = {
   TRANSIT: "交通",
 }
 
-export function eventCardTitle(event: JourneyEvent) {
+export function eventCardTitle(
+  event: Pick<JourneyEvent, "title" | "category">
+) {
   return (
     event.title ||
     (event.category ? eventCategoryLabels[event.category] : "随记")
@@ -44,7 +46,9 @@ function instantClock(value: string | undefined, timeZone: string | null) {
   }
 }
 
-export function eventCardTimes(event: JourneyEvent) {
+export function eventCardTimes(
+  event: Pick<JourneyEvent, "date" | "time" | "timeZone" | "startAt" | "endAt">
+) {
   const start = instantClock(event.startAt, event.timeZone)
   const end = instantClock(event.endAt, event.timeZone)
   const departure = event.time || start?.time || null
@@ -78,7 +82,9 @@ export function eventCardTimes(event: JourneyEvent) {
   }
 }
 
-export function eventTransitDisplay(event: JourneyEvent) {
+export function eventTransitDisplay(
+  event: Pick<JourneyEvent, "transit" | "startAt" | "endAt">
+) {
   const plan =
     event.transit?.routeState === "READY"
       ? event.transit.route?.plans[0]
