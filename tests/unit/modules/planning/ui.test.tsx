@@ -24,16 +24,22 @@ const receipt = {
   appliedRevision: 13,
   replayed: false,
 }
-function setup(initial = proposal()) {
+function setup(initial = proposal(), initialId: string | null = "proposal") {
   const api = {
-    create: vi.fn<PlanningApi["create"]>(),
+    create: vi
+      .fn<PlanningApi["create"]>()
+      .mockResolvedValue({
+        proposalId: "proposal",
+        runId: "run",
+        parentVersion: 0,
+      }),
     get: vi.fn<PlanningApi["get"]>().mockResolvedValue(initial),
     turn: vi.fn<PlanningApi["turn"]>().mockResolvedValue({ runId: "next-run" }),
     cancel: vi.fn<PlanningApi["cancel"]>().mockResolvedValue({}),
     discard: vi.fn<PlanningApi["discard"]>().mockResolvedValue({}),
     apply: vi.fn<PlanningApi["apply"]>().mockResolvedValue(receipt),
   }
-  const store = createPlanningStore("journey", "proposal", api)
+  const store = createPlanningStore("journey", initialId, api)
   const rendered = render(
     <PlanningWorkbench
       journey={{ ...journeyFixture(), eventCount: 0 }}
@@ -202,4 +208,18 @@ it("matches live places by reference and never retains a display-only name in th
   expect(
     screen.getByPlaceholderText("写下答复，或要求重新查询")
   ).toBeInTheDocument()
+})
+
+it("clears a submitted message once retry confirms the original request", async () => {
+  const { api } = setup(proposal(), null)
+  api.create.mockRejectedValueOnce(new TypeError("lost response"))
+  fireEvent.change(screen.getByLabelText("旅行要求"), {
+    target: { value: "11月15日去杭州" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "发送要求" }))
+  const retry = await screen.findByRole("button", { name: "重试原请求" })
+  expect(screen.getByLabelText("旅行要求")).toHaveValue("11月15日去杭州")
+  fireEvent.click(retry)
+  await waitFor(() => expect(screen.getByLabelText("旅行要求")).toHaveValue(""))
+  expect(api.create.mock.calls[1]).toEqual(api.create.mock.calls[0])
 })

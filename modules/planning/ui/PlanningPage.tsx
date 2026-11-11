@@ -149,6 +149,13 @@ export function PlanningWorkbench({
   async function send(value: string, choiceRef?: string) {
     if (await store.getState().send(value.trim(), choiceRef)) setMessage("")
   }
+  async function retry() {
+    const original = store.getState().pending
+    if (await store.getState().retry()) {
+      if (original?.kind === "create" || original?.kind === "turn")
+        setMessage("")
+    }
+  }
   async function apply() {
     if (!preview) return
     const version = preview.version
@@ -266,7 +273,7 @@ export function PlanningWorkbench({
                   variant="secondary"
                   className="min-h-11"
                   loading={busy}
-                  onClick={() => void store.getState().retry()}
+                  onClick={() => void retry()}
                 >
                   {pending ? "重试原请求" : "重新读取"}
                 </Button>
