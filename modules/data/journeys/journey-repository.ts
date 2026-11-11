@@ -222,7 +222,7 @@ async function validateSourcesAndAssets(
     }
   }
 }
-async function writeRevision(
+export async function writeJourneyRevision(
   tx: Tx,
   context: AuthContext,
   write: JourneyRevisionWrite,
@@ -364,7 +364,7 @@ export async function createJourney(
       await transaction.journey.findUnique({ where: { id: write.journey.id } })
     )
       throw new JourneyRevisionConflictError()
-    return writeRevision(transaction, context, write)
+    return writeJourneyRevision(transaction, context, write)
   }
   try {
     return await prisma.$transaction(run)
@@ -413,7 +413,7 @@ export async function commitJourney(
       throw new JourneyRevisionConflictError()
     const before = journeySnapshotSchema.parse(JSON.parse(row.snapshotJson))
     await assertJourneyCommandAccess(tx, context, before, command)
-    return writeRevision(tx, context, write, before)
+    return writeJourneyRevision(tx, context, write, before)
   }
   return prisma.$transaction(run)
 }

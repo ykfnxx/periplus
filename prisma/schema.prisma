@@ -93,6 +93,7 @@ model User {
   journeyInvitations JourneyInvitation[]
   eventSources       JourneyEvent[]      @relation("EventSourceUser")
   journeyRevisions   JourneyRevision[]   @relation("JourneyUserActor")
+  planningProposals  PlanningProposal[]
   agentGrants        AgentGrant[]
 
   @@map("user")
@@ -164,15 +165,16 @@ model Journey {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  owner       User                @relation("OwnedJourneys", fields: [ownerId], references: [id], onDelete: Restrict)
-  revisions   JourneyRevision[]   @relation("JourneyRevisions")
-  events      JourneyEvent[]      @relation("JourneyEvents")
-  assetLinks  EventAssetLink[]    @relation("JourneyAssetLinks")
-  members     JourneyMember[]
-  invitations JourneyInvitation[]
-  weather     EventWeather[]
-  share       JourneyShare?
-  agentGrants AgentGrant[]
+  owner             User                @relation("OwnedJourneys", fields: [ownerId], references: [id], onDelete: Restrict)
+  revisions         JourneyRevision[]   @relation("JourneyRevisions")
+  events            JourneyEvent[]      @relation("JourneyEvents")
+  assetLinks        EventAssetLink[]    @relation("JourneyAssetLinks")
+  members           JourneyMember[]
+  invitations       JourneyInvitation[]
+  weather           EventWeather[]
+  share             JourneyShare?
+  planningProposals PlanningProposal[]
+  agentGrants       AgentGrant[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -643,4 +645,73 @@ model OauthConsent {
 model OauthClientAssertion {
   id        String   @id
   expiresAt DateTime
+}
+
+model PlanningProposal {
+  id            String            @id
+  userId        String
+  journeyId     String
+  requestId     String
+  signature     String
+  status        String            @default("OPEN")
+  baseRevision  Int
+  latestVersion Int               @default(0)
+  activeRunId   String?
+  latestRunId   String
+  questionRunId String?
+  createdAt     DateTime          @default(now())
+  user          User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  journey       Journey           @relation(fields: [journeyId], references: [id], onDelete: Restrict)
+  runs          PlanningRun[]
+  versions      PlanningVersion[]
+  receipt       PlanningReceipt?
+
+  @@unique([userId, journeyId, requestId])
+  @@index([journeyId])
+}
+
+model PlanningRun {
+  id             String           @id
+  proposalId     String
+  requestId      String
+  signature      String
+  inputJson      String
+  parentVersion  Int
+  targetRevision Int
+  mode           String
+  status         String           @default("RUNNING")
+  deadline       DateTime
+  questionJson   String?
+  errorJson      String?
+  createdAt      DateTime         @default(now())
+  proposal       PlanningProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, requestId])
+}
+
+model PlanningVersion {
+  proposalId      String
+  version         Int
+  baseRevision    Int
+  operationsJson  String
+  sourcesJson     String
+  factsJson       String
+  constraintsJson String
+  unverifiedJson  String
+  snapshotJson    String
+  previewJson     String
+  createdAt       DateTime         @default(now())
+  proposal        PlanningProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@id([proposalId, version])
+}
+
+model PlanningReceipt {
+  proposalId      String           @id
+  userId          String
+  journeyId       String
+  version         Int
+  appliedRevision Int
+  createdAt       DateTime         @default(now())
+  proposal        PlanningProposal @relation(fields: [proposalId], references: [id], onDelete: Restrict)
 }
