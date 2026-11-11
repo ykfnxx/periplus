@@ -39,6 +39,9 @@ export default function LoginForm({
       return
     }
 
+    // Better Auth already navigates provider-managed OAuth responses.
+    if (result.data?.redirect) return
+
     if (onAuthenticated) onAuthenticated()
     else {
       router.replace("/journeys")
