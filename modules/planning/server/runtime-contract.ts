@@ -4,6 +4,7 @@ import type {
   PlanningEventSummary,
   PlanningLivePlace,
   PlanningMode,
+  PlanningQuestion,
 } from "../contracts"
 
 // Sources refer to operation indexes and dotted fields such as content.location.name.
@@ -46,6 +47,7 @@ export interface PlanningRunInput {
   message: string
   replyToRunId?: string
   choiceRef?: string
+  question?: PlanningQuestion
   userMessages: string[]
   baseEvents: PlanningEventSummary[]
   previewEvents: PlanningEventSummary[]
