@@ -831,7 +831,7 @@ export async function executePlanningRun(
           const blockers = constraints
             .filter(
               (c) =>
-                (c.hard && c.satisfied === false) ||
+                (c.hard && c.satisfied !== true) ||
                 (c.verificationRequired && c.satisfied !== true)
             )
             .map((c) => c.text)

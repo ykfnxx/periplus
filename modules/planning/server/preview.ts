@@ -60,6 +60,8 @@ export function summarizePlanningEvent(
           fromEventId: event.transit.fromEventId,
           toEventId: event.transit.toEventId,
           transportMode: event.transit.transportMode,
+          distanceMeters: event.transit.distanceMeters,
+          notes: event.transit.notes,
           requestMode: event.transit.requestMode,
           preference: event.transit.preference,
           routeState: event.transit.routeState,
