@@ -11,6 +11,14 @@ import {
 } from "@/modules/travelogue/ui/event-card-display"
 
 const kinds = { added: "新增", updated: "修改", moved: "移动", removed: "移除" }
+const requestModes = { DRIVE: "驾车", WALK: "步行", TRANSIT: "公共交通" }
+const preferences = {
+  RECOMMENDED: "推荐路线",
+  FASTEST: "用时最短",
+  LOW_COST: "费用较低",
+  FEWER_TRANSFERS: "少换乘",
+  LESS_WALKING: "少步行",
+}
 
 function EventFacts({ event }: { event: PlanningEventSummary }) {
   const clock = eventCardTimes(event).range
@@ -47,6 +55,12 @@ function EventFacts({ event }: { event: PlanningEventSummary }) {
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {event.transit.requestMode && (
+            <p>路线查询：{requestModes[event.transit.requestMode]}</p>
+          )}
+          {event.transit.preference && (
+            <p>路线偏好：{preferences[event.transit.preference]}</p>
+          )}
           <p className="text-journal-muted">
             {event.transit.routeState === "READY"
               ? "已有路线"
