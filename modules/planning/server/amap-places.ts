@@ -37,7 +37,7 @@ export interface AmapConnection {
   }>
   close(): Promise<void>
 }
-interface Candidate extends PlanningLivePlace {
+export interface AmapCandidate extends PlanningLivePlace {
   poiId: string
   expectedCity?: string
   inspected: boolean
@@ -65,6 +65,7 @@ export interface AmapPlacesOptions {
   signal: AbortSignal
   onLivePlaces: (places: PlanningLivePlace[]) => void
   connect?: (signal: AbortSignal) => Promise<AmapConnection>
+  candidates?: AmapCandidate[]
 }
 
 const poiSchema = z.object({
@@ -113,7 +114,7 @@ function coordinates(location: string | undefined) {
     throw new Error("Invalid place coordinates")
   return { lng: parts[0], lat: parts[1], coordinateSystem: "GCJ02" as const }
 }
-function publicPlace(candidate: Candidate): PlanningLivePlace {
+function publicPlace(candidate: AmapCandidate): PlanningLivePlace {
   return {
     candidateRef: candidate.candidateRef,
     name: candidate.name,
@@ -153,12 +154,15 @@ function parseResult(result: Awaited<ReturnType<AmapConnection["callTool"]>>) {
 export class AmapPlaces {
   private connection?: Promise<AmapConnection>
   private available = new Set<string>()
-  private candidates = new Map<string, Candidate>()
+  private candidates = new Map<string, AmapCandidate>()
   private facts = new Map<string, PlanningProviderFact>()
   private displayValues: unknown[] = []
   private calls = 0
   private closed = false
-  constructor(private readonly options: AmapPlacesOptions) {}
+  constructor(private readonly options: AmapPlacesOptions) {
+    for (const candidate of options.candidates ?? [])
+      this.record(structuredClone(candidate))
+  }
 
   private async open() {
     if (!this.connection)
@@ -240,9 +244,9 @@ export class AmapPlaces {
   private remember(
     poi: z.infer<typeof poiSchema>,
     expectedCity?: string,
-    previous?: Candidate
+    previous?: AmapCandidate
   ) {
-    const candidate: Candidate = {
+    return this.record({
       candidateRef: previous?.candidateRef ?? `amap:${randomUUID()}`,
       poiId: poi.id,
       name: poi.name,
@@ -251,9 +255,12 @@ export class AmapPlaces {
       coordinates: coordinates(poi.location),
       expectedCity,
       inspected: Boolean(previous),
-    }
+    })
+  }
+
+  private record(candidate: AmapCandidate) {
     this.candidates.set(candidate.candidateRef, candidate)
-    this.displayValues.push(poi.id)
+    this.displayValues.push(candidate.poiId)
     const facts: PlanningProviderFact[] = []
     for (const field of AMAP_FIELDS) {
       const value = candidate[field]
@@ -275,7 +282,7 @@ export class AmapPlaces {
     return { ...publicPlace(candidate), facts, inspected: candidate.inspected }
   }
 
-  private publish() {
+  publish() {
     this.options.signal.throwIfAborted()
     this.options.onLivePlaces([...this.candidates.values()].map(publicPlace))
   }
@@ -389,6 +396,22 @@ export class AmapPlaces {
 
   hasCandidate(reference: string) {
     return this.candidates.has(reference)
+  }
+
+  exportCandidates(references: string[]) {
+    return [...this.candidates.values()]
+      .filter((candidate) => references.includes(candidate.candidateRef))
+      .map((candidate) => structuredClone(candidate))
+  }
+
+  currentCandidates() {
+    return [...this.candidates.values()].map((candidate) => ({
+      ...publicPlace(candidate),
+      inspected: candidate.inspected,
+      facts: [...this.facts.values()].filter((fact) =>
+        fact.factRef.startsWith(`${candidate.candidateRef}:`)
+      ),
+    }))
   }
 
   async close() {

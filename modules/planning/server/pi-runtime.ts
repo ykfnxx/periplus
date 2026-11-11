@@ -7,7 +7,12 @@ import { createModels } from "@earendil-works/pi-ai"
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek"
 import { z } from "zod"
 import { periplusServerConfig } from "@/config/periplus.server"
-import { AmapPlaces, type AmapConnection, type AmapPolicy } from "./amap-places"
+import {
+  AmapPlaces,
+  type AmapCandidate,
+  type AmapConnection,
+  type AmapPolicy,
+} from "./amap-places"
 import { finishTurnParameters, planningTurnOutputSchema } from "./turn-output"
 import type {
   PlanningRunInput,
@@ -17,6 +22,7 @@ import type {
 
 const MAX_MODEL_RESPONSES = 8
 const MAX_RUN_MS = 120000
+const QUESTION_PLACES_TTL_MS = 120000
 interface RuntimeConfig {
   model: string
   apiKey: string
@@ -34,8 +40,8 @@ The supplied context is a safe domain snapshot, previous preview and user requir
 - Read mode. adjust emits only edits relative to previewEvents; rebase emits the complete replacement batch against baseEvents. Keep unchanged existing IDs. Additions need stable draftRefs, references to earlier additions use {draftRef}. Preserve the user's existing records and protected events.
 - Missing local departure date requires a question. Never infer today's date. event.add needs a valid local date and category VISIT/MEAL/STAY/TRANSIT. Chain order uses afterEventId, not dates. null inserts first. Supply only changed fields in updates. Local date/time/timeZone must agree with startAt/endAt.
 - Do not edit photos, bills, bookings, execution status, provider IDs, resolved routes or hotels. For transit provide fromName, toName and transportMode; bind endpoints only to valid adjacent stops. A text route is not verified travel time. Removing a stop must explicitly handle its linked transit events.
-- Tools return run-scoped candidateRefs, not provider IDs. inspect_place must use a current search reference. Verify city, branch and coordinates with detail before locating a place. Several candidates require user clarification unless the request uniquely identifies one. Missing coordinates or failed tools are not an empty search. Expired references must be searched again and shown for renewed choice. find_nearby accepts a current inspected candidate or an event ID with known coordinates; first locate name-only centers.
-- AMap names, addresses, cities and coordinates are DISPLAY-ONLY unless a tool returns an authorized fact for that exact value. They may appear only in livePlaces, never in finish_turn text, questions, option labels, constraints or edits. For a place choice use a generic message and labels such as "候选地点1". Its choiceRef MUST equal the candidateRef of that current live place. Ordinary question choices use different references. A prior run's place reference is expired, including one in the answered question: search again and request renewed selection rather than guessing. Do not copy supplier prose, photos or IDs.
+- Tools return opaque candidateRefs, not provider IDs. inspect_place accepts a current search reference or a resumed pending-question candidate. Verify city, branch and coordinates with detail before locating a place. Several candidates require user clarification unless the request uniquely identifies one. Missing coordinates or failed tools are not an empty search. find_nearby accepts a candidate or event ID with known coordinates; first locate name-only centers.
+- AMap names, addresses, cities and coordinates are DISPLAY-ONLY unless a tool returns an authorized fact for that exact value. They may appear only in livePlaces, never in finish_turn text, questions, option labels, constraints or edits. For a place choice use a generic message and labels such as "候选地点1". Its choiceRef MUST equal the candidateRef of that current live place. Ordinary question choices use different references. selectedPlaceRef, when present, is a valid answer to the pending question; inspect it if necessary and continue planning without asking for that same choice again. If an amap: choiceRef is provided but selectedPlaceRef is absent, the candidate expired or was lost on restart: search again and ask for renewed selection. Do not copy supplier prose, photos or IDs.
 - Every submitted content/patch leaf except nulls, enums and event references needs a source: a user quote, an exact existing event field, or an authorized provider fact. Use operation index and dotted path (content.title, content.location.name, patch.location.coordinates, etc.). Location values must match their cited source. Use the user's own words for text-only arrangements. If the user insists on a specific establishment whose fields cannot be retained, ask whether a text-only arrangement is acceptable. Never silently change that intent.
 - Constraints and unverified items describe user requirements, not provider facts. Unknown or requested-but-unverified hard requirements must remain unsatisfied/null and block applying, never be asserted true without evidence. Place detail does not verify transit time, opening hours or a promised arrival.
 - finish_turn exactly once with either changes {operations,constraints,unverified,sources} or question {message,choices}. No extra keys. Ask instead of inventing missing facts. A question does not publish edits. A changes result can have empty operations to update constraints or withdraw edits. No free-text final answer can publish a version.
@@ -54,6 +60,16 @@ export function createPiPlanningRuntime(
   options: RuntimeOptions = {}
 ): PlanningRuntime {
   const config = () => options.config ?? periplusServerConfig.planning
+  const pendingPlaces = new Map<
+    string,
+    {
+      journeyId: string
+      runId: string
+      expiresAt: number
+      candidates: AmapCandidate[]
+      timer: ReturnType<typeof setTimeout>
+    }
+  >()
   return {
     canRetain(fact) {
       const current = config()
@@ -85,6 +101,19 @@ export function createPiPlanningRuntime(
         input.signal,
         AbortSignal.timeout(remaining),
       ])
+      const pending = pendingPlaces.get(input.proposalId)
+      if (pending) {
+        clearTimeout(pending.timer)
+        pendingPlaces.delete(input.proposalId)
+      }
+      const resumed =
+        pending &&
+        pending.journeyId === input.journeyId &&
+        pending.runId === input.replyToRunId &&
+        pending.runId === input.question?.runId &&
+        pending.expiresAt > Date.now()
+          ? pending.candidates
+          : []
       const places = new AmapPlaces({
         key: settings.amapKey,
         policy: {
@@ -96,6 +125,7 @@ export function createPiPlanningRuntime(
         signal,
         onLivePlaces: input.onLivePlaces,
         connect: options.connectAmap,
+        candidates: resumed,
       })
       let output: PlanningTurnOutput | undefined
       let responses = 0
@@ -104,7 +134,7 @@ export function createPiPlanningRuntime(
           name: "find_places",
           label: "Search places",
           description:
-            "Search keywords in the requested city. Candidate references expire at the end of this run. Inspect before locating.",
+            "Search keywords in the requested city. Pending-question references remain available briefly in server memory. Inspect before locating.",
           parameters: {
             type: "object",
             properties: {
@@ -267,6 +297,7 @@ export function createPiPlanningRuntime(
       signal.addEventListener("abort", onAbort, { once: true })
       try {
         signal.throwIfAborted()
+        if (resumed.length) places.publish()
         // The transcript and tool payloads live only inside this invocation.
         const prompt = JSON.stringify({
           mode: input.mode,
@@ -282,12 +313,47 @@ export function createPiPlanningRuntime(
           message: input.message,
           replyToRunId: input.replyToRunId,
           choiceRef: input.choiceRef,
+          selectedPlaceRef:
+            input.choiceRef &&
+            input.question?.choices.some(
+              (choice) => choice.choiceRef === input.choiceRef
+            ) &&
+            places.hasCandidate(input.choiceRef)
+              ? input.choiceRef
+              : undefined,
+          resumedCandidates: places.currentCandidates(),
         })
         await Promise.race([agent.prompt(prompt), aborted])
         signal.throwIfAborted()
         if (!output)
           throw new Error("Planning did not return a valid finish_turn result")
-        return { output, ...places.result() }
+        let livePlacesExpiresAt: string | undefined
+        if (output.kind === "question") {
+          const candidates = places.exportCandidates(
+            output.choices.map((choice) => choice.choiceRef)
+          )
+          if (candidates.length) {
+            const expiresAt = Date.now() + QUESTION_PLACES_TTL_MS
+            const timer = setTimeout(() => {
+              if (pendingPlaces.get(input.proposalId)?.runId === input.runId)
+                pendingPlaces.delete(input.proposalId)
+            }, QUESTION_PLACES_TTL_MS)
+            timer.unref()
+            pendingPlaces.set(input.proposalId, {
+              journeyId: input.journeyId,
+              runId: input.runId,
+              expiresAt,
+              candidates,
+              timer,
+            })
+            livePlacesExpiresAt = new Date(expiresAt).toISOString()
+          }
+        }
+        return {
+          output,
+          ...places.result(),
+          ...(livePlacesExpiresAt ? { livePlacesExpiresAt } : {}),
+        }
       } catch {
         signal.throwIfAborted()
         // Provider error strings can contain request data and credentials.
