@@ -1080,4 +1080,91 @@ describe("planning lifecycle and atomic domain apply", () => {
       authorized("new-policy")
     )
   })
+  it("requires an unknown hard constraint to be confirmed even without a separate verification request", async () => {
+    const j = await saved([])
+    const p = await createPlanningProposal(user, j.id, {
+      requestId: randomUUID(),
+      message,
+    })
+    const constraint = {
+      id: "arrival",
+      text: "必须按时到站",
+      hard: true,
+      satisfied: null as boolean | null,
+      verificationRequired: false,
+    }
+    await executePlanningRun(
+      user,
+      j.id,
+      p.proposalId,
+      p.runId,
+      runtime([add("d1")], { constraints: [constraint] })
+    )
+    const blocked = await getPlanningProposal(user, j.id, p.proposalId)
+    expect(blocked.preview?.canApply).toBe(false)
+    expect(blocked.preview?.blockers).toEqual([constraint.text])
+    await expect(
+      applyPlanningProposal(user, j.id, p.proposalId, { version: 1 })
+    ).rejects.toMatchObject({ code: "PREVIEW_REQUIRED" })
+    expect((await getJourney(user, j.id))!.revision).toBe(1)
+    const next = await startPlanningTurn(user, j.id, p.proposalId, {
+      requestId: randomUUID(),
+      parentVersion: 1,
+      message,
+    })
+    await executePlanningRun(
+      user,
+      j.id,
+      p.proposalId,
+      next.runId,
+      runtime([], { constraints: [{ ...constraint, satisfied: true }] })
+    )
+    expect(
+      (await getPlanningProposal(user, j.id, p.proposalId)).preview?.canApply
+    ).toBe(true)
+    expect(
+      (await applyPlanningProposal(user, j.id, p.proposalId, { version: 2 }))
+        .appliedRevision
+    ).toBe(2)
+  })
+  it("includes every allowed transit distance and note change in the preview", async () => {
+    const j = await saved(["L", "T", "S"])
+    const transitId = j.events.find((event) => event.title === "T")!.id
+    const requestMessage = message + "，距离350米，到东门上车"
+    const p = await createPlanningProposal(user, j.id, {
+      requestId: randomUUID(),
+      message: requestMessage,
+    })
+    const edits: PlanningEdit[] = [
+      {
+        command: {
+          name: "event.update",
+          eventId: transitId,
+          patch: { transit: { distanceMeters: 350, notes: "到东门上车" } },
+        },
+      },
+    ]
+    await executePlanningRun(
+      user,
+      j.id,
+      p.proposalId,
+      p.runId,
+      runtime(edits, { sources: sources(edits, requestMessage) })
+    )
+    const preview = (await getPlanningProposal(user, j.id, p.proposalId))
+      .preview!
+    expect(
+      preview.events.find((event) => event.id === transitId)?.transit
+    ).toMatchObject({ distanceMeters: 350, notes: "到东门上车" })
+    expect(
+      preview.committableDiff.find((event) => event.eventId === transitId)
+        ?.after?.transit
+    ).toMatchObject({ distanceMeters: 350, notes: "到东门上车" })
+    await applyPlanningProposal(user, j.id, p.proposalId, { version: 1 })
+    expect(
+      (await getJourney(user, j.id))!.events.find(
+        (event) => event.id === transitId
+      )?.transit
+    ).toMatchObject({ distanceMeters: 350, notes: "到东门上车" })
+  })
 })
