@@ -50,6 +50,37 @@ export const periplusServerConfig = {
       return url
     },
   },
+  planning: {
+    get model() {
+      return envString("PERIPLUS_PLANNING_MODEL", "deepseek-flash")
+    },
+    get apiKey() {
+      return envString("DEEPSEEK_API_KEY")
+    },
+    get amapKey() {
+      return envString("PERIPLUS_AMAP_WEB_SERVICE_KEY")
+    },
+    get amapRetentionPolicyId() {
+      return envString("PERIPLUS_AMAP_RETENTION_POLICY_ID")
+    },
+    get amapRetentionFields() {
+      const fields = envString("PERIPLUS_AMAP_RETENTION_FIELDS")
+        .split(",")
+        .map((field) => field.trim())
+        .filter(Boolean)
+      if (
+        fields.some(
+          (field) => !["name", "city", "address", "coordinates"].includes(field)
+        )
+      )
+        throw new Error("Invalid PERIPLUS_AMAP_RETENTION_FIELDS")
+      if (fields.length && !envString("PERIPLUS_AMAP_RETENTION_POLICY_ID"))
+        throw new Error(
+          "PERIPLUS_AMAP_RETENTION_POLICY_ID is required for retained fields"
+        )
+      return fields as ("name" | "city" | "address" | "coordinates")[]
+    },
+  },
   weather: {
     get archiveUrl() {
       return envString(
