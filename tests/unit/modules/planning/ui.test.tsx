@@ -15,7 +15,8 @@ import {
 } from "@/modules/planning/client/api"
 import { recordingApi } from "@/modules/travelogue/data/client"
 import { journeyFixture } from "@/tests/fixtures/journey"
-import { proposal, preview } from "./fixtures"
+import { proposal, preview, plannedEvent } from "./fixtures"
+import PlanningPreview from "@/modules/planning/ui/PlanningPreview"
 
 const receipt = {
   proposalId: "proposal",
@@ -235,4 +236,41 @@ it("explains a runtime failure without exposing server configuration details or 
   expect(
     screen.getByRole("button", { name: "应用第 2 版" })
   ).toBeInTheDocument()
+})
+
+it("shows every supported transit fact needed to review the committed change", () => {
+  const event = {
+    ...plannedEvent,
+    category: "TRANSIT" as const,
+    transit: {
+      fromName: "湖滨午餐",
+      toName: "杭州东站",
+      transportMode: "BUS" as const,
+      requestMode: "TRANSIT" as const,
+      preference: "FEWER_TRANSFERS" as const,
+      routeState: "EMPTY" as const,
+      distanceMeters: 2000,
+      notes: "在东侧入口等车",
+    },
+  }
+  render(
+    <PlanningPreview
+      preview={{
+        ...preview,
+        events: [event],
+        committableDiff: [
+          {
+            ...preview.committableDiff[0],
+            kind: "added",
+            before: null,
+            after: event,
+          },
+        ],
+      }}
+    />
+  )
+  expect(screen.getByText("路线查询：公共交通")).toBeInTheDocument()
+  expect(screen.getByText("路线偏好：少换乘")).toBeInTheDocument()
+  expect(screen.getByText("公交 · 2.0 公里")).toBeInTheDocument()
+  expect(screen.getByText("在东侧入口等车")).toBeInTheDocument()
 })
