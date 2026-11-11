@@ -601,6 +601,191 @@ describe("Pi planning runtime", () => {
     late.end()
   })
 
+  it("continues a valid place selection across two runs without asking the user to choose again", async () => {
+    const clients: AmapConnection[] = []
+    let reference = "",
+      resumed = false
+    const runtime = createPiPlanningRuntime({
+      config,
+      connectAmap: async () => {
+        const client = connection()
+        vi.mocked(client.callTool).mockImplementation(async (name, args) => {
+          if (name === "maps_search_detail") {
+            expect(args.id).toBe("real-from-search")
+            return {
+              structuredContent: {
+                id: "real-from-search",
+                name: "Private restaurant",
+                city: "杭州市",
+                location: "120.15,30.25",
+              },
+            }
+          }
+          return {
+            structuredContent: {
+              pois: [{ id: "real-from-search", name: "Private restaurant" }],
+            },
+          }
+        })
+        clients.push(client)
+        return client
+      },
+      streamFn: (_model, context) => {
+        const message = context.messages.find((item) => item.role === "user")!
+        if (message.role !== "user") throw new Error("Missing planning input")
+        const prompt = JSON.parse(
+          typeof message.content === "string"
+            ? message.content
+            : message.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("")
+        )
+        const result = context.messages.find(
+          (item) => item.role === "toolResult"
+        )
+        if (prompt.replyToRunId) {
+          resumed = true
+          expect(prompt.selectedPlaceRef).toBe(reference)
+          expect(prompt.resumedCandidates[0].candidateRef).toBe(reference)
+          if (!result)
+            return response([
+              call("inspect_place", { candidateRef: reference }),
+            ])
+          return response([call("finish_turn", changes)])
+        }
+        if (!result)
+          return response([
+            call("find_places", { keywords: "餐厅", city: "杭州" }),
+          ])
+        if (result.role !== "toolResult" || result.content[0].type !== "text")
+          throw new Error("Missing search result")
+        reference = JSON.parse(result.content[0].text).candidates[0]
+          .candidateRef
+        return response([
+          call("finish_turn", {
+            kind: "question",
+            message: "请选择地点",
+            choices: [{ choiceRef: reference, label: "候选地点1" }],
+          }),
+        ])
+      },
+    })
+    const first = await runtime.run(input())
+    expect(first).toHaveProperty("livePlacesExpiresAt")
+    if (first.output.kind !== "question")
+      throw new Error("Expected place question")
+    const next = input({
+      runId: "run-2",
+      replyToRunId: "run-1",
+      choiceRef: reference,
+      question: {
+        runId: "run-1",
+        message: first.output.message,
+        choices: first.output.choices,
+      },
+      message: "候选地点1",
+    })
+    const second = await runtime.run(next)
+    expect(resumed).toBe(true)
+    expect(second.output).toEqual(changes)
+    expect(clients).toHaveLength(2)
+    expect(
+      vi.mocked(clients[1].callTool).mock.calls.map(([name]) => name)
+    ).toEqual(["maps_search_detail"])
+    expect(vi.mocked(next.onLivePlaces).mock.calls[0][0][0].candidateRef).toBe(
+      reference
+    )
+    expect(second.displayOnlyValues).toContain("Private restaurant")
+    expect(second.permittedFacts).toEqual([])
+    expect(
+      clients.every((client) => vi.mocked(client.close).mock.calls.length === 1)
+    ).toBe(true)
+  })
+
+  it.each(["expired", "restarted", "other-journey"])(
+    "requires a renewed choice when a pending candidate is %s",
+    async (reason) => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] })
+      let reference = "",
+        missing = false
+      const options = {
+        config,
+        connectAmap: async () => {
+          const client = connection()
+          vi.mocked(client.callTool).mockResolvedValue({
+            structuredContent: {
+              pois: [{ id: "searched-id", name: "Private restaurant" }],
+            },
+          })
+          return client
+        },
+        streamFn: ((_model, context) => {
+          const message = context.messages.find((item) => item.role === "user")!
+          if (message.role !== "user") throw new Error("Missing planning input")
+          const prompt = JSON.parse(
+            typeof message.content === "string"
+              ? message.content
+              : message.content
+                  .filter((part) => part.type === "text")
+                  .map((part) => part.text)
+                  .join("")
+          )
+          if (prompt.replyToRunId) {
+            missing = true
+            expect(prompt.selectedPlaceRef).toBeUndefined()
+            expect(prompt.resumedCandidates).toEqual([])
+          }
+          const result = context.messages.find(
+            (item) => item.role === "toolResult"
+          )
+          if (!result)
+            return response([
+              call("find_places", { keywords: "餐厅", city: "杭州" }),
+            ])
+          if (result.role !== "toolResult" || result.content[0].type !== "text")
+            throw new Error("Missing search result")
+          reference = JSON.parse(result.content[0].text).candidates[0]
+            .candidateRef
+          return response([
+            call("finish_turn", {
+              kind: "question",
+              message: "请重新确认地点",
+              choices: [{ choiceRef: reference, label: "候选地点1" }],
+            }),
+          ])
+        }) as StreamFn,
+      }
+      let runtime = createPiPlanningRuntime(options)
+      const first = await runtime.run(input())
+      if (first.output.kind !== "question")
+        throw new Error("Expected place question")
+      const originalRef = reference
+      if (reason === "expired") await vi.advanceTimersByTimeAsync(120001)
+      if (reason === "restarted") runtime = createPiPlanningRuntime(options)
+      const second = await runtime.run(
+        input({
+          runId: "run-2",
+          replyToRunId: "run-1",
+          choiceRef: originalRef,
+          journeyId: reason === "other-journey" ? "other-journey" : "journey-1",
+          question: {
+            runId: "run-1",
+            message: first.output.message,
+            choices: first.output.choices,
+          },
+          message: "候选地点1",
+        })
+      )
+      expect(missing).toBe(true)
+      expect(second.output).toMatchObject({
+        kind: "question",
+        choices: [{ choiceRef: reference }],
+      })
+      expect(reference).not.toBe(originalRef)
+    }
+  )
+
   it("enforces a real deadline and rejects missing model configuration explicitly", async () => {
     const pending = createPiPlanningRuntime({
       config,
