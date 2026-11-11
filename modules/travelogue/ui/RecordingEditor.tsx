@@ -485,6 +485,11 @@ export default function RecordingEditor({
       )}
       {canEdit && journey && (
         <RecordingMenu
+          onAgents={() =>
+            window.location.assign(
+              `/journeys/${encodeURIComponent(journey.id)}/agents`
+            )
+          }
           onReceipt={() => ui.setState({ receiptImport: { eventId: null } })}
           onMembers={() => ui.setState({ members: true })}
           shareDisabled={loading || saving > 0 || uploads.length > 0}

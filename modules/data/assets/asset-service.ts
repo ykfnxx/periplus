@@ -1,3 +1,4 @@
+import { AgentAuthorizationError } from "@/modules/agent/contracts"
 import { createHash } from "node:crypto"
 import { Readable } from "node:stream"
 import { isAdmin, type AuthContext } from "@/modules/auth/server/context"
@@ -176,6 +177,7 @@ export async function uploadResource(
     } catch (error) {
       if (error instanceof AssetUploadConflictError)
         retained = error.preserveObject
+      if (error instanceof AgentAuthorizationError) retained = false
       throw error
     }
   } finally {

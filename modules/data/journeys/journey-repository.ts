@@ -276,6 +276,7 @@ async function writeRevision(
       patchJson: json(write.patch),
       inversePatchJson: json(write.inversePatch),
       actorUserId: context.userId,
+      agentGrantId: context.agentGrantId,
       idempotencyKey: write.idempotencyKey,
       parentRevisionId: parent?.id,
     },

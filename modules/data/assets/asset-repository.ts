@@ -1,3 +1,4 @@
+import { checkAgentWrite } from "@/modules/agent/server/grants"
 import { Prisma } from "@prisma/client"
 import {
   isAdmin,
@@ -65,23 +66,31 @@ export async function saveAssetUpload(
   )
   if (previous) return { asset: previous, created: false }
   try {
-    const asset = await prisma.asset.create({
-      data: {
-        ownerId: context.userId,
-        visibility: "PRIVATE",
-        storageKey: input.storageKey,
-        uploadId: input.uploadId,
-        uploadFingerprint: input.fingerprint,
-        kind: input.kind,
-        mimeType: input.mimeType,
-        sizeBytes: input.sizeBytes,
-        checksum: input.checksum,
-        originalName: input.originalName,
-        lat: input.lat,
-        lng: input.lng,
-      },
-      include: assetOwnerInclude,
-    })
+    const create = (db: Prisma.TransactionClient) =>
+      db.asset.create({
+        data: {
+          ownerId: context.userId,
+          visibility: "PRIVATE",
+          storageKey: input.storageKey,
+          uploadId: input.uploadId,
+          uploadFingerprint: input.fingerprint,
+          agentGrantId: context.agentGrantId,
+          kind: input.kind,
+          mimeType: input.mimeType,
+          sizeBytes: input.sizeBytes,
+          checksum: input.checksum,
+          originalName: input.originalName,
+          lat: input.lat,
+          lng: input.lng,
+        },
+        include: assetOwnerInclude,
+      })
+    const asset = context.agentGrantId
+      ? await prisma.$transaction(async (tx) => {
+          await checkAgentWrite(tx, context, undefined, "photos:upload")
+          return create(tx)
+        })
+      : await create(prisma)
     return { asset, created: true }
   } catch (error) {
     // Reconcile unique races and lost commit acknowledgements alike. If the

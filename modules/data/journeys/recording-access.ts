@@ -1,3 +1,4 @@
+import { checkAgentWrite } from "@/modules/agent/server/grants"
 import type { Prisma } from "@prisma/client"
 import {
   isAdmin,
@@ -26,6 +27,7 @@ export async function assertJourneyCommandAccess(
   journey: JourneySnapshot,
   command: JourneyCommand
 ) {
+  await checkAgentWrite(tx, context, journey.id, "journey:write")
   if (isAdmin(context) || journey.ownerId === context.userId) return
   if (
     !(await tx.journeyMember.findUnique({

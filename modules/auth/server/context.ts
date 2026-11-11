@@ -7,6 +7,7 @@ export type UserRole = "user" | "admin"
 export interface AuthContext {
   userId: string
   role: UserRole
+  agentGrantId?: string
 }
 
 export class AuthRequiredError extends Error {
