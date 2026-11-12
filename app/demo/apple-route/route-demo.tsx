@@ -8,6 +8,7 @@ import "maplibre-gl/dist/maplibre-gl.css"
 import { MAP_STYLE, fitMapPoints } from "@/lib/map"
 import { journalMapStyle } from "@/lib/ui/map-style"
 import { periplusColors } from "@/lib/ui/map-theme"
+import { Button } from "@/components/kumo/components/button/button"
 import { MAX_GPX_BYTES, parseGpx, type WorkoutTrack } from "./gpx"
 
 const useDemo = create<{
@@ -45,15 +46,23 @@ function drawTrack(map: Map, track?: WorkoutTrack) {
     features,
   })
   const points = track?.segments.flat() ?? []
+  const start = points[0]
+  const end = points[points.length - 1]
+  const endpoints = !points.length
+    ? []
+    : start.lng === end.lng && start.lat === end.lat
+      ? [{ point: start, label: "起/终" }]
+      : [
+          { point: start, label: "起" },
+          { point: end, label: "终" },
+        ]
   ;(map.getSource("ends") as GeoJSONSource).setData({
     type: "FeatureCollection",
-    features: points.length
-      ? [points[0], points[points.length - 1]].map((point, index) => ({
-          type: "Feature",
-          properties: { label: index ? "终" : "起" },
-          geometry: { type: "Point", coordinates: [point.lng, point.lat] },
-        }))
-      : [],
+    features: endpoints.map(({ point, label }) => ({
+      type: "Feature",
+      properties: { label },
+      geometry: { type: "Point", coordinates: [point.lng, point.lat] },
+    })),
   })
   if (points.length)
     fitMapPoints(map, points, { top: 65, bottom: 65, left: 65, right: 65 }, 16)
@@ -79,8 +88,7 @@ export default function RouteDemo() {
     map.addControl(new NavigationControl({ showCompass: false }), "top-right")
     map.on("error", () =>
       useDemo.setState({
-        mapError:
-          "底图加载失败，请检查网络后刷新。已导入的轨迹仍保留在当前页面。",
+        mapError: "底图加载失败，请检查网络后刷新。",
       })
     )
     map.on("load", () => {
@@ -117,7 +125,7 @@ export default function RouteDemo() {
         type: "circle",
         source: "ends",
         paint: {
-          "circle-radius": 13,
+          "circle-radius": ["case", ["==", ["get", "label"], "起/终"], 18, 13],
           "circle-color": periplusColors.softWhite,
           "circle-stroke-width": 2,
           "circle-stroke-color": periplusColors.mapRoute,
@@ -225,20 +233,22 @@ export default function RouteDemo() {
               aria-label="选择 GPX 文件"
               type="file"
               accept=".gpx,application/gpx+xml"
-              className="sr-only"
+              className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0]
                 if (file) void importFile(file)
                 event.target.value = ""
               }}
             />
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-action px-4 py-3 text-sm font-medium text-white hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-4"
+            <Button
+              variant="primary"
+              className="min-h-11 w-full justify-center gap-2 text-sm"
+              aria-busy={loading}
               onClick={() => input.current?.click()}
             >
               <FileUp size={18} />
               {loading ? "正在读取…" : "选择 GPX 文件"}
-            </button>
+            </Button>
             <p className="mt-3 text-center text-xs text-walnut">
               也可以将文件拖到这里 · 最大 64 MB
             </p>
@@ -255,9 +265,11 @@ export default function RouteDemo() {
                 <h2 className="min-w-0 font-semibold break-words">
                   {track.name}
                 </h2>
-                <button
+                <Button
+                  variant="ghost"
+                  shape="square"
                   aria-label="清除轨迹"
-                  className="shrink-0 rounded p-1 hover:bg-ink-5"
+                  className="size-11 shrink-0"
                   onClick={() => {
                     generation.current++
                     useDemo.setState({
@@ -269,12 +281,12 @@ export default function RouteDemo() {
                   }}
                 >
                   <X size={18} />
-                </button>
+                </Button>
               </div>
               {tracks.length > 1 && (
                 <select
                   aria-label="选择运动轨迹"
-                  className="w-full rounded border border-ink-20 bg-white p-2"
+                  className="min-h-11 w-full rounded border border-ink-20 bg-white p-2"
                   value={selected}
                   onChange={(event) =>
                     useDemo.setState({ selected: Number(event.target.value) })
@@ -313,8 +325,10 @@ export default function RouteDemo() {
                   ? `${timeLabel(timeRange[0])} — ${timeLabel(timeRange[1])}${times.length < points.length ? "（部分点缺少时间）" : ""}`
                   : "文件未提供时间"}
               </p>
-              <button
-                className="flex items-center gap-2 rounded-lg border border-ink-20 px-3 py-2 text-sm hover:bg-ink-5"
+              <Button
+                variant="secondary"
+                className="min-h-11 gap-2 text-sm"
+                disabled={!mapReady}
                 onClick={() => {
                   if (mapRef.current?.getSource("workout"))
                     drawTrack(mapRef.current, track)
@@ -322,7 +336,7 @@ export default function RouteDemo() {
               >
                 <LocateFixed size={16} />
                 查看完整路线
-              </button>
+              </Button>
             </section>
           ) : (
             <div className="flex items-center gap-3 text-sm text-walnut">
@@ -346,7 +360,7 @@ export default function RouteDemo() {
           </p>
         </aside>
         <section
-          className="relative min-h-[55dvh] md:min-h-[calc(100dvh-73px)]"
+          className="relative min-h-[55dvh] md:min-h-[calc(100dvh-73px)] [&_.maplibregl-ctrl-group_button]:size-11!"
           aria-label="运动轨迹地图"
         >
           <div ref={container} style={{ position: "absolute", inset: 0 }} />
@@ -361,9 +375,10 @@ export default function RouteDemo() {
           {mapError && (
             <p
               role="alert"
-              className="absolute top-4 left-4 max-w-sm rounded-lg bg-soft-white p-3 text-sm text-coral shadow-periplus"
+              className="absolute top-4 right-16 left-4 max-w-sm rounded-lg bg-soft-white p-3 text-sm text-coral shadow-periplus"
             >
               {mapError}
+              {track ? " 已导入的轨迹仍保留在当前页面。" : ""}
             </p>
           )}
         </section>
