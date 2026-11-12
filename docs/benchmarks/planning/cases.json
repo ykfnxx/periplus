@@ -1,0 +1,289 @@
+{
+  "schemaVersion": 1,
+  "status": "design-only",
+  "clock": "2026-11-14T00:00:00Z",
+  "timezone": "Asia/Shanghai",
+  "cases": [
+    {
+      "id": "W01",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "两轮累计",
+      "input": "按 README 两轮脚本生成 v1/v2，再明确 apply v2",
+      "faultOrDependency": "无",
+      "oracle": "确认前 R12 不变；v2 仅增时间变化；确认后 R13、L/新交通/S、附件与 ID 保留"
+    },
+    {
+      "id": "W02",
+      "lane": "workflow",
+      "fixture": "empty",
+      "name": "空旅程引用",
+      "input": "先创建两个站的 draftRef，再插入两者之间的交通",
+      "faultOrDependency": "无",
+      "oracle": "预览正式事件为零；应用三个不同 ID、正确顺序与端点；修订 +1"
+    },
+    {
+      "id": "W03",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "请求幂等与活动运行",
+      "input": "同 requestId 同参重试、异参重试；活动运行时再 turn/apply",
+      "faultOrDependency": "阻塞 runtime 返回直到探针完成",
+      "oracle": "同参同 run；异参 IDEMPOTENCY_CONFLICT；新轮/应用 RUN_ACTIVE；无正式写入"
+    },
+    {
+      "id": "W04",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "取消迟到结果",
+      "input": "已有 v1，开始 v2 后 cancel 指定 run；释放其延迟结果",
+      "faultOrDependency": "可控延迟的 runtime",
+      "oracle": "cancel 先失效再 abort；迟到结果不能替代 v1；正式旅程不变"
+    },
+    {
+      "id": "W05",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "超时与进程恢复",
+      "input": "已有 v1，运行中终止进程并重启；截止后 GET/turn",
+      "faultOrDependency": "隔离实例重启，推进截止时间",
+      "oracle": "v1 可读；旧 run 超期结算；不能发布迟到版本或永久 RUN_ACTIVE"
+    },
+    {
+      "id": "W06",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "撤回全部变更",
+      "input": "先产生编辑，再输出撤回至基准的增量；apply 空差异",
+      "faultOrDependency": "无",
+      "oracle": "空差异可展示；apply 422，正式修订不变"
+    },
+    {
+      "id": "W07",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "放弃提案",
+      "input": "运行时 discard 当前版本，再投递迟到结果/新 turn",
+      "faultOrDependency": "延迟 runtime",
+      "oracle": "提案关闭；旧 run 失效；新请求 PROPOSAL_CLOSED；正式旅程不变"
+    },
+    {
+      "id": "W08",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "重复确认与失响应",
+      "input": "并发 apply 同版本；丢弃成功响应后重试；另一次编辑到 R14 后再重试",
+      "faultOrDependency": "只丢响应不撤销事务",
+      "oracle": "只有一份原成功回执及一条规划修订；所有重放仍返回原 R13；当前旅程单独为 R14"
+    },
+    {
+      "id": "W09",
+      "lane": "workflow",
+      "fixture": "places",
+      "name": "候选引用生命周期",
+      "input": "问题后 GET；120秒内用当前 choiceRef 答复；分别测试过期、重启、其他旅程引用",
+      "faultOrDependency": "每个子场景重建夹具",
+      "oracle": "有效选择进入下一轮；GET 与适配器同一截止；失效需重新辨认；不跨旅程复用"
+    },
+    {
+      "id": "W10",
+      "lane": "workflow",
+      "fixture": "places",
+      "name": "即时数据留存隔离",
+      "input": "将仅展示标记放入问题、选项、约束、待核实项和命令字段",
+      "faultOrDependency": "合成 provider 数据",
+      "oracle": "不发布可持久化泄漏输出；扫描提案/版本/事件/修订/日志无标记；livePlaces 可即时展示"
+    },
+    {
+      "id": "W11",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "非法时间与引用",
+      "input": "输出冲突 date/time/startAt；前向 draftRef；删除交通端点但未处理交通",
+      "faultOrDependency": "三个独立子场景",
+      "oracle": "均不能发布可应用版本；原预览和正式旅程保留"
+    },
+    {
+      "id": "W12",
+      "lane": "workflow",
+      "fixture": "impacts",
+      "name": "关联影响完整性",
+      "input": "删除带附件事件、修改 STAY 地点、变更有路线端点",
+      "faultOrDependency": "无",
+      "oracle": "预览包含附件影响、酒店/绑定清除和路线失效；应用业务结果与预览一致"
+    },
+    {
+      "id": "W13",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "硬约束与证据",
+      "input": "hard=true/satisfied=null/verificationRequired=false；再测 hard=false/verificationRequired=true/无证据；最后确认约束",
+      "faultOrDependency": "独立子场景",
+      "oracle": "未知硬约束和缺必需证据不可应用；明确满足并重发新版后可确认应用"
+    },
+    {
+      "id": "W14",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "版本与修订冲突",
+      "input": "旧标签页 apply v1；同行修改 R13 后 apply v2；rebase 提问/答复，再明确确认",
+      "faultOrDependency": "rebase 时目标字段或锚点已变",
+      "oracle": "旧版冲突；修订冲突；答复继承目标修订；新版本不自动应用；再次外部变更需再次比对"
+    },
+    {
+      "id": "W15",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "普通调整与重演语义",
+      "input": "v1 后普通增量调整；另分支 rebase 输出完整替换命令",
+      "faultOrDependency": "无",
+      "oracle": "adjust 顺序累计一次；rebase 替换旧批次；不得重复创建或重复执行旧操作"
+    },
+    {
+      "id": "W16",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "提案归属",
+      "input": "stranger/member 读取或确认 owner 提案；其他旅程路径访问；撤权后重放",
+      "faultOrDependency": "真实独立会话",
+      "oracle": "不可见资源404；回执重放前仍鉴权；不返回其他用户提案或回执"
+    },
+    {
+      "id": "W17",
+      "lane": "workflow",
+      "fixture": "R12",
+      "name": "末条失败整批回滚",
+      "input": "预览多条编辑；apply 前使末条失权或状态受保护",
+      "faultOrDependency": "权限/领域状态变更",
+      "oracle": "失败不留下前序编辑、投影、修订、终态或回执；读取数据库前后验证"
+    },
+    {
+      "id": "W18",
+      "lane": "workflow",
+      "fixture": "places",
+      "name": "留存许可变化",
+      "input": "预览时允许合成字段；apply 前撤销许可",
+      "faultOrDependency": "可控 retention policy",
+      "oracle": "422 PREVIEW_REQUIRED；不写正式数据；新版重新预演后仍需确认"
+    },
+    {
+      "id": "W19",
+      "lane": "workflow",
+      "fixture": "places",
+      "name": "运行预算与单次结束",
+      "input": "分别尝试第9次模型响应、第17次业务调用、超过5候选、工具8秒/整轮120秒截止，以及两次有效finish_turn",
+      "faultOrDependency": "运行适配层使用固定模型stream/MCP、受控时钟；每个子场景独立",
+      "oracle": "不超业务预算；候选截断到5；取消信号传播并关闭连接；最多发布一个结果，超时/迟到不覆盖上一版"
+    },
+    {
+      "id": "M01",
+      "lane": "model",
+      "fixture": "R12",
+      "name": "真实模型两轮调整",
+      "input": "使用 README 原话和两轮用户脚本",
+      "faultOrDependency": "固定 MCP",
+      "oracle": "真实模型完成 R12 两轮目标；不得重建 L/S、丢附件或虚构已解析路线；用最终状态评分"
+    },
+    {
+      "id": "M02",
+      "lane": "model",
+      "fixture": "empty",
+      "name": "缺日期澄清与新建",
+      "input": "先说“安排杭州两天行程”；仅在被问日期时回答“2026年11月15日出发，先湖滨午餐再去杭州东站，中间打车”",
+      "faultOrDependency": "固定 MCP",
+      "oracle": "先问日期，不擅自用当天；答复后可预览合法站/交通引用；确认前正式事件零"
+    },
+    {
+      "id": "M03",
+      "lane": "model",
+      "fixture": "places",
+      "name": "搜索与详情",
+      "input": "“2026年11月15日去杭州的合成同名馆，请先确认是哪一家”",
+      "faultOrDependency": "两分店固定 MCP",
+      "oracle": "先搜索，详情只使用搜索返回 ID；明确分店；不猜 ID/坐标"
+    },
+    {
+      "id": "M04",
+      "lane": "model",
+      "fixture": "places",
+      "name": "有效地点选择",
+      "input": "上一例的问题返回后，用户按可见分店选择；在120秒内答复",
+      "faultOrDependency": "固定 MCP与可控时间",
+      "oracle": "choiceRef 复用 candidateRef；下一轮恢复有效候选，不反复要求选同一地点"
+    },
+    {
+      "id": "M05",
+      "lane": "model",
+      "fixture": "places",
+      "name": "过期地点选择",
+      "input": "问题后超120秒再选择原选项",
+      "faultOrDependency": "固定 MCP与可控时间",
+      "oracle": "不直接使用过期候选完成；重新查询并让用户辨认；无陈旧坐标写入"
+    },
+    {
+      "id": "M06",
+      "lane": "model",
+      "fixture": "places",
+      "name": "周边与坐标",
+      "input": "“2026年11月15日在已有事件附近找午餐”",
+      "faultOrDependency": "分别提供 WGS84、GCJ02中心和仅名称中心",
+      "oracle": "正确先定位；坐标只转换一次；半径合法；每次最多5候选；未知坐标不捏造"
+    },
+    {
+      "id": "M07",
+      "lane": "model",
+      "fixture": "places",
+      "name": "外部错误分类",
+      "input": "同一地点请求分别遇空列表、同名、无坐标、鉴权/限额/超时/isError/坏JSON",
+      "faultOrDependency": "独立响应变体",
+      "oracle": "区分无匹配、待选、缺坐标、不可用；不把故障当成功地点；保留上一版"
+    },
+    {
+      "id": "M08",
+      "lane": "model",
+      "fixture": "R12",
+      "name": "到站硬约束",
+      "input": "“必须保证14:00到杭州东站，只在确认交通时间后应用”",
+      "faultOrDependency": "地点详情有坐标但无交通耗时证据",
+      "oracle": "不能把详情等同耗时验证；保持阻塞或澄清，不能给可应用承诺"
+    },
+    {
+      "id": "M09",
+      "lane": "model",
+      "fixture": "impacts",
+      "name": "保留关联资料",
+      "input": "“把午餐提前到11:30，保留照片和正文；取消景点但保留车站备注”",
+      "faultOrDependency": "固定 MCP",
+      "oracle": "最小相关编辑；保留未要求修改的资料；删除影响可见；不修改账单/执行状态等禁止字段"
+    },
+    {
+      "id": "M10",
+      "lane": "model",
+      "fixture": "places",
+      "name": "文字安排与固定店铺",
+      "input": "先“湖滨附近午餐”；另场景“必须固定某家合成门店”，选择接受文字安排",
+      "faultOrDependency": "仅展示许可的固定 MCP",
+      "oracle": "泛化安排只保存用户文字；固定门店无留存权先询问；选择后不泄漏门店名/坐标到持久化字段"
+    },
+    {
+      "id": "L01",
+      "lane": "live",
+      "fixture": "empty",
+      "name": "杭州真实接入",
+      "input": "“2026年11月15日在杭州西湖附近安排午餐，先查地点”",
+      "faultOrDependency": "实际模型与高德",
+      "oracle": "搜索→详情→周边用真实结果引用，结构/城市/坐标正确，不锁定商家排序；无权限不得留存供应商字段"
+    },
+    {
+      "id": "L02",
+      "lane": "live",
+      "fixture": "empty",
+      "name": "成都跨城泛化",
+      "input": "“2026年11月15日在成都春熙路附近安排午餐，先查地点”",
+      "faultOrDependency": "实际模型与高德",
+      "oracle": "与杭州同一工作流；不能硬编码杭州/POI；三工具成功或准确报告外部不可用"
+    }
+  ],
+  "sourceBranch": "feat/agent-workflow",
+  "baseSha": "1de610dcb1a275317d0620fbc599caaa1feb7422"
+}

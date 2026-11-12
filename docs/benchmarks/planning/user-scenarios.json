@@ -1,0 +1,442 @@
+{
+  "schemaVersion": 2,
+  "status": "design-only",
+  "singlePoint": [
+    {
+      "id": "S01",
+      "focus": "缺少绝对日期",
+      "utterance": "给我规划一个杭州三日游，不去灵隐寺",
+      "fixture": "empty",
+      "oracle": "先询问出发日期；不能把当前日直接当出发日；保留杭州/3天/排除灵隐寺"
+    },
+    {
+      "id": "S02",
+      "focus": "否定约束",
+      "utterance": "杭州玩三天，灵隐寺就别排了",
+      "fixture": "dated-hangzhou",
+      "oracle": "不得新增灵隐寺活动或把去灵隐寺作为某日主安排；说明中提及“不去灵隐寺”不算违反"
+    },
+    {
+      "id": "S03",
+      "focus": "否定作用域",
+      "utterance": "别把西湖删了，灵隐寺才是不去的那个",
+      "fixture": "hangzhou-with-westlake-and-lingyin",
+      "oracle": "保留西湖，移除灵隐寺；不得因“别/删”邻近而删错对象"
+    },
+    {
+      "id": "S04",
+      "focus": "改口覆盖",
+      "utterance": "刚才说三天说错了，改成两天，灵隐寺还是不去",
+      "fixture": "hangzhou-three-day-preview",
+      "oracle": "两天替代三天；保留排除约束；不能残留第三天活动"
+    },
+    {
+      "id": "S05",
+      "focus": "软偏好",
+      "utterance": "别太赶，上午晚点开始，喜欢逛吃",
+      "fixture": "dated-hangzhou",
+      "oracle": "保留慢节奏/晚开始偏好；未给具体时刻不能声称用户要求10点；可提出明确可改建议"
+    },
+    {
+      "id": "S06",
+      "focus": "显式时间约束",
+      "utterance": "每天10点之前别给我排活动",
+      "fixture": "dated-hangzhou",
+      "oracle": "所有活动不早于10:00；交通早到与活动开始区别处理；约束未知不得当满足"
+    },
+    {
+      "id": "S07",
+      "focus": "模糊指代",
+      "utterance": "把第二天那个馆挪到第一天下午，其他别动",
+      "fixture": "preview-two-museums-day2",
+      "oracle": "询问具体哪个馆；不得按名称相似或数组第一个猜测"
+    },
+    {
+      "id": "S08",
+      "focus": "明确指代",
+      "utterance": "把第二天唯一的博物馆挪到第一天下午，其他别动",
+      "fixture": "preview-one-museum-day2",
+      "oracle": "只移动指定馆并更新必要日期时间；稳定ID不变；不得重建其他事件"
+    },
+    {
+      "id": "S09",
+      "focus": "时间更正",
+      "utterance": "午饭不是12点，是11点半",
+      "fixture": "R12",
+      "oracle": "L改成11:30且startAt/时区一致；其余字段不变"
+    },
+    {
+      "id": "S10",
+      "focus": "部分撤销",
+      "utterance": "算了，午饭时间改回去，取消景点这件事照旧",
+      "fixture": "R12-two-turn-preview",
+      "oracle": "只撤回时间增量，保留取消景点和直达交通；不是整个提案清空"
+    },
+    {
+      "id": "S11",
+      "focus": "双重否定",
+      "utterance": "不是不去西湖，是不要再给我排灵隐寺",
+      "fixture": "dated-hangzhou",
+      "oracle": "西湖可保留，灵隐寺排除；不存在“两个都排除”"
+    },
+    {
+      "id": "S12",
+      "focus": "禁止擅自承诺",
+      "utterance": "查一下附近吃饭的地方，别替我订",
+      "fixture": "dated-hangzhou",
+      "oracle": "只能查找/规划；不得声称预订成功或新增预订号"
+    },
+    {
+      "id": "S13",
+      "focus": "复合局部修改",
+      "utterance": "把第二天午饭提前半小时，再把下午茶删了",
+      "fixture": "preview-day2-lunch-12-tea-15",
+      "oracle": "午餐11:30，删除下午茶，其他内容/附件不变；两项都完成"
+    },
+    {
+      "id": "S14",
+      "focus": "相互冲突",
+      "utterance": "我10点才到杭州东站，但第一项必须9点到西湖，而且必须从车站出发",
+      "fixture": "empty-dated",
+      "oracle": "指出时间冲突并澄清；不可发布满足全部硬约束的假计划"
+    },
+    {
+      "id": "S15",
+      "focus": "地点歧义",
+      "utterance": "安排去省博，不是孤山那个馆",
+      "fixture": "dated-hangzhou",
+      "oracle": "利用排除馆区信息检索/辨认；不能选回被排除馆区；缺信息时问而非猜"
+    },
+    {
+      "id": "S16",
+      "focus": "价格证据边界",
+      "utterance": "两个人三天总共最多1000，住宿也算，别超了",
+      "fixture": "dated-hangzhou",
+      "oracle": "提取人数/总预算/含住宿；无价格证据标未核实或澄清，不能把任意估价当已满足硬预算"
+    }
+  ],
+  "fullWorkflow": [
+    {
+      "id": "E01",
+      "name": "杭州三日游排除景点",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "给我规划一个杭州三日游，不去灵隐寺",
+        "杭州玩三天，帮我排一下，灵隐寺就算了",
+        "想去杭州待三天，怎么安排？别给我排灵隐寺"
+      ],
+      "answerBank": {
+        "date": "2026年11月15日开始，玩到17日。",
+        "pace": "每天10点后开始，一天最多两个景点；午饭都要有。",
+        "places": "地点只能展示的话，具体店名不用存，保留我的文字安排就行。"
+      },
+      "followupUserTurns": [
+        "第二天别太满，午饭定在11点半，灵隐寺仍然别排。",
+        "第三天16点要到杭州东站，交通时间没查清楚就标出来，别说保证来得及。"
+      ],
+      "workflowVariant": "normal",
+      "oracle": [
+        "日期仅11月15–17日且每天有活动/午餐",
+        "无灵隐寺活动；所有活动>=10:00且每天最多2个景点",
+        "第二天午餐11:30；最终包含第三天16:00杭州东站安排",
+        "交通可行性未核实明确展示；不能捏造已验证保证",
+        "v2/v3保留前轮约束，正式旅程确认前为空"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E02",
+      "name": "成都亲子慢游",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "带六岁娃去成都玩两天，别太累，不去熊猫基地",
+        "成都两天带娃，孩子六岁，熊猫基地不考虑，轻松点",
+        "帮排个成都亲子两日游，六岁小孩，别赶，也别排熊猫基地"
+      ],
+      "answerBank": {
+        "date": "2026年11月21日到22日。",
+        "pace": "每天最多两个景点，14点到16点留给孩子午睡。",
+        "places": "具体门店不必保存，可以用文字安排。"
+      },
+      "followupUserTurns": [
+        "第二天只留一个景点，中午吃饭别删。"
+      ],
+      "workflowVariant": "normal",
+      "oracle": [
+        "两天日期正确、城市成都",
+        "无熊猫基地；每日<=2景点且第二天<=1",
+        "14–16点无游玩/交通安排；午餐保留",
+        "不将亲子偏好机械映射到未经用户确认的付费项目"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E03",
+      "name": "上海单日硬时间窗",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "上海就一天，10点到虹桥，晚上8点还得回虹桥赶车",
+        "上海一日游，虹桥上午10点到，晚上20点要回那里",
+        "帮排上海一天，起终点都虹桥，十点后开始，八点前回来"
+      ],
+      "answerBank": {
+        "date": "2026年11月18日，当天。",
+        "timing": "20点是到站时间，不是发车时间；交通耗时没有证据先标待核实。",
+        "places": "文字活动安排就可以。"
+      },
+      "followupUserTurns": [
+        "外滩一定要有，购物就不要了。"
+      ],
+      "workflowVariant": "normal",
+      "oracle": [
+        "日期11月18日；到达10:00与回站20:00明确",
+        "外滩保留，购物活动移除",
+        "活动处于到达/回站时间窗；不能保证未经核实的交通耗时"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E04",
+      "name": "西安同名地点辨认",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "西安两天，想去陕历博，别搞错馆了",
+        "给我排西安两日游，陕西历史博物馆要去，先确认馆区",
+        "西安玩两天要看陕历博，哪个馆先问我再排"
+      ],
+      "answerBank": {
+        "date": "2026年11月20日到21日。",
+        "branch": "我要雁塔区那个馆，不是秦汉馆；请按展示候选让我选。",
+        "retention": "如果具体馆的信息不能存，先用我说的“雁塔区那个馆”作文字安排。"
+      },
+      "followupUserTurns": [
+        "第二天上午去，第一天保持原来的。"
+      ],
+      "workflowVariant": "normal",
+      "oracle": [
+        "调用搜索/详情与用户辨认闭环，不能猜POI ID",
+        "排除秦汉馆；不把具体供应商数据写入只允许文字的字段",
+        "只改选定馆到第二天上午；第一天非关联内容不变"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E05",
+      "name": "桂林改口缩短行程",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "桂林给我来个四天行程，别安排购物店",
+        "桂林四日游帮我排一下，不进购物店",
+        "想在桂林待四天，旅游购物店就别放进计划了"
+      ],
+      "answerBank": {
+        "date": "2026年11月15日出发。",
+        "places": "具体店名不需要保存。"
+      },
+      "followupUserTurns": [
+        "说错了只有三天，阳朔保留，购物店还是不要。",
+        "最后一天晚上18点回桂林站，没核实的车程注明。"
+      ],
+      "workflowVariant": "normal",
+      "oracle": [
+        "初稿4天，改口后仅15–17日3天，无残留第四天",
+        "阳朔保留，购物店始终排除",
+        "17日18:00桂林站；不虚构交通时间验证"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E06",
+      "name": "杭州已有行程局部改动",
+      "lane": "model",
+      "fixture": "R12",
+      "utteranceVariants": [
+        "景点不去了，吃完饭直接打车去杭州东站，照片别动",
+        "把中间那个景点取消，午餐后打车到东站，保留照片",
+        "午饭和杭州东站留着，中间的景点不要，直接打车过去，原图保留"
+      ],
+      "answerBank": {
+        "date": "就原行程2026年11月15日。",
+        "timing": "车程没有核实就标出来。"
+      },
+      "followupUserTurns": [
+        "午饭再提前到11点半，其他就按刚才的。"
+      ],
+      "workflowVariant": "normal",
+      "oracle": [
+        "R12五项变为L/新TAXI/S，L/S ID及原照片正文备注保留",
+        "新交通EMPTY、端点L/S，第二轮只增时间修改",
+        "明确确认后恰好R13，不能每轮写正式事件"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E07",
+      "name": "厦门撤回局部修改",
+      "lane": "model",
+      "fixture": "dated-xiamen-two-day",
+      "utteranceVariants": [
+        "厦门第二天的午饭往前挪半小时，下午茶不要了",
+        "第二天午餐提前30分钟，厦门下午茶那项删掉",
+        "厦门这个计划改下，第二天早半小时吃午饭，下午茶取消"
+      ],
+      "answerBank": {
+        "date": "原行程2026年11月15–16日，不改日期。"
+      },
+      "followupUserTurns": [
+        "午饭还是原来的时间吧，但下午茶确实不要。"
+      ],
+      "workflowVariant": "normal",
+      "oracle": [
+        "原午餐12:00→11:30→12:00，ID不变",
+        "下午茶仍删除，其他事件不变",
+        "累计差异仅保留最终有意义变更"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E08",
+      "name": "杭州候选过期恢复",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "杭州明天找个湖边吃饭的地方，先让我挑",
+        "明天在杭州湖边吃午饭，给几个选项我选",
+        "帮我找杭州明天湖边午餐，别直接定，先给我看候选"
+      ],
+      "answerBank": {
+        "date": "我说的明天是2026年11月15日。",
+        "choice": "只根据当前可见候选选择第一个符合湖边条件的选项。",
+        "retention": "可以只保存“湖边午餐”文字。"
+      },
+      "followupUserTurns": [
+        "就当前重新查出来的这个选项；如果不能保存门店，记成湖边午餐。"
+      ],
+      "workflowVariant": "expire-choice",
+      "oracle": [
+        "先澄清绝对日期或明确核对，不能默默依赖机器时间",
+        "问题后等待超过120秒并重开；旧引用不直接生效",
+        "重新查询辨认后能继续，不能无限重复选择"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E09",
+      "name": "杭州多人冲突再确认",
+      "lane": "model",
+      "fixture": "R12",
+      "utteranceVariants": [
+        "杭州这个行程景点取消，午饭后直接去东站",
+        "帮我改杭州计划，中间景点不去，直接从午饭去车站",
+        "原来那个杭州景点删了吧，吃完直接去杭州东站"
+      ],
+      "answerBank": {
+        "date": "原来2026年11月15日不变。",
+        "conflict": "以同行刚改的车站备注为准，保留它，仍然取消景点。"
+      },
+      "followupUserTurns": [
+        "好的，先按最新旅程重新给我看看，别直接保存。"
+      ],
+      "workflowVariant": "concurrent-edit",
+      "oracle": [
+        "预览后同行修改备注推进修订；旧版apply被拒",
+        "rebase保留新备注且重新预览、再次确认",
+        "每次正式保存只产生一条修订，未自动应用"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E10",
+      "name": "成都断网重试与重开",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "成都两天帮我安排下，别去太远的地方",
+        "想在成都玩两天，市区为主，帮排个计划",
+        "成都两日游，主要在市区玩，给我排排"
+      ],
+      "answerBank": {
+        "date": "2026年11月21日到22日。",
+        "scope": "只安排市区文字活动，具体门店不用保存。"
+      },
+      "followupUserTurns": [
+        "第二天午饭改成11点半，然后给我看最终版本。"
+      ],
+      "workflowVariant": "lost-apply-response",
+      "oracle": [
+        "两日市区安排，修改保留前轮内容",
+        "确认成功后丢响应；重试原版本返回原回执",
+        "重开页面读到同一行程，只有一次应用修订和一份新增事件"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E11",
+      "name": "北京取消生成保留预览",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "北京三天帮我排个计划，别去长城",
+        "北京玩三天，不考虑长城，给我安排一下",
+        "来个北京三日游，长城不去，其余你先排"
+      ],
+      "answerBank": {
+        "date": "2026年11月15日开始。",
+        "places": "文字安排即可。"
+      },
+      "followupUserTurns": [
+        "第二天都换掉，我想看博物馆。",
+        "这轮先取消，保留刚才那版。"
+      ],
+      "workflowVariant": "cancel-turn",
+      "oracle": [
+        "首版3天无长城；第二轮生成中cancel",
+        "迟到结果不覆盖首版；正式事件仍空",
+        "只在明确选择保留版并确认后写入；不能保存已取消版本"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    },
+    {
+      "id": "E12",
+      "name": "南京明确放弃不落库",
+      "lane": "model",
+      "fixture": "empty",
+      "utteranceVariants": [
+        "南京两天游帮我安排一下，不去中山陵",
+        "南京玩两天，中山陵就不去了，帮排下",
+        "来个南京两日计划，排除中山陵"
+      ],
+      "answerBank": {
+        "date": "2026年11月21–22日。",
+        "places": "具体商家不用保存。"
+      },
+      "followupUserTurns": [
+        "算了，这趟不去了，整个计划都不要了。"
+      ],
+      "workflowVariant": "discard",
+      "oracle": [
+        "先有合法两日预览且无中山陵",
+        "明确放弃后提案关闭，正式旅程始终空",
+        "重开不恢复为待确认计划，不调用apply"
+      ],
+      "maxUserTurns": 10,
+      "repetitionsPerVariant": 3
+    }
+  ]
+}
