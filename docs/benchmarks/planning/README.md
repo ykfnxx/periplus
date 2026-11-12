@@ -1,5 +1,7 @@
 # Pi 旅行规划 workflow benchmark 设计
 
+完整独立稿：[Periplus 旅行规划 Benchmark 设计稿](design.md)。该文档包含目标、59个场景、完整成功判定、metrics及实施验收，不需要结合其他文件阅读。以下文件保留为分类索引与机器可读目录。
+
 ## 基准与交付范围
 
 本设计基于 PR #70 的 `7c3fd2ab2d10e9b62848b6f671a663bfba0331c9`，分支 `feat/agent-plan`。规范来源是 `docs/superpowers/specs/2026-11-11-pi-planning-workflow-spec.md`（原稿位于项目主工作区；[共享 SPEC](https://app.raft.build/artifacts/5niAJkQrtr54F2Dq7UgBZU)）；本设计包含59个逻辑场景：19个工作流不变量、10个工具/模型诊断、2个真实服务场景，以及16个单点口语理解和12个全程旅行任务。全程任务各有3种等义表达，共36个初始表达。`cases.json` 与 `user-scenarios.json` 是设计用例目录，不是已经实现的 runner。本提交不改产品代码，也不宣称真实模型已跑通。
