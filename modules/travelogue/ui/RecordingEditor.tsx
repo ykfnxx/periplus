@@ -22,13 +22,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/dom"
 import { isSortable } from "@dnd-kit/react/sortable"
-import {
-  ArrowLeft,
-  ChartNoAxesColumn,
-  List,
-  Plus,
-  Route,
-} from "lucide-react"
+import { ArrowLeft, ChartNoAxesColumn, List, Plus, Route } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type {
   EventContent,
@@ -158,17 +152,9 @@ function GapSlot({
   ) => void
 }) {
   if (!canInsert)
-    return (
-      <div
-        className="h-2 shrink-0"
-        data-before-record={beforeRecordId}
-      />
-    )
+    return <div className="h-2 shrink-0" data-before-record={beforeRecordId} />
   return (
-    <div
-      className="journal-gap-slot"
-      data-before-record={beforeRecordId}
-    >
+    <div className="journal-gap-slot" data-before-record={beforeRecordId}>
       <div className="journal-gap-reveal">
         <button
           type="button"
@@ -263,11 +249,11 @@ export default function RecordingEditor({
   const photoEntry = journey?.events.find((entry) => entry.id === photoPanelId)
   const hasManagementSubpage = Boolean(
     (activeReceipt && receiptEvent) ||
-      (receiptImport && journey && canEdit) ||
-      (photoEntry && canEdit) ||
-      (dialog && canEdit) ||
-      (members && journey && canEdit) ||
-      (metadata && journey && isOwner)
+    (receiptImport && journey && canEdit) ||
+    (photoEntry && canEdit) ||
+    (dialog && canEdit) ||
+    (members && journey && canEdit) ||
+    (metadata && journey && isOwner)
   )
   const showTimeline = timeline && !hasManagementSubpage
 
@@ -943,7 +929,8 @@ export default function RecordingEditor({
                         `[data-date-divider="${CSS.escape(day.key)}"]`
                       )
                       const target =
-                        divider || document.getElementById(`record-${day.first}`)
+                        divider ||
+                        document.getElementById(`record-${day.first}`)
                       target?.scrollIntoView({
                         block: "start",
                         behavior: "smooth",
@@ -1163,7 +1150,7 @@ export default function RecordingEditor({
       ref={mainRef}
       data-picking={!!picking}
       data-view={showTimeline ? "timeline" : "list"}
-      className="journal-workbench fixed inset-0 isolate overflow-hidden bg-journal-canvas text-journal-ink"
+      className="journal-workbench fixed inset-0 isolate overflow-hidden bg-map-land text-journal-ink"
       style={
         {
           "--journal-map-bottom":

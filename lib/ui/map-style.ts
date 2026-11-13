@@ -3,14 +3,15 @@ import type {
   StyleSpecification,
   VectorSourceSpecification,
 } from "maplibre-gl"
+import { periplusColors } from "./map-theme"
 
-// OpenMapTiles land-use classes share a warm palette with the journal surface.
+// Cool mineral-sage cartography separates the map ground from the warm paper workbench.
 export function journalMapStyle(style: StyleSpecification): StyleSpecification {
   const layers = style.layers.map((layer): LayerSpecification => {
     if (layer.type === "background")
       return {
         ...layer,
-        paint: { ...layer.paint, "background-color": "#f4f0e7" },
+        paint: { ...layer.paint, "background-color": periplusColors.mapLand },
       }
     if (layer.type === "fill") {
       if (layer.id === "landcover_wood")
@@ -29,30 +30,30 @@ export function journalMapStyle(style: StyleSpecification): StyleSpecification {
               "match",
               ["get", "class"],
               "wood",
-              "#ccdabc",
+              "#b0c9ae",
               "grass",
-              "#dfe8cf",
+              "#c7dac4",
               "farmland",
-              "#e8e1b9",
+              "#d3dec8",
               "wetland",
-              "#c8ded3",
+              "#b8d2cd",
               "sand",
-              "#f0dfb9",
+              "#ddd9cb",
               "rock",
-              "#ddd8d0",
-              "#ccdabc",
+              "#cbd3d0",
+              "#b0c9ae",
             ],
           },
         }
 
       const colors: Record<string, string> = {
-        park: "#dde5cf",
-        water: "#bcd8d8",
-        landcover_wood: "#ccdabc",
-        landuse_residential: "#ede7dc",
-        building: "#e5e0d5",
-        road_area_pier: "#f4f0e7",
-        "aeroway-area": "#fffaf3",
+        park: "#c2d6c0",
+        water: "#9fc3d2",
+        landcover_wood: "#b0c9ae",
+        landuse_residential: "#d4ddd9",
+        building: "#c6d1cd",
+        road_area_pier: periplusColors.mapLand,
+        "aeroway-area": "#e6ecea",
       }
       const color = colors[layer.id]
       return color
@@ -62,7 +63,7 @@ export function journalMapStyle(style: StyleSpecification): StyleSpecification {
               ...layer.paint,
               "fill-color": color,
               ...(layer.id === "building"
-                ? { "fill-outline-color": "#d4cdbf", "fill-opacity": 0.65 }
+                ? { "fill-outline-color": "#b3c0bb", "fill-opacity": 0.68 }
                 : {}),
             },
           }
@@ -73,31 +74,33 @@ export function journalMapStyle(style: StyleSpecification): StyleSpecification {
         (layer.id.includes("motorway") || layer.id.includes("major")) &&
         !layer.id.includes("casing")
           ? layer.id.includes("motorway")
-            ? "#e6bc69"
-            : "#edd08d"
+            ? "#dce6eb"
+            : "#f8faf9"
           : (layer.id.includes("motorway") || layer.id.includes("major")) &&
               layer.id.includes("casing")
-            ? "#cfb579"
+            ? layer.id.includes("motorway")
+              ? "#aebdc4"
+              : "#bcc8c3"
             : layer.id === "highway_minor"
-              ? "#fffdf7"
+              ? "#eef2f0"
               : layer.id === "highway_path"
-                ? "#c9c5bd"
+                ? "#b5c2bd"
                 : layer.id === "waterway"
-                  ? "#9ec4c9"
+                  ? "#83aebf"
                   : layer.id.startsWith("boundary")
-                    ? "#a69d8f"
+                    ? "#95a49f"
                     : layer.id.includes("casing")
-                      ? "#d7ccb9"
+                      ? "#bcc8c3"
                       : layer.id.includes("inner") ||
                           layer.id.includes("dashline")
-                        ? "#fffaf3"
+                        ? "#f8faf9"
                         : layer.id.startsWith("railway")
-                          ? "#bdb8ac"
+                          ? "#a8b6b1"
                           : layer.id === "road_pier"
-                            ? "#f4f0e7"
+                            ? periplusColors.mapLand
                             : layer.id.startsWith("highway") ||
                                 layer.id.startsWith("aeroway")
-                              ? "#ddd5c5"
+                              ? "#cdd7d3"
                               : undefined
       return color
         ? { ...layer, paint: { ...layer.paint, "line-color": color } }
@@ -108,8 +111,8 @@ export function journalMapStyle(style: StyleSpecification): StyleSpecification {
         ...layer,
         paint: {
           ...layer.paint,
-          "text-color": layer.id.startsWith("water") ? "#345c63" : "#474e43",
-          "text-halo-color": "#fffaf3",
+          "text-color": layer.id.startsWith("water") ? "#3d6878" : "#47524f",
+          "text-halo-color": "#eef2f0",
         },
       }
     }
@@ -157,7 +160,7 @@ export function journalMapStyle(style: StyleSpecification): StyleSpecification {
           "match",
           ["get", "class"],
           ["commercial", "retail"],
-          "#e3d8ec",
+          "#d8dce6",
           [
             "hospital",
             "school",
@@ -166,18 +169,18 @@ export function journalMapStyle(style: StyleSpecification): StyleSpecification {
             "kindergarten",
             "library",
           ],
-          "#f0d9de",
+          "#dfd6da",
           ["industrial", "railway"],
-          "#d8dfe5",
+          "#cfd8de",
           ["parking", "garages"],
-          "#e5e3de",
+          "#d5ddd9",
           "cemetery",
-          "#d7dfce",
+          "#c7d5c6",
           ["stadium", "pitch", "playground", "track"],
-          "#d1e3d3",
+          "#bed4c1",
           ["theme_park", "zoo"],
-          "#dce7cb",
-          "#ede7dc",
+          "#c5d8c2",
+          "#d4ddd9",
         ],
       },
     }

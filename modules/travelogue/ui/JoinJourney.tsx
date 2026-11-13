@@ -35,7 +35,7 @@ export function InvitationView({
   children?: ReactNode
 }) {
   return (
-    <main className="journal-workbench fixed inset-0 isolate flex items-center justify-center overflow-y-auto bg-cream px-5 py-6 text-ink">
+    <main className="journal-workbench fixed inset-0 isolate flex items-center justify-center overflow-y-auto bg-map-land px-5 py-6 text-ink">
       <div className="absolute inset-0">
         <RecordMap points={[]} />
       </div>
