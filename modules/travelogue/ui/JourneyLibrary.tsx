@@ -21,7 +21,9 @@ import useRecordingViewport from "./useRecordingViewport"
 import MapControls from "./workbench/MapControls"
 import { useConfirmation } from "./workbench/Modal"
 import PhotoViewer from "./workbench/PhotoViewer"
-import ResizableMapPanel, { mobileSheetHeight } from "./workbench/ResizableMapPanel"
+import ResizableMapPanel, {
+  mobileSheetHeight,
+} from "./workbench/ResizableMapPanel"
 
 const RecordMap = dynamic(() => import("./RecordMap"), { ssr: false })
 
@@ -143,7 +145,7 @@ export default function JourneyLibrary({
 
   return (
     <main
-      className="journal-workbench journal-library fixed inset-0 isolate overflow-hidden bg-journal-canvas text-journal-ink"
+      className="journal-workbench journal-library fixed inset-0 isolate overflow-hidden bg-map-land text-journal-ink"
       style={
         {
           "--journal-map-bottom": !desktop ? `${sheetHeight}px` : "0px",

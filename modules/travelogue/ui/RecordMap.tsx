@@ -443,7 +443,7 @@ export default function RecordMap({
     <div
       data-map-picking={picking}
       data-photo-mode={photoMode}
-      className="relative h-full min-h-72 w-full overflow-hidden bg-cream"
+      className="relative h-full min-h-72 w-full overflow-hidden bg-map-land"
     >
       <div
         ref={container}

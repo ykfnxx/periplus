@@ -12,7 +12,7 @@ export default function LandingGate() {
   const [mode, setMode] = useState<"entry" | "login" | "register">("entry")
   const reduced = useReducedMotion()
   return (
-    <main className="journal-workbench journal-entry fixed inset-0 isolate flex items-center justify-center bg-cream px-6 text-ink">
+    <main className="journal-workbench journal-entry fixed inset-0 isolate flex items-center justify-center bg-map-land px-6 text-ink">
       <div className="absolute inset-0">
         <RecordMap points={[]} />
       </div>
