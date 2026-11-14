@@ -9,7 +9,7 @@ import {
   getShareStatus,
   getSharePreview,
 } from "@/modules/data/sharing/share-service"
-import ShareManager from "@/modules/travelogue/sharing/ShareManager"
+import ShareManager from "@/modules/travelogue/react/ShareController"
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = {
   title: "分享旅程 · Periplus",
@@ -42,6 +42,7 @@ export default async function SharePage({
   const returnHref = `/journeys/${encodeURIComponent(id)}${event ? `?event=${encodeURIComponent(event)}` : ""}`
   return (
     <ShareManager
+      key={`${user.userId}:${id}`}
       journeyId={id}
       initialStatus={initial.status}
       initialPreview={initial.preview}

@@ -1,0 +1,119 @@
+@theme {
+  --font-sans: var(--font-inter), var(--font-noto), sans-serif;
+  --font-editorial:
+    "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", Georgia,
+    serif;
+
+  /* 色板与 lib/ui/map-theme.ts 中的 JS 常量一一对应，改色需双改 */
+  --color-cream: #f5e6d3;
+  --color-soft-white: #fffaf3;
+  --color-white: #fff;
+  --color-ink: #2c2416;
+  --color-russet: #d97642;
+  --color-action: #1f1c18;
+  --color-action-hover: #353028;
+  --color-mustard: #d4a574;
+  --color-olive: #4a7c59;
+  --color-walnut: #6b5d4f;
+  --color-teak: #765f45;
+  --color-bluegray: #4f6d79;
+  --color-coral: #a84643;
+  --color-map-land: #dfe6e3;
+  --color-map-marker: #984527;
+  --color-map-route: #9f4308;
+  --color-route-blue: #5fb7ff;
+  --color-route-blue-soft: #edf3f5;
+  --color-route-blue-pending: #9dd8ff;
+  --color-route-summary: #dce5d2;
+  --color-selected-soft: #fff4ea;
+  --color-marker-orange: #ff8a4c;
+  --color-marker-mint: #48c9a9;
+  --color-marker-yellow: #ffd166;
+  --color-marker-violet: #a78bfa;
+  --color-marker-coral: #ef6f6c;
+  --color-marker-sky: #3b82f6;
+  --color-marker-lime: #65a30d;
+  --color-marker-pink: #db5f9a;
+  --color-marker-indigo: #6366f1;
+  --color-marker-turquoise: #0d9488;
+
+  /* ink 标准 alpha 档：描边/底色用 5/10/15，更深的蒙层用 20/30/40/70 */
+  --color-ink-5: rgb(31 28 24 / 5%);
+  --color-ink-10: rgb(31 28 24 / 10%);
+  --color-ink-15: rgb(31 28 24 / 15%);
+  --color-ink-20: rgb(31 28 24 / 20%);
+  --color-ink-30: rgb(31 28 24 / 30%);
+  --color-ink-40: rgb(31 28 24 / 40%);
+  --color-ink-70: rgb(31 28 24 / 70%);
+
+  /* 温润宣纸工作台色板（与冷雾青灰地图拉开冷暖和明度层级） */
+  --color-journal-canvas: #faf8f3;
+  --color-journal-canvas-recess: #eee9df;
+  --color-journal-canvas-line: #d8d1c4;
+  --color-journal-card: #fff;
+  --color-journal-chip: #f3efe6;
+  --color-journal-paper: #fff;
+  --color-journal-paper-glass: rgb(250 248 243 / 96%);
+  --color-journal-paper-line: #e7e1d6;
+  --color-journal-paper-soft: #f5f2eb;
+  --color-journal-paper-muted: #696258;
+  --color-journal-ink: #1f1c18;
+  --color-journal-muted: #696258;
+  --color-journal-line: #e7e1d6;
+  --color-journal-soft: #eee9df;
+  --color-journal-selected: #fcfaf6;
+  --color-journal-accent: #984527;
+  --color-journal-glass: rgb(255 255 255 / 96%);
+  --color-journal-amber: #984527;
+  --color-journal-tag: #f3efe6;
+  --color-journal-tag-line: #e7e1d6;
+  --color-journal-tag-ink: #1f1c18;
+
+  /* 浅蓝交通卡片独立色板 */
+  --color-journal-transit: #ecf4f9;
+  --color-journal-transit-line: #cbe0ee;
+  --color-journal-transit-chip: #f7fbfd;
+  --color-journal-transit-chip-line: #cbe0ee;
+  --color-journal-transit-ink: #1e3240;
+  --color-journal-transit-muted: #587285;
+  --color-journal-transit-note: #3b5568;
+  --color-journal-transit-accent: #2d6284;
+  --color-journal-transit-selected: #2d6284;
+
+  /* 暗场观片台 */
+  --color-photo-stage: #141210;
+  --color-photo-line: rgb(255 255 255 / 20%);
+  --color-photo-overlay: rgb(20 18 16 / 68%);
+
+  --shadow-journal-card:
+    0 2px 8px rgb(31 28 24 / 4%), 0 1px 2px rgb(31 28 24 / 2%);
+  --shadow-journal-card-selected:
+    0 6px 18px rgb(152 69 39 / 12%), 0 1px 3px rgb(152 69 39 / 7%);
+  --shadow-journal-transit-selected:
+    0 6px 18px rgb(45 98 132 / 15%), 0 1px 3px rgb(45 98 132 / 9%);
+  --shadow-photo-paper:
+    0 3px 5px rgb(0 0 0 / 12%), 0 10px 20px rgb(0 0 0 / 18%);
+  --shadow-journal:
+    0 20px 44px -16px rgb(24 32 30 / 22%), 0 2px 8px rgb(24 32 30 / 8%);
+  --shadow-periplus: 0 18px 42px var(--color-ink-15);
+  --shadow-periplus-soft: 0 12px 24px var(--color-ink-15);
+  --shadow-periplus-sheet: 0 -16px 40px var(--color-ink-15);
+}
+
+:root,
+[data-theme="kumo"] {
+  --color-kumo-brand: var(--color-action);
+  --color-kumo-brand-hover: var(--color-action-hover);
+  --color-kumo-base: var(--color-journal-card);
+  --color-kumo-elevated: var(--color-journal-card);
+  --color-kumo-recessed: var(--color-journal-paper-soft);
+  --color-kumo-tint: var(--color-journal-paper-soft);
+  --color-kumo-line: var(--color-journal-line);
+  --color-kumo-hairline: var(--color-journal-line);
+  --color-kumo-focus: var(--color-journal-amber);
+  --text-color-kumo-default: var(--color-journal-ink);
+  --text-color-kumo-subtle: var(--color-journal-muted);
+  --text-color-kumo-strong: var(--color-journal-ink);
+  --text-color-kumo-brand: var(--color-journal-amber);
+  --text-color-kumo-danger: var(--color-coral);
+}

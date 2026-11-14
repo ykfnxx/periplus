@@ -47,8 +47,8 @@ function contrastRatio(foreground: string, background: string, alpha = 1) {
 }
 
 describe("journal workbench and map palette", () => {
-  it("keeps periplusColors in sync with app/globals.css @theme tokens", () => {
-    const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8")
+  it("keeps periplusColors in sync with styles/theme.css @theme tokens", () => {
+    const css = readFileSync(resolve(process.cwd(), "styles/theme.css"), "utf8")
     for (const [key, expected] of Object.entries(periplusColors)) {
       const token = `--color-${toKebabCase(key)}`
       const match = css.match(new RegExp(`${token}:\\s*([^;]+);`))

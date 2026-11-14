@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/modules/auth/server/context"
-import JoinJourney from "@/modules/travelogue/ui/JoinJourney"
+import JoinJourney from "@/modules/travelogue/react/JoinJourneyController"
 
 export default async function JoinPage({
   params,

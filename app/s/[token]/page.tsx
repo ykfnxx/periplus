@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { getPublicShare } from "@/modules/data/sharing/share-service"
 import { periplusServerConfig } from "@/config/periplus.server"
-import SharedJourneyDocument from "@/modules/travelogue/sharing/SharedJourneyDocument"
+import SharedJourneyDocument from "@/modules/travelogue/ui/sharing/SharedJourneyDocument"
 export const dynamic = "force-dynamic"
 const load = cache(getPublicShare)
 type Params = { params: Promise<{ token: string }> }

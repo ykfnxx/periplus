@@ -1,53 +1,41 @@
 "use client"
-import { useState } from "react"
+import type { Dispatch, SetStateAction } from "react"
 import Link from "next/link"
 import { Button } from "@/components/kumo/components/button/button"
 import { Select } from "@/components/kumo/components/select/select"
 import { AGENT_SCOPES, type AgentScope } from "../contracts"
-
 const labels: Record<AgentScope, string> = {
   "journey:read": "读取旅程",
   "journey:write": "编辑旅程与照片",
   "photos:upload": "上传图片",
 }
 export default function AuthorizeForm({
-  oauthQuery,
   clientName,
   clientOrigin,
   account,
   journeys,
   requestedScopes,
+  journeyId,
+  scopes,
+  busy,
+  error,
+  setJourneyId,
+  setScopes,
+  respond,
 }: {
-  oauthQuery: string
   clientName: string
   clientOrigin: string
   account: string
   journeys: { id: string; title: string }[]
   requestedScopes: string[]
+  journeyId: string
+  scopes: AgentScope[]
+  busy: boolean
+  error: string | null
+  setJourneyId: (id: string) => void
+  setScopes: Dispatch<SetStateAction<AgentScope[]>>
+  respond: (accept: boolean) => void
 }) {
-  const [journeyId, setJourneyId] = useState(journeys[0]?.id || "")
-  const [scopes, setScopes] = useState<AgentScope[]>(
-    AGENT_SCOPES.filter((scope) => requestedScopes.includes(scope))
-  )
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  async function respond(accept: boolean) {
-    setBusy(true)
-    setError(null)
-    try {
-      const response = await fetch("/api/agent/authorize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ oauthQuery, accept, journeyId, scopes }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error)
-      window.location.assign(result.url)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "授权未完成，请重试。")
-      setBusy(false)
-    }
-  }
   return (
     <main className="journal-workbench min-h-dvh bg-cream px-5 py-10 text-ink">
       <section className="mx-auto max-w-md space-y-6 rounded-2xl bg-soft-white p-6 shadow-periplus">

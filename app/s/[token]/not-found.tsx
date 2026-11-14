@@ -1,4 +1,4 @@
-import "@/modules/travelogue/sharing/sharing.css"
+import "@/modules/travelogue/ui/sharing/sharing.css"
 export default function UnavailableShare() {
   return (
     <main className="share-page">

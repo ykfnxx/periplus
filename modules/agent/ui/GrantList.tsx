@@ -1,54 +1,21 @@
 "use client"
-import { useState } from "react"
 import { Button } from "@/components/kumo/components/button/button"
-
-type Grant = {
-  id: string
-  clientName: string
-  userName: string
-  scopes: string[]
-  expiresAt: string
-  revokedAt: string | null
-  lastUsedAt: string | null
-}
+import type { AgentGrant } from "../ports"
 export default function GrantList({
-  journeyId,
-  grants: initial,
+  grants,
+  now,
   resource,
+  busy,
+  error,
+  revoke,
 }: {
-  journeyId: string
-  grants: Grant[]
+  grants: AgentGrant[]
+  now: number
   resource: string
+  busy: string | null
+  error: string | null
+  revoke: (id: string) => void
 }) {
-  const [grants, setGrants] = useState(initial)
-  const [now] = useState(Date.now)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  async function revoke(id: string) {
-    setBusy(id)
-    setError(null)
-    try {
-      const response = await fetch(
-        `/api/journeys/${encodeURIComponent(journeyId)}/agent-grants/${encodeURIComponent(id)}`,
-        { method: "DELETE" }
-      )
-      if (!response.ok) {
-        const body = await response.json()
-        throw new Error(body.error)
-      }
-      setGrants((current) =>
-        current.map((grant) =>
-          grant.id === id
-            ? { ...grant, revokedAt: new Date().toISOString() }
-            : grant
-        )
-      )
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "撤销失败，请重试。")
-    } finally {
-      setBusy(null)
-    }
-  }
   return (
     <div className="space-y-6">
       <div className="space-y-2">
