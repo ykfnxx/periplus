@@ -79,3 +79,57 @@ it("rejects application access to concrete database modules", () => {
     )
   )
 })
+
+it.each([
+  ["components/kumo/button.ts", "modules/travelogue/application/save.ts"],
+  ["modules/agent/ui/card.ts", "modules/agent/ports.ts"],
+  [
+    "modules/travelogue/server/save.ts",
+    "modules/travelogue/application/save.ts",
+  ],
+  [
+    "modules/travelogue/server/save.ts",
+    "modules/travelogue/react/controller.ts",
+  ],
+  ["modules/travelogue/ports.ts", "modules/travelogue/adapters/http.ts"],
+])("rejects forbidden edges from %s to %s", (source, target) => {
+  const root = fixture({
+    [source]: `import "@/${target.slice(0, -3)}"`,
+    [target]: "export const value = 1",
+  })
+  expect(checkFrontendBoundaries(root)).toContainEqual(
+    expect.stringContaining(`${source} reaches ${target}`)
+  )
+})
+it("distinguishes browser globals from ordinary fields and local bindings", () => {
+  const root = fixture({
+    "modules/travelogue/application/view.ts": `export function view(document: {window: string}) {
+      const payload = {document, window: document.window}; return payload.document
+    }`,
+    "modules/travelogue/model/window.ts": `export type Snapshot = {document: string; window: string}`,
+  })
+  expect(checkFrontendBoundaries(root)).toEqual([])
+})
+it("rejects qualified global browser access", () => {
+  const root = fixture({
+    "modules/travelogue/application/view.ts": "globalThis.fetch('/api')",
+  })
+  expect(checkFrontendBoundaries(root)).toContainEqual(
+    expect.stringContaining("fetch crosses the business boundary")
+  )
+})
+
+it.each([
+  ["components/ui/button.ts", "modules/travelogue/contracts.ts"],
+  ["app/api/journeys/route.ts", "modules/travelogue/ui/card.ts"],
+  ["app/ui-preview/gallery.ts", "modules/travelogue/adapters/http.ts"],
+])("rejects reverse or preview boundary from %s to %s", (source, target) => {
+  expect(
+    checkFrontendBoundaries(
+      fixture({
+        [source]: `import "@/${target.slice(0, -3)}"`,
+        [target]: "export const data = 1",
+      })
+    )
+  ).toContainEqual(expect.stringContaining(`${source} reaches ${target}`))
+})

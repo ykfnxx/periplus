@@ -32,7 +32,12 @@ export default function JourneyLibraryPage({
       {...state}
       developerMode={developerMode}
       account={account?.user}
-      draftEntry={<DraftEntry userId={userId} journeys={state.journeys} />}
+      draftEntry={
+        <DraftEntry
+          userId={userId}
+          journeys={state.loading || state.error ? undefined : state.journeys}
+        />
+      }
       onSignOut={async () => {
         await authApi.signOut()
         window.location.assign("/")

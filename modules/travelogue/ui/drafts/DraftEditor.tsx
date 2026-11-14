@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Modal, useConfirmation } from "@/components/ui/Modal"
 import EventComposer from "../events/EventComposer"
+import EditorShell from "../events/EditorShell"
 import type { DraftJourney, LocalDraft } from "../../model/local-draft"
 export default function DraftEditor({
   draft,
@@ -42,123 +43,122 @@ export default function DraftEditor({
   const { ask, confirmation } = useConfirmation()
   const committed = Boolean(draft.eventId || draft.pending)
   const content = (
-    <>
-      <header className="journal-subpage-header sticky top-0 z-10">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          onClick={() => void closeInline()}
-        >
-          <ArrowLeft size={16} />
-          返回
-        </Button>
-        <div className="flex items-center gap-2">
-          <span role="status" className="text-xs text-journal-muted">
-            {busy ? "正在提交…" : status || "草稿"}
-          </span>
+    <EditorShell
+      label="添加记录"
+      header={
+        <>
           <Button
-            variant="primary"
+            variant="ghost"
             size="sm"
-            loading={busy}
-            onClick={() => void publish()}
+            disabled={busy}
+            onClick={() => void closeInline()}
           >
-            {draft.pending
-              ? "确认提交结果"
-              : draft.eventId
-                ? "继续上传照片"
-                : "加入游记"}
+            <ArrowLeft size={16} />
+            返回
           </Button>
-        </div>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {(!inline || journeys.length > 1 || error) && (
-          <div className="space-y-2 px-4 pt-3">
-            {(!inline || journeys.length > 1) && (
-              <label className="block text-xs font-medium text-journal-muted">
-                目标游记
-                <select
-                  aria-label="目标游记"
-                  value={draft.journey.id}
-                  disabled={busy}
-                  className="mt-1 block min-h-10 w-full rounded-xl border border-journal-line bg-journal-card px-3 text-sm text-journal-ink"
-                  onChange={async (event) => {
-                    const journey = journeys.find(
-                      (item) => item.id === event.target.value
-                    )!
-                    if (
-                      committed &&
-                      !(await ask(
-                        "原游记可能已保存这条记录。改选后会在另一篇游记新建记录。",
-                        {
-                          title: "改存到其他游记？",
-                          cancelLabel: "保留原目标",
-                          confirmLabel: "改存",
-                        }
-                      ))
-                    )
-                      return
-                    update({
-                      ...draft,
-                      journey,
-                      eventId: undefined,
-                      pending: undefined,
-                      complete: undefined,
-                    })
-                  }}
-                >
-                  {!journeys.some((item) => item.id === draft.journey.id) && (
-                    <option value={draft.journey.id}>
-                      {draft.journey.title}
-                    </option>
-                  )}
-                  {journeys.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {error && (
-              <p role="alert" className="text-sm text-coral">
-                {error}{" "}
-                {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Full navigation rechecks authentication outside the offline shell. */}
-                <a href="/" className="underline">
-                  登录
-                </a>
-              </p>
-            )}
+          <div className="flex items-center gap-2">
+            <span role="status" className="text-xs text-journal-muted">
+              {busy ? "正在提交…" : status || "草稿"}
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={busy}
+              onClick={() => void publish()}
+            >
+              {draft.pending
+                ? "确认提交结果"
+                : draft.eventId
+                  ? "继续上传照片"
+                  : "加入游记"}
+            </Button>
           </div>
-        )}
-        <EventComposer
-          draft={draft.content}
-          files={draft.photos.map((photo) => photo.file)}
-          photos={[]}
-          uploads={[]}
-          busy={busy || committed}
-          filesBusy={busy || Boolean(draft.pending)}
-          canPickLocation={canPick}
-          onChange={(content) => update({ ...draft, content })}
-          onFiles={onFiles}
-          onPickTransitLocation={
-            canPick ? (which) => void pickEndpoint(which) : undefined
-          }
-          onPickLocation={pick}
-        />
-      </div>
-    </>
+        </>
+      }
+    >
+      {(!inline || journeys.length > 1 || error) && (
+        <div className="space-y-2 px-4 pt-3">
+          {(!inline || journeys.length > 1) && (
+            <label className="block text-xs font-medium text-journal-muted">
+              目标游记
+              <select
+                aria-label="目标游记"
+                value={draft.journey.id}
+                disabled={busy}
+                className="mt-1 block min-h-10 w-full rounded-xl border border-journal-line bg-journal-card px-3 text-sm text-journal-ink"
+                onChange={async (event) => {
+                  const journey = journeys.find(
+                    (item) => item.id === event.target.value
+                  )!
+                  if (
+                    committed &&
+                    !(await ask(
+                      "原游记可能已保存这条记录。改选后会在另一篇游记新建记录。",
+                      {
+                        title: "改存到其他游记？",
+                        cancelLabel: "保留原目标",
+                        confirmLabel: "改存",
+                      }
+                    ))
+                  )
+                    return
+                  update({
+                    ...draft,
+                    journey,
+                    eventId: undefined,
+                    pending: undefined,
+                    complete: undefined,
+                  })
+                }}
+              >
+                {!journeys.some((item) => item.id === draft.journey.id) && (
+                  <option value={draft.journey.id}>
+                    {draft.journey.title}
+                  </option>
+                )}
+                {journeys.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-coral">
+              {error}{" "}
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Full navigation rechecks authentication outside the offline shell. */}
+              <a href="/" className="underline">
+                登录
+              </a>
+            </p>
+          )}
+        </div>
+      )}
+      <EventComposer
+        draft={draft.content}
+        files={draft.photos.map((photo) => photo.file)}
+        photos={[]}
+        uploads={[]}
+        busy={busy || committed}
+        filesBusy={busy || Boolean(draft.pending)}
+        canPickLocation={canPick}
+        onChange={(content) => update({ ...draft, content })}
+        onFiles={onFiles}
+        onPickTransitLocation={
+          canPick ? (which) => void pickEndpoint(which) : undefined
+        }
+        onPickLocation={pick}
+      />
+    </EditorShell>
   )
 
   if (inline)
     return (
-      <section
-        className="journal-subpage journal-composer"
-        aria-label="添加记录"
-      >
+      <>
         {content}
         {confirmation}
-      </section>
+      </>
     )
 
   return (

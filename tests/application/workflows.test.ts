@@ -275,3 +275,22 @@ describe("business workflows without React or DOM", () => {
     expect(await invitation.accept()).toEqual({ kind: "login" })
   })
 })
+
+it("does not revive a disposed journey when a draft completion calls load", async () => {
+  const get = vi.fn().mockResolvedValue(journey)
+  const command = vi.fn()
+  const store = createRecordingStore(journey.id, apiWith({ get, command }))
+  await store.getState().load()
+  store.getState().dispose()
+  await store.getState().load()
+  expect(get).toHaveBeenCalledOnce()
+  await expect(
+    store
+      .getState()
+      .mutate({ name: "journey.update", patch: { title: "late" } })
+  ).rejects.toThrow("已关闭")
+  expect(command).not.toHaveBeenCalled()
+  store.getState().activate()
+  await store.getState().load()
+  expect(get).toHaveBeenCalledTimes(2)
+})

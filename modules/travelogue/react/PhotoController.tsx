@@ -18,7 +18,8 @@ export default function PhotoController({
   onClose: () => void
   subpage?: boolean
 }) {
-  const { journey, uploads } = useStore(store)
+  const journey = useStore(store, (state) => state.journey)
+  const uploads = useStore(store, (state) => state.uploads)
   const actions = useMemo(
     () => createPhotoActions(store, eventId),
     [store, eventId]

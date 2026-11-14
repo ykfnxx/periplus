@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla"
-import type { AgentAccessApi, AgentGrant } from "../ports"
+import type { AgentAccessApi } from "../ports"
+import type { AgentGrant } from "../contracts"
 export function createGrantSession(
   journeyId: string,
   grants: AgentGrant[],

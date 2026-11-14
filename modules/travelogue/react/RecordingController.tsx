@@ -1,6 +1,7 @@
 "use client"
 import { useMemo, type ComponentProps } from "react"
 import { useStore } from "zustand"
+import { useShallow } from "zustand/react/shallow"
 import type { RecordingStore } from "../application/recording-session"
 import { createRecordingActions } from "../application/recording-actions"
 import { createReceiptActions } from "../application/receipts"
@@ -22,7 +23,20 @@ export default function RecordingController({
   ComponentProps<typeof RecordingWorkbench>,
   "snapshot" | "actions" | "panels" | "draftEntry"
 > & { userId: string; store: RecordingStore }) {
-  const snapshot = useStore(store)
+  const snapshot = useStore(
+    store,
+    useShallow(
+      ({ journey, weather, loading, error, conflict, saving, uploads }) => ({
+        journey,
+        weather,
+        loading,
+        error,
+        conflict,
+        saving,
+        uploads,
+      })
+    )
+  )
   const actions = useMemo(() => createRecordingActions(store), [store])
   const panels = useMemo<RecordingPanels>(() => {
     const receipts = createReceiptActions(store)

@@ -25,3 +25,13 @@ export class AgentAuthorizationError extends Error {
     super(message)
   }
 }
+
+export interface AgentGrant {
+  id: string
+  clientName: string
+  userName: string
+  scopes: string[]
+  expiresAt: string
+  revokedAt: string | null
+  lastUsedAt: string | null
+}
