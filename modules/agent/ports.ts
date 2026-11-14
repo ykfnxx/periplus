@@ -8,12 +8,3 @@ export interface AgentAccessApi {
   }): Promise<{ url: string }>
   revoke(journeyId: string, grantId: string): Promise<void>
 }
-export interface AgentGrant {
-  id: string
-  clientName: string
-  userName: string
-  scopes: string[]
-  expiresAt: string
-  revokedAt: string | null
-  lastUsedAt: string | null
-}

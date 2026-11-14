@@ -1,9 +1,5 @@
 import type { RecordingStore } from "./recording-session"
-import {
-  eventContent,
-  eventContentPatch,
-  type EventDraft,
-} from "../model/event-draft"
+import { eventContentPatch, type EventDraft } from "../model/event-draft"
 
 export async function saveEvent(
   store: RecordingStore,
@@ -11,28 +7,13 @@ export async function saveEvent(
     draft: EventDraft
     saved: EventDraft
     files: File[]
-    eventId: string | null
-    afterEventId: string | null
+    eventId: string
     saveKey: string
   }
 ) {
-  const { draft, saved, files, eventId, afterEventId, saveKey } = input
+  const { draft, saved, files, eventId, saveKey } = input
   const normalized: EventDraft =
     draft.category === "TRANSIT" ? { ...draft, title: "" } : draft
-  if (
-    !eventId &&
-    !normalized.body.trim() &&
-    !normalized.title.trim() &&
-    !files.length &&
-    !normalized.location &&
-    !(
-      normalized.category === "TRANSIT" &&
-      normalized.transit?.fromName?.trim() &&
-      normalized.transit?.toName?.trim()
-    )
-  ) {
-    throw new Error("写下一句话，选几张照片，或在地图上选个地点。")
-  }
   if (!normalized.date) {
     throw new Error("请选择事件日期。")
   }
@@ -51,41 +32,10 @@ export async function saveEvent(
     throw new Error("结束时间不能早于开始时间，请确认到达日期。")
   }
   const changes = eventContentPatch(normalized, saved)
-  const result =
-    eventId && Object.keys(changes).length === 0
-      ? { journey: store.getState().journey!, eventId }
-      : await store.getState().mutate(
-          eventId
-            ? { name: "event.update", eventId, patch: changes }
-            : {
-                name: "event.add",
-                afterEventId: afterEventId,
-                content: normalized,
-              },
-          eventId ? undefined : saveKey
-        )
-  const id = eventId || result.eventId!
-  const persisted = result.journey.events.find((event) => event.id === id)
-  const persistedDraft = persisted && eventContent(persisted)
-  if (
-    persistedDraft &&
-    Object.entries(eventId ? changes : normalized).some(([key, value]) => {
-      const stored = persistedDraft[key as keyof EventDraft]
-      return value && typeof value === "object" && key === "transit"
-        ? Object.entries(value).some(
-            ([field, next]) =>
-              JSON.stringify(
-                (stored as Record<string, unknown> | null)?.[field]
-              ) !== JSON.stringify(next)
-          )
-        : JSON.stringify(stored) !== JSON.stringify(value)
-    })
-  )
-    await store.getState().mutate({
-      name: "event.update",
-      eventId: id,
-      patch: eventId ? changes : normalized,
-    })
-  if (files.length) store.getState().addFiles(id, files)
-  return { id, draft: normalized }
+  if (Object.keys(changes).length > 0)
+    await store
+      .getState()
+      .mutate({ name: "event.update", eventId, patch: changes }, saveKey)
+  if (files.length) store.getState().addFiles(eventId, files)
+  return { id: eventId, draft: normalized }
 }

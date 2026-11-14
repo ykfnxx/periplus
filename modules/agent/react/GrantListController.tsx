@@ -2,7 +2,7 @@
 import { useState, useSyncExternalStore } from "react"
 import { agentAccessApi } from "../adapters/access-http"
 import { createGrantSession } from "../application/access"
-import type { AgentGrant } from "../ports"
+import type { AgentGrant } from "../contracts"
 import GrantList from "../ui/GrantList"
 export default function GrantListController({
   journeyId,

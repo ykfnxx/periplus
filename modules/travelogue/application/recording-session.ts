@@ -32,6 +32,9 @@ interface RecordingState {
     error: string | null
   }
   loadDirectory: () => Promise<void>
+  activate: () => void
+  pendingMutation: boolean
+  confirmPending: () => Promise<JourneyMutationResult | null>
   load: () => Promise<void>
   mutate: (
     command: CommandInput,
@@ -59,7 +62,16 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
 
   const store = createStore<RecordingState>((set, get) => ({
     directory: { journeys: [], loading: true, error: null },
+    activate: () => {
+      disposed = false
+    },
+    pendingMutation: false,
+    confirmPending: () =>
+      unconfirmed
+        ? get().mutate(unconfirmed.command, unconfirmed.idempotencyKey)
+        : Promise.resolve(null),
     loadDirectory: async () => {
+      if (disposed) return
       const generation = ++directoryGeneration
       set({ directory: { ...get().directory, loading: true, error: null } })
       try {
@@ -91,13 +103,16 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
     },
     recognizeReceipt: (assetId) => api.extractReceipt(assetId),
     load: async () => {
-      disposed = false
+      if (disposed) return
       const generation = ++loadGeneration
       set({ loading: true, error: null })
       try {
         const journey = await api.get(journeyId)
         if (!disposed && generation === loadGeneration) {
-          unconfirmed = null
+          if (unconfirmed) {
+            set({ loading: false })
+            return
+          }
           acceptJourney(journey)
           set({ loading: false, conflict: false })
         }
@@ -123,6 +138,8 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
             const previous = unconfirmed
             const result = await api.command(journeyId, previous)
             unconfirmed = null
+            set({ pendingMutation: false })
+            if (disposed) throw new Error("旅程页面已关闭。")
             acceptJourney(result.journey)
             if (previous.idempotencyKey === idempotencyKey) return result
           }
@@ -134,8 +151,11 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
             idempotencyKey,
             command,
           }
+          set({ pendingMutation: true })
           const result = await api.command(journeyId, unconfirmed)
           unconfirmed = null
+          set({ pendingMutation: false })
+          if (disposed) throw new Error("旅程页面已关闭。")
           acceptJourney(result.journey)
           return result
         } catch (cause) {
@@ -143,8 +163,10 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
             get().conflict ||
             (cause instanceof RecordingApiError &&
               cause.code === "REVISION_CONFLICT")
-          if (cause instanceof RecordingApiError && cause.status < 500)
+          if (cause instanceof RecordingApiError && cause.status < 500) {
             unconfirmed = null
+            set({ pendingMutation: false })
+          }
           const message = conflict
             ? "这份记录已在别处修改。请刷新最新版本后再保存，当前输入仍保留。"
             : cause instanceof Error

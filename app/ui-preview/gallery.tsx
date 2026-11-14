@@ -58,7 +58,7 @@ export default function PreviewGallery() {
           )}
         </select>
       </nav>
-      <Scene key={scene} variant={variant} />
+      <Scene key={`${scene}:${variant}`} variant={variant} />
     </>
   )
 }

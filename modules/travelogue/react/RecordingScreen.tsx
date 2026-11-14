@@ -46,6 +46,7 @@ export default function RecordingPage({
   const [store] = useState(() => createRecordingStore(journeyId, recordingApi))
   const directory = useStore(store, (state) => state.directory)
   useEffect(() => {
+    store.getState().activate()
     void store.getState().load()
     void store.getState().loadDirectory()
     return () => store.getState().dispose()

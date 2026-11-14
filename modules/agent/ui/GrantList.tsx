@@ -1,6 +1,6 @@
 "use client"
 import { Button } from "@/components/kumo/components/button/button"
-import type { AgentGrant } from "../ports"
+import type { AgentGrant } from "../contracts"
 export default function GrantList({
   grants,
   now,
