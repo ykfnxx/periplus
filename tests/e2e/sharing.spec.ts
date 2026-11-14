@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { setTimeout as delay } from "node:timers/promises"
 import { expect, test } from "@playwright/test"
 import type {
   JourneySnapshot,
@@ -10,6 +11,8 @@ test("anonymous photos cannot bypass share revocation through the image optimize
   browser,
   baseURL,
 }) => {
+  // Prior browser flows create multiple accounts in the production rate window.
+  await delay(11_000)
   const signup = await request.post("/api/auth/sign-up/email", {
     headers: { Origin: baseURL! },
     data: {
