@@ -20,7 +20,7 @@ export const periplusColors = {
   coral: "#a84643",
   mapLand: "#dfe6e3",
   mapMarker: "#984527",
-  mapRoute: "#df6516",
+  mapRoute: "#9f4308",
   routeBlue: "#5fb7ff",
   journalCanvas: "#faf8f3",
   journalCanvasRecess: "#eee9df",
@@ -43,8 +43,8 @@ export const periplusColors = {
   journalTransitInk: "#1e3240",
   journalTransitMuted: "#587285",
   journalTransitNote: "#3b5568",
-  journalTransitAccent: "#36698a",
-  journalTransitSelected: "#36698a",
+  journalTransitAccent: "#2d6284",
+  journalTransitSelected: "#2d6284",
   photoStage: "#141210",
 } as const
 
