@@ -24,7 +24,7 @@
   --color-coral: #a84643;
   --color-map-land: #dfe6e3;
   --color-map-marker: #984527;
-  --color-map-route: #df6516;
+  --color-map-route: #9f4308;
   --color-route-blue: #5fb7ff;
   --color-route-blue-soft: #edf3f5;
   --color-route-blue-pending: #9dd8ff;
@@ -81,8 +81,8 @@
   --color-journal-transit-ink: #1e3240;
   --color-journal-transit-muted: #587285;
   --color-journal-transit-note: #3b5568;
-  --color-journal-transit-accent: #36698a;
-  --color-journal-transit-selected: #36698a;
+  --color-journal-transit-accent: #2d6284;
+  --color-journal-transit-selected: #2d6284;
 
   /* 暗场观片台 */
   --color-photo-stage: #141210;
@@ -94,7 +94,7 @@
   --shadow-journal-card-selected:
     0 6px 18px rgb(152 69 39 / 12%), 0 1px 3px rgb(152 69 39 / 7%);
   --shadow-journal-transit-selected:
-    0 6px 18px rgb(54 105 138 / 15%), 0 1px 3px rgb(54 105 138 / 9%);
+    0 6px 18px rgb(45 98 132 / 15%), 0 1px 3px rgb(45 98 132 / 9%);
   --shadow-photo-paper:
     0 3px 5px rgb(0 0 0 / 12%), 0 10px 20px rgb(0 0 0 / 18%);
   --shadow-journal:
