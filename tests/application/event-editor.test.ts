@@ -89,7 +89,7 @@ it("confirms a lost save response with one revision, queues files once, and rota
   expect(addFiles).not.toHaveBeenCalled()
   // Reading the journey cannot discard an uncertain command.
   await store.getState().load()
-  expect(store.getState().pendingMutation).toBe(true)
+  expect(store.getState().pendingMutationKey).toBeTruthy()
   editor.change({ ...editor.getState().draft, title: "确认期间的新输入" })
   await editor.confirmPending()
   expect(remote.events[0].title).toBe("午餐")
@@ -131,4 +131,54 @@ it("rebases edited fields while retaining fresh server fields and selected files
   })
   expect(editor.getState().saved.body).toBe("原文")
   expect(editor.getState().files).toEqual([file])
+})
+
+it("does not mistake another queued operation's uncertain response for this editor's save", async () => {
+  const command = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("response lost"))
+    .mockRejectedValueOnce(new Error("still offline"))
+    .mockResolvedValueOnce({
+      journey: { ...initial, revision: 2 },
+      replayed: true,
+    })
+    .mockResolvedValueOnce({
+      journey: {
+        ...initial,
+        revision: 3,
+        events: [{ ...initial.events[0], body: "本次修改" }],
+      },
+      replayed: false,
+    })
+  const store = createRecordingStore("journey", {
+    get: async () => initial,
+    command,
+    weather: async () => ({ journeyId: "journey", revision: 1, events: [] }),
+  } as unknown as RecordingApi)
+  await store.getState().load()
+  await expect(
+    store
+      .getState()
+      .mutate(
+        { name: "journey.update", patch: { description: "另一项修改" } },
+        "other-intent"
+      )
+  ).rejects.toThrow()
+  const editor = createEventEditor(
+    store,
+    "event",
+    eventContent(initial.events[0])
+  )
+  editor.change({ ...editor.getState().draft, body: "本次修改" })
+  await editor.save()
+  expect(editor.getState().pending).toBe(false)
+  await editor.save()
+  expect(command).toHaveBeenCalledTimes(4)
+  expect(command.mock.calls[2][1].idempotencyKey).toBe("other-intent")
+  expect(command.mock.calls[3][1].command).toEqual({
+    name: "event.update",
+    eventId: "event",
+    patch: { body: "本次修改" },
+  })
+  expect(editor.getState().saved.body).toBe("本次修改")
 })

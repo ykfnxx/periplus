@@ -48,7 +48,7 @@ export function createEventEditor(
       return result.id
     } catch (cause) {
       state.setState({
-        pending: store.getState().pendingMutation,
+        pending: store.getState().pendingMutationKey === saveKey,
         error:
           cause instanceof Error
             ? cause.message
@@ -79,7 +79,7 @@ export function createEventEditor(
       return eventId
     } catch (cause) {
       state.setState({
-        pending: store.getState().pendingMutation,
+        pending: store.getState().pendingMutationKey === saveKey,
         error: cause instanceof Error ? cause.message : "确认失败，请重试。",
       })
     } finally {
