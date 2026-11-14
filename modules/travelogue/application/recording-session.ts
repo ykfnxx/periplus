@@ -33,7 +33,7 @@ interface RecordingState {
   }
   loadDirectory: () => Promise<void>
   activate: () => void
-  pendingMutation: boolean
+  pendingMutationKey: string | null
   confirmPending: () => Promise<JourneyMutationResult | null>
   load: () => Promise<void>
   mutate: (
@@ -65,7 +65,7 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
     activate: () => {
       disposed = false
     },
-    pendingMutation: false,
+    pendingMutationKey: null,
     confirmPending: () =>
       unconfirmed
         ? get().mutate(unconfirmed.command, unconfirmed.idempotencyKey)
@@ -138,7 +138,7 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
             const previous = unconfirmed
             const result = await api.command(journeyId, previous)
             unconfirmed = null
-            set({ pendingMutation: false })
+            set({ pendingMutationKey: null })
             if (disposed) throw new Error("旅程页面已关闭。")
             acceptJourney(result.journey)
             if (previous.idempotencyKey === idempotencyKey) return result
@@ -151,10 +151,10 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
             idempotencyKey,
             command,
           }
-          set({ pendingMutation: true })
+          set({ pendingMutationKey: idempotencyKey })
           const result = await api.command(journeyId, unconfirmed)
           unconfirmed = null
-          set({ pendingMutation: false })
+          set({ pendingMutationKey: null })
           if (disposed) throw new Error("旅程页面已关闭。")
           acceptJourney(result.journey)
           return result
@@ -165,7 +165,7 @@ export function createRecordingStore(journeyId: string, api: RecordingApi) {
               cause.code === "REVISION_CONFLICT")
           if (cause instanceof RecordingApiError && cause.status < 500) {
             unconfirmed = null
-            set({ pendingMutation: false })
+            set({ pendingMutationKey: null })
           }
           const message = conflict
             ? "这份记录已在别处修改。请刷新最新版本后再保存，当前输入仍保留。"
