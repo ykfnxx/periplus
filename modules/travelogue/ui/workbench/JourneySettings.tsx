@@ -1,23 +1,25 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
 import { InputArea } from "@/components/kumo/components/input/input-area"
 import { Select } from "@/components/kumo/components/select/select"
 import type { JourneySnapshot } from "@/modules/data-model/contracts"
-import type { RecordingStore } from "../../state/recording-store"
-import { useConfirmation } from "./Modal"
-import RevisionReload from "./RevisionReload"
+import { useConfirmation } from "../../../../components/ui/Modal"
 
 export default function JourneySettings({
   journey,
-  store,
+  onSave,
+  revisionNotice,
   onClose,
 }: {
   journey: JourneySnapshot
-  store: RecordingStore
+  onSave: (
+    patch: Pick<JourneySnapshot, "title" | "description" | "status">
+  ) => Promise<unknown>
+  revisionNotice: ReactNode
   onClose: () => void
 }) {
   const initial = {
@@ -79,9 +81,7 @@ export default function JourneySettings({
               setSaving(true)
               setError(null)
               try {
-                await store
-                  .getState()
-                  .mutate({ name: "journey.update", patch: draft })
+                await onSave(draft)
                 setSaved(true)
                 setSaving(false)
               } catch (cause) {
@@ -124,7 +124,7 @@ export default function JourneySettings({
                   setDraft({ ...draft, status: value as typeof draft.status })
               }}
             />
-            <RevisionReload store={store} />
+            {revisionNotice}
             {error && (
               <p role="alert" className="text-sm text-coral">
                 {error}

@@ -12,11 +12,11 @@ import type { JourneySnapshot } from "@/modules/data-model/contracts"
 import {
   recordingApi,
   RecordingApiError,
-} from "@/modules/travelogue/data/client"
-import { createRecordingStore } from "@/modules/travelogue/state/recording-store"
-import RecordingEditor from "@/modules/travelogue/ui/RecordingEditor"
-import ReceiptImport from "@/modules/travelogue/ui/workbench/ReceiptImport"
-import EventEditor from "@/modules/travelogue/ui/workbench/EventEditor"
+} from "@/modules/travelogue/adapters/recording-http"
+import { createRecordingStore } from "@/modules/travelogue/application/recording-session"
+import RecordingEditor from "@/modules/travelogue/react/RecordingController"
+import ReceiptImport from "@/modules/travelogue/react/ReceiptController"
+import EventEditor from "@/modules/travelogue/react/EventEditorController"
 
 const fields = {
   merchant: "茶馆",

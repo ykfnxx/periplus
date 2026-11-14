@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import LandingGate from "@/modules/auth/ui/LandingGate"
+import LandingGate from "@/modules/auth/react/LandingGateController"
 import { getCurrentUser } from "@/modules/auth/server/context"
 
 export default async function HomePage() {

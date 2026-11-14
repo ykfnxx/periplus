@@ -1,7 +1,7 @@
 import { renderHook } from "@testing-library/react"
 import type { Map } from "maplibre-gl"
 import { expect, it, vi } from "vitest"
-import useJourneyRoutes from "@/modules/travelogue/ui/useJourneyRoutes"
+import useJourneyRoutes from "@/modules/travelogue/ui/map/useJourneyRoutes"
 import { transitJourneyFixture } from "@/tests/fixtures/journey"
 import { coordinateToWgs84 } from "@/lib/journeys/coordinates"
 

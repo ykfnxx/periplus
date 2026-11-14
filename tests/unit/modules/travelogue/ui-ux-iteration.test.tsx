@@ -15,11 +15,11 @@ import type {
   JourneyMutation,
   JourneySnapshot,
 } from "@/modules/data-model/contracts"
-import { recordingApi, type RecordingApi } from "@/modules/travelogue/data/client"
-import { publishDraft } from "@/modules/travelogue/drafts/publish"
-import type { LocalDraft } from "@/modules/travelogue/drafts/storage"
-import { createRecordingStore } from "@/modules/travelogue/state/recording-store"
-import RecordingEditor from "@/modules/travelogue/ui/RecordingEditor"
+import { recordingApi, type RecordingApi } from "@/modules/travelogue/adapters/recording-http"
+import { publishDraft } from "@/modules/travelogue/application/publish-draft"
+import type { LocalDraft } from "@/modules/travelogue/adapters/draft-indexeddb"
+import { createRecordingStore } from "@/modules/travelogue/application/recording-session"
+import RecordingEditor from "@/modules/travelogue/react/RecordingController"
 import {
   MOBILE_COLLAPSED_SHEET_HEIGHT,
   mobileSheetHeight,

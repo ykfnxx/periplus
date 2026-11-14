@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   recordingApi,
   RecordingApiError,
-} from "@/modules/travelogue/data/client"
+} from "@/modules/travelogue/adapters/recording-http"
 
 afterEach(() => vi.unstubAllGlobals())
 function respond(response: Response) {

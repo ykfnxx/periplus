@@ -7,7 +7,7 @@ import {
   signedOAuthQuery,
 } from "@/modules/agent/server/authorization"
 import { listRecordingJourneys } from "@/modules/data/journeys/recording-service"
-import AuthorizeForm from "@/modules/agent/ui/AuthorizeForm"
+import AuthorizeForm from "@/modules/agent/react/AuthorizeFormController"
 export default async function AuthorizeAgentPage({
   searchParams,
 }: {
@@ -35,6 +35,7 @@ export default async function AuthorizeAgentPage({
   })
   return (
     <AuthorizeForm
+      key={`${session.user.id}:${oauthQuery}`}
       oauthQuery={oauthQuery}
       account={session.user.email}
       clientName={authorization.client.client_name || authorization.clientId}

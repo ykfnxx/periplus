@@ -4,7 +4,7 @@ import {
   eventContentPatch,
   eventLocalDateTime,
   eventTimeInstant,
-} from "@/modules/travelogue/ui/event-content"
+} from "@/modules/travelogue/model/event-draft"
 import { eventCardJourney } from "@/tests/fixtures/event-card"
 
 describe("dated event editing", () => {

@@ -1,14 +1,21 @@
 "use client"
 import dynamic from "next/dynamic"
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/kumo/components/button/button"
-import LoginForm from "./LoginForm"
-import RegisterForm from "./RegisterForm"
-const RecordMap = dynamic(() => import("@/modules/travelogue/ui/RecordMap"), {
-  ssr: false,
-})
-export default function LandingGate() {
+const RecordMap = dynamic(
+  () => import("@/modules/travelogue/ui/map/RecordMap"),
+  {
+    ssr: false,
+  }
+)
+export default function LandingGate({
+  renderLogin,
+  renderRegister,
+}: {
+  renderLogin: (switchMode: () => void) => ReactNode
+  renderRegister: (switchMode: () => void) => ReactNode
+}) {
   const [mode, setMode] = useState<"entry" | "login" | "register">("entry")
   const reduced = useReducedMotion()
   return (
@@ -41,11 +48,9 @@ export default function LandingGate() {
               </div>
             ) : (
               <>
-                {mode === "login" ? (
-                  <LoginForm onSwitchToRegister={() => setMode("register")} />
-                ) : (
-                  <RegisterForm onSwitchToLogin={() => setMode("login")} />
-                )}
+                {mode === "login"
+                  ? renderLogin(() => setMode("register"))
+                  : renderRegister(() => setMode("login"))}
                 <Button
                   variant="ghost"
                   className="mt-4 w-full"

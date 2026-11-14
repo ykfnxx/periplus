@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/modules/auth/server/context"
 import { getRecordingJourney } from "@/modules/data/journeys/recording-service"
 import { prisma } from "@/modules/data/db/prisma"
 import { agentResource } from "@/modules/agent/server/oauth"
-import GrantList from "@/modules/agent/ui/GrantList"
+import GrantList from "@/modules/agent/react/GrantListController"
 export default async function AgentGrantsPage({
   params,
 }: {
@@ -38,6 +38,7 @@ export default async function AgentGrantsPage({
         </Link>
         <h1 className="text-xl font-semibold">Agent 接入</h1>
         <GrantList
+          key={`${context.userId}:${id}`}
           journeyId={id}
           resource={agentResource}
           grants={grants.map((grant) => ({

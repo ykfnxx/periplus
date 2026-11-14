@@ -6,7 +6,7 @@ import {
   eventCardTimes,
   eventCity,
   eventTransitDisplay,
-} from "@/modules/travelogue/ui/event-card-display"
+} from "@/modules/travelogue/model/event-card-display"
 
 const transit = eventCardJourney.events[1]
 

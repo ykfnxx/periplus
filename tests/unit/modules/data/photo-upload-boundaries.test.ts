@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { PHOTO_MAX_BYTES, PHOTO_SIZE_ERROR } from "@/types/photo"
-import { recordingApi } from "@/modules/travelogue/data/client"
+import { recordingApi } from "@/modules/travelogue/adapters/recording-http"
 import { uploadPhotoResource } from "@/modules/data/photos/photo-repository"
 import { POST } from "@/app/api/photos/route"
 

@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/kumo/components/button/button"
 import type { JourneySummary } from "@/modules/data-model/contracts"
-import { journeyDateLabel } from "../display"
+import { journeyDateLabel } from "../formatting/display"
 
 export default function JourneyMenu({
   title = "全部游记",

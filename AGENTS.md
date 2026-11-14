@@ -41,7 +41,7 @@
 ### 2.2 其他规范
 
 - 遵循现有代码风格（TypeScript 严格模式、Tailwind CSS、Kumo 组件源码（统一 Lucide 图标））
-- 颜色/阴影一律使用 `app/globals.css` `@theme` 中注册的 token 类（如 `bg-ink`、`text-russet`、`border-ink-10`、`shadow-periplus`），禁止再写 `var(--periplus-*)` 或 `rgb(44_36_22_/N%)` 形式的 arbitrary value；地图 SDK 相关的 JS 色值常量在 `lib/ui/map-theme.ts`，与 CSS token 双改
+- 颜色/阴影一律使用 `styles/theme.css` `@theme` 中注册的 token 类（如 `bg-ink`、`text-russet`、`border-ink-10`、`shadow-periplus`），禁止再写 `var(--periplus-*)` 或 `rgb(44_36_22_/N%)` 形式的 arbitrary value；地图 SDK 相关的 JS 色值常量在 `lib/ui/map-theme.ts`，与 CSS token 双改
 - 每个文件一个明确职责，保持小而聚焦
 - 使用 Zustand 进行客户端状态管理
 - 地图使用 MapLibre GL 与 OpenFreeMap；`lib/map.ts` 管理底图与视野，显示坐标统一为 WGS84
@@ -104,6 +104,15 @@ npm run build       # 生产构建
 - OpenFreeMap 底图无需 API Key，保留地图署名
 - 新增配置项应先加入 `.env.example`，再通过 `config/periplus.ts` 或 `config/periplus.server.ts` 读取
 - 运行本地命令时不要再临时前缀 `DATABASE_URL=...`，配置应来自 `.env.local`
+
+## 6. 前端业务与 UI 边界
+
+- `modules/{travelogue,auth,agent}/ui` 接收数据与明确操作回调，不引用业务状态、HTTP、数据库或 IndexedDB。
+- `application` 管理保存、队列、重试与恢复；`model` 放纯数据转换和规则；两者不依赖 React、DOM 或具体适配器。
+- `ports.ts` 定义外部能力，`adapters` 实现 HTTP／本机存储，`react` 负责实例生命周期、订阅和页面接线。账号或旅程切换必须隔离旧实例。
+- 图片临时预览 URL 由 UI 创建和释放，业务层只保留文件及上传状态。
+- `Component.preview.tsx` 与组件同目录，通过开发模式 `/ui-preview` 检查；生产返回 404。预览使用本地数据和回调，不需要登录或可用数据库，但 Next 启动仍需有效格式的配置。
+- `npm run lint` 同时检查静态、动态、相对路径和 barrel 导出后的依赖边界。新增业务规则测 `tests/application`；纯组件测 `tests/ui`，其 setup 不加载服务端配置。
 
 ---
 

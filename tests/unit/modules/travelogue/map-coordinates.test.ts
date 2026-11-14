@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 import { coordinateToWgs84, wgs84ToGcj02, bd09ToGcj02 } from "@/lib/journeys/coordinates"
-import { recordingCoordinateToMap } from "@/modules/travelogue/ui/display"
+import { recordingCoordinateToMap } from "@/modules/travelogue/ui/formatting/display"
 
 it("displays legacy GCJ02 and BD09 records at the same WGS84 location without rewriting them", () => {
   const legacy = { lng: 116.40324337854781, lat: 39.90940335390724, coordinateSystem: "GCJ02" as const }

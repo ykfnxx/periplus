@@ -1,54 +1,26 @@
 "use client"
-
+import type { FormEvent } from "react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
-import { useRouter } from "next/navigation"
-import { FormEvent, useState } from "react"
-import { authClient } from "@/modules/auth/client"
-
-interface LoginFormProps {
-  onSwitchToRegister: () => void
-  onAuthenticated?: () => void
-}
-
 export default function LoginForm({
+  email,
+  password,
+  error,
+  isSubmitting,
+  handleSubmit,
+  setEmail,
+  setPassword,
   onSwitchToRegister,
-  onAuthenticated,
-}: LoginFormProps) {
-  const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError("")
-    setIsSubmitting(true)
-
-    const result = await authClient.signIn.email({
-      email,
-      password,
-      rememberMe: true,
-    })
-
-    setIsSubmitting(false)
-
-    if (result.error) {
-      setError(result.error.message || "登录失败")
-      return
-    }
-
-    // Better Auth already navigates provider-managed OAuth responses.
-    if (result.data?.redirect) return
-
-    if (onAuthenticated) onAuthenticated()
-    else {
-      router.replace("/journeys")
-      router.refresh()
-    }
-  }
-
+}: {
+  email: string
+  password: string
+  error: string
+  isSubmitting: boolean
+  handleSubmit: (event: FormEvent<HTMLFormElement>) => void
+  setEmail: (value: string) => void
+  setPassword: (value: string) => void
+  onSwitchToRegister: () => void
+}) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <Input

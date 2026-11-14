@@ -6,13 +6,13 @@ import type {
 import {
   recordingApi,
   RecordingApiError,
-} from "@/modules/travelogue/data/client"
+} from "@/modules/travelogue/adapters/recording-http"
 import {
   draftStorage,
   type LocalDraft,
-} from "@/modules/travelogue/drafts/storage"
-import { publishDraft } from "@/modules/travelogue/drafts/publish"
-import { eventContent } from "@/modules/travelogue/ui/event-content"
+} from "@/modules/travelogue/adapters/draft-indexeddb"
+import { publishDraft } from "@/modules/travelogue/application/publish-draft"
+import { eventContent } from "@/modules/travelogue/model/event-draft"
 import { transitJourneyFixture } from "@/tests/fixtures/journey"
 
 let saved: LocalDraft | undefined

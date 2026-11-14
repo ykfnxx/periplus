@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ReactNode } from "react"
 import { Group, Panel, Separator } from "react-resizable-panels"
-import useRecordingViewport from "../useRecordingViewport"
+import useRecordingViewport from "./useRecordingViewport"
 
 export const MOBILE_COLLAPSED_SHEET_HEIGHT = 34
 const MOBILE_COLLAPSE_THRESHOLD = 64
@@ -95,7 +95,9 @@ export default function ResizableMapPanel({
         aria-label="拖动调整面板高度"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={collapsed ? 0 : Math.round((currentHeight / height) * 100)}
+        aria-valuenow={
+          collapsed ? 0 : Math.round((currentHeight / height) * 100)
+        }
         className="flex h-[34px] w-full shrink-0 cursor-ns-resize touch-none items-center justify-center outline-none select-none focus-visible:bg-journal-canvas-recess"
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId)
@@ -110,7 +112,10 @@ export default function ResizableMapPanel({
           const deltaY = dragOrigin.current.startY - event.clientY
           const next = Math.max(
             MOBILE_COLLAPSED_SHEET_HEIGHT,
-            Math.min(height, Math.round(dragOrigin.current.startHeight + deltaY))
+            Math.min(
+              height,
+              Math.round(dragOrigin.current.startHeight + deltaY)
+            )
           )
           setLiveHeight(next)
           onSheetRatio?.(next < MOBILE_COLLAPSE_THRESHOLD ? 0 : next / height)

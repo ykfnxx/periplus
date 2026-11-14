@@ -1,7 +1,7 @@
 import { periplusServerConfig } from "@/config/periplus.server"
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/modules/auth/server/context"
-import RecordingPage from "@/modules/travelogue/ui/RecordingPage"
+import RecordingPage from "@/modules/travelogue/react/RecordingScreen"
 
 export default async function JourneyPage({
   params,
@@ -14,7 +14,7 @@ export default async function JourneyPage({
   return (
     <RecordingPage
       userId={user.userId}
-      key={id}
+      key={`${user.userId}:${id}`}
       journeyId={id}
       developerMode={periplusServerConfig.development.bypassLogin}
     />

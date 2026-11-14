@@ -1,52 +1,30 @@
 "use client"
-
+import type { FormEvent } from "react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
-import { useRouter } from "next/navigation"
-import { FormEvent, useState } from "react"
-import { authClient } from "@/modules/auth/client"
-
-interface RegisterFormProps {
-  onSwitchToLogin: () => void
-  onAuthenticated?: () => void
-}
-
 export default function RegisterForm({
+  email,
+  password,
+  error,
+  isSubmitting,
+  handleSubmit,
+  setEmail,
+  setPassword,
   onSwitchToLogin,
-  onAuthenticated,
-}: RegisterFormProps) {
-  const router = useRouter()
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError("")
-    setIsSubmitting(true)
-
-    const result = await authClient.signUp.email({
-      name,
-      email,
-      password,
-    })
-
-    setIsSubmitting(false)
-
-    if (result.error) {
-      setError(result.error.message || "注册失败")
-      return
-    }
-
-    if (onAuthenticated) onAuthenticated()
-    else {
-      router.replace("/journeys")
-      router.refresh()
-    }
-  }
-
+  name,
+  setName,
+}: {
+  email: string
+  password: string
+  error: string
+  isSubmitting: boolean
+  handleSubmit: (event: FormEvent<HTMLFormElement>) => void
+  setEmail: (value: string) => void
+  setPassword: (value: string) => void
+  onSwitchToLogin: () => void
+  name: string
+  setName: (value: string) => void
+}) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <Input

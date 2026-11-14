@@ -6,13 +6,13 @@ import {
   waitFor,
 } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
-import LoginForm from "@/modules/auth/ui/LoginForm"
+import LoginForm from "@/modules/auth/react/LoginFormController"
 const { signIn, replace } = vi.hoisted(() => ({
   signIn: vi.fn(),
   replace: vi.fn(),
 }))
-vi.mock("@/modules/auth/client", () => ({
-  authClient: { signIn: { email: signIn } },
+vi.mock("@/modules/auth/adapters/better-auth", () => ({
+  authApi: { login: signIn },
 }))
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, refresh: vi.fn() }),
