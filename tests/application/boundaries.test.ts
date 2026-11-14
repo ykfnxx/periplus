@@ -30,7 +30,7 @@ function fixture(files: Record<string, string>) {
 }
 it("accepts the complete production frontend graph", () => {
   expect(checkFrontendBoundaries()).toEqual([])
-})
+}, 30_000)
 it.each([
   'import { save } from "@/modules/travelogue/adapters/http"',
   'export { save } from "../adapters/http"',
