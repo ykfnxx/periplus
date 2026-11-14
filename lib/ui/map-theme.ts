@@ -5,7 +5,7 @@ type TransitSegmentMode = NonNullable<
   NonNullable<JourneyEvent["transit"]>["route"]
 >["plans"][number]["segments"][number]["mode"]
 
-// 与 app/globals.css @theme 中的 --color-* token 一一对应，改色需双改
+// 与 styles/theme.css @theme 中的 --color-* token 一一对应，改色需双改
 export const periplusColors = {
   cream: "#f5e6d3",
   softWhite: "#fffaf3",

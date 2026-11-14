@@ -3,7 +3,7 @@ import {
   confirmedReceiptFields,
   receiptFormValues,
   receiptTotal,
-} from "@/modules/travelogue/ui/receipt-display"
+} from "@/modules/travelogue/model/receipt-draft"
 
 describe("confirming receipt information", () => {
   it("keeps monetary precision from recognition through manual confirmation", () => {

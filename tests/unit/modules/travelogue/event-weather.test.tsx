@@ -15,11 +15,11 @@ import type {
 import {
   recordingApi,
   type RecordingApi,
-} from "@/modules/travelogue/data/client"
-import { createRecordingStore } from "@/modules/travelogue/state/recording-store"
+} from "@/modules/travelogue/adapters/recording-http"
+import { createRecordingStore } from "@/modules/travelogue/application/recording-session"
 import WeatherStamp, {
   WeatherAttribution,
-} from "@/modules/travelogue/ui/workbench/EventWeather"
+} from "@/modules/travelogue/ui/events/EventWeather"
 
 const now = "2026-11-02T07:00:00Z"
 const hourly: EventWeather = {

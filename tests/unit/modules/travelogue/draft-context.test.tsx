@@ -3,16 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   recordingApi,
   RecordingApiError,
-} from "@/modules/travelogue/data/client"
-import { loadDraftContext } from "@/modules/travelogue/drafts/context"
+} from "@/modules/travelogue/adapters/recording-http"
+import { loadDraftContext } from "@/modules/travelogue/application/draft-context"
 import {
   draftStorage,
   type DraftContext,
-} from "@/modules/travelogue/drafts/storage"
-import DraftEntry from "@/modules/travelogue/drafts/DraftEntry"
-import { prepareOfflineDrafts } from "@/modules/travelogue/drafts/offline"
+} from "@/modules/travelogue/adapters/draft-indexeddb"
+import DraftEntry from "@/modules/travelogue/react/DraftEntry"
+import { prepareOfflineDrafts } from "@/modules/travelogue/adapters/offline"
 
-vi.mock("@/modules/travelogue/drafts/offline", () => ({
+vi.mock("@/modules/travelogue/adapters/offline", () => ({
   prepareOfflineDrafts: vi.fn(async () => false),
 }))
 

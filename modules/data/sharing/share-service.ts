@@ -34,8 +34,8 @@ import { eventWeatherInput } from "@/modules/data/weather/weather-input"
 import {
   eventCardTimes,
   eventTransitDisplay,
-} from "@/modules/travelogue/ui/event-card-display"
-import { receiptCardTotal } from "@/modules/travelogue/ui/receipt-display"
+} from "@/modules/travelogue/model/event-card-display"
+import { receiptCardTotal } from "@/modules/travelogue/model/receipt-draft"
 
 type Tx = Prisma.TransactionClient
 const photoIds = (journey: JourneySnapshot) => [

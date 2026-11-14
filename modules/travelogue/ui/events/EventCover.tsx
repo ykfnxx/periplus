@@ -1,0 +1,65 @@
+"use client"
+
+import type { JourneyEvent } from "@/modules/data-model/contracts/index"
+import { Button } from "@/components/kumo/components/button/button"
+import { ProviderImage } from "../photos/ProviderImage"
+
+export default function EventCover({
+  event,
+  title,
+  onOpen,
+  showCount = false,
+}: {
+  event: JourneyEvent
+  title: string
+  onOpen: (index: number) => void
+  showCount?: boolean
+}) {
+  const coverIndex = Math.max(
+    0,
+    event.photos.findIndex((photo) => photo.isCover)
+  )
+  const photo = event.photos[coverIndex]
+  const providerCover =
+    event.hotel?.coverImageUrl ?? event.planning?.coverImageUrl
+  if (!photo && !providerCover) return null
+  return (
+    <div className="journal-card-cover" data-photo-strip="">
+      {photo ? (
+        <Button
+          variant="ghost"
+          aria-label={`查看${title}的照片 ${coverIndex + 1}`}
+          className="h-full! w-full! rounded-none! p-0!"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpen(coverIndex)
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={photo.url}
+            alt={title}
+            loading="lazy"
+            draggable={false}
+            className="h-full w-full object-cover"
+          />
+        </Button>
+      ) : (
+        <ProviderImage
+          src={providerCover!}
+          alt={title}
+          category={event.hotel ? "HOTEL" : "SIGHT"}
+          width={640}
+          height={320}
+          className="h-full w-full object-cover"
+        />
+      )}
+      {showCount && event.photos.length > 1 && (
+        <span className="journal-cover-count" aria-hidden="true">
+          {coverIndex + 1} / {event.photos.length}
+        </span>
+      )}
+    </div>
+  )
+}

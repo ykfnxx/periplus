@@ -1,7 +1,7 @@
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider"
 import { periplusServerConfig } from "@/config/periplus.server"
 import { signedOAuthQuery } from "@/modules/agent/server/authorization"
-import AgentLogin from "@/modules/agent/ui/Login"
+import AgentLogin from "@/modules/agent/react/LoginController"
 export default async function AgentLoginPage({
   searchParams,
 }: {

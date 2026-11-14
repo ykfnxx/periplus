@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import LandingGate from "@/modules/auth/ui/LandingGate"
+import LandingGate from "@/modules/auth/react/LandingGateController"
 
 // Authentication interactions do not require a WebGL map in jsdom.
-vi.mock("@/modules/travelogue/ui/RecordMap", () => ({ default: () => null }))
+vi.mock("@/modules/travelogue/ui/map/RecordMap", () => ({ default: () => null }))
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -12,11 +12,8 @@ vi.mock("next/navigation", () => ({
   }),
 }))
 
-vi.mock("@/modules/auth/client", () => ({
-  authClient: {
-    signIn: { email: vi.fn() },
-    signUp: { email: vi.fn() },
-  },
+vi.mock("@/modules/auth/adapters/better-auth", () => ({
+  authApi: { login: vi.fn(), register: vi.fn() },
 }))
 
 describe("LandingGate", () => {

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
-import EventComposer from "@/modules/travelogue/ui/workbench/EventComposer"
-import { eventContent } from "@/modules/travelogue/ui/event-content"
+import EventComposer from "@/modules/travelogue/ui/events/EventComposer"
+import { eventContent } from "@/modules/travelogue/model/event-draft"
 
 beforeEach(() => {
   vi.stubGlobal(
