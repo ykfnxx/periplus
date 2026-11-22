@@ -5,6 +5,8 @@
   "compatibility_date": "2026-11-22",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "minify": true,
+  // next-themes serializes its initialization function into the page.
+  "keep_names": false,
   "workers_dev": false,
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "routes": [{ "pattern": "beta.periplus.cc", "custom_domain": true }],
