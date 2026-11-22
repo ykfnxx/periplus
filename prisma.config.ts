@@ -9,6 +9,7 @@ export default defineConfig({
   engine: "classic",
   datasource: {
     url: periplusServerConfig.database.url,
+    directUrl: periplusServerConfig.database.directUrl,
   },
   migrations: {
     seed: "tsx prisma/seed.ts",
