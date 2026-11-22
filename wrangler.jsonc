@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "periplus-beta",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-22",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "minify": true,
+  "workers_dev": false,
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "routes": [{ "pattern": "beta.periplus.cc", "custom_domain": true }],
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "7d5a52a86a424af986c6a1d57e4972e1" }],
+  "r2_buckets": [{ "binding": "ASSETS_BUCKET", "bucket_name": "periplus-test-assets" }],
+  "vars": { "PERIPLUS_RUNTIME": "cloudflare", "BETTER_AUTH_URL": "https://beta.periplus.cc" },
+  "secrets": { "required": ["BETTER_AUTH_SECRET"] }
+}

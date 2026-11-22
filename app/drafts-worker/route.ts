@@ -7,7 +7,8 @@ export async function GET() {
   const version =
     process.env.NODE_ENV === "development"
       ? "development"
-      : (await readFile(join(process.cwd(), ".next/BUILD_ID"), "utf8")).trim()
+      : (process.env.PERIPLUS_BUILD_ID ??
+        (await readFile(join(process.cwd(), ".next/BUILD_ID"), "utf8")).trim())
   return new Response(
     `
 const CACHE = ${JSON.stringify(`periplus-drafts-${version}`)};

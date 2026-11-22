@@ -11,6 +11,7 @@ import { useConfirmation } from "@/components/ui/Modal"
 import ReceiptForm, { type ReceiptFormValues } from "./ReceiptForm"
 
 export default function ReceiptImport({
+  manual = false,
   events,
   initialEventId,
   revisionNotice,
@@ -25,6 +26,7 @@ export default function ReceiptImport({
   onClose,
   onSaved,
 }: {
+  manual?: boolean
   initialEventId?: string | null
   revisionNotice?: ReactNode
   events: { id: string; title: string }[]
@@ -122,7 +124,7 @@ export default function ReceiptImport({
             loading={!!busy}
             onClick={() => void submit()}
           >
-            {review ? "加入" : "识别"}
+            {review ? "加入" : manual ? "填写" : "识别"}
           </Button>
         </header>
 
@@ -136,7 +138,11 @@ export default function ReceiptImport({
             )}
             {busy && (
               <p role="status" className="text-sm text-journal-muted">
-                {busy === "recognizing" ? "正在识别账单…" : "正在加入记录…"}
+                {busy === "recognizing"
+                  ? manual
+                    ? "正在上传账单…"
+                    : "正在识别账单…"
+                  : "正在加入记录…"}
               </p>
             )}
             {file ? (
@@ -172,14 +178,16 @@ export default function ReceiptImport({
                   ]}
                   onValueChange={(value) => value && setTarget(value)}
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!!busy}
-                  onClick={() => void recognizeImage()}
-                >
-                  重新识别
-                </Button>
+                {!manual && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!!busy}
+                    onClick={() => void recognizeImage()}
+                  >
+                    重新识别
+                  </Button>
+                )}
               </>
             )}
             <div className="flex gap-2.5">

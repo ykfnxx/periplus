@@ -14,7 +14,12 @@ import {
   saveAssetUpload,
   type AssetRecord,
 } from "./asset-repository"
-import { assetOperator, assertObjectKey, newObjectKey } from "./object-storage"
+import {
+  assetOperator,
+  assertObjectKey,
+  newObjectKey,
+  readObjectStream,
+} from "./object-storage"
 
 const imageTypes = new Set([
   "image/jpeg",
@@ -231,31 +236,5 @@ export function parseByteRange(header: string | null, size: number) {
 
 export function resourceStream(key: string, start: number, end: number) {
   assertObjectKey(key)
-  const op = assetOperator()
-  let offset = start
-  let cancelled = false
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (cancelled) return
-      if (offset > end) return controller.close()
-      const size = Math.min(1024 * 1024, end - offset + 1)
-      try {
-        // The Node binding exposes byte ranges on read(), not reader(). Bound
-        // each read and let the response stream provide downstream backpressure.
-        const bytes = await op.read(key, {
-          offset: BigInt(offset),
-          size: BigInt(size),
-        })
-        if (cancelled) return
-        if (!bytes.length || bytes.length > size) throw new AssetStorageError()
-        offset += bytes.length
-        controller.enqueue(new Uint8Array(bytes))
-      } catch {
-        if (!cancelled) controller.error(new AssetStorageError())
-      }
-    },
-    cancel() {
-      cancelled = true
-    },
-  })
+  return readObjectStream(key, start, end)
 }

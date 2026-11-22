@@ -11,23 +11,30 @@ import {
 import { periplusServerConfig } from "@/config/periplus.server"
 import { prisma } from "@/modules/data/db/prisma"
 
-export const auth = betterAuth({
-  baseURL: periplusServerConfig.app.baseUrl,
-  secret: periplusServerConfig.auth.secret,
-  database: prismaAdapter(prisma, {
-    provider: "postgresql",
-  }),
-  emailAndPassword: {
-    enabled: true,
-  },
-  plugins: [
-    oauthProvider(agentOAuthOptions),
-    cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
-    agentTokenPlugin,
-    admin({
-      defaultRole: "user",
-      adminRoles: ["admin"],
-      bannedUserMessage: "账号已停用，请联系管理员。",
+function createAuth() {
+  return betterAuth({
+    baseURL: periplusServerConfig.app.baseUrl,
+    secret: periplusServerConfig.auth.secret,
+    database: prismaAdapter(prisma, {
+      provider: "postgresql",
     }),
-  ],
-})
+    emailAndPassword: {
+      enabled: true,
+    },
+    plugins: [
+      oauthProvider(agentOAuthOptions),
+      cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+      agentTokenPlugin,
+      admin({
+        defaultRole: "user",
+        adminRoles: ["admin"],
+        bannedUserMessage: "账号已停用，请联系管理员。",
+      }),
+    ],
+  })
+}
+
+let instance: ReturnType<typeof createAuth>
+export function getAuth() {
+  return (instance ??= createAuth())
+}

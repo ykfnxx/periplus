@@ -13,7 +13,7 @@ import { prisma } from "@/modules/data/db/prisma"
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }))
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }))
 vi.mock("@/modules/auth/server/auth", () => ({
-  auth: { api: { getSession } },
+  getAuth: () => ({ api: { getSession } }),
 }))
 
 beforeEach(() => getSession.mockReset().mockResolvedValue(null))

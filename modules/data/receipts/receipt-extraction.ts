@@ -192,6 +192,8 @@ export async function extractReceipt(
     throw new AssetInputError(
       "Bill recognition accepts JPEG, PNG or WebP images up to 20 MB"
     )
+  if (process.env.NEXT_PUBLIC_PERIPLUS_MANUAL_RECEIPTS === "true")
+    throw new ReceiptOcrError("OCR_UNAVAILABLE")
   let bytes: Buffer
   try {
     assertObjectKey(asset.storageKey)

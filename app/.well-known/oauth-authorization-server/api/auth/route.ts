@@ -1,5 +1,6 @@
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
-import { auth } from "@/modules/auth/server/auth"
-export const GET = oauthProviderAuthServerMetadata(auth, {
-  headers: { "Access-Control-Allow-Origin": "*" },
-})
+import { getAuth } from "@/modules/auth/server/auth"
+export const GET = (request: Request) =>
+  oauthProviderAuthServerMetadata(getAuth(), {
+    headers: { "Access-Control-Allow-Origin": "*" },
+  })(request)

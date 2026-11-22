@@ -1,7 +1,7 @@
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { isAPIError } from "better-auth/api"
-import { auth } from "@/modules/auth/server/auth"
+import { getAuth } from "@/modules/auth/server/auth"
 import {
   authorizationRequest,
   signedOAuthQuery,
@@ -15,7 +15,7 @@ export default async function AuthorizeAgentPage({
 }) {
   const oauthQuery = signedOAuthQuery(await searchParams)
   const requestHeaders = await headers()
-  const session = await auth.api.getSession({ headers: requestHeaders })
+  const session = await getAuth().api.getSession({ headers: requestHeaders })
   if (!session) redirect(`/agent/login?${oauthQuery}`)
   let authorization
   try {

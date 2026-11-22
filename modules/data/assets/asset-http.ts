@@ -96,7 +96,7 @@ export async function resourceFile(
     }
     const start = range?.start ?? 0
     const end = range?.end ?? asset.sizeBytes - 1
-    return new Response(resourceStream(asset.storageKey, start, end), {
+    return new Response(await resourceStream(asset.storageKey, start, end), {
       status: range ? 206 : 200,
       headers: {
         "Accept-Ranges": "bytes",

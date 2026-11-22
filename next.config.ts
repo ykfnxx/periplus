@@ -10,11 +10,23 @@ const nextConfig: NextConfig = {
   // optimizer cache that outlives revocation. Existing images are unoptimized.
   images: { unoptimized: true },
   // OpenDAL loads a platform-specific N-API binary from its Node package.
-  serverExternalPackages: ["opendal"],
+  serverExternalPackages: [
+    "opendal",
+    ...(process.env.PERIPLUS_WORKER_BUILD === "true"
+      ? ["@periplus/worker-prisma"]
+      : []),
+  ],
   // The configured app host must also be allowed to connect its development
   // runtime. Binding to 0.0.0.0 alone does not admit LAN browser origins.
   allowedDevOrigins: [new URL(periplusPublicConfig.app.baseUrl).hostname],
   turbopack: {
+    ...(process.env.PERIPLUS_WORKER_BUILD === "true" && {
+      resolveAlias: {
+        "@/modules/platform/database": "./modules/platform/database.worker.ts",
+        "@/modules/platform/object-driver":
+          "./modules/platform/object-driver.worker.ts",
+      },
+    }),
     root: projectRoot,
   },
   async headers() {

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from "node:crypto"
 import { afterAll, expect, it } from "vitest"
-import { auth } from "@/modules/auth/server/auth"
+import { getAuth } from "@/modules/auth/server/auth"
 import { prisma } from "@/modules/data/db/prisma"
 
 const email = `pg-auth-${randomUUID()}@example.test`
@@ -15,11 +15,11 @@ afterAll(async () => {
 
 it("persists password authentication and sessions through the PostgreSQL adapter", async () => {
   const password = `resource-auth-${randomUUID()}`
-  const signup = await auth.api.signUpEmail({
+  const signup = await getAuth().api.signUpEmail({
     body: { email, password, name: "Postgres Auth" },
   })
   expect(signup.user.email).toBe(email)
-  const signin = await auth.api.signInEmail({
+  const signin = await getAuth().api.signInEmail({
     body: { email, password },
     asResponse: true,
   })
@@ -28,7 +28,7 @@ it("persists password authentication and sessions through the PostgreSQL adapter
     .getSetCookie()
     .map((value) => value.split(";")[0])
     .join("; ")
-  const session = await auth.api.getSession({
+  const session = await getAuth().api.getSession({
     headers: new Headers({ cookie }),
   })
   expect(session?.user.id).toBe(signup.user.id)
@@ -44,7 +44,7 @@ it("persists password authentication and sessions through the PostgreSQL adapter
     where: { id: signup.user.id },
     data: { banned: true },
   })
-  const blocked = await auth.api.signInEmail({
+  const blocked = await getAuth().api.signInEmail({
     body: { email, password },
     asResponse: true,
   })

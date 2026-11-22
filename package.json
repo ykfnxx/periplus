@@ -17,7 +17,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "places:import-mct-5a": "tsx scripts/import-mct-5a.ts",
     "places:import-mct-5a:mock": "tsx scripts/import-mct-5a.ts --mock",
-    "places:review-matches": "tsx scripts/review-place-matches.ts"
+    "places:review-matches": "tsx scripts/review-place-matches.ts",
+    "build:worker": "PERIPLUS_WORKER_BUILD=true NEXT_PUBLIC_PERIPLUS_MANUAL_RECEIPTS=true NEXT_PUBLIC_PERIPLUS_APP_URL=https://beta.periplus.cc opennextjs-cloudflare build",
+    "postbuild:worker": "node scripts/worker-runtime-env.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
@@ -28,6 +30,8 @@
     "@modelcontextprotocol/server": "2.4.0",
     "@neon/config": "^1.14.6",
     "@neon/env": "^2.1.9",
+    "@opennextjs/cloudflare": "^1.20.18",
+    "@prisma/adapter-pg": "^6.19.3",
     "@prisma/client": "^6.19.3",
     "better-auth": "1.7.20",
     "clsx": "^2.1.1",
@@ -35,7 +39,7 @@
     "lucide-react": "^1.21.0",
     "maplibre-gl": "6.17.0",
     "motion": "12.43.0",
-    "next": "16.2.6",
+    "next": "~16.4.5",
     "next-themes": "^0.4.6",
     "opendal": "0.49.13",
     "prisma": "^6.19.3",
@@ -48,6 +52,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261121.1",
     "@modelcontextprotocol/client": "2.4.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
@@ -55,20 +60,21 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
-    "@types/pg": "8.15.5",
+    "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.3",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "~16.4.5",
     "jsdom": "^29.1.1",
-    "pg": "8.16.3",
+    "pg": "^8.16.3",
     "playwright": "^1.61.1",
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.166.0"
   }
 }

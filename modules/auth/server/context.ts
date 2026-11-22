@@ -1,5 +1,5 @@
 import { headers } from "next/headers"
-import { auth } from "@/modules/auth/server/auth"
+import { getAuth } from "@/modules/auth/server/auth"
 import { getDeveloperContext } from "./developer-mode"
 
 export type UserRole = "user" | "admin"
@@ -49,9 +49,8 @@ export async function getCurrentUser(): Promise<AuthContext | null> {
   const developer = await getDeveloperContext()
   if (developer) return developer
 
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
+  const requestHeaders = await headers()
+  const session = await getAuth().api.getSession({ headers: requestHeaders })
 
   if (!session?.user?.id) return null
 

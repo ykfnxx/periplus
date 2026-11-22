@@ -46,3 +46,7 @@ public/uploads/
 /prisma/dev.db
 /prisma/dev.db-journal
 .neon
+
+.open-next/
+.wrangler/
+.dev.vars*

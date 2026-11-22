@@ -5,7 +5,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client"
-import { auth } from "@/modules/auth/server/auth"
+import { getAuth } from "@/modules/auth/server/auth"
 import { prisma } from "@/modules/data/db/prisma"
 import {
   createRecordingJourney,
@@ -36,7 +36,7 @@ const png = Buffer.from(
 )
 
 async function account(name: string) {
-  const response = await auth.api.signUpEmail({
+  const response = await getAuth().api.signUpEmail({
     body: {
       name,
       email: `agent-${randomUUID()}@example.test`,
@@ -77,7 +77,7 @@ async function begin(cookie: string, scopes = oauthScopes) {
     resource: agentResource,
     scope: scopes.join(" "),
   })
-  const response = await auth.handler(
+  const response = await getAuth().handler(
     new Request(`${agentIssuer}/oauth2/authorize?${query}`, {
       headers: cookies(cookie),
     })
@@ -96,7 +96,7 @@ async function begin(cookie: string, scopes = oauthScopes) {
   return { verifier, query, oauthQuery }
 }
 async function tokens(form: Record<string, string>) {
-  return auth.handler(
+  return getAuth().handler(
     new Request(`${agentIssuer}/oauth2/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -192,7 +192,7 @@ beforeAll(async () => {
     where: { id: owner.userId },
     data: { role: "admin" },
   })
-  const client = await auth.api.adminCreateOAuthClient({
+  const client = await getAuth().api.adminCreateOAuthClient({
     headers: cookies(ownerCookie),
     body: {
       client_name: "Periplus validation",

@@ -1,7 +1,7 @@
 import { APIError } from "better-auth/api"
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider"
 import { periplusServerConfig } from "@/config/periplus.server"
-import { auth } from "@/modules/auth/server/auth"
+import { getAuth } from "@/modules/auth/server/auth"
 import { getRecordingJourney } from "@/modules/data/journeys/recording-service"
 import { prisma } from "@/modules/data/db/prisma"
 import {
@@ -25,7 +25,7 @@ export function signedOAuthQuery(
   ).toString()
 }
 export async function realSession(headers: Headers) {
-  const session = await auth.api.getSession({ headers })
+  const session = await getAuth().api.getSession({ headers })
   if (!session || session.user.banned)
     throw new AgentAuthorizationError("请先登录")
   return session
@@ -46,7 +46,7 @@ export async function authorizationRequest(
   }
   const query = new URLSearchParams(oauthQuery)
   const clientId = query.get("client_id")!
-  const client = await auth.api.getOAuthClientPublic({
+  const client = await getAuth().api.getOAuthClientPublic({
     headers,
     query: { client_id: clientId },
   })
@@ -74,7 +74,7 @@ export async function authorizeAgent(request: Request) {
     request.headers
   )
   if (!input.accept)
-    return auth.api.oauth2Consent({
+    return getAuth().api.oauth2Consent({
       headers: request.headers,
       body: { accept: false, oauth_query: input.oauthQuery },
     })
@@ -118,7 +118,7 @@ export async function authorizeAgent(request: Request) {
       409
     )
   }
-  return auth.api.oauth2Consent({
+  return getAuth().api.oauth2Consent({
     headers: request.headers,
     body: {
       accept: true,

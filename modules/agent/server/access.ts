@@ -1,6 +1,6 @@
 import { isAPIError } from "better-auth/api"
 import { prisma } from "@/modules/data/db/prisma"
-import { auth } from "@/modules/auth/server/auth"
+import { getAuth } from "@/modules/auth/server/auth"
 import { AgentAuthorizationError, type AgentScope } from "../contracts"
 import { requireAgentGrant } from "./grants"
 import { agentIssuer, agentResource } from "./oauth"
@@ -19,7 +19,7 @@ export async function authenticateAgent(
     throw new AgentAuthorizationError("Bearer access token is required")
   let claims
   try {
-    claims = await auth.api.verifyAgentAccessToken({
+    claims = await getAuth().api.verifyAgentAccessToken({
       body: { token: match[1] },
     })
   } catch (error) {
