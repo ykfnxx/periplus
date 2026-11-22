@@ -42,6 +42,9 @@ export const periplusServerConfig = {
     },
   },
   database: {
+    get directUrl() {
+      return process.env.DATABASE_URL_UNPOOLED || undefined
+    },
     get url() {
       const url = envString("DATABASE_URL")
       if (!/^postgres(?:ql)?:\/\//.test(url)) {
