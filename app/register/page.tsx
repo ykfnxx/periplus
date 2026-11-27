@@ -10,9 +10,10 @@ export default async function RegisterPage({
 }) {
   if (await getCurrentUser()) redirect("/journeys")
   const { code } = await searchParams
+  const initialCode = typeof code === "string" ? code : ""
   return (
     <AuthSplitLayout register>
-      <RegisterForm initialCode={typeof code === "string" ? code : ""} />
+      <RegisterForm key={initialCode} initialCode={initialCode} />
     </AuthSplitLayout>
   )
 }

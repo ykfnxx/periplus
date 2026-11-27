@@ -1,3 +1,12 @@
+@keyframes drawInkRoute {
+  from {
+    stroke-dashoffset: 760;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 .ink-entry {
   background: var(--color-journal-canvas);
   color: var(--color-journal-ink);
@@ -54,7 +63,7 @@
     border: 1px solid var(--color-action);
     border-radius: 10px;
     background: var(--color-action);
-    color: #ffffff;
+    color: var(--color-white);
     font-size: 14px;
     font-weight: 500;
     line-height: 1;
@@ -182,9 +191,9 @@
     position: sticky;
     top: 0;
     z-index: 30;
-    background: rgb(250 248 243 / 88%);
+    background: color-mix(in srgb, var(--color-journal-canvas) 88%, transparent);
     backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgb(216 209 196 / 55%);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-journal-canvas-line) 55%, transparent);
   }
 
   .ink-header-inner {
@@ -300,15 +309,6 @@
     animation: drawInkRoute 1.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  @keyframes drawInkRoute {
-    from {
-      stroke-dashoffset: 760;
-    }
-    to {
-      stroke-dashoffset: 0;
-    }
-  }
-
   .hero-waypoint {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -318,7 +318,7 @@
     padding: 5px 10px 5px 7px;
     border: 1px solid transparent;
     border-radius: 999px;
-    background: rgb(250 248 243 / 86%);
+    background: color-mix(in srgb, var(--color-journal-canvas) 86%, transparent);
     color: var(--color-journal-ink);
     font-size: 12.5px;
     font-weight: 500;
@@ -340,7 +340,7 @@
     border-color: var(--color-journal-accent);
     background: var(--color-journal-card);
     color: var(--color-journal-accent);
-    box-shadow: 0 6px 18px rgb(152 69 39 / 14%);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--color-journal-accent) 14%, transparent);
   }
 
   .waypoint-dot {
@@ -371,7 +371,7 @@
     width: min(286px, 84%);
     border: 1px solid var(--color-journal-line);
     border-radius: 16px;
-    background: rgb(255 255 255 / 96%);
+    background: var(--color-journal-glass);
     box-shadow: var(--shadow-journal);
     overflow: hidden;
     transition:
@@ -491,7 +491,7 @@
   .mode-switch-btn.is-active {
     background: var(--color-journal-card);
     color: var(--color-journal-ink);
-    box-shadow: 0 1px 3px rgb(31 28 24 / 8%);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--color-journal-ink) 8%, transparent);
   }
 
   .surface-stage[hidden] {
@@ -533,7 +533,7 @@
     padding: 4px 11px;
     border-radius: 999px;
     background: var(--color-journal-ink);
-    color: #ffffff;
+    color: var(--color-white);
     font-size: 12px;
     font-weight: 500;
   }
@@ -598,7 +598,7 @@
     background: linear-gradient(
       to top,
       var(--color-journal-card) 0%,
-      rgb(255 255 255 / 0%) 34%
+      transparent 34%
     );
     pointer-events: none;
   }
@@ -617,8 +617,8 @@
     z-index: 2;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgb(31 28 24 / 62%);
-    color: #ffffff;
+    background: color-mix(in srgb, var(--color-journal-ink) 62%, transparent);
+    color: var(--color-white);
     font-size: 11.5px;
   }
 
@@ -695,7 +695,7 @@
   .p-expense-pill.is-solid {
     border-color: var(--color-journal-ink);
     background: var(--color-journal-ink);
-    color: #ffffff;
+    color: var(--color-white);
   }
 
   .p-card-transit {
@@ -811,7 +811,7 @@
     background: linear-gradient(
       to left,
       var(--color-journal-card) 0%,
-      rgb(255 255 255 / 0%) 30%
+      transparent 30%
     );
     pointer-events: none;
   }
@@ -880,7 +880,7 @@
     height: 82px;
     padding: 4px 4px 13px;
     border-radius: 2px;
-    background: #ffffff;
+    background: var(--color-white);
     box-shadow: var(--shadow-photo-paper);
     transition:
       transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -923,7 +923,7 @@
     height: 24px;
     border-radius: 50%;
     background: var(--color-journal-ink);
-    color: #ffffff;
+    color: var(--color-white);
     font-size: 12px;
     font-weight: 600;
     display: grid;
@@ -937,10 +937,10 @@
     transform: translateX(-50%);
     width: 12px;
     height: 12px;
-    border: 2px solid #ffffff;
+    border: 2px solid var(--color-white);
     border-radius: 50%;
     background: var(--color-journal-accent);
-    box-shadow: 0 4px 10px rgb(31 28 24 / 22%);
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--color-journal-ink) 22%, transparent);
   }
 
   .map-ordinal-pin {
@@ -948,13 +948,13 @@
     transform: translate(-50%, -50%);
     width: 34px;
     height: 34px;
-    border: 3px solid #ffffff;
+    border: 3px solid var(--color-white);
     border-radius: 50%;
     background: var(--color-journal-transit-accent);
-    color: #ffffff;
+    color: var(--color-white);
     font-size: 13px;
     font-weight: 700;
-    box-shadow: 0 6px 14px rgb(31 28 24 / 20%);
+    box-shadow: 0 6px 14px var(--color-ink-20);
     transition: transform 180ms ease;
   }
 
@@ -973,7 +973,7 @@
     padding: 10px 14px;
     border: 1px solid var(--color-journal-line);
     border-radius: 12px;
-    background: rgb(255 255 255 / 92%);
+    background: color-mix(in srgb, var(--color-white) 92%, transparent);
     backdrop-filter: blur(8px);
   }
 
@@ -999,12 +999,12 @@
   .share-cover-folio {
     padding: 44px 48px 40px;
     background: var(--color-journal-ink);
-    color: #faf8f3;
+    color: var(--color-journal-canvas);
   }
 
   .share-date-range {
     font-size: 12.5px;
-    color: rgb(250 248 243 / 72%);
+    color: color-mix(in srgb, var(--color-journal-canvas) 72%, transparent);
     letter-spacing: 0.04em;
   }
 
@@ -1021,7 +1021,7 @@
     max-width: 54ch;
     font-size: 15px;
     line-height: 1.75;
-    color: rgb(250 248 243 / 82%);
+    color: color-mix(in srgb, var(--color-journal-canvas) 82%, transparent);
   }
 
   .share-body-grid {
@@ -1050,7 +1050,7 @@
 
   .share-day-chip.is-active {
     background: var(--color-journal-ink);
-    color: #ffffff;
+    color: var(--color-white);
     font-weight: 600;
   }
 
@@ -1238,7 +1238,7 @@
     font-family: var(--font-editorial);
     font-size: 12px;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--color-white);
   }
 
   .author-dot.is-ink {
@@ -1260,7 +1260,7 @@
     border: 1px solid var(--color-journal-canvas-line);
     border-radius: 8px;
     background: var(--color-journal-card);
-    font-family: var(--font-mono);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-size: 12px;
     color: var(--color-journal-ink);
   }
@@ -1338,7 +1338,7 @@
   .colophon-input:focus {
     outline: none;
     border-color: var(--color-journal-accent);
-    box-shadow: 0 0 0 3px rgb(152 69 39 / 12%);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-journal-accent) 12%, transparent);
   }
 
   .colophon-login-line {
@@ -1355,7 +1355,7 @@
   .ink-footer-inner {
     max-width: 1240px;
     margin: 0 auto;
-    padding: 22px 36px 86px;
+    padding: 24px 36px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1418,7 +1418,7 @@
     justify-content: space-between;
     gap: 12px;
     padding-top: 16px;
-    border-top: 1px solid rgb(216 209 196 / 65%);
+    border-top: 1px solid color-mix(in srgb, var(--color-journal-canvas-line) 65%, transparent);
   }
 
   .auth-folio-quote {
@@ -1439,7 +1439,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 40px 32px 92px;
+    padding: 40px 32px;
     background: var(--color-journal-card);
   }
 
@@ -1522,7 +1522,7 @@
 
     .auth-stage {
       justify-content: flex-start;
-      padding: 0 20px 96px;
+      padding: 0 20px 32px;
       background: var(--color-journal-canvas);
     }
 
