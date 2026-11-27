@@ -84,6 +84,9 @@ model User {
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
 
+  invitedByCodeId    String?
+  invitedByCode      InviteCode?         @relation("RedeemedCode", fields: [invitedByCodeId], references: [id], onDelete: SetNull)
+  createdInviteCodes InviteCode[]        @relation("IssuedCodes")
   sessions           Session[]           @relation("UserSessions")
   accounts           Account[]           @relation("UserAccounts")
   journeys           Journey[]           @relation("OwnedJourneys")
@@ -96,6 +99,21 @@ model User {
   agentGrants        AgentGrant[]
 
   @@map("user")
+}
+
+model InviteCode {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  maxUses     Int       @default(1)
+  usedCount   Int       @default(0)
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  note        String?
+  createdAt   DateTime  @default(now())
+  // A locally issued code can precede the first administrator account.
+  createdById String?
+  createdBy   User?     @relation("IssuedCodes", fields: [createdById], references: [id], onDelete: SetNull)
+  redeemedBy  User[]    @relation("RedeemedCode")
 }
 
 model Session {

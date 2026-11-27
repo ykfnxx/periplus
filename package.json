@@ -17,7 +17,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "places:import-mct-5a": "tsx scripts/import-mct-5a.ts",
     "places:import-mct-5a:mock": "tsx scripts/import-mct-5a.ts --mock",
-    "places:review-matches": "tsx scripts/review-place-matches.ts"
+    "places:review-matches": "tsx scripts/review-place-matches.ts",
+    "invite:create": "tsx scripts/create-invite.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
@@ -42,6 +43,7 @@
     "react-resizable-panels": "4.14.7",
     "supercluster": "9.1.0",
     "tailwind-merge": "^3.6.0",
+    "tsx": "^4.22.4",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
@@ -65,7 +67,6 @@
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4",
-    "tsx": "^4.22.4",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

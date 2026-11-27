@@ -1,3 +1,4 @@
+import { registrationCode } from "@/tests/fixtures/registration"
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
 import type { JourneySnapshot } from "../../modules/data-model/contracts"
@@ -22,13 +23,16 @@ test("normal accounts save photos, reopen content and collaborate without sharin
   expect((await page.request.get("/api/journeys")).status()).toBe(401)
 
   await page.goto("/")
-  await page.getByRole("button", { name: "注册", exact: true }).click()
+  await page.getByRole("link", { name: "受邀注册", exact: true }).click()
+  await page
+    .getByLabel("邀请码", { exact: true })
+    .fill(await registrationCode())
   await page.getByLabel("名称", { exact: true }).fill("CI 作者")
   await page
     .getByLabel("邮箱", { exact: true })
     .fill(`owner-${id}@example.test`)
   await page.getByLabel("密码", { exact: true }).fill(password)
-  await page.getByRole("button", { name: "注册", exact: true }).click()
+  await page.getByRole("button", { name: "完成注册", exact: true }).click()
   await page.getByRole("button", { name: "新建游记", exact: true }).click()
   await page.getByLabel("旅程名称", { exact: true }).fill("CI 真实记录")
   await page.getByRole("button", { name: "开始记录", exact: true }).click()
@@ -79,15 +83,6 @@ test("normal accounts save photos, reopen content and collaborate without sharin
 
   const friend = await browser.newContext({ baseURL })
   try {
-    const signup = await friend.request.post("/api/auth/sign-up/email", {
-      headers: { Origin: baseURL! },
-      data: { name: "CI 同行者", email: `friend-${id}@example.test`, password },
-    })
-    expect(signup.ok()).toBeTruthy()
-    expect(
-      (await friend.request.get(`/api/journeys/${journeyId}`)).status()
-    ).toBe(404)
-    expect((await friend.request.get(photo.url)).status()).toBe(403)
     const invite = await page.request.post(
       `/api/journeys/${journeyId}/invitations`,
       { data: {} }
@@ -96,6 +91,22 @@ test("normal accounts save photos, reopen content and collaborate without sharin
     const url = new URL((await invite.json()).url)
     const joined = await friend.newPage()
     await joined.goto(url.pathname)
+    await joined.getByRole("button", { name: "登录后加入" }).click()
+    await joined.getByRole("button", { name: "注册", exact: true }).click()
+    await expect(joined.getByLabel("邀请码", { exact: true })).toHaveCount(0)
+    await joined.getByLabel("名称", { exact: true }).fill("CI 同行者")
+    await joined
+      .getByLabel("邮箱", { exact: true })
+      .fill(`friend-${id}@example.test`)
+    await joined.getByLabel("密码", { exact: true }).fill(password)
+    await joined.getByRole("button", { name: "完成注册" }).click()
+    await expect(
+      joined.getByRole("button", { name: "加入旅程", exact: true })
+    ).toBeVisible()
+    expect(
+      (await friend.request.get(`/api/journeys/${journeyId}`)).status()
+    ).toBe(404)
+    expect((await friend.request.get(photo.url)).status()).toBe(403)
     await joined.getByRole("button", { name: "加入旅程", exact: true }).click()
     await expect(joined).toHaveURL(new RegExp(`/journeys/${journeyId}$`))
     const current: JourneySnapshot = await (

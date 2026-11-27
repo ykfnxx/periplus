@@ -1,3 +1,4 @@
+import { registrationCode } from "@/tests/fixtures/registration"
 import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
 import { expect, test } from "@playwright/test"
@@ -14,7 +15,7 @@ test("anonymous photos cannot bypass share revocation through the image optimize
   // Prior browser flows create multiple accounts in the production rate window.
   await delay(11_000)
   const signup = await request.post("/api/auth/sign-up/email", {
-    headers: { Origin: baseURL! },
+    headers: { "x-invite-code": await registrationCode(), Origin: baseURL! },
     data: {
       name: "CI 分享作者",
       email: `share-${randomUUID()}@example.test`,

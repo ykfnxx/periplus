@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { registrationCode } from "@/tests/fixtures/registration"
 import { randomUUID } from "node:crypto"
 import { afterAll, expect, it } from "vitest"
 import { auth } from "@/modules/auth/server/auth"
@@ -16,6 +17,7 @@ afterAll(async () => {
 it("persists password authentication and sessions through the PostgreSQL adapter", async () => {
   const password = `resource-auth-${randomUUID()}`
   const signup = await auth.api.signUpEmail({
+    headers: new Headers({ "x-invite-code": await registrationCode() }),
     body: { email, password, name: "Postgres Auth" },
   })
   expect(signup.user.email).toBe(email)

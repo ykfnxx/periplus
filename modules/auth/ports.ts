@@ -9,6 +9,8 @@ export interface AuthApi {
     rememberMe: boolean
   }): Promise<AuthResult>
   register(input: {
+    inviteCode?: string
+    journeyInvitationToken?: string
     name: string
     email: string
     password: string
