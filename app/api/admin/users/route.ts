@@ -1,27 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import {
-  AuthRequiredError,
-  PermissionDeniedError,
-  requireAdmin,
-} from "@/modules/auth/server/context"
+import { requireAdmin } from "@/modules/auth/server/context"
 import {
   createAdminUser,
   listAdminUsers,
   normalizeAdminRole,
 } from "@/modules/data/users/user-repository"
 
-function authErrorResponse(error: unknown) {
-  if (error instanceof AuthRequiredError) {
-    return NextResponse.json(
-      { error: "Authentication required" },
-      { status: 401 }
-    )
-  }
-  if (error instanceof PermissionDeniedError) {
-    return NextResponse.json({ error: error.message }, { status: 403 })
-  }
-  return null
-}
+import { authErrorResponse } from "@/modules/auth/server/http-errors"
 
 export async function GET() {
   try {
@@ -29,9 +14,7 @@ export async function GET() {
     const users = await listAdminUsers()
     return NextResponse.json(users)
   } catch (error) {
-    const response = authErrorResponse(error)
-    if (response) return response
-    throw error
+    return authErrorResponse(error)
   }
 }
 
@@ -57,8 +40,6 @@ export async function POST(request: NextRequest) {
     })
     return NextResponse.json(user, { status: 201 })
   } catch (error) {
-    const response = authErrorResponse(error)
-    if (response) return response
-    throw error
+    return authErrorResponse(error)
   }
 }

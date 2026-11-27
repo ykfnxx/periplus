@@ -1,5 +1,9 @@
 import { betterAuth } from "better-auth"
-import { prismaAdapter } from "better-auth/adapters/prisma"
+import {
+  invitationDatabase,
+  authorizeRegistration,
+  requireRegistrationInvite,
+} from "./registration"
 import { admin } from "better-auth/plugins"
 import { oauthProvider } from "@better-auth/oauth-provider"
 import { cimd } from "@better-auth/cimd"
@@ -9,14 +13,34 @@ import {
   agentTokenPlugin,
 } from "@/modules/agent/server/oauth"
 import { periplusServerConfig } from "@/config/periplus.server"
-import { prisma } from "@/modules/data/db/prisma"
 
 export const auth = betterAuth({
   baseURL: periplusServerConfig.app.baseUrl,
   secret: periplusServerConfig.auth.secret,
-  database: prismaAdapter(prisma, {
-    provider: "postgresql",
-  }),
+  database: invitationDatabase,
+  user: {
+    additionalFields: {
+      invitedByCodeId: {
+        type: "string",
+        required: false,
+        input: false,
+        returned: false,
+      },
+    },
+  },
+  hooks: { before: requireRegistrationInvite },
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user, ctx) => {
+          if (ctx?.path === "/sign-up/email") {
+            const invitedByCodeId = await authorizeRegistration(ctx.headers)
+            return { data: { ...user, invitedByCodeId } }
+          }
+        },
+      },
+    },
+  },
   emailAndPassword: {
     enabled: true,
   },

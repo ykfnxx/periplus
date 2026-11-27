@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { registrationCode } from "@/tests/fixtures/registration"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { beforeAll, describe, expect, it } from "vitest"
 import {
@@ -37,6 +38,7 @@ const png = Buffer.from(
 
 async function account(name: string) {
   const response = await auth.api.signUpEmail({
+    headers: new Headers({ "x-invite-code": await registrationCode() }),
     body: {
       name,
       email: `agent-${randomUUID()}@example.test`,

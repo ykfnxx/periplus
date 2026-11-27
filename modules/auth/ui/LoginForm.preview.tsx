@@ -1,4 +1,5 @@
 "use client"
+import AuthSplitLayout from "./AuthSplitLayout"
 import { useState } from "react"
 import LoginForm from "./LoginForm"
 export default function LoginFormPreview({ variant }: { variant: string }) {
@@ -6,7 +7,7 @@ export default function LoginFormPreview({ variant }: { variant: string }) {
   const [password, setPassword] = useState("")
   const [sent, setSent] = useState(false)
   return (
-    <section className="mx-auto mt-24 max-w-sm rounded-2xl bg-soft-white p-7">
+    <AuthSplitLayout>
       <LoginForm
         email={email}
         password={password}
@@ -26,6 +27,6 @@ export default function LoginFormPreview({ variant }: { variant: string }) {
         }}
         onSwitchToRegister={() => {}}
       />
-    </section>
+    </AuthSplitLayout>
   )
 }

@@ -7,6 +7,7 @@ import ReceiptImport from "@/modules/travelogue/ui/receipts/ReceiptImport.previe
 import ShareManager from "@/modules/travelogue/ui/sharing/ShareManager.preview"
 import JourneyLibrary from "@/modules/travelogue/ui/library/JourneyLibrary.preview"
 import JourneyMembers from "@/modules/travelogue/ui/collaboration/JourneyMembers.preview"
+import InkLanding from "@/modules/auth/ui/InkLanding"
 import LoginForm from "@/modules/auth/ui/LoginForm.preview"
 import RegisterForm from "@/modules/auth/ui/RegisterForm.preview"
 import AuthorizeForm from "@/modules/agent/ui/AuthorizeForm.preview"
@@ -20,6 +21,7 @@ const scenes = {
   分享: ShareManager,
   旅程目录: JourneyLibrary,
   同行者: JourneyMembers,
+  首页: InkLanding,
   登录: LoginForm,
   注册: RegisterForm,
   授权: AuthorizeForm,

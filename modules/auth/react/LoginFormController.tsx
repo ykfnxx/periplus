@@ -7,7 +7,7 @@ import { authenticate } from "../application/authenticate"
 import LoginFormView from "../ui/LoginForm"
 
 interface LoginFormProps {
-  onSwitchToRegister: () => void
+  onSwitchToRegister?: () => void
   onAuthenticated?: () => void
 }
 
@@ -54,7 +54,9 @@ export default function LoginForm({
       handleSubmit={handleSubmit}
       setEmail={setEmail}
       setPassword={setPassword}
-      onSwitchToRegister={onSwitchToRegister}
+      onSwitchToRegister={
+        onSwitchToRegister ?? (() => router.push("/register"))
+      }
     />
   )
 }

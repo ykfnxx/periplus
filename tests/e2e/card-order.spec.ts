@@ -1,3 +1,4 @@
+import { registrationCode } from "@/tests/fixtures/registration"
 import { randomUUID } from "node:crypto"
 import { expect, test, type Page } from "@playwright/test"
 import type { JourneySnapshot } from "../../modules/data-model/contracts"
@@ -6,7 +7,7 @@ async function journeyFixture(page: Page, origin: string) {
   // Keep normal account creation outside the production sign-up rate window.
   await page.waitForTimeout(11_000)
   const signup = await page.request.post("/api/auth/sign-up/email", {
-    headers: { Origin: origin },
+    headers: { "x-invite-code": await registrationCode(), Origin: origin },
     data: {
       name: "排序作者",
       email: `order-${randomUUID()}@example.test`,

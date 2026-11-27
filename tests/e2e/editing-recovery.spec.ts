@@ -1,3 +1,4 @@
+import { registrationCode } from "@/tests/fixtures/registration"
 import { randomUUID } from "node:crypto"
 import { expect, test, type Page } from "@playwright/test"
 import type { JourneySnapshot } from "../../modules/data-model/contracts"
@@ -34,7 +35,7 @@ test("keeps editing state across breakpoints and confirms a lost response withou
 }) => {
   await page.waitForTimeout(11_000)
   const signup = await page.request.post("/api/auth/sign-up/email", {
-    headers: { Origin: baseURL! },
+    headers: { "x-invite-code": await registrationCode(), Origin: baseURL! },
     data: {
       name: "恢复验证",
       email: `recovery-${randomUUID()}@example.test`,

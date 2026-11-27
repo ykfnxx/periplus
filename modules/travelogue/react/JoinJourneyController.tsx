@@ -106,6 +106,7 @@ export default function JoinJourney({
             />
           ) : (
             <RegisterForm
+              journeyInvitationToken={token}
               onSwitchToLogin={() => setMode("login")}
               onAuthenticated={onAuthenticated}
             />

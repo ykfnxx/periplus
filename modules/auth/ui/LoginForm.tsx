@@ -1,4 +1,5 @@
 "use client"
+import PasswordField from "./PasswordField"
 import type { FormEvent } from "react"
 import { Button } from "@/components/kumo/components/button/button"
 import { Input } from "@/components/kumo/components/input/input"
@@ -31,13 +32,10 @@ export default function LoginForm({
         required
         autoComplete="email"
       />
-      <Input
-        label="密码"
-        type="password"
+      <PasswordField
         value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        required
-        autoComplete="current-password"
+        onChange={setPassword}
+        newPassword={false}
       />
       {error && (
         <p role="alert" className="text-sm text-coral">
@@ -54,7 +52,7 @@ export default function LoginForm({
       </Button>
       <p className="flex items-center justify-center text-sm text-walnut">
         没有账号？
-        <Button variant="ghost" onClick={onSwitchToRegister}>
+        <Button type="button" variant="ghost" onClick={onSwitchToRegister}>
           注册
         </Button>
       </p>
