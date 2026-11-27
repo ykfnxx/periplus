@@ -6,6 +6,7 @@ import {
 import {
   assetOperator,
   assertObjectKey,
+  directPhotoResponse,
   isObjectNotFound,
 } from "@/modules/data/assets/object-storage"
 export const runtime = "nodejs"
@@ -39,6 +40,8 @@ export async function GET(
       headers: { ...headers, "Content-Range": `bytes */${asset.sizeBytes}` },
     })
   }
+  const redirect = await directPhotoResponse(asset)
+  if (redirect) return redirect
   const start = range?.start ?? 0,
     end = range?.end ?? asset.sizeBytes - 1
   return new Response(await resourceStream(asset.storageKey, start, end), {

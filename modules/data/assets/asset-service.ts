@@ -113,7 +113,10 @@ export async function uploadResource(
       signal?.throwIfAborted()
       const writer = await op.writer(
         key,
-        op.capability().writeWithContentType ? { contentType: mimeType } : {}
+        {
+          ...(op.capability().writeWithContentType && { contentType: mimeType }),
+          ...(op.capability().writeWithCacheControl && { cacheControl: "private, no-store" }),
+        }
       )
       let closed = false
       try {

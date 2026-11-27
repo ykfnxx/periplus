@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { assetOperator } from "@/modules/platform/object-driver"
+import { periplusServerConfig } from "@/config/periplus.server"
 export {
   assetOperator,
   createAssetOperator,
@@ -25,4 +27,18 @@ export function assertObjectKey(key: string) {
 
 export function isObjectNotFound(error: unknown) {
   return error instanceof Error && /\bNotFound\b/.test(error.message)
+}
+
+export async function directPhotoResponse(asset: { kind: string; storageKey: string }) {
+  if (asset.kind !== "IMAGE" || !periplusServerConfig.storage.directPhotoReads)
+    return null
+  const signed = await assetOperator().presignRead(asset.storageKey, 60)
+  return new Response(null, {
+    status: 307,
+    headers: {
+      Location: signed.url,
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  })
 }
