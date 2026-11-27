@@ -31,6 +31,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       CI_IMAGE_SHA: ${{ github.sha }}
+      RELEASE_MANUAL_RECEIPTS: "true"
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -45,7 +46,11 @@ jobs:
       - run: npm run typecheck && npm run lint && npm run test:unit -- --run
       - name: Build deployment image
         run: |
-          docker build --build-arg "PERIPLUS_RELEASE_SHA=$CI_IMAGE_SHA" -t "periplus:$CI_IMAGE_SHA" .
+          docker build \
+            --build-arg "PERIPLUS_RELEASE_SHA=$CI_IMAGE_SHA" \
+            --build-arg NEXT_PUBLIC_PERIPLUS_APP_URL=https://beta.periplus.cc \
+            --build-arg "NEXT_PUBLIC_PERIPLUS_MANUAL_RECEIPTS=$RELEASE_MANUAL_RECEIPTS" \
+            -t "periplus:$CI_IMAGE_SHA" .
       - name: Reject missing production authentication configuration
         run: |
           set +e
@@ -68,17 +73,18 @@ jobs:
           playwright_version=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")
           docker run --rm --init --network host --ipc=host \
             -e PLAYWRIGHT_EXTERNAL_SERVER -e CI=true \
+            -e "NEXT_PUBLIC_PERIPLUS_MANUAL_RECEIPTS=$RELEASE_MANUAL_RECEIPTS" \
             -v "$GITHUB_WORKSPACE:/work" -w /work \
             "mcr.microsoft.com/playwright:v$playwright_version-noble" npm run test:e2e
       - name: Package verified image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         run: |
           mkdir release
           docker save "periplus:$CI_IMAGE_SHA" | gzip > release/image.tar.gz
           (cd release && sha256sum image.tar.gz > SHA256SUMS)
           node -e 'require("fs").writeFileSync("release/release.json",JSON.stringify({sha:process.env.CI_IMAGE_SHA,image:"periplus:"+process.env.CI_IMAGE_SHA,runId:process.env.GITHUB_RUN_ID}))'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         with:
           name: verified-image
           path: release/

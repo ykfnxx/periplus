@@ -16,6 +16,7 @@ import { parseByteRange, resourceStream } from "./asset-service"
 import {
   assetOperator,
   assertObjectKey,
+  directPhotoResponse,
   isObjectNotFound,
 } from "./object-storage"
 
@@ -69,8 +70,7 @@ export async function resourceFile(
   kind?: AssetRecord["kind"]
 ) {
   return resourceResponse(async (context) => {
-    // This check remains on every read. No signed download URL can bypass a
-    // subsequent soft deletion or a change to the resource's ownership rules.
+    // Check access before serving bytes or signing a download URL.
     const asset = await getAssetRecord(context, id, kind)
     if (!asset)
       return NextResponse.json({ error: "Resource not found" }, { status: 404 })
@@ -94,6 +94,8 @@ export async function resourceFile(
         headers: { "Content-Range": `bytes */${asset.sizeBytes}` },
       })
     }
+    const redirect = await directPhotoResponse(asset, request.method)
+    if (redirect) return redirect
     const start = range?.start ?? 0
     const end = range?.end ?? asset.sizeBytes - 1
     return new Response(resourceStream(asset.storageKey, start, end), {

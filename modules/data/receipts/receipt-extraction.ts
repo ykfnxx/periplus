@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { periplusPublicConfig } from "@/config/periplus"
 import { periplusServerConfig } from "@/config/periplus.server"
 import type { AuthContext } from "@/modules/auth/server/context"
 import {
@@ -192,6 +193,8 @@ export async function extractReceipt(
     throw new AssetInputError(
       "Bill recognition accepts JPEG, PNG or WebP images up to 20 MB"
     )
+  if (periplusPublicConfig.receipts.manualEntry)
+    throw new ReceiptOcrError("OCR_UNAVAILABLE")
   let bytes: Buffer
   try {
     assertObjectKey(asset.storageKey)

@@ -106,10 +106,13 @@ export async function uploadResource(
     let sizeBytes = 0
     try {
       signal?.throwIfAborted()
-      const writer = await op.writer(
-        key,
-        op.capability().writeWithContentType ? { contentType: mimeType } : {}
-      )
+      const capability = op.capability()
+      const writer = await op.writer(key, {
+        ...(capability.writeWithContentType && { contentType: mimeType }),
+        ...(capability.writeWithCacheControl && {
+          cacheControl: "private, no-store",
+        }),
+      })
       let closed = false
       try {
         const source = Readable.fromWeb(

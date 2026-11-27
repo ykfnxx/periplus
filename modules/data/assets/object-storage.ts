@@ -57,3 +57,26 @@ export function assertObjectKey(key: string) {
 export function isObjectNotFound(error: unknown) {
   return error instanceof Error && /\bNotFound\b/.test(error.message)
 }
+
+export async function directPhotoResponse(
+  asset: { kind: string; storageKey: string },
+  method: string
+) {
+  if (
+    method !== "GET" ||
+    asset.kind !== "IMAGE" ||
+    !periplusServerConfig.storage.directPhotoReads ||
+    periplusServerConfig.storage.scheme !== "s3"
+  )
+    return null
+
+  const signed = await assetOperator().presignRead(asset.storageKey, 60)
+  return new Response(null, {
+    status: 307,
+    headers: {
+      Location: signed.url,
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  })
+}

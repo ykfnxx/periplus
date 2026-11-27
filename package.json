@@ -26,6 +26,8 @@
     "@better-auth/prisma-adapter": "1.7.20",
     "@dnd-kit/react": "0.5.1",
     "@modelcontextprotocol/server": "2.4.0",
+    "@neon/config": "^1.14.6",
+    "@neon/env": "^2.1.9",
     "@prisma/client": "^6.19.3",
     "better-auth": "1.7.20",
     "clsx": "^2.1.1",

@@ -122,10 +122,16 @@ test("keeps editing state across breakpoints and confirms a lost response withou
   await page.getByRole("button", { name: "旅程操作", exact: true }).click()
   await page.getByRole("button", { name: "拍账单", exact: true }).click()
   await page.locator("input[type=file]").last().setInputFiles(image)
-  await page.route("**/api/receipts/extract", (route) =>
-    route.fulfill({ status: 503, json: { error: "识别暂不可用" } })
-  )
-  await page.getByRole("button", { name: "识别", exact: true }).click()
+  const manualReceipts =
+    process.env.NEXT_PUBLIC_PERIPLUS_MANUAL_RECEIPTS === "true"
+  if (!manualReceipts) {
+    await page.route("**/api/receipts/extract", (route) =>
+      route.fulfill({ status: 503, json: { error: "识别暂不可用" } })
+    )
+  }
+  await page
+    .getByRole("button", { name: manualReceipts ? "填写" : "识别", exact: true })
+    .click()
   await page.getByLabel("店名", { exact: true }).fill("断点后的核对商家")
   const viewport = page.viewportSize()!
   await page.setViewportSize({

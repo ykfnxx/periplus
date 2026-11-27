@@ -1,5 +1,6 @@
 "use client"
 import { useState, useSyncExternalStore, type ReactNode } from "react"
+import { periplusPublicConfig } from "@/config/periplus"
 import {
   createReceiptImport,
   type ReceiptImportApi,
@@ -15,7 +16,13 @@ export default function ReceiptController(
     onSaved: (eventId: string) => void
   }
 ) {
-  const [session] = useState(() => createReceiptImport(props))
+  const manual = periplusPublicConfig.receipts.manualEntry
+  const [session] = useState(() =>
+    createReceiptImport({
+      ...props,
+      recognize: manual ? undefined : props.recognize,
+    })
+  )
   const snapshot = useSyncExternalStore(
     session.subscribe,
     session.getState,
@@ -24,6 +31,7 @@ export default function ReceiptController(
   return (
     <ReceiptImport
       {...snapshot}
+      manual={manual}
       events={props.events}
       initialEventId={props.initialEventId}
       revisionNotice={props.revisionNotice}
