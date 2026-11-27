@@ -7,7 +7,7 @@ import {
 } from "../model/receipt-draft"
 export interface ReceiptImportApi {
   upload: (file: File, uploadId: string) => Promise<string>
-  recognize: (assetId: string) => Promise<ReceiptFormValues>
+  recognize?: (assetId: string) => Promise<ReceiptFormValues>
   save: (
     review: ReceiptReview,
     eventId: string | null,
@@ -30,7 +30,9 @@ export function createReceiptImport(api: ReceiptImportApi) {
     let uploadedAssetId = review?.assetId
     try {
       uploadedAssetId ||= await api.upload(file, uploadId)
-      const values = await api.recognize(uploadedAssetId)
+      const values = api.recognize
+        ? await api.recognize(uploadedAssetId)
+        : emptyReceiptValues
       state.setState({ review: { assetId: uploadedAssetId, values } })
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "账单识别失败。"

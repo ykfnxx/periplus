@@ -108,6 +108,25 @@ describe("business workflows without React or DOM", () => {
     ])
     expect(session.getState().status).toBe("已存本机")
   })
+  it("saves manually entered receipt values with the original upload", async () => {
+    const upload = vi.fn().mockResolvedValue("asset")
+    const save = vi.fn().mockResolvedValue("event")
+    const session = createReceiptImport({ upload, save })
+    session.choose(new File(["receipt"], "receipt.jpg"))
+    await session.submit(null)
+    const review = session.getState().review!
+    expect(review.assetId).toBe("asset")
+    expect(session.getState().error).toBeNull()
+    const values = { ...review.values, merchant: "Cafe", total: "12.50" }
+    session.edit(values)
+    expect(await session.submit(null)).toBe("event")
+    expect(save).toHaveBeenCalledWith(
+      { assetId: "asset", values },
+      null,
+      expect.any(String)
+    )
+    expect(upload).toHaveBeenCalledOnce()
+  })
   it("retains an uploaded receipt after OCR failure and replays a failed save with the same key", async () => {
     const upload = vi.fn().mockResolvedValue("asset")
     const recognize = vi.fn().mockRejectedValue(new Error("OCR unavailable"))

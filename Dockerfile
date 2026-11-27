@@ -4,9 +4,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 WORKDIR /app
 
 FROM base AS build
+ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+ARG NEXT_PUBLIC_PERIPLUS_APP_URL
+ARG NEXT_PUBLIC_PERIPLUS_MANUAL_RECEIPTS
 RUN node scripts/ci-env.mjs && npx prisma generate && npm run build && npm prune --omit=dev
 
 FROM base AS runtime
