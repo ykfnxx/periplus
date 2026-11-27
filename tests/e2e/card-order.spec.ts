@@ -169,7 +169,7 @@ test("card order persists for pointer and keyboard moves without sorting dates",
   await expect
     .poll(() => visibleOrder(page))
     .toEqual([ids[0], ids[2], ids[1], ids[3]])
-  await expect(page.locator("[data-dnd-dropping]")).toHaveCount(0)
+  await expect(page.locator("[data-dnd-dragging]")).toHaveCount(0)
   await handle.focus()
   await page.keyboard.press("Space")
   await page.keyboard.press("ArrowUp")
