@@ -76,6 +76,9 @@ export const periplusServerConfig = {
     },
   },
   storage: {
+    get directPhotoReads() {
+      return envString("PERIPLUS_STORAGE_DIRECT_PHOTO_READS") === "true"
+    },
     get scheme() {
       const scheme = envString("PERIPLUS_STORAGE_SCHEME", "s3")
       if (scheme !== "s3" && scheme !== "fs" && scheme !== "memory") {
